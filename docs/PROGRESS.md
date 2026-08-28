@@ -71,3 +71,17 @@ One gap is deliberately left open: the retention sweep (DECISIONS D27).
 | Language-detection confidence on a first chunk (§19.6) | Phase 5 | `uv run pytest -m windows -k detect_english_fixture` (needs SAPI + a local model) |
 | FTS5 present (§19.1) | **closed** | measured in Phase 1: FTS5 is available |
 | `nemotron_h` in the local runtime (§19.3) | optional | `MA_OLLAMA=1 uv run pytest -m live_api -k local_model_path` |
+
+## Exactly what is skipped here, and what closes it
+
+21 tests are collected and skipped in this WSL2 shell; 5 more (`live_api`) are deselected
+by default. Nothing else is skipped.
+
+| Skipped | Count | Closes with |
+|---|---|---|
+| `tests/e2e/test_phase4_audio_hw.py` — enumerate, T2 loopback echo, chunks+manifest, mic smoke, **dual-stream concurrent**, 2 h soak | 6 | Windows: `uv run pytest -m audio_hw` and `uv run python -m app.selftest audio` |
+| `tests/e2e/test_phase13_frozen.py` — frozen imports, frozen pipeline, resources, installer size, Task Scheduler | 5 | Windows: `packaging\build.ps1`, then `uv run pytest -q tests/e2e/test_phase13_frozen.py` |
+| `tests/e2e/test_phase12_windows_signals.py` — T3 registry-sees-self, registry re-arm, window titles, render sessions | 4 | Windows: `uv run pytest -m windows` |
+| SAPI speech fixtures (T1) — fixture generation and caching, VAD on speech, real transcription, English detection | 5 | Windows: `uv run pytest -m windows` (the last two also need a local ASR model) |
+| `test_windows_dll_dirs_registered` — `add_dll_directory` **and** the PATH prepend | 1 | Windows: `uv run pytest -m windows` |
+| `live_api` — Hebrew tokens-per-word, cache hit on window 2, live smoke, cross-language summary, Ollama | 5 (deselected) | `uv run pytest -m live_api` with an Anthropic key, or `python -m app.selftest live-llm` |
