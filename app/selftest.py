@@ -127,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, default=None)
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument("--seconds", type=int, default=60)
+    parser.add_argument("--budget-s", type=float, default=120.0, dest="budget_s")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 

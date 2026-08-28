@@ -121,6 +121,7 @@ DEFAULTS: dict[str, Any] = {
     "delivery": {
         "mode": "draft",  # draft|auto_send
         "attach_transcript": False,
+        "recipients": [],
         "notifier": "windows",  # windows|fake
         "smtp": {
             "host": "smtp.gmail.com",
