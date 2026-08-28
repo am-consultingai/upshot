@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+frontend/dist/
+build/
+dist/
+*.json.tmp
+m0.json
+m1.json
+m2.json
+docs/spike-report.json
+.env
