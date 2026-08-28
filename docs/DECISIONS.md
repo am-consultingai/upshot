@@ -173,3 +173,14 @@ the scan is strictly harder to satisfy than before; only the prose exemption is 
 and cssutils silently dropped the declaration — the Hebrew font stack disappeared from
 every email. The stylesheet is ours, not user input, so it is marked safe; everything else
 in the template stays escaped.
+
+## D20 — The middlewares are pure ASGI, and SSE is tested against a real socket
+**Choice.** `HostHeaderMiddleware`, `AuthMiddleware` and `CsrfMiddleware` are plain ASGI
+callables, not `BaseHTTPMiddleware` subclasses; `test_sse_emits_state_change` starts
+`LocalServer` on an ephemeral port and reads the stream with a real `httpx` client.
+**Alternatives.** Keep `BaseHTTPMiddleware` and test SSE through `TestClient`.
+**Why.** `BaseHTTPMiddleware` buffers the response body, which is wrong for an endpoint
+whose body never ends, and Starlette's `TestClient` cannot read an unbounded response at
+all — it runs the app to completion before returning (a minimal FastAPI app reproduces the
+hang with no project code involved). Both changes make the tested path closer to
+production: real middleware ordering, a real socket, a real client.
