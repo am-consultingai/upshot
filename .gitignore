@@ -17,3 +17,5 @@ docs/spike-report.json
 frontend/test-results/
 frontend/playwright-report/
 frontend/.vite/
+tests/fixtures/*.wav
+reports/
