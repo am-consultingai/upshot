@@ -133,12 +133,37 @@ def test_no_google_imports() -> None:
     assert offenders == [], offenders
 
 
-@pytest.mark.parametrize("word", ["oauth", "client_secret", "refresh_token"])
+def _code_without_prose(path: Path) -> str:
+    """Source with comments and docstrings removed — prose about *not* doing OAuth is
+    not an OAuth flow, and the assertion is about code."""
+    import io
+    import tokenize
+
+    kept: list[str] = []
+    with path.open("rb") as handle:
+        previous = tokenize.INDENT
+        for token in tokenize.tokenize(io.BytesIO(handle.read()).readline):
+            if token.type == tokenize.COMMENT:
+                continue
+            if token.type == tokenize.STRING and previous in (
+                tokenize.INDENT,
+                tokenize.DEDENT,
+                tokenize.NEWLINE,
+                tokenize.NL,
+                tokenize.ENCODING,
+            ):
+                continue  # a docstring
+            if token.type not in (tokenize.NL, tokenize.NEWLINE):
+                previous = token.type
+            kept.append(token.string)
+    return " ".join(kept).lower()
+
+
+@pytest.mark.parametrize("word", ["oauth", "client_secret", "refresh_token", "consent screen"])
 def test_no_oauth_flow_in_this_build(word: str) -> None:
-    hits = [
-        str(path)
-        for path in sorted(Path("app").rglob("*.py"))
-        if word in path.read_text(encoding="utf-8").lower()
-        and "google_refresh_token" not in path.read_text(encoding="utf-8")
-    ]
+    hits = []
+    for path in sorted(Path("app").rglob("*.py")):
+        code = _code_without_prose(path).replace("google_refresh_token", "")
+        if word in code:
+            hits.append(str(path))
     assert hits == [], hits

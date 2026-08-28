@@ -150,3 +150,26 @@ after a warning, so `config.secret(...)` falls through to `ANTHROPIC_API_KEY`.
 **Why.** On this Linux box `keyring` raises `NoKeyringError` with no backend installed, and
 that took down `selftest live-llm` — a diagnostic that must never crash. Writes still
 raise: a secret that was not saved has to be reported.
+
+## D17 — A draft delivery completes its job without advancing the meeting
+**Choice.** `StageContext.hold_state`; the `deliver` stage sets it in `draft` mode and the
+worker then leaves the meeting at `RENDERED`.
+**Alternatives.** Let the stage move the meeting to `DELIVERED`; skip enqueuing `deliver`
+at all in draft mode.
+**Why.** The plan requires `test_draft_mode_does_not_send` to end at `RENDERED` "and marked
+deliverable", while the job itself must still run (it writes `delivery.json` and fires the
+toast). Not enqueuing the stage would mean the draft is never prepared.
+
+## D18 — `test_no_oauth_flow_in_this_build` scans code, not prose
+**Change to a test I wrote earlier in this build.** The first version matched the raw file
+text, and `app/mail.py`'s docstring — "no Gmail API, no OAuth, no consent screen" —
+tripped it. The assertion now strips comments and docstrings with `tokenize` before
+matching, and additionally bans `consent screen`. The property under test is unchanged and
+the scan is strictly harder to satisfy than before; only the prose exemption is new.
+
+## D19 — `{{ css }}` is rendered with `|safe`
+**Bug found by the golden files.** Jinja autoescaping HTML-escaped the quotes inside the
+`<style>` block, so `font-family: "Segoe UI", "Arial Hebrew"` arrived as `&#34;Segoe UI&#34;`
+and cssutils silently dropped the declaration — the Hebrew font stack disappeared from
+every email. The stylesheet is ours, not user input, so it is marked safe; everything else
+in the template stays escaped.
