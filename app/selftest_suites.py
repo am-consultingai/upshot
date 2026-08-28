@@ -61,3 +61,46 @@ def _db(args: argparse.Namespace) -> list[Check]:
     ]
     conn.close()
     return checks
+
+
+@suite("queue")
+def _queue(args: argparse.Namespace) -> list[Check]:
+    """Prove the queue's guarantees against a temporary database on every run."""
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from app.clock import FakeClock
+    from app.config import default_config
+    from app.db.dao import Dao, connect
+    from app.pipeline.fake_stages import FakeStages
+    from app.pipeline.queue import JobQueue
+    from app.pipeline.states import MeetingState
+    from app.pipeline.worker import Worker
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        conn = connect(root / "index.db")
+        clock = FakeClock()
+        dao = Dao(conn, clock)
+        dao.seed_ids(1)
+        queue = JobQueue(conn, clock, random.Random(1))
+        stages = FakeStages(fail_times=2)
+        worker = Worker(
+            dao=dao,
+            queue=queue,
+            config=default_config(job_policy="asap"),
+            stages=stages.registry(),  # type: ignore[arg-type]
+            clock=clock,
+        )
+        meeting = dao.insert_meeting(folder=root / "m", source="manual")
+        dao.set_state(meeting.id, MeetingState.RECORDED)
+        queue.enqueue(meeting.id, "flaky")
+        for _ in range(4):
+            worker.run_once()
+            clock.advance(60)
+        job = queue.get_by_stage(meeting.id, "flaky")
+        ok = job is not None and job.state == "done" and job.attempts == 2
+        detail = f"flaky recovered after {job.attempts if job else '?'} failed attempts"
+        conn.close()
+    return [Check("queue_retry_ladder", ok, detail, {"attempts": job.attempts if job else -1})]
