@@ -822,3 +822,315 @@ def _detect_shadow(args: argparse.Namespace) -> list[Check]:
             {"samples": samples, "peak_score": peak, "processes": sorted(processes)},
         )
     ]
+
+
+@suite("capture-e2e", in_all=False)
+def _capture_e2e(args: argparse.Namespace) -> list[Check]:
+    """M1 — the whole product proving itself with no human in the loop.
+
+    Start a recording through the API, play a speech fixture into the render endpoint for
+    N seconds, stop through the API, and run the pipeline to RENDERED.
+
+    On a machine with WASAPI the fixture is played out the real render endpoint and
+    captured on the loopback stream. Everywhere else the same fixture is fed through
+    ``SyntheticCapture``, which exercises every part of the path except the audio
+    hardware — the report says which mode ran, and `mode` is in the metrics.
+    """
+    import random
+    import tempfile
+    import threading
+    import time
+    import wave
+    from pathlib import Path
+
+    import numpy as np
+
+    from app.api.security import CSRF_HEADER
+    from app.audio.analysis import cross_correlation
+    from app.audio.fake import SyntheticCapture
+    from app.audio.recorder import Recorder
+    from app.audio.writer import read_manifest
+    from app.clock import SystemClock
+    from app.config import Config
+    from app.db.dao import Dao, connect
+    from app.events import EventBus
+    from app.mail import Mailer
+    from app.main import create_app
+    from app.meetings import MeetingService
+    from app.notify import FakeNotifier
+    from app.pipeline.queue import JobQueue
+    from app.pipeline.stages import registry
+    from app.pipeline.states import MeetingState
+    from app.pipeline.worker import Worker
+    from app.services import Services
+    from app.tray import TrayApp
+    from app.tray_state import RecorderState
+
+    seconds = int(getattr(args, "seconds", 120) or 120)
+    checks: list[Check] = []
+
+    hardware = True
+    try:
+        from app.audio.devices import default_render, loopback_for
+
+        loopback_for(default_render())
+    except Exception:
+        hardware = False
+    mode = "wasapi" if hardware else "synthetic"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        fixture = root / "speech.wav"
+        spoken_words: list[str] = []
+        try:
+            from tests.fixtures import speech  # source checkouts only
+
+            if speech.available():
+                sentence = (
+                    "Good morning everyone, can you hear me? "
+                    "Let us start the weekly sync and review the release. "
+                )
+                speech.synth(sentence * 4, fixture)
+                spoken_words = [w.strip(".,?") for w in sentence.split() if len(w) > 3]
+            else:
+                raise RuntimeError("no SAPI")
+        except Exception:
+            import subprocess
+            import sys as _sys
+
+            subprocess.run(
+                [
+                    _sys.executable,
+                    "scripts/make_fixture.py",
+                    "--minutes",
+                    str(max(0.5, seconds / 60)),
+                    "--out",
+                    str(fixture),
+                ],
+                check=True,
+                capture_output=True,
+            )
+
+        cfg = Config.load()
+        cfg.set("data_root", str(root / "meetings"))
+        cfg.set("asr.backend", "fake")
+        cfg.set("asr.fake_language", "en")
+        cfg.set("asr.language_mode", "detect")
+        cfg.set("llm.provider", "fake")
+        cfg.set("audio.vad", "energy")
+        cfg.set("delivery.notifier", "fake")
+        cfg.set("job_policy", "asap")
+        cfg.set("audio.min_meeting_s", 10)
+        cfg.set("server.port", _free_port())
+        cfg.set("audio.capture", "wasapi" if hardware else "synthetic")
+
+        conn = connect(root / "index.db")
+        clock = SystemClock()
+        dao = Dao(conn, clock)
+        queue = JobQueue(conn, clock, random.Random(17))
+        events = EventBus()
+        from app.api.security import AuthState
+
+        services = Services(
+            config=cfg,
+            conn=conn,
+            dao=dao,
+            queue=queue,
+            meetings=MeetingService(cfg, dao, queue, clock=clock),
+            events=events,
+            auth=AuthState(),
+            clock=clock,
+            mailer=Mailer(cfg),
+            notifier=FakeNotifier(clock=clock),
+        )
+        captures: dict[str, Any] = {}
+
+        def make(track: str) -> Any:
+            if hardware:
+                from app.audio.wasapi import WasapiCapture
+
+                return WasapiCapture(track=track)
+            capture = SyntheticCapture(
+                track,
+                "silence",
+                wav=fixture if track == "them" else None,
+                loop_wav=True,
+                queue_seconds=30.0,
+                generate_on_read=False,  # the test is the device: only explicit emits
+            )
+            captures[track] = capture
+            return capture
+
+        services.recorder = Recorder(cfg, make, clock=clock)
+        services.worker = Worker(
+            dao=dao,
+            queue=queue,
+            config=cfg,
+            stages=registry(),
+            clock=clock,
+            recorder=services.recorder,
+            services=services,
+        )
+        app = create_app(services)
+        tray = TrayApp(services)
+
+        def tray_label() -> str:
+            """idle → recording → processing → idle, the way the icon reads."""
+            state = tray.observe()
+            if state.recorder is not RecorderState.IDLE:
+                return str(state.recorder)
+            return "processing" if state.processing else "idle"
+
+        tray_states: list[str] = [tray_label()]
+
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app, base_url=f"http://127.0.0.1:{cfg.server_port}")
+        token = services.auth.issue_token()
+        client.get(f"/?k={token}")
+        client.headers[CSRF_HEADER] = services.auth.csrf_secret
+
+        started = client.post("/api/recording/start", json={"title": "M1 capture"}).json()
+        meeting_id = started["meeting_id"]
+        tray_states.append(tray_label())
+
+        player: threading.Thread | None = None
+        if hardware:
+            from app.audio.devices import play_wav
+
+            player = threading.Thread(target=play_wav, args=(fixture,), daemon=True)
+            player.start()
+            time.sleep(seconds)
+        else:
+            services.recorder.start_thread()
+            for _ in range(seconds * 10):  # 0.1 s blocks
+                for capture in captures.values():
+                    capture.emit()
+                time.sleep(0.001)
+            time.sleep(0.5)
+        stopped = client.post("/api/recording/stop").json()
+        if player is not None:
+            player.join(timeout=5)
+        tray_states.append(tray_label())
+
+        folder = dao.require_meeting(meeting_id).path
+        records, torn = read_manifest(folder)
+        durations = {
+            track: sum(r.dur_ms for r in records if r.track == track) for track in ("me", "them")
+        }
+        tracks_present = {track for track in ("me", "them") if (folder / "audio" / track).is_dir()}
+
+        services.worker.drain()
+        tray_states.append(tray_label())
+        final = dao.require_meeting(meeting_id)
+
+        # the loopback (or synthetic) `them` track must carry the fixture
+        with wave.open(str(fixture), "rb") as handle:
+            source = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
+        captured_parts = []
+        for record in sorted((r for r in records if r.track == "them"), key=lambda r: r.seq):
+            with wave.open(str(folder / "audio" / record.file), "rb") as handle:
+                captured_parts.append(
+                    np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
+                )
+        captured = np.concatenate(captured_parts) if captured_parts else np.zeros(0, np.int16)
+        window = min(len(source), len(captured), 30 * cfg.sample_rate)
+        peak, lag = cross_correlation(
+            source[:window].astype(np.float64),
+            captured[:window].astype(np.float64),
+            max_lag=cfg.sample_rate,
+        )
+
+        transcript_text = ""
+        transcript_md = folder / "transcript.md"
+        if transcript_md.exists():
+            transcript_text = transcript_md.read_text(encoding="utf-8").lower()
+        artifacts = {
+            name: (folder / name).exists()
+            for name in ("transcript.md", "notes.json", "summary.html", "summary.email.html")
+        }
+        conn.close()
+
+    checks.append(Check("capture_mode", True, f"{mode} capture", {"mode": mode}))
+    checks.append(
+        Check(
+            "capture_api_roundtrip",
+            bool(meeting_id) and stopped.get("meeting_id") == meeting_id,
+            f"started and stopped {meeting_id} through the API, {stopped.get('chunks')} chunks",
+            {"chunks": stopped.get("chunks")},
+        )
+    )
+    checks.append(
+        Check(
+            "capture_duration",
+            all(abs(value - seconds * 1000) <= 500 for value in durations.values()),
+            f"durations {durations} against {seconds * 1000} ms (±500 ms)",
+            {"durations_ms": durations, "torn_manifest_lines": torn},
+        )
+    )
+    checks.append(
+        Check(
+            "capture_both_tracks",
+            tracks_present == {"me", "them"},
+            f"tracks on disk: {sorted(tracks_present)}",
+        )
+    )
+    checks.append(
+        Check(
+            "capture_them_correlates",
+            peak >= 0.5,
+            f"cross-correlation {peak:.3f} at lag {lag}",
+            {"correlation": round(peak, 4), "lag_samples": int(lag)},
+        )
+    )
+    checks.append(
+        Check(
+            "capture_language_pinned",
+            final.language == "en" and (final.language_conf or 0) >= 0.6,
+            f"language {final.language} (confidence {final.language_conf})",
+            {"language": final.language, "confidence": final.language_conf},
+        )
+    )
+    checks.append(
+        Check(
+            "capture_pipeline_rendered",
+            final.state in (MeetingState.RENDERED, MeetingState.DELIVERED)
+            and all(artifacts.values()),
+            f"{final.state}, artifacts {artifacts}",
+            {"state": final.state},
+        )
+    )
+    expected_sequence = ["idle", "recording", "processing", "idle"]
+    checks.append(
+        Check(
+            "capture_tray_sequence",
+            tray_states == expected_sequence,
+            f"tray states {tray_states}",
+            {"states": tray_states},
+        )
+    )
+    if spoken_words and str(Config.load().get("asr.backend", "local")) != "fake":
+        hits = sum(1 for word in spoken_words if word.lower() in transcript_text)
+        checks.append(
+            Check(
+                "capture_transcript_words",
+                hits / max(1, len(spoken_words)) >= 0.5,
+                f"{hits}/{len(spoken_words)} fixture words in the transcript",
+            )
+        )
+    else:
+        checks.append(
+            skipped(
+                "capture_transcript_words",
+                "the fake ASR is wired, so the transcript is fixture text, not the spoken words",
+            )
+        )
+    return checks
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
