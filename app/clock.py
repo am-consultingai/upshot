@@ -73,11 +73,16 @@ class FakeClock:
         self._mono += delta
 
 
-def iso(when: datetime) -> str:
-    """ISO-8601 with offset — the only timestamp format written anywhere."""
+def iso(when: datetime, timespec: str = "milliseconds") -> str:
+    """ISO-8601 with offset — the only timestamp format written anywhere.
+
+    Millisecond precision by default: ``jobs.not_before`` carries a jittered sub-second
+    backoff, and every timestamp in the database is compared as a string, so they all
+    have to agree on precision.
+    """
     if when.tzinfo is None:
         raise ValueError("refusing to serialize a naive datetime")
-    return when.isoformat(timespec="seconds")
+    return when.isoformat(timespec=timespec)
 
 
 def parse_iso(text: str) -> datetime:
