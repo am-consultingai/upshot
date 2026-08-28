@@ -368,6 +368,7 @@
     },
     "/api/import": {
       "post": {
+        "description": "An uploaded recording becomes chunk files and runs the ordinary pipeline.",
         "operationId": "import_audio_api_import_post",
         "requestBody": {
           "content": {

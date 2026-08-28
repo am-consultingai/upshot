@@ -116,6 +116,7 @@ def run(ctx: StageContext) -> None:
         raise FileNotFoundError(f"{source} is missing — run the transcribe stage first")
 
     segments, payload = load_segments(folder)
+    segments = _corrected(ctx, segments)
     ordered = sort_segments(segments)
     kept, echo_suppressed = suppress_echo(ordered)
     numbered = renumber(kept)
@@ -154,6 +155,41 @@ def run(ctx: StageContext) -> None:
         len(turns),
         echo_suppressed,
     )
+
+
+def _corrected(ctx: StageContext, segments: Sequence[Segment]) -> list[Segment]:
+    """The glossary's second use: alias → canonical term, before summarization."""
+    from app import glossary as glossary_module
+
+    entries = glossary_module.merge(
+        glossary_module.from_db(ctx.dao),
+        glossary_module.load_yaml(ctx.config.glossary_path),
+    )
+    if not entries:
+        return list(segments)
+    fixed: list[Segment] = []
+    corrections = 0
+    for segment in segments:
+        text = glossary_module.apply_corrections(segment.text, entries)
+        if text != segment.text:
+            corrections += 1
+        fixed.append(
+            Segment(
+                id=segment.id,
+                track=segment.track,
+                speaker=segment.speaker,
+                start=segment.start,
+                end=segment.end,
+                text=text,
+                words=segment.words,
+                avg_logprob=segment.avg_logprob,
+                no_speech_prob=segment.no_speech_prob,
+            )
+        )
+    if corrections:
+        log.info("glossary corrected %d segment(s)", corrections)
+    ctx.metrics["glossary_corrections"] = corrections
+    return fixed
 
 
 def load_turns(folder: Path) -> list[Turn]:
