@@ -143,5 +143,9 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["ok"] else 1
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+if __name__ == "__main__":  # pragma: no cover - process entry point
+    # Re-enter through the package so suites registering against ``app.selftest``
+    # populate the same registry this process dispatches from.
+    from app.selftest import main as _main
+
+    sys.exit(_main())
