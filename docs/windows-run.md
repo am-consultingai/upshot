@@ -95,7 +95,18 @@ ConsentStore.
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 dist\meeting-agent\meeting-agent.exe --selftest imports
 dist\meeting-agent\meeting-agent.exe --selftest pipeline
+uv run pytest -q tests/e2e/test_phase13_frozen.py
 ```
 
-**Expected:** both exit 0. The first is the PyInstaller hidden-import tripwire and must
-never be skipped before shipping a build.
+**Expected:** both `--selftest` runs exit 0, and the frozen tests stop skipping once
+`dist\meeting-agent\meeting-agent.exe` exists. The first is the PyInstaller
+hidden-import tripwire and must never be skipped before shipping a build.
+`build.ps1` runs both itself and fails the build if either does.
+
+First run on a clean profile:
+
+```powershell
+dist\meeting-agent\meeting-agent.exe --bootstrap
+```
+
+prints the first-run report as JSON (profile, model, schema version, logon task).
