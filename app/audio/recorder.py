@@ -268,6 +268,14 @@ class Recorder:
                 self.clock.sleep(0.01)
 
     def start_thread(self) -> threading.Thread:
+        """Idempotent: a second caller gets the running writer thread, not a second one.
+
+        Two pump threads would drain the same queues into the same resampler, and the
+        one that is not joined at stop() keeps feeding it after its final flush.
+        """
+        existing = self._thread
+        if existing is not None and existing.is_alive():
+            return existing
         self._stop.clear()
         thread = threading.Thread(target=self.run_forever, name="writer", daemon=True)
         self._thread = thread
