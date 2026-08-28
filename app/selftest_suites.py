@@ -319,3 +319,44 @@ def _asr(args: argparse.Namespace) -> list[Check]:
         ),
     ]
     return checks
+
+
+@suite("live-llm", in_all=False)
+def _live_llm(args: argparse.Namespace) -> list[Check]:
+    """One real API call, schema-validated. Skipped when no key is configured."""
+    from app.config import Config
+    from app.llm.client import AnthropicClient, system_blocks
+    from app.llm.schema import validate
+    from app.llm.tokens import CachingCounter, tokens_per_word
+
+    cfg = Config.load()
+    if not cfg.secret("anthropic", env="ANTHROPIC_API_KEY"):
+        return [skipped("live_llm", "no Anthropic key in keyring or ANTHROPIC_API_KEY")]
+    transcript = (
+        "**[00:00] THEM:** בוקר טוב, נתחיל עם הסטטוס של ה-deployment.\n"
+        "**[00:14] ME:** העברתי את השירות ל-Kubernetes, יש בעיה עם ה-migration.\n"
+        "**[00:31] THEM:** אז ההחלטה היא לדחות את הרילי‏ס לשבוע הבא.\n"
+    )
+    client = AnthropicClient(cfg)
+    counter = CachingCounter(client.count_tokens)
+    ratio = tokens_per_word(transcript, counter)
+    result = client.complete_json(
+        system_blocks=system_blocks("You write meeting notes as JSON.", None),
+        user=transcript,
+        max_tokens=4000,
+    )
+    validate(result.data)
+    return [
+        Check(
+            "live_llm_call",
+            result.stop_reason == "end_turn" and bool(result.data.get("title")),
+            f"stop_reason={result.stop_reason}, title={result.data.get('title')!r}",
+            {"usage": result.usage, "model": result.model},
+        ),
+        Check(
+            "hebrew_tokens_per_word",
+            ratio < 5.0,
+            f"{ratio:.3f} tokens per Hebrew word",
+            {"tokens_per_word": round(ratio, 3)},
+        ),
+    ]
