@@ -203,3 +203,31 @@ the one change that cannot be got subtly wrong later.
 the backend had no handler, so a deep link — including the one a toast opens — returned
 404. Added a catch-all that serves `index.html`, plus an explicit `/api/{rest:path}` 404 in
 front of it so an unknown API path never returns the HTML shell for any method.
+
+## D23 — A verdict suppresses re-waking on the same process until the mic is released
+**Choice.** After a shadow verdict or a discard, `Detector.suppressed_process` holds that
+process name; `_tick_idle` ignores it until the microphone is released.
+**Alternatives.** Re-wake immediately (what the first implementation did).
+**Why.** In shadow mode the detector reached a verdict and then, with the mic still held,
+re-armed and reached the same verdict again every ~11 seconds — dozens of duplicate
+`detector_events` and both audio streams re-opening continuously for a meeting it had
+already decided about. The suppression is per-process and clears the moment the mic is
+released, so a genuine second meeting still wakes it.
+
+## D24 — The M2 negative is a media app holding the mic, not a browser playing video
+**Choice.** `detect-e2e` asserts two negatives: watching a video (loopback audio, nobody
+holds the microphone) never wakes the detector at all, and a media/voice-note app that
+*does* hold the mic peaks at 3 and is logged as a `near_miss`.
+**Alternatives.** The gate's wording is "a simulated YouTube pattern produces a
+`near_miss`".
+**Why.** Watching YouTube does not take the microphone, so it cannot produce a near miss —
+by `DETECTION.md` §8 a near miss is a *wake* that peaked above the watermark, and there is
+no wake. Making the browser hold the mic to force one would have simulated a Meet call and
+scored 5 — correctly. Both real negatives are asserted instead of one impossible one.
+
+## D25 — The wake tick scores immediately
+**Choice.** `_tick_idle` falls straight into `_tick_awake`, so the sustain window opens on
+the same tick the microphone is acquired.
+**Why.** `DETECTION.md` §3 Tier 1 says evidence collection starts "within ~200 ms" of the
+wake. Deferring it to the next tick added a second to every commit and made the sustain
+window one tick shorter than the configured value.
