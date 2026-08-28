@@ -77,6 +77,20 @@ def build(
         from app.audio.factory import make_capture
 
         services.recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=clock)
+    if with_recorder and str(cfg.get("detection.mode", "shadow")) != "off":
+        from app.detect.detector import Detector
+        from app.detect.factory import make_sources
+
+        services.detector = Detector(
+            cfg,
+            dao,
+            services.meetings,
+            services.recorder,  # type: ignore[arg-type]
+            make_sources(cfg, services.recorder),
+            clock=clock,
+            notifier=services.notifier,
+            events=events,
+        )
     if with_worker:
         from app.pipeline.stages import registry
 

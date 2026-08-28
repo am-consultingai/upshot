@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 from app.selftest import Check, skipped, suite
 
@@ -568,4 +569,256 @@ def _api(args: argparse.Namespace) -> list[Check]:
             rebind.status_code == 421,
             f"Host: evil.com → {rebind.status_code}",
         ),
+    ]
+
+
+def _detector_harness(root: Path, *, mode: str) -> Any:
+    """A real detector and a real recorder, driven by fake signal sources."""
+    import random
+
+    from app.audio.fake import SyntheticCapture
+    from app.audio.recorder import Recorder
+    from app.clock import FakeClock
+    from app.config import Config
+    from app.db.dao import Dao, connect
+    from app.detect.detector import Detector
+    from app.detect.sources import (
+        FakeCameraSource,
+        FakeMicSource,
+        FakeSessionSource,
+        FakeTitleSource,
+        FakeVadSource,
+        Sources,
+    )
+    from app.meetings import MeetingService
+    from app.notify import FakeNotifier
+    from app.pipeline.queue import JobQueue
+
+    cfg = Config.load()
+    cfg.set("data_root", str(root / "meetings"))
+    cfg.set("audio.capture", "synthetic")
+    cfg.set("audio.vad", "energy")
+    cfg.set("asr.backend", "fake")
+    cfg.set("llm.provider", "fake")
+    cfg.set("detection.mode", mode)
+    cfg.set("audio.min_meeting_s", 5)
+    cfg.set("job_policy", "asap")
+    conn = connect(root / "index.db")
+    clock = FakeClock()
+    dao = Dao(conn, clock)
+    dao.seed_ids(31)
+    queue = JobQueue(conn, clock, random.Random(13))
+    captures: dict[str, Any] = {}
+
+    def make(track: str) -> Any:
+        capture = SyntheticCapture(track, "tone", queue_seconds=200.0, generate_on_read=False)
+        captures[track] = capture
+        return capture
+
+    recorder = Recorder(cfg, make, clock=clock)
+    sources = Sources(
+        mic=FakeMicSource(),
+        sessions=FakeSessionSource(),
+        titles=FakeTitleSource(),
+        camera=FakeCameraSource(),
+        vad=FakeVadSource(),
+    )
+    detector = Detector(
+        cfg,
+        dao,
+        MeetingService(cfg, dao, queue, clock=clock),
+        recorder,
+        sources,
+        clock=clock,
+        notifier=FakeNotifier(clock=clock),
+    )
+    return {
+        "cfg": cfg,
+        "conn": conn,
+        "dao": dao,
+        "queue": queue,
+        "clock": clock,
+        "recorder": recorder,
+        "sources": sources,
+        "detector": detector,
+        "captures": captures,
+    }
+
+
+def _run_seconds(harness: dict[str, Any], count: int) -> None:
+    for _ in range(count):
+        for capture in harness["captures"].values():
+            for _block in range(10):
+                capture.emit()
+        harness["recorder"].drain()
+        harness["detector"].tick()
+        harness["clock"].advance(1)
+
+
+@suite("detect-e2e", in_all=False)
+def _detect_e2e(args: argparse.Namespace) -> list[Check]:
+    """M2 — a simulated meeting is detected, recorded and processed to RENDERED."""
+    import tempfile
+    from pathlib import Path
+
+    from app.pipeline.stages import registry
+    from app.pipeline.states import MeetingState
+    from app.pipeline.worker import Worker
+
+    checks: list[Check] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+
+        # 1. a real meeting: detected, committed, recorded, processed
+        h = _detector_harness(root / "positive", mode="on")
+        h["sources"].mic.hold("Zoom.exe")
+        h["sources"].titles.window_titles = ["Zoom Meeting"]
+        h["sources"].vad.set(me=True, them=True)
+        _run_seconds(h, 130)
+        h["sources"].mic.release()
+        _run_seconds(h, 65)
+        meetings = h["dao"].list_meetings()
+        detected = meetings[0] if meetings else None
+        worker = Worker(
+            dao=h["dao"], queue=h["queue"], config=h["cfg"], stages=registry(), clock=h["clock"]
+        )
+        worker.drain()
+        final = h["dao"].require_meeting(detected.id) if detected else None
+        artifacts: dict[str, bool] = {}
+        ok = False
+        codes: list[str] = []
+        if final is not None:
+            artifacts = {
+                name: (final.path / name).exists()
+                for name in ("transcript.md", "notes.json", "summary.html")
+            }
+            codes = [item["code"] for item in final.evidence]
+            ok = (
+                final.source == "detected"
+                and bool(codes)
+                and all(artifacts.values())
+                and final.state in (MeetingState.RENDERED, MeetingState.DELIVERED)
+            )
+        checks.append(
+            Check(
+                "detect_commits_a_meeting",
+                ok,
+                f"{final.id if final else 'none'} → {final.state if final else '-'}, "
+                f"artifacts {artifacts}",
+                {"evidence": codes},
+            )
+        )
+        h["conn"].close()
+
+        # 2a. watching a video: loopback audio, nobody holds the microphone. The
+        # detector never even wakes — the cheapest possible rejection.
+        n = _detector_harness(root / "negative", mode="on")
+        n["sources"].vad.set(me=False, them=True)
+        n["sources"].titles.window_titles = ["Funny cats - YouTube"]
+        _run_seconds(n, 120)
+        checks.append(
+            Check(
+                "video_never_wakes_the_detector",
+                not n["dao"].list_meetings() and not n["dao"].detector_events(),
+                f"{len(n['dao'].list_meetings())} meetings, "
+                f"{len(n['dao'].detector_events())} detector events",
+            )
+        )
+
+        # 2b. a media or voice-note app that *does* hold the mic while audio plays: it
+        # wakes, peaks at 3 (unknown app + loopback), never reaches 5, and is logged as a
+        # near miss at the 90 s give-up.
+        n["sources"].mic.hold("SomeMediaPlayer.exe")
+        _run_seconds(n, 95)
+        negative_meetings = n["dao"].list_meetings()
+        events = n["dao"].detector_events()
+        checks.append(
+            Check(
+                "media_app_is_a_near_miss",
+                not negative_meetings and bool(events) and events[0].outcome == "near_miss",
+                f"{len(negative_meetings)} meetings, outcome "
+                f"{events[0].outcome if events else 'none'}",
+                {"peak_score": events[0].peak_score if events else None},
+            )
+        )
+        n["conn"].close()
+
+        # 3. shadow mode commits nothing
+        s = _detector_harness(root / "shadow", mode="shadow")
+        s["sources"].mic.hold("Zoom.exe")
+        s["sources"].titles.window_titles = ["Zoom Meeting"]
+        s["sources"].vad.set(me=True, them=True)
+        _run_seconds(s, 30)
+        shadow_events = s["dao"].detector_events()
+        shadow_files = (
+            list((root / "shadow" / "meetings").rglob("*"))
+            if (root / "shadow" / "meetings").exists()
+            else []
+        )
+        checks.append(
+            Check(
+                "shadow_commits_nothing",
+                not s["dao"].list_meetings()
+                and bool(shadow_events)
+                and shadow_events[0].outcome == "shadow"
+                and not [f for f in shadow_files if f.is_file()],
+                f"{len(shadow_events)} shadow event(s), {len(shadow_files)} paths on disk",
+            )
+        )
+        s["conn"].close()
+    return checks
+
+
+@suite("detect-shadow", in_all=False)
+def _detect_shadow(args: argparse.Namespace) -> list[Check]:
+    """Run the real signal sources for N seconds and report what they saw."""
+    import time
+
+    from app.config import Config
+    from app.detect.evidence import mic_evidence, score, title_evidence
+    from app.detect.registry import ConsentStoreReader
+    from app.detect.sessions import PycawSessions
+    from app.detect.windows import EnumWindowTitles
+
+    cfg = Config.load()
+    seconds = int(getattr(args, "seconds", 60) or 60)
+    reader = ConsentStoreReader()
+    sessions = PycawSessions()
+    windows = EnumWindowTitles()
+    if not reader.current_holders() and not windows.titles():
+        available = False
+    else:
+        available = True
+    if not available and __import__("sys").platform != "win32":
+        return [
+            skipped("detect_shadow", "the microphone ConsentStore is Windows-only"),
+        ]
+    samples = 0
+    peak = 0
+    processes: set[str] = set()
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        holders = reader.current_holders()
+        titles = windows.titles()
+        render = sessions.render_processes()
+        process = holders[0].process if holders else ""
+        if process:
+            processes.add(process)
+        evidence = mic_evidence(
+            process,
+            known_apps=list(cfg.get("detection.known_apps", [])),
+            ignore=list(cfg.get("detection.ignore", [])),
+        ) + title_evidence(titles, list(cfg.get("detection.title_patterns", [])))
+        peak = max(peak, score(evidence, cfg.detection_weights))
+        samples += 1
+        assert isinstance(render, list)
+        time.sleep(1.0)
+    return [
+        Check(
+            "detect_shadow",
+            True,
+            f"{samples} samples in {seconds}s; peak score {peak}; "
+            f"mic holders seen: {sorted(processes) or 'none'}",
+            {"samples": samples, "peak_score": peak, "processes": sorted(processes)},
+        )
     ]
