@@ -7,8 +7,9 @@ free and safe in every environment.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
-from app.selftest import Check, suite
+from app.selftest import Check, skipped, suite
 
 
 @suite("config")
@@ -146,3 +147,145 @@ def _audio_synthetic(args: argparse.Namespace) -> list[Check]:
             {"durations_ms": durations, "drift_ms": drift, "chunks": len(records)},
         )
     ]
+
+
+def _tone_fixture(path: Path, seconds: float = 20.0, rate: int = 16000) -> Path:
+    """A speech-like fallback signal for machines with no SAPI (chirp + amplitude
+    envelope, so cross-correlation has something unambiguous to lock onto)."""
+    import wave
+
+    import numpy as np
+
+    index = np.arange(int(seconds * rate), dtype=np.float64)
+    sweep = np.sin(2 * np.pi * (200 + 600 * (index / len(index))) * index / rate)
+    envelope = 0.5 + 0.5 * np.sin(2 * np.pi * 3.0 * index / rate)
+    signal = np.round(0.4 * sweep * envelope * 32767).astype("<i2")
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(signal.tobytes())
+    return path
+
+
+@suite("audio")
+def _audio(args: argparse.Namespace) -> list[Check]:
+    """T2 — play a known signal out the render endpoint and capture it on loopback."""
+    import tempfile
+    import threading
+    import time
+    import wave
+    from pathlib import Path
+
+    import numpy as np
+
+    from app.audio.analysis import cross_correlation
+    from app.audio.devices import (
+        NoDeviceError,
+        default_capture,
+        default_render,
+        list_devices,
+        loopback_for,
+        play_wav,
+    )
+    from app.audio.recorder import Recorder
+    from app.audio.writer import read_manifest
+    from app.clock import SystemClock
+    from app.config import Config
+
+    try:
+        devices = list_devices()
+        render = default_render()
+        loopback = loopback_for(render)
+    except (NoDeviceError, Exception) as exc:
+        return [
+            skipped("audio_devices", f"no WASAPI audio available here ({exc})"),
+            skipped("loopback_echo", "requires a Windows render endpoint"),
+        ]
+
+    checks = [
+        Check(
+            "audio_devices",
+            len(devices) > 0,
+            f"{len(devices)} endpoints; render={render.name!r}, loopback={loopback.name!r}",
+            {"devices": len(devices), "render_rate": render.rate},
+        )
+    ]
+    try:
+        capture_device = default_capture()
+        checks.append(
+            Check("default_capture", True, capture_device.name, {"rate": capture_device.rate})
+        )
+    except Exception as exc:
+        checks.append(skipped("default_capture", f"no microphone ({exc})"))
+
+    cfg = Config.load()
+    cfg.set("audio.capture", "wasapi")
+    seconds = 20.0
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        fixture = root / "source.wav"
+        try:
+            from tests.fixtures import speech  # source checkouts only
+
+            if speech.available():
+                speech.synth("This is the meeting agent loopback self test. " * 6, fixture)
+            else:
+                _tone_fixture(fixture, seconds)
+        except Exception:
+            _tone_fixture(fixture, seconds)
+
+        from app.audio.factory import make_capture
+
+        recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=SystemClock())
+        recorder.start(root / "meeting", "selftest-audio")
+        thread = recorder.start_thread()
+        time.sleep(0.5)
+        player = threading.Thread(target=play_wav, args=(fixture,), daemon=True)
+        player.start()
+        player.join(timeout=seconds + 30)
+        time.sleep(0.5)
+        result = recorder.stop()
+        assert thread is not None
+
+        with wave.open(str(fixture), "rb") as handle:
+            source_rate = handle.getframerate()
+            source = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
+        if source_rate != cfg.sample_rate:
+            import soxr
+
+            source = np.asarray(
+                soxr.resample(source.astype(np.float32), source_rate, cfg.sample_rate)
+            )
+        captured_parts = []
+        for record in sorted((r for r in result.records if r.track == "them"), key=lambda r: r.seq):
+            with wave.open(str(Path(result.folder or root) / "audio" / record.file), "rb") as h:
+                captured_parts.append(np.frombuffer(h.readframes(h.getnframes()), dtype=np.int16))
+        captured = np.concatenate(captured_parts) if captured_parts else np.zeros(0, dtype=np.int16)
+        peak, lag = cross_correlation(
+            source.astype(np.float64), captured.astype(np.float64), max_lag=cfg.sample_rate
+        )
+        offset_ms = abs(lag) * 1000 / cfg.sample_rate
+        ratio = len(captured) / max(1, len(source))
+        records, torn = read_manifest(Path(result.folder or root))
+        xruns = result.xruns.get("them", 0)
+
+    checks.extend(
+        [
+            Check(
+                "loopback_echo",
+                peak >= 0.8 and offset_ms < 500,
+                f"correlation {peak:.3f}, offset {offset_ms:.0f} ms",
+                {"correlation": round(peak, 4), "offset_ms": round(offset_ms, 1)},
+            ),
+            Check(
+                "loopback_sample_count",
+                abs(ratio - 1.0) <= 0.01,
+                f"captured/source = {ratio:.4f}",
+                {"ratio": round(ratio, 5), "captured": len(captured)},
+            ),
+            Check("loopback_xruns", xruns == 0, f"{xruns} xruns", {"xruns": xruns}),
+            Check("loopback_manifest", torn == 0, f"{len(records)} chunks, {torn} torn lines"),
+        ]
+    )
+    return checks
