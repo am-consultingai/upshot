@@ -378,27 +378,10 @@ def _synthesize_meeting(folder: Path, seconds: float, rate: int = 16000) -> None
 
 
 def _import_wav(folder: Path, wav: Path, rate: int = 16000) -> None:
-    """A user-supplied recording becomes the `them` track (single-track import)."""
-    import wave
+    """A user-supplied recording becomes the `them` track — the same path /api/import uses."""
+    from app.audio.ingest import ingest
 
-    import numpy as np
-    import soxr
-
-    from app.audio.writer import ChunkWriter
-
-    with wave.open(str(wav), "rb") as handle:
-        source_rate = handle.getframerate()
-        channels = handle.getnchannels()
-        raw = handle.readframes(handle.getnframes())
-    mono = np.frombuffer(raw, dtype=np.int16).astype(np.float64)
-    if channels > 1:
-        mono = mono[: len(mono) // channels * channels].reshape(-1, channels).mean(axis=1)
-    if source_rate != rate:
-        mono = np.asarray(soxr.resample(mono / 32768.0, source_rate, rate)) * 32768.0
-    audio = mono
-    writer = ChunkWriter(folder, tracks=("them",), rate=rate)
-    writer.write_pcm("them", audio.astype(np.int16))
-    writer.close()
+    ingest(wav, folder)
 
 
 @suite("pipeline")

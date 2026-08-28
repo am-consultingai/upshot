@@ -89,9 +89,16 @@ class Worker:
     def may_run(self) -> bool:
         if self.should_yield():
             return False
-        return not (
-            self.policy == "when_idle" and self.activity is not None and self.activity.is_busy()
-        )
+        if self.policy == "when_idle" and self.activity is not None and self.activity.is_busy():
+            return False
+        return not (self.policy == "scheduled" and not self.in_schedule())
+
+    def in_schedule(self) -> bool:
+        """`scheduled` runs inside a nightly window — never silently as `asap`."""
+        start = int(self.config.get("schedule.hour", 2))
+        length = int(self.config.get("schedule.hours", 4))
+        hour = self.clock.now().hour
+        return any(hour == (start + offset) % 24 for offset in range(max(1, length)))
 
     # -- one job -----------------------------------------------------------
 
