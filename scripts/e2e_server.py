@@ -1,6 +1,6 @@
 """Launch the app for Playwright: fakes everywhere, a temp data root, seed route on.
 
-    MA_E2E_PORT=8123 MA_E2E_SESSION=... uv run python scripts/e2e_server.py
+MA_E2E_PORT=8123 MA_E2E_SESSION=... uv run python scripts/e2e_server.py
 """
 
 from __future__ import annotations
@@ -12,11 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import default_config  # noqa: E402
-from app.log import setup  # noqa: E402
-from app.main import create_app  # noqa: E402
-from app.server import LocalServer  # noqa: E402
-from app.services import build  # noqa: E402
+from app.config import default_config
+from app.log import setup
+from app.main import create_app
+from app.server import LocalServer
+from app.services import build
 
 
 def main() -> int:

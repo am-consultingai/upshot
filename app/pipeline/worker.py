@@ -226,6 +226,12 @@ class Worker:
         thread.start()
         return thread
 
+    def is_alive(self) -> bool:
+        """False once the worker thread has died — the tray shows that, and the
+        recorder is unaffected."""
+        thread = self._thread
+        return thread is None or thread.is_alive()
+
     def stop(self, timeout: float = 10.0) -> None:
         self.stop_event.set()
         if self._thread is not None:
