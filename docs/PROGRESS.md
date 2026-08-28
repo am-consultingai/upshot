@@ -54,6 +54,14 @@ through `SyntheticCapture` instead of being played out the render endpoint and c
 the loopback stream, and the transcript-words check is reported as `skipped` because the
 fake ASR is wired. Both close on Windows with the same command — see `docs/windows-run.md`.
 
+## Completed after the phases, before sign-off
+
+`tests/integration/test_completeness.py` — three behaviours the design declares that the
+phase tests did not reach (DECISIONS D26): `POST /api/import` now ingests audio into real
+chunks and runs the pipeline; the glossary correction pass runs in `assemble`; and the
+`scheduled` job policy honours a nightly window instead of behaving like `asap`.
+One gap is deliberately left open: the retention sweep (DECISIONS D27).
+
 ## Measurements still outstanding
 
 | Measurement | Closes | Command |

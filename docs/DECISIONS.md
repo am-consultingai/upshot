@@ -231,3 +231,29 @@ the same tick the microphone is acquired.
 **Why.** `DETECTION.md` §3 Tier 1 says evidence collection starts "within ~200 ms" of the
 wake. Deferring it to the next tick added a second to every commit and made the sustain
 window one tick shorter than the configured value.
+
+## D26 — Three design behaviours that were declared but not wired, finished before sign-off
+A pass over the design against the code found three places where a documented behaviour
+existed only as a config key or an unused function. Each is now implemented and asserted
+in `tests/integration/test_completeness.py`:
+
+1. **`POST /api/import` produced a meeting with no audio.** `DESIGN.md` §7 says an
+   imported file "runs the pipeline from `TRANSCRIBING`", but the route only saved the
+   upload. `app/audio/ingest.py` now converts it (ffmpeg when it is not a 16-bit WAV),
+   writes real chunk files and a manifest on the `them` track, and finishes the meeting so
+   the queue picks it up. The M0 selftest uses the same function, so the gate and the
+   product share one path.
+2. **The glossary was used once, not twice.** `DESIGN.md` §11 has it feeding Whisper's
+   `initial_prompt` *and* a correction pass before summarization. `apply_corrections` was
+   written in Phase 5 and never called; `assemble` now runs it over the segments and
+   reports the count in `meta.json`.
+3. **`job_policy = "scheduled"` behaved exactly like `asap`.** A config value that
+   silently does the opposite of what it says is worse than one that is absent, so the
+   worker now honours a nightly window (`schedule.hour`, `schedule.hours`).
+
+## D27 — Known gap: retention is configured but not swept
+`retention.audio_days` (default 30) and `retention.transcript_days` are in the shipped
+config, and nothing deletes anything yet. The retention sweep belongs to **M4** in
+`DESIGN.md` §17 and no phase in `EXECUTION-PLAN.md` implements or gates it, so it is left
+unbuilt rather than half-built. It is listed here because a config key that promises
+deletion and does not delete is a trust problem the next session should close first.

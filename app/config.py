@@ -136,6 +136,7 @@ DEFAULTS: dict[str, Any] = {
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},
+    "schedule": {"hour": 2, "hours": 4},  # the window the `scheduled` job policy runs in
 }
 
 _ENUMS: dict[str, tuple[str, ...]] = {
