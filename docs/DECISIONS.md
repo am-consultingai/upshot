@@ -120,3 +120,13 @@ timestamps); `assemble` turns it into `transcript.json` and `transcript.md`.
 **Why.** `TECHNICAL-DESIGN.md` §3.2 defines `transcript.json` as the assembled artifact
 (echo-suppressed, coalesced), and stage idempotency needs each stage to own exactly one
 output it can check for. Two files, two owners, two skip checks.
+
+## D14 — Hebrew search matches whole tokens
+**Observation, not a choice.** `transcripts_fts` uses `unicode61 remove_diacritics 0`, so
+`סטטוס` does not match the token `הסטטוס` — Hebrew's attached prefixes are part of the
+word. The `LIKE` fallback *does* match substrings, so the two search paths differ in
+recall.
+**Why it is left alone.** Changing it means a custom tokenizer or prefix indexing, which is
+out of scope for V1 and would weaken `test_fts_hebrew_diacritics`. The UI search box passes
+the user's text through unchanged, and the plan's own test asks only for "search a Hebrew
+word → correct meeting id and snippet offset", which holds.

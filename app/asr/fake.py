@@ -50,7 +50,10 @@ class FakeAsr:
             return 12.0
 
     def _seed(self, wav: Path) -> int:
-        return int(hashlib.sha256(wav.name.encode("utf-8")).hexdigest()[:8], 16)
+        # The track is part of the key: the two tracks must not produce identical text,
+        # or echo suppression would (correctly) delete one of them.
+        key = f"{wav.parent.name}/{wav.name}"
+        return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16)
 
     # -- protocol
 
