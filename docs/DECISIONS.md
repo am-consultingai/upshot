@@ -184,3 +184,22 @@ whose body never ends, and Starlette's `TestClient` cannot read an unbounded res
 all — it runs the app to completion before returning (a minimal FastAPI app reproduces the
 hang with no project code involved). Both changes make the tested path closer to
 production: real middleware ordering, a real socket, a real client.
+
+## D21 — Every SQL statement runs under a connection lock, with its rows materialized
+**Bug found by the frontend.** The /attention page issues four `GET /api/meetings?state=`
+requests at once. FastAPI runs sync endpoints in a threadpool, so several threads hit the
+one SQLite connection — and an **FTS5 cursor is not safe for concurrent use on a single
+connection**, which surfaced as `sqlite3.InterfaceError: bad parameter or other API
+misuse`. Reproduced in four threads outside the API before fixing.
+**Choice.** `db.dao.Connection` overrides `execute`/`executemany` to hold an `RLock` and
+return a `Result` whose rows were already fetched under that lock.
+**Alternatives.** A thread-local connection per thread (more moving parts, and WAL
+readers still need care around the FTS writer); dropping FTS.
+**Why.** A desktop app's query volume does not need parallel SQLite, and serializing is
+the one change that cannot be got subtly wrong later.
+
+## D22 — The server serves the SPA for unknown non-API paths
+**Bug found by the frontend.** `/settings`, `/m/<id>`, `/attention` are client-side routes;
+the backend had no handler, so a deep link — including the one a toast opens — returned
+404. Added a catch-all that serves `index.html`, plus an explicit `/api/{rest:path}` 404 in
+front of it so an unknown API path never returns the HTML shell for any method.

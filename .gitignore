@@ -14,3 +14,6 @@ m1.json
 m2.json
 docs/spike-report.json
 .env
+frontend/test-results/
+frontend/playwright-report/
+frontend/.vite/

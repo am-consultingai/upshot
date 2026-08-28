@@ -8,3 +8,5 @@ All paths are inside the project folder unless stated otherwise. Nothing outside
 |---|---|---|
 | 2026-08-28 | install | `uv python install 3.13` → CPython 3.13.12 into `~/.local/share/uv/python` (uv-managed toolchain, outside the project; required to run the build at all) |
 | 2026-08-28 | install | `uv sync` → project venv at `./.venv` with the dependencies in `pyproject.toml` |
+| 2026-08-29 | install | `npm install` in `frontend/` → 187 packages into `frontend/node_modules` (React, Vite, TanStack Query, Tailwind, Vitest, Playwright) |
+| 2026-08-29 | install | `npx playwright install chromium` → Chrome Headless Shell 151 into `~/.cache/ms-playwright` (outside the project; needed to run the e2e gate here) |

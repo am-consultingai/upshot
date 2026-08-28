@@ -434,6 +434,21 @@ def test_router() -> APIRouter:
     def seed_db(request: Request, body: dict[str, Any]) -> JSONResponse:
         svc = services_of(request)
         created: list[str] = []
+        if body.get("reset"):
+            # Test isolation: each spec starts from an empty library.
+            for meeting in svc.dao.list_meetings(limit=10_000):
+                svc.dao.clear_turns(meeting.id)
+            svc.conn.execute("DELETE FROM jobs")
+            svc.conn.execute("DELETE FROM meetings")
+            svc.conn.execute("DELETE FROM detector_events")
+        for event in body.get("detector_events", []):
+            svc.dao.add_detector_event(
+                peak_score=int(event.get("peak_score", 7)),
+                evidence=event.get("evidence", []),
+                outcome=event.get("outcome", "shadow"),
+                process=event.get("process"),
+                window_title=event.get("window_title"),
+            )
         for item in body.get("meetings", []):
             meeting = svc.dao.insert_meeting(
                 meeting_id=item.get("id"),
@@ -461,6 +476,14 @@ def test_router() -> APIRouter:
                 )
             folder = meeting.path
             folder.mkdir(parents=True, exist_ok=True)
+            if item.get("evidence"):
+                svc.dao.add_detector_event(
+                    peak_score=int(item.get("peak_score", 7)),
+                    evidence=item["evidence"],
+                    outcome=item.get("outcome", "committed"),
+                    process=item.get("process"),
+                    meeting_id=meeting.id,
+                )
             if item.get("summary_html"):
                 (folder / "summary.html").write_text(item["summary_html"], encoding="utf-8")
             if item.get("notes"):
