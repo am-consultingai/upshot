@@ -128,7 +128,7 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "retention": {"audio_days": 30, "transcript_days": None},
-    "enrichment": {"source": "null"},  # null|fake
+    "enrichment": {"source": "null", "timeout_s": 2.0},  # null|fake
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},
