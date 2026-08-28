@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import random
 import sqlite3
+import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
@@ -133,10 +134,67 @@ class Capabilities:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+class Result:
+    """A materialized cursor.
+
+    Rows are read while the connection lock is held, so a caller can iterate them at
+    leisure from any thread.
+    """
+
+    __slots__ = ("_index", "lastrowid", "rowcount", "rows")
+
+    def __init__(self, rows: list[Any], lastrowid: int | None, rowcount: int) -> None:
+        self.rows = rows
+        self.lastrowid = lastrowid
+        self.rowcount = rowcount
+        self._index = 0
+
+    def fetchall(self) -> list[Any]:
+        return self.rows
+
+    def fetchone(self) -> Any:
+        if self._index >= len(self.rows):
+            return None
+        row = self.rows[self._index]
+        self._index += 1
+        return row
+
+    def __iter__(self) -> Any:
+        return iter(self.rows)
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+
 class Connection(sqlite3.Connection):
-    """A connection that can carry the capability probe result."""
+    """One process-wide connection, serialized.
+
+    SQLite is compiled serialized, but an **FTS5 cursor is not** safe for concurrent use
+    on one connection — two threads searching at once raise
+    ``InterfaceError: bad parameter or other API misuse``. The API serves several
+    concurrent requests per page, so every statement runs under this lock and its rows
+    are materialized before the lock is released.
+    """
 
     ma_capabilities: Capabilities
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.ma_lock = threading.RLock()
+
+    def execute(self, sql: str, parameters: Any = (), /) -> Any:
+        with self.ma_lock:
+            cursor = super().execute(sql, parameters)
+            try:
+                rows = cursor.fetchall()
+            except sqlite3.ProgrammingError:  # a statement with no result set
+                rows = []
+            return Result(rows, cursor.lastrowid, cursor.rowcount)
+
+    def executemany(self, sql: str, parameters: Any, /) -> Any:
+        with self.ma_lock:
+            cursor = super().executemany(sql, parameters)
+            return Result([], cursor.lastrowid, cursor.rowcount)
 
 
 def connect(path: Path | None = None, *, fts: bool = True) -> Connection:

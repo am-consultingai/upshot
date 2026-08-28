@@ -36,6 +36,11 @@ class AuthState:
         self._tokens.add(token)
         return token
 
+    def register_token(self, token: str) -> str:
+        """Adopt a token minted elsewhere — the tray, or the e2e launcher."""
+        self._tokens.add(token)
+        return token
+
     def redeem(self, token: str) -> bool:
         if token in self._used or token not in self._tokens:
             return False

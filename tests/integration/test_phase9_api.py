@@ -20,12 +20,16 @@ def api(tmp_path: Path, app_home: Path):  # type: ignore[no-untyped-def]
 
 def test_host_header_rejected(api) -> None:  # type: ignore[no-untyped-def]
     """The DNS-rebinding defense runs before routing: the handler is never entered."""
+    from fastapi.routing import APIRoute
+
     entered: list[str] = []
 
-    @api.app.get("/api/spy")
-    def spy() -> dict[str, bool]:  # registered on the same app, behind the same stack
+    def spy() -> dict[str, bool]:
         entered.append("yes")
         return {"ok": True}
+
+    # Inserted ahead of the SPA catch-all, but behind the same middleware stack.
+    api.app.router.routes.insert(0, APIRoute("/api/spy", spy, methods=["GET"]))
 
     client = api.client()
     response = client.get("/api/spy", headers={"Host": "evil.com"})
