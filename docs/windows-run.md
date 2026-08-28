@@ -43,6 +43,25 @@ uv sync
 
 ---
 
+## 1b. The frontend
+
+```powershell
+cd frontend
+npm ci
+npm run typecheck
+npm test                       # 17 vitest unit tests
+npm run build                  # FastAPI serves frontend\dist
+npx playwright install chromium
+npm run e2e                    # 15 Playwright tests against the built bundle
+cd ..
+```
+
+**Expected:** all green. `npm run e2e` starts the backend itself
+(`.venv\Scripts\python scripts\e2e_server.py` via the `webServer` block — set
+`MA_E2E_PYTHON` if your venv lives elsewhere).
+
+---
+
 ## 2. The standard per-phase gate
 
 ```powershell
@@ -83,9 +102,29 @@ uv run python -m app.selftest capture-e2e --seconds 120                         
 uv run python -m app.selftest detect-e2e                                           --report m2.json
 ```
 
-M0 also runs on Linux (it is fakes-only end to end). **M1 and M2 are Windows-only** — M1
-needs a real render endpoint and a real capture device; M2 needs the microphone
-ConsentStore.
+M0 and M2 run anywhere (fakes end to end). **M1 runs anywhere too, but in one of two
+modes**, and the report says which:
+
+| Mode | When | What it proves |
+|---|---|---|
+| `synthetic` | no WASAPI render endpoint (this WSL2 shell, CI) | the API round trip, chunking and durations, the manifest, both tracks, the `them`-track correlation against the fixture, language pinning, the tray sequence, and the pipeline to `RENDERED` |
+| `wasapi` | a Windows host | all of the above **plus** the real render endpoint, the real loopback stream, and the real capture device |
+
+So on Windows the same command closes M1's hardware half:
+
+```powershell
+uv run python -m app.selftest capture-e2e --seconds 120 --report m1.json
+```
+
+Expect `capture_mode: wasapi capture` in the report. With a local ASR model configured
+(`asr.backend = "local"`), `capture_transcript_words` also stops reporting `skipped` and
+asserts the spoken fixture words survive into the transcript.
+
+The M0 input is generated, never committed:
+
+```powershell
+uv run python scripts\make_fixture.py --minutes 10
+```
 
 ---
 
