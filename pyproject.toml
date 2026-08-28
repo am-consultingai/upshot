@@ -77,6 +77,7 @@ module = [
     "apscheduler.*", "keyring.*", "psutil.*", "PIL.*", "rapidfuzz.*",
     "bs4.*", "aiosmtpd.*", "win32com.*", "pythoncom.*", "win32file.*",
     "ctranslate2.*", "huggingface_hub.*", "jsonschema.*", "premailer.*",
+    "winerror.*", "win32event.*", "pystray.*",
 ]
 ignore_missing_imports = true
 
