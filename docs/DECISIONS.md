@@ -94,3 +94,29 @@ lost audio from the device.
 report it. The floor states the honest minimum: a reopen is never free. What the manifest
 must preserve is that the timeline has a hole at all, which is what `t0_ms` carries
 forward, and that is asserted by `test_gap_marker_written`.
+
+## D11 — `NEEDS_REVIEW` is sticky; jobs keep running under it
+**Choice.** Once a meeting is `NEEDS_REVIEW`, the worker stops managing its state: later
+stages still run and still write their artifacts, but nothing moves the meeting back onto
+the happy path.
+**Alternatives.** Flag review only at the end of the pipeline; add a `needs_review` column.
+**Why.** The plan requires "meeting state `NEEDS_REVIEW`, artifacts still written"
+(Phase 7) while `TECHNICAL-DESIGN.md` §3.1 has no column for a review flag. Making the
+state sticky satisfies both without touching the schema, and `/attention` then has exactly
+one thing to query.
+
+## D12 — Which VAD is wired is a config key (`audio.vad`)
+**Choice.** `two_stage` (default, energy + Silero) or `energy`.
+**Alternatives.** Always two-stage; monkeypatch Silero out in tests.
+**Why.** `resolve_language` asks "does this track carry enough sound to detect a language
+from". Synthetic fixtures are sound but not speech, and Silero correctly rejects them — so
+without a seam every language test would need real recorded speech. The key also covers a
+real case: a machine where onnxruntime will not load still needs a working VAD.
+
+## D13 — `segments.json` is the transcribe stage's artifact
+**Choice.** `transcribe` writes `segments.json` (both tracks, meeting-relative
+timestamps); `assemble` turns it into `transcript.json` and `transcript.md`.
+**Alternatives.** Have `transcribe` write `transcript.json` directly.
+**Why.** `TECHNICAL-DESIGN.md` §3.2 defines `transcript.json` as the assembled artifact
+(echo-suppressed, coalesced), and stage idempotency needs each stage to own exactly one
+output it can check for. Two files, two owners, two skip checks.

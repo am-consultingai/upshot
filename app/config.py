@@ -56,6 +56,9 @@ DEFAULTS: dict[str, Any] = {
         "beam_size": 5,
         "remote_url": None,
         "initial_prompt_max_tokens": 200,
+        "fake_language": "he",
+        "fake_confidence": 0.95,
+        "fake_repetitions": 1,
     },
     "audio": {
         "capture": "wasapi",  # wasapi|synthetic
@@ -67,6 +70,7 @@ DEFAULTS: dict[str, Any] = {
         "silence_search_s": 10,
         "hard_cut_s": 70,
         "queue_seconds": 10,
+        "vad": "two_stage",
     },
     "detection": {
         "mode": "shadow",  # shadow|on|off
@@ -138,6 +142,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "asr.backend": ("local", "remote", "fake"),
     "asr.language_mode": ("detect", "fixed"),
     "audio.capture": ("wasapi", "synthetic"),
+    "audio.vad": ("two_stage", "energy"),
     "detection.mode": ("shadow", "on", "off"),
     "detection.sources": ("windows", "fake"),
     "llm.provider": ("anthropic", "ollama", "fake"),

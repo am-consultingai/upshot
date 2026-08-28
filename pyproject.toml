@@ -76,6 +76,7 @@ module = [
     "win32event.*", "winreg.*", "windows_toasts.*", "faster_whisper.*",
     "apscheduler.*", "keyring.*", "psutil.*", "PIL.*", "rapidfuzz.*",
     "bs4.*", "aiosmtpd.*", "win32com.*", "pythoncom.*", "win32file.*",
+    "ctranslate2.*", "huggingface_hub.*", "jsonschema.*", "premailer.*",
 ]
 ignore_missing_imports = true
 
