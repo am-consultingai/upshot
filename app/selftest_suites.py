@@ -104,3 +104,45 @@ def _queue(args: argparse.Namespace) -> list[Check]:
         detail = f"flaky recovered after {job.attempts if job else '?'} failed attempts"
         conn.close()
     return [Check("queue_retry_ladder", ok, detail, {"attempts": job.attempts if job else -1})]
+
+
+@suite("audio-synthetic")
+def _audio_synthetic(args: argparse.Namespace) -> list[Check]:
+    """Every byte-level guarantee in §4, with no audio hardware."""
+    import tempfile
+    from pathlib import Path
+
+    from app.audio.fake import SyntheticCapture
+    from app.audio.recorder import Recorder
+    from app.audio.writer import read_manifest
+    from app.clock import FakeClock
+    from app.config import Config
+
+    cfg = Config.load()
+    cfg.set("audio.capture", "synthetic")
+    seconds = 180
+
+    def factory(track: str) -> SyntheticCapture:
+        return SyntheticCapture(track, "tone" if track == "them" else "silence", block_frames=48000)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "meeting"
+        recorder = Recorder(cfg, factory, clock=FakeClock())
+        recorder.start(folder, "selftest")
+        for _ in range(seconds):
+            recorder.pump_once(0.0)
+        recorder.stop()
+        records, torn = read_manifest(folder)
+        durations = {
+            track: sum(r.dur_ms for r in records if r.track == track) for track in ("me", "them")
+        }
+        drift = {track: abs(value - seconds * 1000) for track, value in durations.items()}
+        ok = torn == 0 and all(value <= 50 for value in drift.values())
+    return [
+        Check(
+            "synthetic_capture_roundtrip",
+            ok,
+            f"{seconds}s synthetic → durations {durations}, torn lines {torn}",
+            {"durations_ms": durations, "drift_ms": drift, "chunks": len(records)},
+        )
+    ]
