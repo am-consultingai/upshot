@@ -6,16 +6,18 @@ stage registry is injected, which is what lets the queue be proven with no real 
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
 from app.errors import PermanentError, Preempted
-from app.log import get, meeting_context
+from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
 from app.pipeline.context import StageContext
 from app.pipeline.queue import Job, JobQueue
@@ -65,6 +67,7 @@ class Worker:
         self.activity = activity
         self.services = services
         self.stats = WorkerStats()
+        self.last_metrics: dict[str, dict[str, Any]] = {}
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self.queue.reset_running()
@@ -127,6 +130,11 @@ class Worker:
             should_yield=self.should_yield,
             services=self.services,
         )
+        handler = None
+        folder = Path(meeting.folder)
+        if folder.exists():
+            handler = meeting_log_handler(folder)
+            logging.getLogger().addHandler(handler)
         with meeting_context(meeting.id):
             self._mark_running(job)
             try:
@@ -142,7 +150,11 @@ class Worker:
             except Exception as exc:
                 self._on_failure(job, exc, permanent=False)
                 return
-            self._on_success(job)
+            finally:
+                if handler is not None:
+                    logging.getLogger().removeHandler(handler)
+                    handler.close()
+            self._on_success(job, context)
 
     def _stage(self, job: Job) -> JobStage | None:
         try:
@@ -164,11 +176,12 @@ class Worker:
             if is_legal(MeetingState(meeting.state), target):
                 self.dao.set_state(job.meeting_id, target)
 
-    def _on_success(self, job: Job) -> None:
+    def _on_success(self, job: Job, context: StageContext | None = None) -> None:
         self.queue.complete(job)
         self.stats.completed += 1
+        self.last_metrics[job.stage] = dict(context.metrics) if context else {}
         stage = self._stage(job)
-        if stage is not None:
+        if stage is not None and not (context is not None and context.hold_state):
             from app.pipeline.states import is_legal
 
             target = STAGE_DONE_STATE[stage]

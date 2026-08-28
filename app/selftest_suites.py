@@ -360,3 +360,146 @@ def _live_llm(args: argparse.Namespace) -> list[Check]:
             {"tokens_per_word": round(ratio, 3)},
         ),
     ]
+
+
+def _synthesize_meeting(folder: Path, seconds: float, rate: int = 16000) -> None:
+    """Two tracks of deterministic audio on disk, exactly as the recorder leaves them."""
+    import numpy as np
+
+    from app.audio.writer import ChunkWriter
+
+    writer = ChunkWriter(folder, tracks=("me", "them"), rate=rate)
+    rng = np.random.default_rng(7)
+    for track in ("me", "them"):
+        payload = (rng.normal(0, 0.15, int(seconds * rate)) * 32767).astype(np.int16)
+        writer.write_pcm(track, payload)
+    writer.close()
+
+
+def _import_wav(folder: Path, wav: Path, rate: int = 16000) -> None:
+    """A user-supplied recording becomes the `them` track (single-track import)."""
+    import wave
+
+    import numpy as np
+    import soxr
+
+    from app.audio.writer import ChunkWriter
+
+    with wave.open(str(wav), "rb") as handle:
+        source_rate = handle.getframerate()
+        channels = handle.getnchannels()
+        raw = handle.readframes(handle.getnframes())
+    mono = np.frombuffer(raw, dtype=np.int16).astype(np.float64)
+    if channels > 1:
+        mono = mono[: len(mono) // channels * channels].reshape(-1, channels).mean(axis=1)
+    if source_rate != rate:
+        mono = np.asarray(soxr.resample(mono / 32768.0, source_rate, rate)) * 32768.0
+    audio = mono
+    writer = ChunkWriter(folder, tracks=("them",), rate=rate)
+    writer.write_pcm("them", audio.astype(np.int16))
+    writer.close()
+
+
+@suite("pipeline")
+def _pipeline(args: argparse.Namespace) -> list[Check]:
+    """M0 — a recording on disk becomes summary.html, with fakes and no network."""
+    import random
+    import tempfile
+    import time
+    from pathlib import Path
+
+    from app.clock import SystemClock
+    from app.config import Config
+    from app.db.dao import Dao, connect
+    from app.llm.schema import validate
+    from app.meetings import MeetingService
+    from app.pipeline.queue import JobQueue
+    from app.pipeline.stages import registry
+    from app.pipeline.stages.summarize import load_notes
+    from app.pipeline.states import MeetingState
+    from app.pipeline.worker import Worker
+
+    started = time.monotonic()
+    budget_s = float(getattr(args, "budget_s", 0) or 120)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cfg = Config.load()
+        cfg.set("data_root", str(root / "meetings"))
+        cfg.set("asr.backend", "fake")
+        cfg.set("llm.provider", "fake")
+        cfg.set("audio.vad", "energy")
+        cfg.set("enrichment.source", "null")
+        cfg.set("delivery.mode", "draft")
+        cfg.set("job_policy", "asap")
+        conn = connect(root / "index.db")
+        clock = SystemClock()
+        dao = Dao(conn, clock)
+        dao.seed_ids(11)
+        queue = JobQueue(conn, clock, random.Random(5))
+        service = MeetingService(cfg, dao, queue, clock=clock)
+        meeting = service.create(source="imported")
+
+        wav = getattr(args, "input", None)
+        if wav and Path(wav).exists():
+            _import_wav(meeting.path, Path(wav))
+            source_detail = f"imported {Path(wav).name}"
+        else:
+            _synthesize_meeting(meeting.path, seconds=600)
+            source_detail = "synthesized 10 minutes of two-track audio"
+        service.finish(meeting.id, duration_s=600)
+
+        worker = Worker(dao=dao, queue=queue, config=cfg, stages=registry(), clock=clock)
+        executed = worker.drain()
+        final = dao.require_meeting(meeting.id)
+        folder = final.path
+        artifacts = {
+            name: (folder / name).exists()
+            for name in (
+                "transcript.json",
+                "transcript.md",
+                "notes.json",
+                "summary.html",
+                "summary.email.html",
+                "meta.json",
+            )
+        }
+        schema_ok = False
+        notes_detail = "notes.json missing"
+        if artifacts["notes.json"]:
+            try:
+                notes = load_notes(folder)
+                validate(notes)
+                schema_ok = True
+                notes_detail = f"notes.json is schema-valid; title={notes.get('title')!r}"
+            except Exception as exc:
+                notes_detail = f"notes.json failed validation: {exc}"
+        log_path = folder / "pipeline.log"
+        log_text = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        errors = [line for line in log_text.splitlines() if " ERROR " in line]
+        elapsed = time.monotonic() - started
+        state = final.state
+        conn.close()
+
+    return [
+        Check("pipeline_source", True, source_detail, {"jobs_executed": executed}),
+        Check(
+            "pipeline_artifacts",
+            all(artifacts.values()),
+            ", ".join(f"{name}={'ok' if ok else 'MISSING'}" for name, ok in artifacts.items()),
+            {"artifacts": artifacts},
+        ),
+        Check("pipeline_notes_schema", schema_ok, notes_detail),
+        Check(
+            "pipeline_state",
+            state in (MeetingState.RENDERED, MeetingState.DELIVERED),
+            f"meeting reached {state}",
+            {"state": state},
+        ),
+        Check("pipeline_log_clean", not errors, f"{len(errors)} ERROR line(s) in pipeline.log"),
+        Check(
+            "pipeline_within_budget",
+            elapsed <= budget_s,
+            f"{elapsed:.1f}s (budget {budget_s:.0f}s)",
+            {"seconds": round(elapsed, 2), "budget_s": budget_s},
+        ),
+    ]

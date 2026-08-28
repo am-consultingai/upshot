@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html dir="{{ dir }}" lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ notes.title }}</title>
+{%- if include_style %}
+<style>
+{{ css|safe }}
+</style>
+{%- endif %}
+</head>
+<body>
+<div class="page">
+<h1>{{ notes.title }}</h1>
+<p class="meta">{{ meta_line }}</p>
+
+<section class="tldr">
+<h2>{{ labels.tldr }}</h2>
+<ul>
+{%- for line in notes.tldr %}
+<li>{{ line }}</li>
+{%- endfor %}
+</ul>
+</section>
+
+<section class="topics">
+<h2>{{ labels.topics }}</h2>
+{%- for topic in notes.topics %}
+<h3>{{ topic.heading }}</h3>
+<ul>
+{%- for point in topic.points %}
+<li>{{ point }}</li>
+{%- endfor %}
+</ul>
+{%- for quote in topic.get('quotes', []) %}
+<blockquote{% if quote.get('at_ms') is not none %} data-at-ms="{{ quote.at_ms }}"{% endif %}>{{ quote.text }}<span class="quote-who"> — {{ quote.who }}</span></blockquote>
+{%- endfor %}
+{%- else %}
+<p class="empty">{{ labels.none }}</p>
+{%- endfor %}
+</section>
+
+<section class="decisions">
+<h2>{{ labels.decisions }}</h2>
+{%- for decision in notes.decisions %}
+<div class="decision"{% if decision.get('at_ms') is not none %} data-at-ms="{{ decision.at_ms }}"{% endif %}>
+<p><span class="who">{{ decision.get('who_decided', '') }}</span> {{ decision.what }}</p>
+{%- if decision.get('rationale') %}
+<p class="rationale">{{ decision.rationale }}</p>
+{%- endif %}
+</div>
+{%- else %}
+<p class="empty">{{ labels.none }}</p>
+{%- endfor %}
+</section>
+
+<section class="actions">
+<h2>{{ labels.actions }}</h2>
+{%- for item in notes.action_items %}
+<p class="action"><span class="who">{{ item.get('who', '') }}</span> {{ item.get('what', '') }}{% if item.get('due') %}<span class="due"> ({{ labels.due }} {{ item.due }})</span>{% endif %}</p>
+{%- else %}
+<p class="empty">{{ labels.none }}</p>
+{%- endfor %}
+</section>
+
+{%- if notes.get('open_questions') %}
+<section class="questions">
+<h2>{{ labels.questions }}</h2>
+<ul>
+{%- for question in notes.open_questions %}
+<li>{{ question }}</li>
+{%- endfor %}
+</ul>
+</section>
+{%- endif %}
+
+{%- if notes.get('risks') %}
+<section class="risks">
+<h2>{{ labels.risks }}</h2>
+<ul>
+{%- for risk in notes.risks %}
+<li>{{ risk }}</li>
+{%- endfor %}
+</ul>
+</section>
+{%- endif %}
+
+<footer>{{ labels.footer }}</footer>
+</div>
+</body>
+</html>

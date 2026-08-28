@@ -27,6 +27,9 @@ class StageContext:
     should_yield: Callable[[], bool] = lambda: False
     services: Any = None
     metrics: dict[str, Any] = field(default_factory=dict)
+    #: Set by a stage that completed without moving the meeting forward — a draft
+    #: delivery finishes its job but must leave the meeting at RENDERED.
+    hold_state: bool = False
 
     @property
     def folder(self) -> Path:
