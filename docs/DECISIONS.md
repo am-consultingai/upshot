@@ -66,3 +66,31 @@ top of the `TECHNICAL-DESIGN.md` §14 document.
 **Why.** `EXECUTION-PLAN.md` §16.3 requires fakes to be selected by config so the wiring
 itself is exercised. Each added key is exactly one such seam, and every one of them is
 validated against an enum, so a typo fails at startup rather than at runtime.
+
+## D8 — Chunk boundaries are chosen by the **energy** stage, not by Silero
+**Choice.** `ChunkWriter._find_cut` calls `EnergyGate`, not `TwoStageVad`.
+**Alternatives.** Run the full two-stage VAD over the ±10 s search window.
+**Why.** The boundary rule is "do not cut through sound", not "do not cut through speech":
+music, a ringing phone, or hold tone are all things a chunk boundary should avoid, and
+Silero classifies every one of them as silence. It is also the always-on stage
+(`TECHNICAL-DESIGN.md` §4.7), which is what the writer thread can afford. `test_chunk_
+prefers_silence_boundary` uses a tone as its stand-in for sound, and would be meaningless
+under a speech-only detector.
+
+## D9 — The resampler's delay line is flushed at end of stream
+**Choice.** `Resampler.flush()` drains soxr's internal delay (~477 samples at 48→16 kHz)
+and `Recorder.stop()` writes it as real audio.
+**Alternatives.** Ignore it (roughly 30 ms lost per meeting per track).
+**Why.** `test_resample_sample_count` asserts 10.0 s in → 160 000 ±16 samples out. Without
+the flush the streaming resampler is 477 samples short, and the miss is silent — exactly
+the class of bug the assertion exists to catch.
+
+## D10 — A reopened device records a floored gap
+**Choice.** On `StreamError` the recorder measures the reopen with the injected clock and
+writes `gap_ms = max(measured, 100)`.
+**Alternatives.** Write the measured value alone (zero under a `FakeClock`); estimate the
+lost audio from the device.
+**Why.** The audio actually lost while a device is gone is unknowable — WASAPI does not
+report it. The floor states the honest minimum: a reopen is never free. What the manifest
+must preserve is that the timeline has a hole at all, which is what `t0_ms` carries
+forward, and that is asserted by `test_gap_marker_written`.
