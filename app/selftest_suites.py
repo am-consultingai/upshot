@@ -503,3 +503,69 @@ def _pipeline(args: argparse.Namespace) -> list[Check]:
             {"seconds": round(elapsed, 2), "budget_s": budget_s},
         ),
     ]
+
+
+@suite("api")
+def _api(args: argparse.Namespace) -> list[Check]:
+    """Start the server on an ephemeral port and hit /api/status over a real socket."""
+    import tempfile
+    from pathlib import Path
+
+    import httpx
+
+    from app.config import Config
+    from app.main import create_app
+    from app.server import LocalServer
+    from app.services import build
+
+    def free_port() -> int:
+        import socket
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return int(probe.getsockname()[1])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Config.load()
+        cfg.set("data_root", str(Path(tmp) / "meetings"))
+        cfg.set("server.port", free_port())
+        cfg.set("delivery.notifier", "fake")
+        services = build(cfg, with_worker=False, with_recorder=False)
+        app = create_app(services)
+        server = LocalServer(app, host=cfg.server_host, port=cfg.server_port).start()
+        try:
+            base = f"http://127.0.0.1:{cfg.server_port}"
+            bound = server.sockets[0].getsockname()[0]
+            with httpx.Client(base_url=base, timeout=5.0) as client:
+                unauthorized = client.get("/api/status")
+                token = services.auth.issue_token()
+                client.get("/", params={"k": token})
+                status = client.get("/api/status")
+                rebind = client.get("/api/status", headers={"Host": "evil.com"})
+        finally:
+            server.stop()
+            services.close()
+
+    return [
+        Check("api_bind_address", bound == "127.0.0.1", f"bound to {bound}", {"host": bound}),
+        Check(
+            "api_requires_cookie",
+            unauthorized.status_code == 401,
+            f"unauthenticated /api/status → {unauthorized.status_code}",
+        ),
+        Check(
+            "api_status",
+            status.status_code == 200,
+            f"/api/status → {status.status_code}",
+            {
+                "queue_depth": status.json().get("queue_depth")
+                if status.status_code == 200
+                else None
+            },
+        ),
+        Check(
+            "api_host_header",
+            rebind.status_code == 421,
+            f"Host: evil.com → {rebind.status_code}",
+        ),
+    ]
