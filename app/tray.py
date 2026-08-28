@@ -5,6 +5,8 @@ pystray needs the main thread on Windows, so everything else is spawned from her
 
 from __future__ import annotations
 
+import json
+import sys
 import threading
 import webbrowser
 from collections.abc import Callable
@@ -177,6 +179,25 @@ class TrayApp:
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
+    """The frozen executable's entry point.
+
+    ``meeting-agent.exe --selftest imports`` is the PyInstaller hidden-import tripwire:
+    it imports every ``app.*`` module *inside the freeze*, where a missing hidden import
+    is the classic failure.
+    """
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if "--selftest" in arguments:
+        from app.selftest import main as selftest_main
+
+        index = arguments.index("--selftest")
+        return selftest_main(arguments[index + 1 :] or ["all"])
+    if "--bootstrap" in arguments:
+        from app.bootstrap import run as bootstrap_run
+
+        setup()
+        report = bootstrap_run()
+        print(json.dumps(report.as_dict(), indent=2))
+        return 0 if report.ok else 1
     setup()
     guard = SingleInstance()
     if not guard.acquire():
