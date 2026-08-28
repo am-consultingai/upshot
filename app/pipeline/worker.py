@@ -156,6 +156,8 @@ class Worker:
             return
         target = STAGE_RUNNING_STATE[stage]
         meeting = self.dao.require_meeting(job.meeting_id)
+        if meeting.state == MeetingState.NEEDS_REVIEW:
+            return  # the flag is sticky: jobs keep running, the state keeps saying so
         if meeting.state != str(target):
             from app.pipeline.states import is_legal
 
@@ -172,6 +174,8 @@ class Worker:
             target = STAGE_DONE_STATE[stage]
             meeting = self.dao.require_meeting(job.meeting_id)
             current = MeetingState(meeting.state)
+            if current == MeetingState.NEEDS_REVIEW:
+                return
             if current != target and is_legal(current, target):
                 self.dao.set_state(job.meeting_id, target)
         self.queue.enqueue_next_stage(job)

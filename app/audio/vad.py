@@ -31,6 +31,14 @@ class Vad(Protocol):
     def voiced_frames(self, pcm: np.ndarray, rate: int = 16000) -> list[bool]: ...
 
 
+class Verifier(Protocol):
+    """The second stage. ``available()`` says whether it can run at all."""
+
+    def available(self) -> bool: ...
+
+    def voiced_frames(self, pcm: np.ndarray, rate: int = 16000) -> list[bool]: ...
+
+
 class EnergyGate:
     """RMS gate. ~0 CPU, runs on every frame of both tracks."""
 
@@ -101,7 +109,7 @@ class TwoStageVad:
     def __init__(
         self,
         gate: EnergyGate | None = None,
-        silero: SileroVad | None = None,
+        silero: Verifier | None = None,
         frame_ms: int = FRAME_MS,
     ) -> None:
         self.gate = gate or EnergyGate(frame_ms=frame_ms)
@@ -112,6 +120,9 @@ class TwoStageVad:
     def voiced_frames(self, pcm: np.ndarray, rate: int = 16000) -> list[bool]:
         gated = self.gate.voiced_frames(pcm, rate)
         if not any(gated):
+            return gated
+        if not self.silero.available():
+            # No onnxruntime, or no model: degrade to the gate rather than to silence.
             return gated
         self.silero_calls += 1
         verified = self.silero.voiced_frames(pcm, rate)
@@ -138,3 +149,28 @@ def read_wav(path: Path) -> tuple[np.ndarray, int]:
 def has_speech_in_file(path: Path, min_s: float = 3.0, vad: TwoStageVad | None = None) -> bool:
     pcm, rate = read_wav(path)
     return (vad or TwoStageVad()).has_speech(pcm, rate, min_s=min_s)
+
+
+class GateOnlyVerifier:
+    """Verification disabled — selected with ``audio.vad = "energy"``.
+
+    Useful on a machine with no onnxruntime, and in tests whose fixtures are synthetic
+    sound rather than real speech.
+    """
+
+    def available(self) -> bool:
+        return False
+
+    def voiced_frames(self, pcm: np.ndarray, rate: int = 16000) -> list[bool]:
+        return []
+
+
+def make_vad(config: object) -> TwoStageVad:
+    """Which VAD is wired — chosen by config, like every other fake in this build."""
+    kind = "two_stage"
+    getter = getattr(config, "get", None)
+    if callable(getter):
+        kind = str(getter("audio.vad", "two_stage"))
+    if kind == "energy":
+        return TwoStageVad(silero=GateOnlyVerifier())
+    return TwoStageVad()
