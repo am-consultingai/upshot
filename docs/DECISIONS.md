@@ -130,3 +130,23 @@ recall.
 out of scope for V1 and would weaken `test_fts_hebrew_diacritics`. The UI search box passes
 the user's text through unchanged, and the plan's own test asks only for "search a Hebrew
 word → correct meeting id and snippet offset", which holds.
+
+## D15 — Structured output via `messages.create(output_config.format)`, not `messages.parse`
+**Choice.** `AnthropicClient` calls `client.beta.messages.create(...)` with
+`output_config={"effort": ..., "format": {"type": "json_schema", "schema": NOTES_SCHEMA}}`,
+reads the JSON out of the first text block, and validates it with `jsonschema`.
+**Alternatives.** `TECHNICAL-DESIGN.md` §9.2 writes `client.messages.parse(...)` with the
+same `output_config`.
+**Why.** In the current SDK, `messages.parse()` takes `output_format=<Pydantic model>` and
+returns `parsed_output`; the raw-JSON-Schema path is `messages.create` with
+`output_config.format`. Our schema is a raw JSON Schema by §9.3, and the `betas` /
+`fallbacks` parameters the same section requires are only accepted on
+`client.beta.messages.*`. The intent of §9.2 — the schema is the contract, validation is
+not free-text parsing — is preserved exactly; only the SDK entry point differs.
+
+## D16 — A broken credential store degrades to the environment
+**Choice.** `KeyringSecrets.get` catches any exception from `keyring` and returns `None`
+after a warning, so `config.secret(...)` falls through to `ANTHROPIC_API_KEY`.
+**Why.** On this Linux box `keyring` raises `NoKeyringError` with no backend installed, and
+that took down `selftest live-llm` — a diagnostic that must never crash. Writes still
+raise: a secret that was not saved has to be reported.

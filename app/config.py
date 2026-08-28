@@ -23,6 +23,9 @@ from typing import Any
 
 from app import paths
 from app.errors import ConfigError
+from app.log import get
+
+log = get(__name__)
 
 SERVICE_NAME = "meeting-agent"
 
@@ -261,9 +264,14 @@ class KeyringSecrets(SecretStore):
     name = "keyring"
 
     def get(self, key: str) -> str | None:
+        """A credential store that is missing or locked must not crash the app."""
         import keyring
 
-        value = keyring.get_password(SERVICE_NAME, key)
+        try:
+            value = keyring.get_password(SERVICE_NAME, key)
+        except Exception as exc:
+            log.warning("credential store unavailable (%s); falling back to the environment", exc)
+            return None
         return str(value) if value is not None else None
 
     def set(self, key: str, value: str) -> None:
