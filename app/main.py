@@ -75,6 +75,26 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     if (dist / "assets").exists():
         app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="assets")
 
+    @app.api_route(
+        "/api/{rest:path}",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
+    def api_not_found(rest: str) -> JSONResponse:
+        """An unknown API path is a 404 for every method — never the SPA shell."""
+        return JSONResponse({"detail": f"no such route: /api/{rest}"}, status_code=404)
+
+    @app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
+    def spa(full_path: str) -> Response:
+        """Client-side routes are deep-linkable: /m/<id> from a toast must open the app.
+
+        Registered last, so every real route and the /assets mount still win.
+        """
+        candidate = frontend_dir() / "index.html"
+        if candidate.exists():
+            return FileResponse(candidate)
+        return HTMLResponse(INDEX_FALLBACK)
+
     # Middleware runs in reverse registration order, so this registers
     # CSRF, then auth, then the host check — and the host check runs first.
     app.add_middleware(CsrfMiddleware, auth=svc.auth)
