@@ -59,6 +59,15 @@ DEFAULTS: dict[str, Any] = {
         "beam_size": 5,
         "remote_url": None,
         "initial_prompt_max_tokens": 200,
+        "diarization": "off",  # off|onnx|fake — splits THEM into THEM_1/2/3
+        "diarization_dir": None,
+        "diarization_segmentation_path": None,
+        "diarization_embedding_path": None,
+        "diarization_speakers": -1,  # -1 lets the clusterer decide
+        "diarization_threshold": 0.6,  # measured: DECISIONS D29
+        "diarization_min_duration_on": 0.3,
+        "diarization_min_duration_off": 0.5,
+        "diarization_fake_speakers": 2,
         "fake_language": "he",
         "fake_confidence": 0.95,
         "fake_repetitions": 1,
@@ -147,6 +156,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "summary.language": ("en", "he", "auto"),
     "asr.backend": ("local", "remote", "fake"),
     "asr.language_mode": ("detect", "fixed"),
+    "asr.diarization": ("off", "onnx", "fake"),
     "audio.capture": ("wasapi", "synthetic"),
     "audio.vad": ("two_stage", "energy"),
     "detection.mode": ("shadow", "on", "off"),
