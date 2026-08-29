@@ -74,6 +74,7 @@ DEFAULTS: dict[str, Any] = {
         "hard_cut_s": 70,
         "queue_seconds": 10,
         "vad": "two_stage",
+        "synthetic_realtime": True,  # synthetic capture paces itself at 1x
     },
     "detection": {
         "mode": "shadow",  # shadow|on|off

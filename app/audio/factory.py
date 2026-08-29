@@ -20,6 +20,7 @@ def make_capture(config: Config, track: str, *, fixture: Path | None = None) -> 
             pattern=pattern,
             queue_seconds=queue_seconds,
             wav=fixture,
+            realtime=bool(config.get("audio.synthetic_realtime", True)),
         )
     if kind == "wasapi":
         from app.audio.wasapi import WasapiCapture
