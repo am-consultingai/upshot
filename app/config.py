@@ -30,7 +30,7 @@ log = get(__name__)
 SERVICE_NAME = "meeting-agent"
 
 #: Secret names in the credential store.
-SECRET_NAMES = ("anthropic", "smtp", "google_refresh_token")
+SECRET_NAMES = ("anthropic", "openai", "gemini", "smtp", "google_refresh_token")
 
 #: Dotted config keys that must never be persisted to ``app_config.json`` and always
 #: render as ``"***"`` in :meth:`Config.redacted_dump`.
@@ -119,7 +119,11 @@ DEFAULTS: dict[str, Any] = {
         "title_patterns": ["zoom meeting", "microsoft teams", "meet -", "meet –", "webex"],
     },
     "llm": {
-        "provider": "anthropic",  # anthropic|ollama|fake
+        # anthropic|openai|gemini|claude-subscription|ollama|fake
+        # `claude-subscription` runs through the Claude Code CLI on this machine, using
+        # the signed-in user's own plan. It is never the default: Anthropic does not
+        # permit third-party products to offer claude.ai login (DECISIONS D30).
+        "provider": "anthropic",
         "model": "claude-opus-5",
         "effort": "high",
         "local_model": "dictalm3-nemotron-12b",
@@ -127,6 +131,16 @@ DEFAULTS: dict[str, Any] = {
         "max_tokens": 16000,
         "window_tokens": 6000,
         "window_overlap_tokens": 300,
+        "openai_model": "gpt-5",
+        "openai_base_url": None,  # any OpenAI-compatible endpoint
+        "gemini_model": "gemini-2.5-pro",
+        "gemini_base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "claude_cli_path": "claude",
+        "claude_cli_timeout_s": 600,
+        "claude_cli_args": [],
+        "claude_cli_disallowed_tools": (
+            "Bash,Read,Write,Edit,NotebookEdit,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite"
+        ),
     },
     "delivery": {
         "mode": "draft",  # draft|auto_send
@@ -161,7 +175,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "audio.vad": ("two_stage", "energy"),
     "detection.mode": ("shadow", "on", "off"),
     "detection.sources": ("windows", "fake"),
-    "llm.provider": ("anthropic", "ollama", "fake"),
+    "llm.provider": ("anthropic", "openai", "gemini", "claude-subscription", "ollama", "fake"),
     "delivery.mode": ("draft", "auto_send"),
     "delivery.notifier": ("windows", "fake"),
     "enrichment.source": ("null", "fake"),
