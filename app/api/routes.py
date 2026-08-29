@@ -480,15 +480,35 @@ def test_router() -> APIRouter:
                 if state != "pending":
                     svc.conn.execute("UPDATE jobs SET state = ? WHERE id = ?", (state, job.id))
             if item.get("turns"):
+                from app.asr.backend import Segment, TranscriptFile
                 from app.db.dao import Turn
 
+                turns = list(item["turns"])
                 svc.dao.index_turns(
                     meeting.id,
                     [
                         Turn(index, turn.get("speaker", "ME"), turn.get("at_ms", 0), turn["text"])
-                        for index, turn in enumerate(item["turns"])
+                        for index, turn in enumerate(turns)
                     ],
                 )
+                # The UI reads transcript.json, not the index — write it too, so a seeded
+                # meeting looks exactly like a processed one.
+                meeting.path.mkdir(parents=True, exist_ok=True)
+                TranscriptFile(
+                    language=item.get("language", "he"),
+                    model={"name": "seed", "device": "none", "compute": "none"},
+                    segments=[
+                        Segment(
+                            id=index,
+                            track="me" if turn.get("speaker", "ME") == "ME" else "them",
+                            speaker=turn.get("speaker", "ME"),
+                            start=turn.get("at_ms", 0) / 1000,
+                            end=turn.get("at_ms", 0) / 1000 + 4.0,
+                            text=turn["text"],
+                        )
+                        for index, turn in enumerate(turns)
+                    ],
+                ).write(meeting.path / "transcript.json")
             folder = meeting.path
             folder.mkdir(parents=True, exist_ok=True)
             if item.get("evidence"):
