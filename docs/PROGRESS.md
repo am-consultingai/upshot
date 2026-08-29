@@ -77,6 +77,24 @@ stage; the `me` track is never relabelled because two-track capture already sett
 | 4-speaker reference | 4 speakers ✅ at 0.6 |
 | Hebrew / real meeting audio | **unmeasured** |
 
+## Summarization providers (added after the phases, on request)
+
+`llm.provider` ∈ `anthropic` (default) · `openai` · `gemini` · `claude-subscription` ·
+`ollama` · `fake`. Keys live in the OS credential store through a **write-only**
+`PUT /api/settings/secrets`; `GET` returns booleans only. Settings has a provider section
+with per-provider status, a key field, a Test button and — for the subscription provider —
+a Sign in button that launches Anthropic's own login.
+
+`claude-subscription` spawns the `claude` CLI the user signed into themselves and holds no
+credential (DECISIONS D30). It is never the default: Anthropic does not permit third-party
+products to offer claude.ai login.
+
+| Verified | How |
+|---|---|
+| 29 provider unit tests | injected transports — no network, no keys, no subprocess |
+| 10 provider API tests | write-only secrets, status, probe, sign-in error path |
+| 5 provider e2e tests | key stored and never rendered, switching persists, Test reports a real result |
+
 ## Measurements still outstanding
 
 | Measurement | Closes | Command |

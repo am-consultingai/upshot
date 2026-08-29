@@ -338,3 +338,48 @@ point rather than a tuned value.
 **Not changed:** `notes.json`'s `participants[].track` is still the enum `ME|THEM`. The
 system prompt (now **version 2**) tells the model that `THEM_2` is a speaker slot that
 belongs in `name`, not in `track`.
+
+## D30 — Four summarization providers; the subscription one never holds a credential
+**Choice.** `llm.provider` accepts `anthropic` (default, unchanged), `openai`, `gemini`,
+`claude-subscription`, `ollama`, `fake`.
+
+**Why `claude-subscription` is not the default and never will be.** Anthropic's Agent SDK
+documentation states: *"Unless previously approved, Anthropic does not allow third party
+developers to offer claude.ai login or rate limits for their products, including agents
+built on the Claude Agent SDK."* The Claude Code compliance page adds that developers may
+not *"collect, store, or intermediate Claude.ai credentials or session tokens."*
+
+The provider is therefore built so that **the application never authenticates**: it spawns
+the `claude` CLI that the machine's owner signed into themselves, pipes the transcript to
+stdin, and reads JSON from stdout. `test_claude_cli_never_sees_a_credential` asserts this
+structurally — the module is scanned for `keyring`, `api_key`, `Authorization`,
+`session_token` and `.credentials`, and must contain none of them. The child process also
+has `ANTHROPIC_API_KEY` stripped from its environment, or Claude Code would offer to use
+the key instead of the subscription session.
+
+Tools are removed from that subprocess's context (`--disallowed-tools Bash,Read,Write,…`):
+summarizing a transcript has no business reading the user's disk, and
+`--dangerously-skip-permissions` is never passed.
+
+**What the non-Anthropic providers give up.** Only the Anthropic Messages API enforces our
+schema server-side, so the other three share one validate-and-repair loop
+(`app/llm/repair.py`, extracted from the Ollama client). Consequences: no
+`cache_read_input_tokens` accounting, and no `count_tokens` endpoint except Gemini's —
+`claude-subscription` estimates at 2.0 chars/token, deliberately low so windows come out
+smaller rather than over-full, because `DESIGN.md` §9.1 warns a character heuristic
+silently blows the window on Hebrew.
+
+**Subscriptions do not grant API access** at any of the three vendors — verified against
+their own documentation. Gemini is the only one with a real free tier, which is why it is
+the recommended no-payment-method option in the UI.
+
+## D31 — Two bugs the provider work surfaced
+1. **The e2e suite reached the public internet.** The Test button, with a key left behind
+   by an earlier spec, made a real `POST` to `generativelanguage.googleapis.com`. Tests
+   must never depend on or touch a third-party service, so `scripts/e2e_server.py` now
+   points every provider base URL at `127.0.0.1:9`: an accidental call fails locally
+   instead of leaving the machine.
+2. **Provider selection looked broken.** The radio was bound to server state, so it snapped
+   back until the round-trip finished — Playwright reported *"clicking the checkbox did not
+   change its state"*, which is exactly what a user on a slow machine would see. Selection
+   is now optimistic and settles on the response.

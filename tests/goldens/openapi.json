@@ -94,6 +94,36 @@
         "title": "MeetingPatch",
         "type": "object"
       },
+      "ProviderPost": {
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "ProviderPost",
+        "type": "object"
+      },
+      "SecretsPut": {
+        "properties": {
+          "values": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "title": "SecretsPut",
+        "type": "object"
+      },
       "SettingsPut": {
         "properties": {
           "values": {
@@ -405,6 +435,96 @@
           }
         },
         "summary": "Import Audio"
+      }
+    },
+    "/api/llm/signin": {
+      "post": {
+        "description": "Launch Anthropic's own login. We never see the credential it creates.",
+        "operationId": "llm_signin_api_llm_signin_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Signin Api Llm Signin Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Llm Signin"
+      }
+    },
+    "/api/llm/status": {
+      "get": {
+        "description": "What each summarization provider needs, and whether it has it.",
+        "operationId": "llm_status_api_llm_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Status Api Llm Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Llm Status"
+      }
+    },
+    "/api/llm/test": {
+      "post": {
+        "description": "One tiny real call against the selected provider. Costs a few tokens.",
+        "operationId": "llm_test_api_llm_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderPost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Test Api Llm Test Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Llm Test"
       }
     },
     "/api/meetings": {
@@ -972,6 +1092,66 @@
           }
         },
         "summary": "Put Settings"
+      }
+    },
+    "/api/settings/secrets": {
+      "get": {
+        "description": "Which secrets exist — booleans only, never the values.",
+        "operationId": "secret_status_api_settings_secrets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Secret Status Api Settings Secrets Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Secret Status"
+      },
+      "put": {
+        "description": "Write-only. A secret goes to the OS credential store and is never readable back.",
+        "operationId": "put_secrets_api_settings_secrets_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretsPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Secrets Api Settings Secrets Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Secrets"
       }
     },
     "/api/status": {
