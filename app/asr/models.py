@@ -16,6 +16,16 @@ from app.log import get
 
 log = get(__name__)
 
+SEGMENTATION_URL = (
+    "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/"
+    "resolve/main/model.onnx"
+)
+#: A GitHub release asset, so the diarization path needs no Hugging Face account at all.
+EMBEDDING_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+    "speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
+)
+
 GPU_REPO = "ivrit-ai/whisper-large-v3-ct2"
 CPU_REPO = "ivrit-ai/whisper-large-v3-turbo-ct2"
 
@@ -70,3 +80,48 @@ def ensure(config: Config, *, device: str = "cpu", allow_download: bool = True) 
         return choice
     log.info("no local model; faster-whisper will fetch %s on first use", choice.reference)
     return choice
+
+
+@dataclass(frozen=True)
+class DiarizationModels:
+    segmentation: Path
+    embedding: Path
+
+    @property
+    def present(self) -> bool:
+        return self.segmentation.exists() and self.embedding.exists()
+
+
+def diarization_dir(config: Config) -> Path:
+    configured = config.get("asr.diarization_dir")
+    if configured:
+        return Path(str(configured)).expanduser()
+    return paths.app_home() / "models" / "diarization"
+
+
+def resolve_diarization(config: Config) -> DiarizationModels:
+    """Configured paths win; otherwise the app home's diarization directory."""
+    directory = diarization_dir(config)
+    segmentation = config.get("asr.diarization_segmentation_path") or (
+        directory / "segmentation.onnx"
+    )
+    embedding = config.get("asr.diarization_embedding_path") or (directory / "embedding.onnx")
+    return DiarizationModels(Path(str(segmentation)), Path(str(embedding)))
+
+
+def download_diarization(config: Config, *, timeout: float = 300.0) -> DiarizationModels:
+    """Fetch the two ONNX models. ~37 MB, no account, no token (DECISIONS.md D28)."""
+    import urllib.request
+
+    models = resolve_diarization(config)
+    for target, url in ((models.segmentation, SEGMENTATION_URL), (models.embedding, EMBEDDING_URL)):
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        partial = target.with_suffix(target.suffix + ".part")
+        log.info("downloading %s → %s", url.rsplit("/", 1)[-1], target)
+        with urllib.request.urlopen(url, timeout=timeout) as response, partial.open("wb") as out:
+            while chunk := response.read(1 << 20):
+                out.write(chunk)
+        partial.replace(target)
+    return models

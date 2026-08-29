@@ -40,7 +40,7 @@ def test_summarize_writes_schema_valid_notes(tmp_path: Path) -> None:
     assert notes["title"]
     assert len(llm.calls) >= 2, "at least one map call and the reduce call"
     payload = meta.read(meeting.path)
-    assert payload["prompt_versions"] == {"system": "1", "map": "1", "reduce": "1"}
+    assert payload["prompt_versions"] == {"system": "2", "map": "1", "reduce": "1"}
     assert payload["summary_language"] == "en"
     stored = h.dao.require_meeting(meeting.id)
     assert stored.summary_language == "en"
