@@ -257,3 +257,42 @@ config, and nothing deletes anything yet. The retention sweep belongs to **M4** 
 `DESIGN.md` §17 and no phase in `EXECUTION-PLAN.md` implements or gates it, so it is left
 unbuilt rather than half-built. It is listed here because a config key that promises
 deletion and does not delete is a trust problem the next session should close first.
+
+## D28 — Measurement: diarization does not cost 2.5 GB on Windows
+**`STACK.md` and `DESIGN.md` §20.1 defer diarization because "pyannote drags in PyTorch
+(~2.5 GB install)". Measured on 2026-08-29, that figure is Linux-specific and wrong for
+this product.**
+
+| Component | Measured |
+|---|---|
+| `ivrit-ai/pyannote-segmentation-3.0` weights | 6.0 MB |
+| `pyannote/wespeaker-voxceleb-resnet34-LM` weights | 26.7 MB |
+| **diarization weights, total** | **~33 MB** (the ASR model is 3,091 MB) |
+| `torch` 2.13.0 `cp313-win_amd64` wheel | 122 MB compressed |
+| `sherpa-onnx` + `sherpa-onnx-core` (`win_amd64`) | 2.3 MB + 16.5 MB |
+
+The 2.5 GB is the Linux torch install, which pulls the `nvidia-*-cu12` wheels. The Windows
+wheel is self-contained CPU-only, and this product is Windows-only.
+
+**Two other facts worth having on record:**
+
+1. Upstream `pyannote/speaker-diarization-3.1` is `gated=auto` — it needs a Hugging Face
+   account, accepted terms and a token at load time, which is unshippable in a desktop
+   installer. `ivrit-ai/pyannote-speaker-diarization-3.1` is **ungated**, and its
+   `config.yaml` points at `ivrit-ai/pyannote-segmentation-3.0` (ungated) and
+   `pyannote/wespeaker-voxceleb-resnet34-LM` (ungated), so the pipeline is token-free end
+   to end. That is what the fork is for.
+2. A torch-free path exists: `sherpa-onnx` runs the same two models as ONNX, and this
+   build already ships `onnxruntime` for Silero VAD.
+
+**Nothing has changed in the build.** Diarization is still Post-V1 per
+`EXECUTION-PLAN.md` §14 and is not implemented. What has changed is that the *reason* for
+deferring it no longer holds on the target platform, so the decision should be re-taken on
+its merits — the open question is accuracy on Hebrew multi-speaker audio, which no one in
+this project has measured. The seam is ready either way: `Segment.speaker` is a `str`, not
+an enum (`TECHNICAL-DESIGN.md` §8).
+
+**Not verified:** the sherpa-onnx diarization API shape, ONNX-vs-torch accuracy in
+practice, the unpacked torch footprint on Windows, and quality on Hebrew audio. The
+ivrit-ai diarization repo is a re-hosted fork of upstream pyannote, **not** a Hebrew
+fine-tune — diarization is acoustic rather than lexical, so that is expected.
