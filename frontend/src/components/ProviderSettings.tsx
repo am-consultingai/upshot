@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LlmProvider } from "../api";
 import { useI18n } from "../i18n";
+import type { MessageKey } from "../locales/en";
 
 /** Which secret name each provider reads. `undefined` means it needs no key. */
 const SECRET_FOR: Record<string, string | undefined> = {
@@ -9,6 +10,13 @@ const SECRET_FOR: Record<string, string | undefined> = {
   openai: "openai",
   gemini: "gemini",
 };
+
+/** A provider that needs no key must not claim one is stored. */
+function readyLabel(needs: string, ready: boolean): MessageKey {
+  if (needs === "cli") return ready ? "settings.cliInstalled" : "settings.cliNotInstalled";
+  if (needs === "key") return ready ? "settings.keySet" : "settings.keyMissing";
+  return "settings.localReady";
+}
 
 export default function ProviderSettings() {
   const { t } = useI18n();
@@ -82,7 +90,7 @@ export default function ProviderSettings() {
                       : "bg-neutral-200 text-neutral-700"
                   }`}
                 >
-                  {provider.ready ? t("settings.keySet") : t("settings.keyMissing")}
+                  {t(readyLabel(provider.needs, provider.ready))}
                 </span>
               </label>
 
