@@ -296,3 +296,45 @@ an enum (`TECHNICAL-DESIGN.md` §8).
 practice, the unpacked torch footprint on Windows, and quality on Hebrew audio. The
 ivrit-ai diarization repo is a re-hosted fork of upstream pyannote, **not** a Hebrew
 fine-tune — diarization is acoustic rather than lexical, so that is expected.
+
+## D29 — Diarization is implemented, ONNX-first, off by default — and the threshold is measured
+**Choice.** `app/asr/diarize.py` behind a `Diarizer` protocol with three implementations:
+`OnnxDiarizer` (sherpa-onnx: pyannote segmentation + a wespeaker embedding, both ONNX),
+`FakeDiarizer` (config-selected, deterministic), and `None` when `asr.diarization = "off"`,
+which is the default. It runs inside the `transcribe` stage, over the **whole** `them`
+track reassembled on the meeting's timeline — diarizing per chunk would produce speaker
+ids that disagree across chunk boundaries.
+
+**Why inside `transcribe` and not as a sixth stage.** `TECHNICAL-DESIGN.md` §3.1 and
+`STAGE_ORDER` fix the stage list at five, and the retry route, the OpenAPI golden and both
+milestone gates enumerate it. Diarization consumes the same audio the stage already reads
+and its output belongs in `segments.json`, so it costs nothing to keep the stage list
+literal.
+
+**Measured threshold.** `FastClusteringConfig.threshold` decides how many speakers come
+out. Swept against the two reference recordings published by k2-fsa:
+
+| threshold | 2-speaker sample | 4-speaker sample |
+|---|---|---|
+| 0.4 | 2 ✅ | 6 ❌ |
+| 0.5 | 2 ✅ | 5 ❌ |
+| **0.6** | **2 ✅** | **4 ✅** |
+| 0.7 | 2 ✅ | 3 ❌ |
+| 0.8 | 3 ❌ | 2 ❌ |
+
+**0.6 is the only value correct on both, and is now the default** — the 0.5 in the
+sherpa-onnx examples is wrong for this workload. Speed: **10–12× real time on CPU**, so a
+45-minute meeting diarizes in about four minutes on one core.
+
+**Pinning the speaker count makes it worse.** With `num_clusters` forced to the true value
+the clusterer *under*-segmented (2 → found 1; 4 → found 3), so `asr.diarization_speakers`
+stays at `-1` (auto) and the UI should not offer "I know there were N people" as a fix.
+
+**Still unmeasured:** accuracy on Hebrew, and on real meeting audio from this recorder.
+The reference samples are English and Chinese. The `them` track is also echo-suppressed
+and single-channel, which is easier than the general case, so treat 0.6 as a starting
+point rather than a tuned value.
+
+**Not changed:** `notes.json`'s `participants[].track` is still the enum `ME|THEM`. The
+system prompt (now **version 2**) tells the model that `THEM_2` is a speaker slot that
+belongs in `name`, not in `track`.

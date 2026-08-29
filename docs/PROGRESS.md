@@ -62,6 +62,21 @@ chunks and runs the pipeline; the glossary correction pass runs in `assemble`; a
 `scheduled` job policy honours a nightly window instead of behaving like `asap`.
 One gap is deliberately left open: the retention sweep (DECISIONS D27).
 
+## Diarization (added after the phases, on request)
+
+Post-V1 in the plan, implemented on request — **off by default**, so no phase gate changes.
+`asr.diarization = off|onnx|fake`. Splits `THEM` into `THEM_1/2/3` inside the `transcribe`
+stage; the `me` track is never relabelled because two-track capture already settles it.
+
+| Measured here | Value |
+|---|---|
+| Clustering threshold | **0.6** — the only value correct on both reference samples (DECISIONS D29) |
+| Speed | 10–12× real time, CPU, one thread pair |
+| Footprint | ~19 MB of wheels (opt-in extra) + ~37 MB of models, no Hugging Face account |
+| 2-speaker reference | 2 speakers ✅ |
+| 4-speaker reference | 4 speakers ✅ at 0.6 |
+| Hebrew / real meeting audio | **unmeasured** |
+
 ## Measurements still outstanding
 
 | Measurement | Closes | Command |
@@ -85,3 +100,4 @@ by default. Nothing else is skipped.
 | SAPI speech fixtures (T1) — fixture generation and caching, VAD on speech, real transcription, English detection | 5 | Windows: `uv run pytest -m windows` (the last two also need a local ASR model) |
 | `test_windows_dll_dirs_registered` — `add_dll_directory` **and** the PATH prepend | 1 | Windows: `uv run pytest -m windows` |
 | `live_api` — Hebrew tokens-per-word, cache hit on window 2, live smoke, cross-language summary, Ollama | 5 (deselected) | `uv run pytest -m live_api` with an Anthropic key, or `python -m app.selftest live-llm` |
+| ONNX diarization — well-formed turns, real speaker separation | 2 | `uv sync --extra diarization`, download the models, then `MA_DIARIZATION_MODELS=<dir> uv run pytest -q tests/e2e/test_diarization_onnx.py` |

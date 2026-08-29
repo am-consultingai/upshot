@@ -9,7 +9,9 @@ from typing import Any
 from app import glossary as glossary_module
 from app import meta
 from app.asr.backend import AsrBackend, Segment
+from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
 from app.asr.language import resolve_language
+from app.audio.vad import read_wav
 from app.audio.writer import ChunkRecord, recover
 from app.log import get
 from app.pipeline.artifacts import up_to_date
@@ -117,6 +119,8 @@ def run(ctx: StageContext) -> None:
         if chunk_segments:
             previous_sentence = chunk_segments[-1].text[-200:]
 
+    segments = _diarize(ctx, segments, records)
+
     payload: dict[str, Any] = {
         "version": 1,
         "language": decision.language,
@@ -131,11 +135,57 @@ def run(ctx: StageContext) -> None:
         language=decision.language,
         language_conf=decision.confidence,
         asr=_describe(backend),
+        **({"diarization": ctx.metrics["diarization"]} if "diarization" in ctx.metrics else {}),
     )
     # ASR and the LLM are never resident together (DESIGN.md §20.4).
     backend.unload()
     ctx.metrics["segments"] = len(segments)
     ctx.metrics["language"] = decision.language
+
+
+def _diarize(
+    ctx: StageContext, segments: list[Segment], records: list[ChunkRecord]
+) -> list[Segment]:
+    """Split THEM into THEM_1/2/3 over the whole track, when diarization is enabled.
+
+    Diarizing per chunk would be worthless: the speaker ids would not agree across chunk
+    boundaries. So the loopback track is reassembled on the meeting's timeline (gaps
+    become silence) and clustered once.
+    """
+    from app.asr.diarize import concat_track, make_diarizer, speaker_count
+
+    diarizer = make_diarizer(ctx.config)
+    if diarizer is None:
+        return segments
+    rate = ctx.config.sample_rate
+    chunks: list[tuple[float, Any]] = []
+    for record in sorted(records, key=lambda r: r.seq):
+        if record.track != "them":
+            continue
+        wav = ctx.folder / "audio" / record.file
+        if not wav.exists():
+            continue
+        pcm, chunk_rate = read_wav(wav)
+        if chunk_rate != rate:  # pragma: no cover - chunks are written at the storage rate
+            continue
+        chunks.append((record.t0_ms / 1000.0, pcm))
+    if not chunks:
+        return segments
+    track = concat_track(chunks, rate)
+    minutes = len(track) / rate / 60
+    if minutes > LONG_TRACK_MINUTES:
+        log.warning("diarizing %.0f minutes in one pass; this is memory-hungry", minutes)
+    ctx.checkpoint()
+    turns = diarizer.diarize(track, rate)
+    diarizer.unload()
+    speakers = speaker_count(turns)
+    log.info("diarization found %d speaker(s) in %d turn(s)", speakers, len(turns))
+    ctx.metrics["diarization"] = {
+        "backend": diarizer.name,
+        "speakers": speakers,
+        "turns": len(turns),
+    }
+    return assign_speakers(segments, turns)
 
 
 def _describe(backend: AsrBackend) -> dict[str, Any]:
