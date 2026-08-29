@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type Locale } from "../i18n";
+import ProviderSettings from "../components/ProviderSettings";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -86,6 +87,8 @@ export default function Settings() {
           </option>
         ))}
       </select>
+
+      <ProviderSettings />
 
       <div className="mt-4">
         <button

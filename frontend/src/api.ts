@@ -46,6 +46,15 @@ export interface Status {
   now: string;
 }
 
+export interface LlmProvider {
+  id: string;
+  label: string;
+  needs: string;
+  ready: boolean;
+  console?: string;
+  detail?: string;
+}
+
 export interface DetectorEvent {
   id: number;
   at: string;
@@ -115,6 +124,24 @@ export const api = {
     request<{ config: Record<string, unknown>; warnings: string[] }>("/api/settings", {
       method: "PUT",
       body: JSON.stringify({ values }),
+    }),
+  llmStatus: () =>
+    request<{ active: string; providers: LlmProvider[] }>("/api/llm/status"),
+  secretStatus: () => request<{ secrets: Record<string, boolean> }>("/api/settings/secrets"),
+  putSecrets: (values: Record<string, string>) =>
+    request<{ secrets: Record<string, boolean> }>("/api/settings/secrets", {
+      method: "PUT",
+      body: JSON.stringify({ values }),
+    }),
+  llmTest: (provider: string) =>
+    request<{ provider: string; ok: boolean; model?: string; error?: string }>("/api/llm/test", {
+      method: "POST",
+      body: JSON.stringify({ provider }),
+    }),
+  llmSignin: () =>
+    request<{ launched: boolean; command: string }>("/api/llm/signin", {
+      method: "POST",
+      body: JSON.stringify({}),
     }),
   detectorEvents: () => request<{ events: DetectorEvent[] }>("/api/detector/events?limit=50"),
   audioUrl: (id: string, track: string) => `/api/meetings/${id}/audio?track=${track}`,

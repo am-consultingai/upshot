@@ -13,7 +13,8 @@ from typing import Any, Protocol, runtime_checkable
 
 from app.config import Config
 from app.errors import PermanentError, RecoverableError
-from app.llm.schema import NOTES_SCHEMA, ValidationError, validate
+from app.llm.repair import complete_with_repair
+from app.llm.schema import NOTES_SCHEMA, validate
 from app.log import get
 
 log = get(__name__)
@@ -235,9 +236,8 @@ class OllamaClient:
         max_tokens: int = 16000,
     ) -> LlmResult:
         system_text = "\n\n".join(str(block.get("text", "")) for block in system_blocks)
-        message = user
-        last_error = ""
-        for attempt in range(self.max_repairs + 1):
+
+        def send(message: str) -> str:
             payload = {
                 "model": self.model,
                 "format": "json",
@@ -249,26 +249,12 @@ class OllamaClient:
                 ],
             }
             self.requests.append(payload)
-            raw = self._post(payload)
-            try:
-                data = json.loads(raw)
-                validate(data, schema)
-            except (ValueError, ValidationError) as exc:
-                last_error = str(exc)
-                log.warning(
-                    "local model returned invalid output (attempt %d): %s", attempt + 1, exc
-                )
-                message = (
-                    f"{user}\n\nYour previous answer was rejected: {last_error}\n"
-                    "Return only JSON that satisfies the schema."
-                )
-                continue
-            return LlmResult(data=data, model=self.model, attempts=attempt + 1)
-        raise PermanentError(
-            f"local model could not produce schema-valid JSON after "
-            f"{self.max_repairs + 1} attempts: {last_error}",
-            category="schema",
+            return self._post(payload)
+
+        data, attempts = complete_with_repair(
+            send, user, schema, max_repairs=self.max_repairs, provider=self.name
         )
+        return LlmResult(data=data, model=self.model, attempts=attempts)
 
     def count_tokens(self, text: str) -> int:
         # No tokenizer endpoint: a conservative Hebrew-aware estimate.
@@ -306,7 +292,12 @@ class FakeLlm:
         max_tokens: int = 16000,
     ) -> LlmResult:
         self.calls.append({"system": list(system_blocks), "user": user, "schema": schema})
-        reduced = schema is not NOTES_SCHEMA and "title" not in schema.get("properties", {})
+        properties = schema.get("properties", {})
+        if "title" not in properties and "topics" not in properties:
+            # An arbitrary small schema — the /api/llm/test probe uses one. Satisfy it
+            # rather than returning meeting notes that would fail validation.
+            return LlmResult(data=_minimal_for(schema), model="fake")
+        reduced = schema is not NOTES_SCHEMA and "title" not in properties
         lines = [line for line in user.splitlines() if line.strip()]
         first = lines[0][:110] if lines else "Meeting"
         # The reduce step is handed JSON, not transcript text: read the meeting out of it
@@ -384,6 +375,27 @@ class FakeLlm:
         return int(len(text) / self.chars_per_token) + 1
 
 
+def _minimal_for(schema: dict[str, Any]) -> dict[str, Any]:
+    """The smallest object satisfying a schema's required properties."""
+    defaults: dict[str, Any] = {
+        "boolean": True,
+        "string": "ok",
+        "integer": 1,
+        "number": 1.0,
+        "array": [],
+        "object": {},
+    }
+    properties = schema.get("properties", {})
+    out: dict[str, Any] = {}
+    for name in schema.get("required", []):
+        spec = properties.get(name, {})
+        kind = spec.get("type", "string")
+        if isinstance(kind, list):
+            kind = kind[0]
+        out[name] = defaults.get(str(kind), "ok")
+    return out
+
+
 def _first_at_ms(text: str) -> int:
     match = re.search(r"\[(\d+):(\d\d)\]", text)
     if not match:
@@ -398,4 +410,16 @@ def make_client(config: Config, *, sensitive: bool = False) -> LlmClient:
         return FakeLlm()
     if provider == "ollama":
         return OllamaClient(config)
+    if provider == "openai":
+        from app.llm.openai_client import OpenAiClient
+
+        return OpenAiClient(config)
+    if provider == "gemini":
+        from app.llm.gemini_client import GeminiClient
+
+        return GeminiClient(config)
+    if provider == "claude-subscription":
+        from app.llm.claude_cli import ClaudeCliClient
+
+        return ClaudeCliClient(config)
     return AnthropicClient(config)

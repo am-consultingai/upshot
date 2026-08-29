@@ -38,6 +38,11 @@ def main() -> int:
     )
     config.set("data_root", str(home / "meetings"))
     config.set("server.port", port)
+    # Belt and braces: an accidental provider call in an e2e run must fail locally
+    # rather than leave the machine. Discovered when the Test button reached Google.
+    config.set("llm.gemini_base_url", "http://127.0.0.1:9")
+    config.set("llm.openai_base_url", "http://127.0.0.1:9")
+    config.set("llm.ollama_url", "http://127.0.0.1:9")
 
     services = build(config, with_worker=True, with_recorder=True)
     services.auth.session_secret = os.environ.get("MA_E2E_SESSION", services.auth.session_secret)

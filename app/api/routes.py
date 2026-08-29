@@ -48,6 +48,14 @@ class GlossaryPut(BaseModel):
     terms: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class SecretsPut(BaseModel):
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class ProviderPost(BaseModel):
+    provider: str | None = None
+
+
 class IgnorePost(BaseModel):
     process: str
 
@@ -371,6 +379,150 @@ def put_settings(request: Request, body: SettingsPut) -> dict[str, Any]:
     svc.config.save()
     svc.events.publish("settings", changed=sorted(body.values))
     return get_settings(request)
+
+
+# --------------------------------------------------------------------------- llm
+
+
+PROBE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["ok"],
+    "properties": {"ok": {"type": "boolean"}},
+}
+
+
+@router.put("/settings/secrets")
+def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
+    """Write-only. A secret goes to the OS credential store and is never readable back."""
+    from app.config import SECRET_NAMES
+
+    svc = services_of(request)
+    changed: list[str] = []
+    for name, value in body.values.items():
+        if name not in SECRET_NAMES:
+            raise HTTPException(400, f"unknown secret {name!r}")
+        if value:
+            svc.config.secrets.set(name, value)
+        else:
+            svc.config.secrets.delete(name)
+        changed.append(name)
+    svc.events.publish("settings", changed=[f"secret:{name}" for name in sorted(changed)])
+    return secret_status(request)
+
+
+@router.get("/settings/secrets")
+def secret_status(request: Request) -> dict[str, Any]:
+    """Which secrets exist — booleans only, never the values."""
+    from app.config import SECRET_NAMES
+
+    svc = services_of(request)
+    return {"secrets": {name: bool(svc.config.secrets.get(name)) for name in SECRET_NAMES}}
+
+
+@router.get("/llm/status")
+def llm_status(request: Request) -> dict[str, Any]:
+    """What each summarization provider needs, and whether it has it."""
+    from app.llm.claude_cli import ClaudeCliClient
+
+    svc = services_of(request)
+
+    def has(name: str, env: str) -> bool:
+        return bool(svc.config.secret(name, env=env))
+
+    cli = ClaudeCliClient(svc.config).status()
+    providers = [
+        {
+            "id": "anthropic",
+            "label": "Claude (API key)",
+            "needs": "key",
+            "ready": has("anthropic", "ANTHROPIC_API_KEY"),
+            "console": "https://console.anthropic.com/settings/keys",
+        },
+        {
+            "id": "gemini",
+            "label": "Gemini (API key, free tier)",
+            "needs": "key",
+            "ready": has("gemini", "GEMINI_API_KEY"),
+            "console": "https://aistudio.google.com/apikey",
+        },
+        {
+            "id": "openai",
+            "label": "OpenAI (API key)",
+            "needs": "key",
+            "ready": has("openai", "OPENAI_API_KEY"),
+            "console": "https://platform.openai.com/api-keys",
+        },
+        {
+            "id": "claude-subscription",
+            "label": "Claude Code (your own subscription)",
+            "needs": "cli",
+            "ready": cli.installed,
+            "detail": cli.version or cli.detail,
+        },
+        {
+            "id": "ollama",
+            "label": "Local (Ollama)",
+            "needs": "ollama",
+            "ready": True,
+            "detail": str(svc.config.get("llm.ollama_url")),
+        },
+    ]
+    return {"active": str(svc.config.get("llm.provider")), "providers": providers}
+
+
+@router.post("/llm/signin")
+def llm_signin(request: Request) -> dict[str, Any]:
+    """Launch Anthropic's own login. We never see the credential it creates."""
+    import subprocess
+    import sys
+
+    from app.llm.claude_cli import ClaudeCliClient
+
+    svc = services_of(request)
+    client = ClaudeCliClient(svc.config)
+    path = client.resolve()
+    if path is None:
+        raise HTTPException(
+            409,
+            "Claude Code is not installed. Install it, then sign in — the app never "
+            "handles your credentials.",
+        )
+    command = [path]
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(command, creationflags=0x00000010)  # CREATE_NEW_CONSOLE
+            launched = True
+        else:
+            launched = False  # no assumption about which terminal emulator exists
+    except Exception as exc:
+        raise HTTPException(500, f"could not launch Claude Code: {exc}") from exc
+    return {"launched": launched, "command": " ".join(command)}
+
+
+@router.post("/llm/test")
+def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
+    """One tiny real call against the selected provider. Costs a few tokens."""
+    from app.llm.client import make_client, system_blocks
+
+    svc = services_of(request)
+    provider = (body.provider if body else None) or str(svc.config.get("llm.provider"))
+    config = svc.config
+    previous = config.get("llm.provider")
+    config.set("llm.provider", provider)
+    try:
+        client = make_client(config)
+        result = client.complete_json(
+            system_blocks=system_blocks("You answer with JSON only.", None),
+            user='Reply with exactly {"ok": true}',
+            schema=PROBE_SCHEMA,
+            max_tokens=64,
+        )
+        return {"provider": provider, "ok": bool(result.data.get("ok")), "model": result.model}
+    except Exception as exc:
+        return {"provider": provider, "ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+    finally:
+        config.set("llm.provider", previous)
 
 
 # --------------------------------------------------------------------------- detector
