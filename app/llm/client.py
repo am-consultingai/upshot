@@ -309,6 +309,22 @@ class FakeLlm:
         reduced = schema is not NOTES_SCHEMA and "title" not in schema.get("properties", {})
         lines = [line for line in user.splitlines() if line.strip()]
         first = lines[0][:110] if lines else "Meeting"
+        # The reduce step is handed JSON, not transcript text: read the meeting out of it
+        # so the fake's title looks like a title rather than like a serialized payload.
+        if user.lstrip().startswith("{"):
+            try:
+                payload = json.loads(user)
+            except ValueError:
+                payload = {}
+            meeting = payload.get("meeting", {}) if isinstance(payload, dict) else {}
+            windows = payload.get("windows", []) if isinstance(payload, dict) else []
+            points = [
+                point
+                for window in windows
+                for topic in window.get("topics", [])
+                for point in topic.get("points", [])
+            ]
+            first = str(meeting.get("title") or (points[0] if points else "Meeting"))[:110]
         at_ms = _first_at_ms(user)
         topics = [
             {

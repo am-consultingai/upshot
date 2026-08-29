@@ -104,16 +104,42 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     return app
 
 
-def main() -> int:  # pragma: no cover - process entry point
+def start_background(services: Services) -> None:
+    """The worker and the detector. Without these the app records and then sits there."""
+    if services.worker is not None:
+        services.worker.start()
+        log.info("worker started (policy %s)", services.worker.policy)
+    detector = services.detector
+    if detector is not None and str(services.config.get("detection.mode", "shadow")) != "off":
+        detector.start()
+        log.info("detector started in %s mode", services.config.get("detection.mode"))
+
+
+def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
+    """Headless: the server, the worker and the detector, without the tray icon.
+
+        python -m app.main
+
+    The tray entry point (``python -m app.tray``) is this plus the icon, and is what the
+    installer runs. Use this one on a machine with no desktop, or to see the log.
+    """
     setup()
     services = build()
     app = create_app(services)
     from app.server import LocalServer
 
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
+    start_background(services)
     token = services.auth.issue_token()
-    log.info("open http://127.0.0.1:%d/?k=%s", services.config.server_port, token)
-    server.run()
+    url = f"http://127.0.0.1:{services.config.server_port}/?k={token}"
+    log.info("open %s", url)
+    print(f"\n  Meeting Agent is running. Open this once to authorize the browser:\n\n  {url}\n")
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        log.info("shutting down")
+    finally:
+        services.close()
     return 0
 
 
