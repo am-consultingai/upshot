@@ -1,5 +1,8 @@
 # Progress
 
+> For a cold read of where the project stands, start with `current-state.md`.
+> For the subscription-vs-API-key question, see `inference-subscription.md`.
+
 One line per phase: status, the command that proved it, date, deviations.
 Statuses: **green** (proved here), **green-linux / windows-pending** (all
 environment-independent tests green; `windows`/`audio_hw`/`gpu` tests written, collected
