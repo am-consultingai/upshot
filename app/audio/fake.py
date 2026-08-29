@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
 import wave
 from collections.abc import Callable
 from pathlib import Path
@@ -44,6 +45,7 @@ class SyntheticCapture:
         wav: Path | None = None,
         loop_wav: bool = True,
         generate_on_read: bool = True,
+        realtime: bool = False,
     ) -> None:
         self.track = track
         self.format = fmt or AudioFormat()
@@ -60,6 +62,10 @@ class SyntheticCapture:
         self._wav: np.ndarray | None = None
         self.loop_wav = loop_wav
         self.generate_on_read = generate_on_read
+        # Tests want audio as fast as the machine allows; a person running the app with
+        # `audio.capture = "synthetic"` wants a minute of audio to take a minute.
+        self.realtime = realtime
+        self._next_block_at: float | None = None
         if wav is not None:
             self._wav = self._load_wav(wav)
         self.running = False
@@ -110,11 +116,25 @@ class SyntheticCapture:
         except queue.Empty:
             pass
         if self.running and self.generate_on_read:
+            if self.realtime:
+                self._pace()
             return self.block()
         try:
             return self.frames.get(timeout=timeout)
         except queue.Empty:
             return None
+
+    def _pace(self) -> None:
+        """Hold one block's worth of wall time, so synthetic audio runs at 1×."""
+        interval = self.block_frames / self.format.rate
+        now = time.monotonic()
+        if self._next_block_at is None:
+            self._next_block_at = now + interval
+            return
+        delay = self._next_block_at - now
+        if delay > 0:
+            time.sleep(delay)
+        self._next_block_at = max(now, self._next_block_at) + interval
 
     # -- generation
 
