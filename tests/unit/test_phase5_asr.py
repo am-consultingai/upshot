@@ -428,3 +428,66 @@ def test_detect_english_fixture(tmp_path: Path) -> None:
     assert language == "en"
     assert confidence >= 0.6, f"confidence {confidence:.2f} is below the one-chunk bar"
     backend.unload()
+
+
+# ------------------------------------------------------------------ configured CUDA dir
+
+
+def test_configured_cuda_dir_is_used(tmp_path: Path) -> None:
+    """DESIGN.md §2: the app adopts an existing CUDA directory rather than downloading."""
+    cuda = tmp_path / "Scripts"
+    cuda.mkdir()
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll"):
+        (cuda / name).touch()
+
+    # without the config key the probe cannot see it
+    assert cuda_library_dirs(app_home=tmp_path / "home", search_path=[], system_dirs=()) == []
+
+    # with it, it is found first
+    found = cuda_library_dirs(
+        configured=str(cuda), app_home=tmp_path / "home", search_path=[], system_dirs=()
+    )
+    assert found == [cuda]
+
+
+def test_configured_cuda_dir_selects_the_gpu(tmp_path: Path) -> None:
+    cuda = tmp_path / "Scripts"
+    cuda.mkdir()
+    (cuda / "cublas64_12.dll").touch()
+    config = default_config()
+    config.set("asr.cuda_dir", str(cuda))
+    config.set("asr.compute_type", "int8")  # Pascal: DESIGN.md §20.5
+    env: dict[str, str] = {}
+    device, compute, registered = probe_device(
+        config, app_home=tmp_path / "home", search_path=[], system_dirs=(), environ=env
+    )
+    assert device == "cuda"
+    assert compute == "int8"
+    assert str(cuda) in registered
+    assert "CUDA_VISIBLE_DEVICES" not in env, "the GPU must not be disabled"
+
+
+def test_configured_cuda_dir_without_cublas_is_ignored(tmp_path: Path) -> None:
+    """A wrong path degrades to CPU with a warning, never a crash mid-meeting."""
+    empty = tmp_path / "not-cuda"
+    empty.mkdir()
+    config = default_config()
+    config.set("asr.cuda_dir", str(empty))
+    device, compute, registered = probe_device(
+        config, app_home=tmp_path / "home", search_path=[], system_dirs=(), environ={}
+    )
+    assert (device, compute, registered) == ("cpu", "int8", [])
+
+
+def test_configured_cuda_dir_accepts_a_list(tmp_path: Path) -> None:
+    first, second = tmp_path / "a", tmp_path / "b"
+    for folder in (first, second):
+        folder.mkdir()
+        (folder / "cublas64_12.dll").touch()
+    found = cuda_library_dirs(
+        configured=[str(first), str(second)],
+        app_home=tmp_path / "home",
+        search_path=[],
+        system_dirs=(),
+    )
+    assert found == [first, second]

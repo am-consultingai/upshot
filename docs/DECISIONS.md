@@ -383,3 +383,25 @@ the recommended no-payment-method option in the UI.
    back until the round-trip finished — Playwright reported *"clicking the checkbox did not
    change its state"*, which is exactly what a user on a slow machine would see. Selection
    is now optimistic and settles on the response.
+
+## D32 — `asr.cuda_dir` implemented; it was promised by the design and missing
+`DESIGN.md` §2 says *"The app takes a `model_path` and a `cuda_dir` in config, so first run
+can point at these and skip a 3 GB download"*, and `TECHNICAL-DESIGN.md` §17 step 2 repeats
+it. `model_path` was built in Phase 5; **`cuda_dir` never existed** — `cuda_library_dirs()`
+searched only the app home, three hard-coded toolkit paths, and `nvidia-*` wheels on
+`sys.path`.
+
+Found when the user pointed at a real machine: cuBLAS 12 and cuDNN 9 sitting in
+`…\temp\Scripts`, which none of those three searches covers. The failure mode is the bad
+kind — no error, just `CUDA_VISIBLE_DEVICES=""` and a 3.09 GB large-v3 model running on
+CPU int8, several times slower, with nothing in the UI to say why.
+
+`asr.cuda_dir` now takes a path or a list, is searched **first**, and warns rather than
+failing when the folder holds no cuBLAS. Four tests cover it, including that a wrong path
+degrades to CPU instead of crashing mid-meeting.
+
+**Also recorded:** `supported_compute_type()` prefers `float16`, which is wrong for a
+GTX 1080 — Pascal has no fast FP16, and `DESIGN.md` §20.5 specifies int8 for that card.
+Rather than adding GPU-generation detection, the Windows launcher sets
+`asr.compute_type = "int8"` explicitly with a comment. Automatic detection is the better
+fix if a second GPU generation ever matters.

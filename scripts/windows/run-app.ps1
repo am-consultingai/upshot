@@ -15,6 +15,10 @@
 .PARAMETER ModelPath
   The ivrit-ai CTranslate2 model folder (the one containing model.bin).
 
+.PARAMETER CudaDir
+  A folder holding cuBLAS and cuDNN DLLs. Without it CTranslate2 silently runs on the CPU,
+  which on a 3 GB large-v3 model is several times slower.
+
 .PARAMETER Provider
   Summarizer: fake (default, no key), anthropic, gemini, openai, ollama,
   claude-subscription.
@@ -30,6 +34,7 @@
 [CmdletBinding()]
 param(
     [string] $ModelPath = "D:\deprecated_project\Learning Managers\temp\Scripts\ivrit_model",
+    [string] $CudaDir   = "D:\deprecated_project\Learning Managers\temp\Scripts",
     [string] $Provider = "fake",
     [string] $HomeDir = "$env:LOCALAPPDATA\meeting-agent",
     [int]    $Port = 8000,
@@ -77,6 +82,9 @@ try {
 
     $venvPython = Join-Path $root ".venv-win\Scripts\python.exe"
     if (-not (Test-Path $venvPython)) {
+        # uv fetches its own Python on purpose. An Anaconda install cannot serve here:
+        # this project needs 3.13 and Anaconda currently ships 3.12, and mixing conda's
+        # DLL search order with CTranslate2's CUDA loading is a known source of grief.
         $plan += "Python 3.13 and the dependencies (~400 MB, one time)"
     }
 
@@ -92,8 +100,14 @@ try {
 
     # Without CUDA libraries CTranslate2 runs on the CPU, which is several times slower.
     $haveNvidia = [bool] (Get-Command nvidia-smi -ErrorAction SilentlyContinue)
+    $cudaOk = $false
     $cudaWanted = $false
-    if ($haveNvidia) {
+    if ($CudaDir -ne "" -and (Test-Path $CudaDir)) {
+        $cudaOk = [bool] (Get-ChildItem -Path $CudaDir -Filter "cublas*" `
+            -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if (-not $cudaOk) { Write-Warn "no cuBLAS DLLs in: $CudaDir" }
+    }
+    if ($haveNvidia -and -not $cudaOk) {
         $searchPaths = @("$HomeDir\cuda")
         if ($env:CUDA_PATH) { $searchPaths += $env:CUDA_PATH }
         $cudaProbe = Get-ChildItem -Path $searchPaths -Recurse -Filter "cublas*" `
@@ -162,6 +176,13 @@ try {
     if ($modelOk) {
         $env:MA_ASR__MODEL_PATH = '"' + ($ModelPath -replace '\\', '\\') + '"'
         Write-Good "model: $ModelPath"
+    }
+    if ($cudaOk) {
+        $env:MA_ASR__CUDA_DIR = '"' + ($CudaDir -replace '\\', '\\') + '"'
+        # A GTX 1080 is Pascal: it has no fast float16, so int8 is the right compute type
+        # (DESIGN.md section 20.5). Remove this line on newer hardware.
+        $env:MA_ASR__COMPUTE_TYPE = '"int8"'
+        Write-Good "CUDA: $CudaDir (int8, suits Pascal)"
     }
 
     switch ($Provider) {
