@@ -301,7 +301,7 @@ def _asr(args: argparse.Namespace) -> list[Check]:
 
     cfg = Config.load()
     kind = str(cfg.get("asr.backend", "local"))
-    cuda_dirs = cuda_library_dirs()
+    cuda_dirs = cuda_library_dirs(configured=cfg.get("asr.cuda_dir"))
     choice = resolve(cfg, device="cuda" if cuda_dirs else "cpu")
     checks = [
         Check("asr_backend", True, f"asr.backend = {kind}", {"backend": kind}),

@@ -57,12 +57,25 @@ def _has_cublas(directory: Path) -> bool:
 
 def cuda_library_dirs(
     *,
+    configured: Sequence[str] | str | None = None,
     app_home: Path | None = None,
     search_path: Sequence[str] | None = None,
     system_dirs: Sequence[str] = SYSTEM_CUDA_DIRS,
 ) -> list[Path]:
-    """Every directory holding a cuBLAS the runtime could load."""
+    """Every directory holding a cuBLAS the runtime could load.
+
+    A configured ``asr.cuda_dir`` wins: it is the user saying "the libraries are here",
+    which is the whole point of being able to adopt an existing install.
+    """
     found: list[Path] = []
+    if configured:
+        entries = [configured] if isinstance(configured, str) else list(configured)
+        for entry in entries:
+            candidate = Path(str(entry)).expanduser()
+            if _has_cublas(candidate):
+                found.append(candidate)
+            else:
+                log.warning("asr.cuda_dir has no cuBLAS in it: %s", candidate)
     home = app_home if app_home is not None else paths.app_home()
     bin_name = "bin" if sys.platform == "win32" else "lib"
     nvidia_root = home / "cuda" / "nvidia"
@@ -126,7 +139,12 @@ def probe_device(
     env = environ if environ is not None else os.environ
     configured_device = str(config.get("asr.device", "auto")) if config else "auto"
     configured_compute = str(config.get("asr.compute_type", "auto")) if config else "auto"
-    dirs = cuda_library_dirs(app_home=app_home, search_path=search_path, system_dirs=system_dirs)
+    dirs = cuda_library_dirs(
+        configured=config.get("asr.cuda_dir") if config else None,
+        app_home=app_home,
+        search_path=search_path,
+        system_dirs=system_dirs,
+    )
     if configured_device == "cpu" or (configured_device == "auto" and not dirs):
         env["CUDA_VISIBLE_DEVICES"] = ""
         compute = configured_compute if configured_compute != "auto" else "int8"
