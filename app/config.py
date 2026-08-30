@@ -53,6 +53,10 @@ DEFAULTS: dict[str, Any] = {
         "default_language": "he",
         "detect_min_confidence": 0.6,
         "model_path": None,
+        # An existing CUDA library folder (DESIGN.md §2). Without this the probe only
+        # looks in the app home, the standard toolkit paths and the nvidia-* wheels, so a
+        # hand-placed cuBLAS/cuDNN is invisible and transcription silently runs on CPU.
+        "cuda_dir": None,
         "model_repo": None,
         "compute_type": "auto",
         "device": "auto",

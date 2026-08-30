@@ -70,7 +70,7 @@ def choose_profile(config: Config) -> tuple[str, str]:
     from app.asr.models import resolve
 
     configured = config.profile
-    device = "cuda" if cuda_library_dirs() else "cpu"
+    device = "cuda" if cuda_library_dirs(configured=config.get("asr.cuda_dir")) else "cpu"
     profile = (
         configured if configured != "auto" else ("gpu-live" if device == "cuda" else "cpu-deferred")
     )
