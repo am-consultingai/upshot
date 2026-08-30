@@ -30,6 +30,29 @@ directly and the sequence below can be driven from either side.
 
 ---
 
+## 0. The shortcut: double-click one file
+
+For testing real recording and transcription, everything below is wrapped up in:
+
+```
+scripts\windows\test-recording.cmd
+```
+
+Double-click it. It checks for `uv`, installs the dependencies, builds the UI if needed,
+runs the T2 loopback probe **and the dual-stream test** (the project's stop condition),
+reports which ASR device and model were chosen, then starts the app and opens the browser.
+The summarizer is left as a fake, so no API key is needed — this tests audio and words.
+
+```powershell
+# to skip the ~1.6 GB model download, point it at a model you already have
+powershell -ExecutionPolicy Bypass -File scripts\windows\test-recording.ps1 `
+  -ModelPath 'D:\models\ivrit-ai-whisper-large-v3-ct2'
+```
+
+Recordings land in `%LOCALAPPDATA%\meeting-agent-test\meetings`.
+
+---
+
 ## 1. One-time setup on Windows
 
 ```powershell
