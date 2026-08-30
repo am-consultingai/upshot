@@ -20,3 +20,4 @@ frontend/.vite/
 tests/fixtures/*.wav
 reports/
 .demo/
+.venv-win/
