@@ -1,186 +1,162 @@
 # Next session — operating brief
 
-You are implementing the Meeting Agent from a completed design. **Everything you need is
-in `docs/`. Nothing is left to decide.** Build it.
+The application is **built and running on Windows**. This is no longer an implementation
+session; it is a continuation. Read `docs/current-state.md` first — it is the accurate
+picture as of 2026-09-03, including what is not proved and what is broken.
 
 ---
 
-## 1. Mission
+## 1. Where things stand
 
-Implement `docs/EXECUTION-PLAN.md` in full — Phase 0 through Phase 13, then the milestone
-gates in Phase 14 — until every test in every phase passes.
+Phases 0–14 are complete. The app records two real tracks on the author's Windows machine,
+transcribes Hebrew locally on the GPU, assembles, renders and files. 420 Python tests, 31
+vitest, 26 Playwright, `ruff` and `mypy --strict` clean.
 
-**Work autonomously. Do not ask for permission. Do not stop to confirm decisions. Do not
-pause between phases for approval.** The design is settled; the plan is the contract. When
-something is ambiguous, the answer is in the docs; if it genuinely is not, pick the option
-most consistent with the surrounding design, record the choice in `docs/DECISIONS.md`, and
-keep going.
+Since the last brief, items 1 and 2 of the queue below were built: **echo cancellation**
+(D37) and the **retention sweep** (D38). Both have now been **run on Windows** against
+real audio and the real GPU model — driven directly, not through the UI. Running the sweep
+there found a delete that reported success while leaving half the audio on disk; see D38.
+
+The single most important fact: **almost every bug worth fixing in the last few days was
+found by running it on Windows, not by the test suite.** Ten such bugs are listed in
+`current-state.md` §3. Prefer running the real thing over adding more tests against fakes.
 
 ---
 
-## 2. Read first, in this order
+## 2. Environment — this changed
 
-| Doc | Why |
+**Windows interop is available from this WSL shell.** The previous brief said it was not.
+It is:
+
+```bash
+/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "..."
+```
+
+That means you can, from here:
+
+- inspect and stop Windows processes (`Get-CimInstance Win32_Process`, `Stop-Process`)
+- check what holds a port (`Get-NetTCPConnection`)
+- **read the Windows crash log** — `Get-WinEvent` with `Id=1000` gives the faulting module
+  and exception code, which is how the PortAudio access violation was identified
+
+**An isolated instance costs one environment variable.** `MA_HOME` overrides the config
+file, the database, the data root and the log directory together, so a whole second
+instance can be pointed at a scratch folder and driven from the launcher's venv without
+going near the real library. Use it before running anything that deletes.
+
+**Read the app's own logs directly. Do not ask the user to paste them:**
+
+```
+/mnt/c/Users/am/AppData/Local/meeting-agent/logs/app.log        the app's log
+/mnt/c/Users/am/AppData/Local/meeting-agent/console.err.log     the same, plus stdout
+/mnt/c/Users/am/AppData/Local/meeting-agent/meetings/<id>/      audio, transcript, summary
+/mnt/c/Users/am/AppData/Local/meeting-agent/app_config.json     saved settings
+```
+
+Recordings are real audio: measure them with numpy rather than reasoning about them. Peak,
+RMS and FFT cross-correlation have settled several arguments in this project that opinion
+could not.
+
+### The author's machine
+
+| | |
 |---|---|
-| `docs/EXECUTION-PLAN.md` | **The contract.** Phases, deliverables, exact tests, exit criteria, operating rules |
-| `docs/TECHNICAL-DESIGN.md` | The spec: threading, schema, algorithms, API, config |
-| `docs/DESIGN.md` | Architecture and the *why* behind constraints you must not violate |
-| `docs/DETECTION.md` | The detection mechanism implemented in Phase 12 |
-| `docs/STACK.md` | Exact dependencies and versions; what is deliberately not used |
-| `docs/SECURITY-AND-AUTH.md` | §1 and §§9–11 apply to this build. §§2–8 are post-V1 reference — **ignore them** |
-| `docs/PRIOR-ART.md`, `docs/PRODUCT-PATH.md` | Context only. Do not act on these |
-
-Read all of them before writing code. They are ~3,000 lines and they answer nearly every
-question you will have.
+| Model | `D:\deprecated_project\Learning Managers\temp\Scripts\ivrit_model` (ivrit-ai large-v3, CT2) |
+| CUDA libs | `D:\deprecated_project\Learning Managers\temp\Scripts` — cuBLAS 12 + cuDNN 9 |
+| GPU | Pascal, so `compute_type=int8` — **not** float16 |
+| Audio | Voicemeeter. The microphone endpoint carries system audio, which is the crosstalk problem |
+| Port 8000 | taken by a Docker container (`billers4-backend-1`). The launcher moves to 8010 |
+| Repo | on `\\wsl.localhost\...`, read by Windows over the bridge; the runtime lives on the Windows disk |
 
 ---
 
-## 3. Non-negotiables
+## 3. How the user wants to work
 
-These are invariants, not preferences. Violating one is a defect even if tests pass.
+These were stated explicitly. They are not preferences to re-litigate.
 
-1. **Recording is sacred.** Audio goes to disk continuously as chunk files. A meeting must be reconstructible from disk with the app dead. Never buffer a whole meeting in RAM.
-2. **Audio callbacks copy bytes and return.** No numpy, no file I/O, no logging inside a PortAudio callback. Ever.
-3. **A chunk does not exist until its manifest line is fsynced.** The durability order in `TECHNICAL-DESIGN.md` §4.4 is asserted by a test; do not "optimize" it.
-4. **No Google packages, no OAuth, no calendar.** V1 ships with zero integrations. `test_no_google_imports` enforces this.
-5. **ASR and LLM are never loaded simultaneously.** `unload()` before the summarize stage.
-6. **Fakes are selected by config, never by monkeypatching inside a test body.** If a test needs to patch internals, the seam is wrong — move the seam.
-7. **Never weaken an assertion to make it pass.** If an assertion is genuinely wrong, change it deliberately and record why in the commit message and in `docs/DECISIONS.md`.
-8. **Do not reference or import from any sibling project folder.** This repo is self-contained.
-9. **Do not add scope.** No features that are not in the plan. Post-V1 items stay unbuilt.
+- **Ctrl+C in the launcher stops everything.** When a change needs a restart, say so and
+  move on. Do not check for stray processes, do not ask permission to stop them.
+- **Never publish an Artifact** unless explicitly asked (global instruction).
+- **No `Co-Authored-By` or Claude/Anthropic attribution** in commit messages, ever.
+- Report what was measured, not what is expected. If something has never been executed,
+  say so plainly rather than implying coverage.
 
 ---
 
-## 4. Environment — read this before Phase 0
+## 4. The work queue
 
-The primary working directory is a **WSL2 Ubuntu** shell. The product is a **Windows**
-application. That split is the single most important operational fact in this session.
+In the order I would take it.
 
-**First action: determine where you can execute.**
+1. **Record a live meeting with both features on.** They have run on Windows against
+   audio already on disk; what has not happened is a meeting recorded, cancelled and
+   swept while the app runs normally. Record with the Voicemeeter bus selected (the
+   default fault on this machine) and check that `meta.json` gains an `echo` block near
+   gain 1.7 / delay 1683, that the far side appears **once** in `transcript.md`, and that
+   the mix plays without the slap echo. Then listen for the timestamp cost in
+   `current-state.md` §6.1 — click a turn that follows a stretch of far-side-only audio
+   and see how early it lands.
+2. **A real LLM call.** Every summary so far is placeholder text. `-Provider gemini`,
+   `anthropic`, or `claude-subscription` (which uses the signed-in Claude Code CLI and
+   holds no credential). This is the last major path that has never executed.
+3. **Track skew** — measure before correcting. See `current-state.md` §6.2. D37 narrowed
+   this: the offset does not drift *within* a recording at five-second resolution. What
+   is unmeasured is an hour rather than half a minute.
+4. **First-run setup UI**, then the frozen build and installer.
+5. **Settings for the keys that now delete things.** `retention.audio_days` deletes user
+   recordings and is not in the UI.
+
+To run either of them on Windows without touching the real library, set `MA_HOME` to a
+scratch folder — it overrides the config, the database, the data root and the logs
+together — and drive the stage or the sweep from the venv the launcher built at
+`%LOCALAPPDATA%\meeting-agent-win\venv`. That is how D37 and D38 were verified, and it is
+much faster than recording a meeting each time.
+
+---
+
+## 5. Verification
 
 ```bash
-# Is Windows interop available from this shell?
-ls /proc/sys/fs/binfmt_misc/WSLInterop 2>/dev/null && echo INTEROP_ON || echo INTEROP_OFF
+uv run ruff check . && uv run mypy app && uv run pytest -q
+cd frontend && npx tsc --noEmit && npx vitest run && npx playwright test
 ```
 
-### If INTEROP_OFF (the current known state)
-
-`/etc/wsl.conf` has `[interop] appendWindowsPath = false` and the binfmt handler is not
-registered, so this shell **cannot execute Windows binaries**. You can still read and write
-`/mnt/c/...`.
-
-Do this, in order:
-
-1. **Develop in WSL**, running everything not marked `windows` / `audio_hw` / `gpu`. That is the large majority of the plan: Phases 0, 1, 2, 3, 5 (fake + logic), 6, 6b, 7, 8, 9, 10, and all pure-logic tests in 11 and 12.
-2. **Write the Windows-marked tests anyway.** They are part of each phase's deliverable. They must be complete, correct, and collected — just skipped in this environment.
-3. **Enable interop yourself if you can.** Append `enabled = true` under `[interop]` in `/etc/wsl.conf`. It takes effect only after `wsl --shutdown` from Windows, which this shell cannot invoke — so write the exact instruction into `docs/windows-run.md` and continue.
-4. **Produce `docs/windows-run.md`** — the exact command sequence to run the Windows-only gates from a Windows terminal, with expected output. Keep it current as phases land.
-5. **Do not treat a skip as a pass.** The final report must state exactly which gates are green, which are skipped-for-environment, and what command closes each one.
-
-### If INTEROP_ON
-
-Run the full suite, including `windows`, `audio_hw`, and `gpu` markers, via the Windows
-Python interpreter (`/mnt/c/Users/am/AppData/Local/Programs/Python/Python313/python.exe`).
-Then everything in the plan is achievable in this session and "done" means *all* of it.
+Playwright takes ~2.5 minutes; run it in the background and do something else.
 
 ---
 
-## 5. Execution order
+## 6. Traps this project has already fallen into
 
-Follow `docs/EXECUTION-PLAN.md` phase by phase. Do not reorder, with one exception noted
-below.
+Each of these cost real time. They are not hypothetical.
 
-```
-Phase 0   skeleton + the four self-testing techniques   ← everything depends on this
-Phase 1   config, paths, DB, migrations
-Phase 2   state machine, job queue, worker
-Phase 3   audio, synthetic only (no hardware)
-Phase 4   audio on real hardware — THE SPIKE  ← see §6
-Phase 5   ASR backends
-Phase 6   assembly
-Phase 6b  enrichment seams (no integrations)
-Phase 7   LLM + summarization
-Phase 8   rendering + delivery              → M0 gate
-Phase 9   HTTP API
-Phase 10  frontend
-Phase 11  tray, notifications, single instance
-Phase 12  detection                          → M2 gate
-Phase 13  packaging + first run
-Phase 14  milestone gates M0, M1, M2
-```
-
-**The one permitted reorder:** if you are INTEROP_OFF, Phase 4 cannot execute. Implement it
-fully, mark its tests, and continue to Phase 5. Do not let it block the other twelve phases.
-
-**Every phase ends with:**
-
-```bash
-uv run ruff check . && uv run mypy app && uv run pytest -q && uv run python -m app.selftest all
-```
-
-A phase is done when that line is green — not when the code looks finished.
+- **`pkill -f "app.main"` kills your own shell**, because the pattern appears in its own
+  command line. Use `[a]pp[.]main`.
+- **SSE cannot be tested through `TestClient`** — it deadlocks (D20). Use the `serve()`
+  helper in `tests/fixtures/api.py`, which runs a real uvicorn socket.
+- **Never `await` in a `finally` that runs during cancellation.** A closing browser cancels
+  the task and the await raises before your cleanup runs.
+- **React effects must not depend on `t` or anything else recreated each render.** One such
+  dependency reopened the microphone four times a second.
+- **A Linux listener inside WSL answers `127.0.0.1` on the Windows side** while Windows
+  reports the port as free. Probe by connecting, not by asking the OS.
+- **Regenerate goldens deliberately** with `--update-goldens`, and read the diff. The
+  OpenAPI snapshot changes whenever a route or parameter does.
+- **Do not weaken an assertion to make it pass.** Two fixtures in this repo were wrong and
+  were fixed; both times the test was right and the fixture was lying.
+- **String-slicing a Python file by `t.index("...")` is dangerous** — `self._lock` matches
+  `_lock` and truncates a class. Anchor on something unique.
 
 ---
 
-## 6. The one real stop condition
+## 7. Invariants that still hold
 
-Phase 4 `test_dual_stream_concurrent`: if PyAudioWPatch cannot hold a capture stream and a
-loopback stream simultaneously for an hour, **do not proceed downstream on that assumption.**
+Unchanged from the original brief, and still load-bearing:
 
-This is *not* a reason to stop working. Descend the fallback ladder in
-`docs/TECHNICAL-DESIGN.md` §4.0 — SoundCard (master) → sounddevice/PortAudio → a vendored
-C++ loopback helper piping PCM to stdin — and re-run the phase. Only `app/audio/wasapi.py`
-changes; everything above the `AudioCapture` protocol is unaffected. That is why the
-protocol exists.
-
-Stop and report **only** if the entire ladder is exhausted, or if the environment
-physically cannot run a gate (see §4).
-
----
-
-## 7. Definition of done
-
-**Done means:** every phase's exit criteria met, and the three milestone gates green:
-
-```bash
-python -m app.selftest pipeline    --input tests/fixtures/meeting_10min.wav --report m0.json
-python -m app.selftest capture-e2e --seconds 120                            --report m1.json
-python -m app.selftest detect-e2e                                           --report m2.json
-```
-
-M1 is the one that matters most: it starts a recording through the API, plays a speech
-fixture out the render endpoint for two minutes, stops through the API, and runs the full
-pipeline to `RENDERED` — the whole product proving itself with no human in the loop.
-
-Done is **not**: "the code is written", "the tests would pass on Windows", or "only the
-hardware tests are failing". Report status precisely.
-
----
-
-## 8. Working protocol
-
-- **Track progress in `docs/PROGRESS.md`** — one line per phase: status, the command that proved it, date, and any deviation. Update it as each phase closes, not at the end.
-- **Record every judgment call in `docs/DECISIONS.md`** — what you chose, what the alternatives were, and why. This is how the design docs stay trustworthy.
-- **Commit per phase**, message `phase N: <name>`, body listing the tests that now pass. Do not add `Co-Authored-By` or any Claude/Anthropic attribution.
-- **Write the test in the same change as the code.** A phase's test table is its definition of done, not a follow-up.
-- **Regenerate golden files only with `--update-goldens`**, and review the diff in that change.
-- **Report measurements.** Phases 4, 5 and 7 exist partly to produce numbers other decisions depend on — clock drift, language-detection confidence, Hebrew tokens-per-word. Write them into the selftest report and into `docs/PROGRESS.md`.
-- **When a test fails, fix the code.** Only change the test if the assertion is genuinely wrong, and say so explicitly.
-
----
-
-## 9. Secrets and external calls
-
-- The Anthropic API key comes from `keyring` or `ANTHROPIC_API_KEY`. If neither is present, `live_api`-marked tests skip — that is expected and is not a failure.
-- **`live_api` tests are excluded from the default run.** Never make them a prerequisite for a phase's exit criteria.
-- No test may send real email. `FakeSmtp` (an `aiosmtpd` server on a loopback port) is the only SMTP target in the suite.
-- Nothing in this build talks to Google. If you find yourself reaching for an OAuth flow, you have misread the scope — see §3.4.
-
----
-
-## 10. First actions
-
-1. Read the seven docs in §2.
-2. Run the interop probe in §4 and record the result in `docs/PROGRESS.md`.
-3. Start Phase 0: `pyproject.toml`, the package tree, `app/clock.py`, `app/selftest.py`, and the four self-testing techniques (SAPI fixtures, loopback echo, self-held mic, config-selected fakes). Everything later depends on these existing and working.
-4. Do not stop.
+1. Recording is sacred — audio reaches disk continuously and a meeting must be
+   reconstructible with the app dead. The mechanism changed in D34; the guarantee did not.
+2. Audio callbacks copy bytes and return. No numpy, no I/O, no logging.
+3. Audio does not exist until its manifest line is fsynced. The durability order is
+   asserted by test.
+4. No Google packages, no OAuth, no calendar.
+5. ASR and the LLM are never resident together.
+6. Fakes are chosen by config, never by monkeypatching inside a test body.
+7. Record every judgment call in `docs/DECISIONS.md` — 38 entries and counting.

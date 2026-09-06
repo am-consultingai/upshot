@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from app.asr.backend import AsrBackend
 from app.config import Config
+from app.log import get
+
+log = get(__name__)
 
 
 def make_backend(config: Config) -> AsrBackend:
@@ -11,6 +14,13 @@ def make_backend(config: Config) -> AsrBackend:
     if kind == "fake":
         from app.asr.fake import FakeAsr
 
+        # Its output is plausible Hebrew, so a fake transcript is indistinguishable from
+        # a real one once it reaches the UI. Say so loudly rather than let someone spend
+        # an afternoon wondering why every recording says the same thing.
+        log.warning(
+            "asr.backend=fake — transcripts are canned text, NOT your audio. "
+            "Set MA_ASR__BACKEND to 'local' for real transcription."
+        )
         return FakeAsr(
             language=str(config.get("asr.fake_language", config.default_language)),
             confidence=float(config.get("asr.fake_confidence", 0.95)),
@@ -19,6 +29,7 @@ def make_backend(config: Config) -> AsrBackend:
     if kind == "local":
         from app.asr.local import LocalAsr
 
+        log.info("asr.backend=local, model=%s", config.get("asr.model_path") or "(default)")
         return LocalAsr(config)
     if kind == "remote":
         from app.asr.local import LocalAsr

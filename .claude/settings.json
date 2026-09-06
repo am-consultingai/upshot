@@ -25,6 +25,7 @@
       "Bash(vite *)",
 
       "Bash(git *)",
+      "Bash(gh *)",
 
       "Bash(ls *)",
       "Bash(cat *)",
@@ -75,8 +76,6 @@
       "Bash(dd *)",
       "Bash(shutdown *)",
       "Bash(reboot *)",
-      "Bash(git push *)",
-      "Bash(gh *)",
 
       "Edit(//home/am/projects/training-forum-NLM-sync-app/**)",
       "Write(//home/am/projects/training-forum-NLM-sync-app/**)",

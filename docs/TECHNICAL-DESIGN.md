@@ -5,6 +5,14 @@ Implementation-level specification. Assumes `DESIGN.md` (architecture), `DETECTI
 
 Target: Windows 11, Python 3.13, single user-session process.
 
+> **Amended since implementation.** Audio is no longer stored as per-minute chunk files.
+> Each track is a single growing WAV — `audio/me.wav`, `audio/them.wav` — valid and
+> playable at every moment, with `manifest.jsonl` recording committed segments as sample
+> offsets into it. The durability guarantee is unchanged. See `DECISIONS.md` **D34**;
+> **D35** (playback mixes the tracks on read), **D36** (crosstalk detection) and **D37**
+> (echo cancellation) also postdate this document. Where this text and `DECISIONS.md` disagree, `DECISIONS.md` is
+> what the code does.
+
 **Contents**
 1. Process and threading model · 2. Module map · 3. Data model · 4. Audio subsystem ·
 5. Detection subsystem · 6. Job queue and pipeline · 7. ASR · 8. Assembly ·

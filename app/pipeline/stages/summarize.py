@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,8 +13,7 @@ from app import glossary as glossary_module
 from app import meta
 from app.llm.client import LlmClient, LlmResult, make_client, system_blocks
 from app.llm.prompts import load as load_prompt
-from app.llm.prompts import versions as prompt_versions
-from app.llm.schema import MAP_SCHEMA, NOTES_SCHEMA, validate
+from app.llm.schema import FREE_SCHEMA
 from app.llm.tokens import CachingCounter, TokenCounter
 from app.log import get
 from app.pipeline.artifacts import up_to_date
@@ -126,99 +126,125 @@ def client_for(ctx: StageContext) -> LlmClient:
     return make_client(ctx.config, sensitive=bool(ctx.meeting.sensitive))
 
 
-def run(ctx: StageContext) -> None:
-    folder = ctx.folder
-    _, transcript_md = transcript_paths(folder)
-    output = notes_path(folder)
-    if up_to_date(output, [transcript_md]):
-        log.info("notes.json is current; skipping")
-        return
-    if not transcript_md.exists():
-        raise FileNotFoundError(f"{transcript_md} is missing — run the assemble stage first")
+def system_text(ctx: StageContext) -> tuple[str, str]:
+    """The summarizing instructions, and the version to record against them.
 
-    transcript = transcript_md.read_text(encoding="utf-8")
+    An edited prompt replaces the shipped one rather than appending to it. Appending
+    would mean the box in Settings shows something other than what is sent, and a prompt
+    you cannot fully see is one you cannot debug.
+    """
+    shipped = load_prompt("system")
+    custom = ctx.config.get("llm.summary_prompt")
+    if isinstance(custom, str) and custom.strip():
+        text = custom.strip()
+        # Hashed, not just "custom": every edit has to be a different version, or a
+        # second edit looks identical to the first and the notes are never rebuilt.
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
+        return text, f"custom:{digest}"
+    return shipped.text, shipped.version
+
+
+def summarize(ctx: StageContext, transcript: str, *, system: str, system_version: str) -> None:
+    """Free-form: the prompt writes the summary, and nothing here rewrites it.
+
+    Structured mode exists because the rest of the application reads the parts — the
+    title indexes the meeting, action-item owners drive the review gates, the template
+    lays the sections out. All of that is a constraint the prompt cannot see past, so a
+    prompt asking for a different shape of document could not have any visible effect.
+
+    Here the only thing still imposed is the JSON envelope, and only because it is what
+    makes an answer extractable at all across providers. What is inside ``summary_html``
+    is entirely the prompt's: sections, order, wording, layout.
+    """
     client = client_for(ctx)
     counter = CachingCounter(client.count_tokens)
     language = resolve_summary_language(ctx)
     glossary = glossary_block(ctx)
-
     windows = split_windows(
         transcript,
         counter,
         target_tokens=int(ctx.config.get("llm.window_tokens", 6000)),
         overlap_tokens=int(ctx.config.get("llm.window_overlap_tokens", 300)),
     )
-    log.info("summarizing %d window(s) in %s", len(windows), language)
+    log.info("summarizing %d window(s) in %s (free-form)", len(windows), language)
 
-    map_prompt = load_prompt("map")
-    reduce_prompt = load_prompt("reduce")
-    system_prompt = load_prompt("system")
+    envelope = (
+        "Reply with a JSON object holding `summary_html` — the complete summary as HTML — "
+        "and optionally `title`. Everything about that HTML is yours to decide."
+    )
     instruction = language_instruction(language)
-
-    partials: list[dict[str, Any]] = []
+    parts: list[str] = []
     usage: list[dict[str, Any]] = []
     for window in windows:
         ctx.checkpoint()
         result = client.complete_json(
-            system_blocks=system_blocks(
-                f"{system_prompt.text}\n\n{map_prompt.text}\n\n{instruction}", glossary
-            ),
+            system_blocks=system_blocks(f"{system}\n\n{instruction}\n\n{envelope}", glossary),
             user=window.text,
-            schema=MAP_SCHEMA,
+            schema=FREE_SCHEMA,
             max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
         )
-        partials.append(result.data)
         usage.append(result.usage)
+        parts.append(str(result.data.get("summary_html", "")))
+        log.info("window %d/%d done", window.index + 1, len(windows))
 
-    ctx.checkpoint()
-    reduce_input = json.dumps(
-        {
-            "meeting": {
-                "title": ctx.meeting.title,
-                "started_at": ctx.meeting.started_at,
-                "duration_s": ctx.meeting.duration_s,
-                "language": ctx.meeting.language,
-            },
-            "windows": partials,
-        },
-        ensure_ascii=False,
-    )
-    final = client.complete_json(
-        system_blocks=system_blocks(
-            f"{system_prompt.text}\n\n{reduce_prompt.text}\n\n{instruction}", glossary
-        ),
-        user=reduce_input,
-        schema=NOTES_SCHEMA,
-        max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
-    )
-    usage.append(final.usage)
-    notes = validate(final.data)
-    output.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
+    if len(parts) > 1:
+        ctx.checkpoint()
+        merged = client.complete_json(
+            system_blocks=system_blocks(f"{system}\n\n{instruction}\n\n{envelope}", glossary),
+            user="Merge these partial summaries of one meeting into a single document:\n\n"
+            + "\n\n---\n\n".join(parts),
+            schema=FREE_SCHEMA,
+            max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
+        )
+        usage.append(merged.usage)
+        notes = {
+            "summary_html": str(merged.data.get("summary_html", "")),
+            "title": str(merged.data.get("title", "") or ctx.meeting.title or ""),
+        }
+    else:
+        notes = {"summary_html": parts[0], "title": str(ctx.meeting.title or "")}
 
+    notes_path(ctx.folder).write_text(
+        json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     ctx.dao.update_meeting(ctx.meeting.id, summary_language=language)
-    if notes.get("title") and ctx.meeting.title_source in (None, "window", "llm"):
-        ctx.dao.update_meeting(ctx.meeting.id, title=notes["title"], title_source="llm")
-
-    reasons = sanity_gates(notes, ctx)
+    # No sanity gates: they read action_items and owners, which free-form has no notion
+    # of. Nothing here is in a position to judge what the prompt asked for.
     meta.mirror(
         ctx.refresh(),
-        prompt_versions=prompt_versions("system", "map", "reduce"),
+        prompt_versions={"system": system_version, "format": "free"},
         summary_language=language,
         windows=len(windows),
         llm={"name": client.name, "usage": _sum_usage(usage)},
     )
-    for reason in reasons:
-        meta.add_review_reason(folder, reason)
-    if reasons:
-        _flag_review(ctx, reasons)
-    ctx.metrics.update(
-        {
-            "windows": len(windows),
-            "token_counts": counter.calls,
-            "cache_read_tokens": sum(int(u.get("cache_read_input_tokens", 0) or 0) for u in usage),
-            "review_reasons": reasons,
-        }
-    )
+    log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
+
+
+def run(ctx: StageContext) -> None:
+    folder = ctx.folder
+    _, transcript_md = transcript_paths(folder)
+    output = notes_path(folder)
+    system, system_version = system_text(ctx)
+    # The prompt is an input to the notes, so it belongs in the staleness test. Comparing
+    # against the transcript alone meant editing the prompt and pressing Summarize again
+    # did nothing at all: the transcript had not moved, so the stage skipped and the old
+    # summary stood.
+    recorded = str(meta.read(folder).get("prompt_versions", {}).get("system", ""))
+    if ctx.force:
+        # Asked for by hand: no staleness test, no comparison against what is on disk.
+        # Pressing Summarize is a decision, and second-guessing it is how an edited
+        # prompt came to have no visible effect at all.
+        log.info("re-summarizing on request")
+    elif up_to_date(output, [transcript_md]) and recorded == system_version:
+        log.info("notes.json is current; skipping")
+        return
+    elif recorded and recorded != system_version:
+        log.info("prompt changed (%s -> %s); re-summarizing", recorded, system_version)
+    if not transcript_md.exists():
+        raise FileNotFoundError(f"{transcript_md} is missing — run the assemble stage first")
+
+    transcript = transcript_md.read_text(encoding="utf-8")
+    summarize(ctx, transcript, system=system, system_version=system_version)
 
 
 def _sum_usage(usage: Sequence[dict[str, Any]]) -> dict[str, int]:
@@ -228,35 +254,6 @@ def _sum_usage(usage: Sequence[dict[str, Any]]) -> dict[str, int]:
             if isinstance(value, int):
                 total[key] = total.get(key, 0) + value
     return total
-
-
-def sanity_gates(notes: dict[str, Any], ctx: StageContext) -> list[str]:
-    """Surfaced as NEEDS_REVIEW, never silently accepted (§9.4)."""
-    reasons: list[str] = []
-    duration = ctx.meeting.duration_s or 0
-    if duration > LONG_MEETING_S and not notes.get("action_items"):
-        reasons.append(f"no action items on a {duration // 60}-minute meeting")
-    if len(notes.get("tldr", [])) < 2:
-        reasons.append("the summary has fewer than two TL;DR lines")
-    known = {"ME", "THEM"}
-    known.update(str(person.get("name", "")) for person in notes.get("participants", []))
-    for item in notes.get("action_items", []):
-        who = str(item.get("who", "")).strip()
-        if who and who not in known:
-            reasons.append(f"action item owner {who!r} is not a known participant")
-    return reasons
-
-
-def _flag_review(ctx: StageContext, reasons: Sequence[str]) -> None:
-    from app.pipeline.states import MeetingState, is_legal
-
-    meeting = ctx.refresh()
-    current = MeetingState(meeting.state)
-    if current is MeetingState.NEEDS_REVIEW:
-        return
-    if is_legal(current, MeetingState.NEEDS_REVIEW):
-        ctx.dao.set_state(meeting.id, MeetingState.NEEDS_REVIEW)
-        log.warning("meeting %s needs review: %s", meeting.id, "; ".join(reasons))
 
 
 def load_notes(folder: Path) -> dict[str, Any]:

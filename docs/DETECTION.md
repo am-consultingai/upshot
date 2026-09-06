@@ -3,6 +3,14 @@
 The tray app's job is to notice a meeting beginning, record it, notice it ending, and tell
 you — without you touching anything. This document defines that mechanism.
 
+> **Amended since implementation.** Audio is no longer stored as per-minute chunk files.
+> Each track is a single growing WAV — `audio/me.wav`, `audio/them.wav` — valid and
+> playable at every moment, with `manifest.jsonl` recording committed segments as sample
+> offsets into it. The durability guarantee is unchanged. See `DECISIONS.md` **D34**;
+> **D35** (playback mixes the tracks on read), **D36** (crosstalk detection) and **D37**
+> (echo cancellation) also postdate this document. Where this text and `DECISIONS.md` disagree, `DECISIONS.md` is
+> what the code does.
+
 Manual Start/Stop (M1) remains the baseline and the fallback. Detection is layered on top,
 which is what lets it be **tuned conservatively**: see §1.
 
@@ -158,6 +166,11 @@ nothing is ever recorded silently.
 **Ignore list** ships pre-populated with the usual mic-squatters — voice assistants,
 Windows Voice Access, headset/《virtual mic》 utilities, streaming tools — and grows from
 the *"not a meeting"* button.
+
+> **Unverified as of 2026-09-06.** That Zoom and Teams keep the stream open while muted
+> is asserted here and assumed by the release grace, but nobody has watched it happen.
+> The protocol — and what changes if it turns out to be false — is the open question in
+> `manual-checks.md`, using `scripts/windows/probe-mic.py watch`.
 
 **A privacy note worth stating plainly:** Zoom and Teams mute in *software*. When you mute,
 the app keeps the microphone open, so our `me` track keeps capturing your room. That is

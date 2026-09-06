@@ -56,7 +56,7 @@ def test_import_becomes_chunks_and_runs_the_pipeline(tmp_path: Path, app_home: P
 
     meeting = api.services.dao.require_meeting(body["meeting_id"])
     assert meeting.source == "imported"
-    assert (meeting.path / "audio" / "them" / "0001.wav").exists()
+    assert (meeting.path / "audio" / "them.wav").exists()
     assert api.services.queue.get_by_stage(meeting.id, "transcribe") is not None
 
     assert api.services.worker is not None
@@ -65,7 +65,6 @@ def test_import_becomes_chunks_and_runs_the_pipeline(tmp_path: Path, app_home: P
     assert api.services.dao.require_meeting(meeting.id).state in (
         MeetingState.RENDERED,
         MeetingState.DELIVERED,
-        MeetingState.NEEDS_REVIEW,
     )
 
 
@@ -74,7 +73,7 @@ def test_import_resamples_to_the_storage_format(tmp_path: Path) -> None:
     imported = ingest(wav, tmp_path / "meeting")
     assert imported.duration_s == 3
     assert imported.converted is False
-    with wave.open(str(tmp_path / "meeting" / "audio" / "them" / "0001.wav"), "rb") as handle:
+    with wave.open(str(tmp_path / "meeting" / "audio" / "them.wav"), "rb") as handle:
         assert handle.getframerate() == 16000
         assert handle.getnchannels() == 1
         assert handle.getnframes() == 3 * 16000

@@ -25,6 +25,9 @@ class StageContext:
     clock: Clock
     job: Job
     should_yield: Callable[[], bool] = lambda: False
+    #: The user pressed the button. Stages must redo their work rather than deciding for
+    #: themselves that what is already on disk will do.
+    force: bool = False
     services: Any = None
     metrics: dict[str, Any] = field(default_factory=dict)
     #: Set by a stage that completed without moving the meeting forward — a draft

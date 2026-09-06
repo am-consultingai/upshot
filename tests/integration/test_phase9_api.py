@@ -70,6 +70,18 @@ def test_token_exchange_once(api) -> None:  # type: ignore[no-untyped-def]
     assert "already been used" in second.json()["detail"]
 
 
+def test_spent_token_does_not_lock_out_an_authorized_browser(api) -> None:  # type: ignore[no-untyped-def]
+    """The launcher opens the link, then the user clicks the printed one. Same browser,
+    already has the cookie: the second visit must work, not 401."""
+    from fastapi.testclient import TestClient
+
+    token = api.services.auth.issue_token()
+    client = TestClient(api.app, base_url=api.base_url)
+    assert client.get(f"/?k={token}").status_code == 200
+    assert client.get(f"/?k={token}").status_code == 200  # spent token, valid cookie
+    assert client.get("/").status_code == 200  # and without the token at all
+
+
 def test_csrf_required_on_mutations(api) -> None:  # type: ignore[no-untyped-def]
     client = api.client()
     del client.headers[CSRF_HEADER]
@@ -157,10 +169,20 @@ def test_meeting_detail_and_patch(api) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_range_request_audio(api, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    import wave
+
     ids = seed(api, 1)
-    folder = api.services.config.data_root / ids[0] / "audio" / "them"
+    folder = api.services.config.data_root / ids[0] / "audio"
     folder.mkdir(parents=True)
-    (folder / "0001.wav").write_bytes(bytes(range(256)) * 20)  # 5120 bytes
+    # A real WAV named for its track: audio is one file per track, and the route serves
+    # that file. A fixture of arbitrary bytes would test a path that cannot occur.
+    with wave.open(str(folder / "them.wav"), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(b"\x01\x02" * 2538)
+    size = 44 + 2538 * 2  # 5120
+
     client = api.client()
     response = client.get(
         f"/api/meetings/{ids[0]}/audio",
@@ -168,10 +190,11 @@ def test_range_request_audio(api, tmp_path: Path) -> None:  # type: ignore[no-un
         headers={"Range": "bytes=0-999"},
     )
     assert response.status_code == 206
-    assert response.headers["content-range"] == "bytes 0-999/5120"
+    assert response.headers["content-range"] == f"bytes 0-999/{size}"
     assert len(response.content) == 1000
     full = client.get(f"/api/meetings/{ids[0]}/audio", params={"track": "them"})
     assert full.status_code == 200 and full.headers["accept-ranges"] == "bytes"
+    assert len(full.content) == size
     assert client.get(f"/api/meetings/{ids[0]}/audio", params={"track": "me"}).status_code == 404
 
 
@@ -343,3 +366,46 @@ def test_import_rejects_a_file_it_cannot_decode(api, tmp_path: Path) -> None:  #
         response = api.client().post("/api/import", files={"file": ("broken.wav", handle)})
     assert response.status_code in (415, 500)
     assert api.services.dao.list_meetings(state="DISCARDED") or response.status_code == 500
+
+
+def test_foreign_token_names_the_real_cause(api) -> None:  # type: ignore[no-untyped-def]
+    """A token this process never minted means another instance owns the port. Saying
+    "already used" sent us hunting the wrong problem for an afternoon."""
+    from fastapi.testclient import TestClient
+
+    client = TestClient(api.app, base_url=api.base_url)
+    response = client.get("/?k=aToKenFromSomeOtherProcess")
+    assert response.status_code == 401
+    detail = response.json()["detail"]
+    assert "not issued by the app answering on this port" in detail
+    assert "already been used" not in detail
+
+
+def test_every_endpoint_the_ui_calls_exists() -> None:
+    """A route deleted by an edit elsewhere is invisible until a screen goes blank.
+
+    `/api/llm/prompt` was removed by a patch that replaced a range of routes.py. Nothing
+    failed: the frontend got a 404, the component rendered null, and the Settings screen
+    simply had no prompt editor on it. This walks the other way — from what the UI calls
+    to what the server serves — so the next one is caught here instead of by eye.
+    """
+    import re
+    from pathlib import Path
+
+    from app.api.routes import router
+
+    frontend = Path(__file__).resolve().parents[2] / "frontend" / "src"
+    if not frontend.is_dir():  # pragma: no cover - a source-only check
+        pytest.skip("frontend sources are not present")
+
+    called = set()
+    for source in frontend.rglob("*.ts*"):
+        for match in re.finditer(r'"(/api/[a-zA-Z0-9_/.\-]+)', source.read_text(encoding="utf-8")):
+            called.add(match.group(1).split("?")[0])
+
+    patterns = [
+        re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", route.path) + "$")
+        for route in router.routes  # type: ignore[attr-defined]
+    ]
+    missing = sorted(path for path in called if not any(p.match(path) for p in patterns))
+    assert not missing, f"the UI calls endpoints the server does not serve: {missing}"

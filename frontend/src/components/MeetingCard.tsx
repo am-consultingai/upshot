@@ -22,9 +22,11 @@ export function etaSeconds(meeting: Meeting): number | null {
 export default function MeetingCard({
   meeting,
   onStop,
+  onDelete,
 }: {
   meeting: Meeting;
   onStop?: () => void;
+  onDelete?: () => void;
 }) {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
@@ -77,6 +79,20 @@ export default function MeetingCard({
         <p className="mt-2 text-sm text-neutral-600" data-testid="eta">
           {t("timeline.eta")}: {formatDuration(eta, t)}
         </p>
+      )}
+      {onDelete && !recording && (
+        <button
+          type="button"
+          data-testid="delete-meeting"
+          // Confirmed here rather than in a dialog component: it removes audio from disk
+          // and there is no undo.
+          onClick={() => {
+            if (window.confirm(t("meeting.deleteConfirm"))) onDelete();
+          }}
+          className="mt-2 text-sm text-red-700 underline"
+        >
+          {t("meeting.delete")}
+        </button>
       )}
     </article>
   );

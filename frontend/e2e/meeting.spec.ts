@@ -31,22 +31,26 @@ test("click_transcript_seeks", async ({ page, seed }) => {
       state: "RENDERED",
       started_at: isoAt(0, 10),
       turns: [{ speaker: "ME", at_ms: 0, text: "first turn" }],
+      audio_seconds: 3,
     },
   ]);
   const audioRequests: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("/audio")) audioRequests.push(request.headers()["range"] ?? "full");
+    if (request.url().includes("/audio"))
+      audioRequests.push(request.headers()["range"] ?? "full");
   });
   await gotoApp(page, "/m/e2e-seek");
+  // One stream, mixed on read (D35): the page does not offer a track picker.
   await expect(page.getByTestId("audio")).toHaveAttribute(
     "src",
-    "/api/meetings/e2e-seek/audio?track=them",
+    "/api/meetings/e2e-seek/audio?track=mix",
   );
   await page.getByTestId("audio").evaluate((node) => {
     (node as HTMLAudioElement).load();
   });
-  await page.waitForTimeout(300);
-  expect(audioRequests.length).toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(() => audioRequests.length, { timeout: 5000 })
+    .toBeGreaterThan(0);
 });
 
 test("content_dir_independent_of_chrome", async ({ page, seed }) => {
@@ -61,7 +65,9 @@ test("content_dir_independent_of_chrome", async ({ page, seed }) => {
   ]);
   await gotoApp(page, "/m/e2e-dir");
   expect(await page.evaluate(() => document.dir)).toBe("ltr");
-  const transcriptDir = await page.getByTestId("transcript").getAttribute("dir");
+  const transcriptDir = await page
+    .getByTestId("transcript")
+    .getAttribute("dir");
   expect(["ltr", "rtl"]).toContain(transcriptDir);
 });
 
@@ -80,7 +86,9 @@ test("attention_lists_failures", async ({ page, seed }) => {
     if (request.url().includes("/retry")) retried.push(request.url());
   });
   await gotoApp(page, "/attention");
-  const item = page.getByTestId("attention-item").filter({ hasText: "Broken meeting" });
+  const item = page
+    .getByTestId("attention-item")
+    .filter({ hasText: "Broken meeting" });
   await expect(item).toBeVisible();
   await item.getByTestId("retry").click();
   await expect.poll(() => retried.length).toBeGreaterThan(0);
@@ -143,7 +151,78 @@ test("seed_route_is_not_open", async ({ request }) => {
   // asserted by the Python suite (test_test_seed_route_absent_by_default), which can
   // control the environment. What we assert here is that an unauthenticated caller —
   // no cookie, no CSRF header — is rejected before reaching it.
-  const response = await request.post("/api/test/seed", { data: { meetings: [] } });
+  const response = await request.post("/api/test/seed", {
+    data: { meetings: [] },
+  });
   expect(response.ok()).toBeFalsy();
   expect([401, 403]).toContain(response.status());
+});
+
+test("mic_picker_and_meter", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByTestId("mic-meter-me")).toBeVisible();
+  // The synthetic source is a tone, so a working meter must leave zero.
+  await expect
+    .poll(
+      async () =>
+        Number(
+          // Scoped: there are two meters on this page now, microphone and system audio.
+          await page
+            .getByTestId("mic-meter-me")
+            .getByRole("meter")
+            .getAttribute("data-level"),
+        ),
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0);
+});
+
+test("mic_meter_opens_the_device_once", async ({ page }) => {
+  // A React effect that depended on an unstable value once reopened the microphone on
+  // every incoming level — several times a second, for as long as Settings was open.
+  await page.goto("/settings");
+  await expect(page.getByTestId("mic-meter-me")).toBeVisible();
+
+  const opens = async () => {
+    const response = await page.request.get("/api/audio/devices");
+    return (await response.json()).meter_opens as number;
+  };
+  const first = await opens();
+  await page.waitForTimeout(6000);
+  const later = await opens();
+  expect(later - first).toBeLessThanOrEqual(1);
+});
+
+test("settings_shows_both_meters", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByTestId("mic-meter-me")).toBeVisible();
+  await expect(page.getByTestId("mic-meter-them")).toBeVisible();
+  // Two endpoints, two independent streams — one open each, not one per render.
+  const opens = async () => {
+    const response = await page.request.get("/api/audio/devices");
+    return (await response.json()).meter_opens as number;
+  };
+  const first = await opens();
+  await page.waitForTimeout(5000);
+  expect((await opens()) - first).toBeLessThanOrEqual(2);
+});
+
+test("swept_audio_reads_as_deleted_not_missing", async ({ page, seed }) => {
+  // A meeting the retention policy stripped must not look like a failed recording.
+  await seed([
+    {
+      id: "e2e-swept",
+      title: "Old meeting",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      audio_deleted_at: isoAt(0, 11),
+      turns: [{ speaker: "ME", at_ms: 0, text: "first turn" }],
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-swept");
+  await expect(page.getByTestId("audio-deleted")).toContainText(
+    "retention policy",
+  );
+  await expect(page.getByTestId("no-audio")).toHaveCount(0);
+  await expect(page.getByTestId("audio")).toHaveCount(0);
 });

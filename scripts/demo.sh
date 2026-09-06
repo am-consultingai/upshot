@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PROVIDER="fake"
-PORT="8000"
+PORT="${PORT:-8000}"
 HOME_DIR="$ROOT/.demo"
 KEEP=0
 

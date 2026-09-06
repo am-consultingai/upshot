@@ -178,3 +178,81 @@ dist\meeting-agent\meeting-agent.exe --bootstrap
 ```
 
 prints the first-run report as JSON (profile, model, schema version, logon task).
+
+
+## Where files go, and removing it all
+
+Nothing is written into the source folder. The launcher keeps every Windows-side
+artifact in `%LOCALAPPDATA%\meeting-agent-win` (override with `-WorkDir`), and your
+recordings in `%LOCALAPPDATA%\meeting-agent`. Nothing touches PATH, the registry or
+Program Files.
+
+| What | Where | Size |
+|---|---|---|
+| uv (the package manager) | `<work>\bin\uv.exe` | ~20 MB |
+| Python interpreter | `<work>\python\` | ~110 MB |
+| Dependencies | `<work>\venv\` | ~600 MB |
+| Package cache | `<work>\cache\` | ~600 MB, safe to delete any time |
+| Byte-code cache | `<work>\pycache\` | small |
+| Recordings, transcripts, database | `%LOCALAPPDATA%\meeting-agent\` | grows with use |
+
+(Sizes measured from the Linux environment; Windows differs somewhat.)
+
+This matters most when the source folder is a WSL path shared with a Linux checkout:
+a 600 MB Windows venv does not belong in it, and writing that much over the
+`\\wsl.localhost` bridge is slow and can fail on file locking. Keeping the runtime on
+a local Windows disk means only the application's own source files are read across
+the bridge.
+
+Five settings do the work, all applied before uv runs: `UV_PROJECT_ENVIRONMENT`,
+`UV_CACHE_DIR`, `UV_PYTHON_INSTALL_DIR`, `UV_TOOL_DIR` and `HF_HOME`, plus
+`PYTHONPYCACHEPREFIX` so the interpreter does not leave `__pycache__` behind.
+`uv sync --frozen` guarantees the lockfile is read and never rewritten. uv itself is
+fetched as the release zip (SHA-256 verified) rather than through winget, because
+winget installs machine-wide and puts a shim on PATH.
+
+**The one exception**: building the web UI runs `npm`, which requires `node_modules`
+beside `package.json`. If `frontend/dist` is missing the script says so and asks before
+building; declining leaves you with a placeholder page. Both folders are gitignored.
+
+To remove everything:
+
+```powershell
+.\run-app.ps1 -Uninstall
+```
+
+It deletes the runtime folder after listing it, and asks separately about the data
+folder so recordings are never removed by surprise.
+
+
+## Starting it: one command, no flags
+
+`run-app.cmd` is the whole interface. Double-click it. Before starting it:
+
+1. **Stops any instance still running.** Two copies is the failure that cost a day: the
+   older one keeps the socket and shadows the newer, so the app you are looking at is
+   not the app you just launched. There is never more than one.
+2. **Picks a port that is actually free** — the requested one (8000 by default), then
+   8010-8040. It probes by connecting to `127.0.0.1`, not by asking Windows, because a
+   Linux listener inside WSL (a Docker container, say) answers there while Windows
+   reports the port as free. On this machine `billers4-backend-1` publishes 8000, so the
+   app lands on 8010 and says so.
+
+`-Port` still exists to express a preference, but nothing requires it: the script will
+move off a busy port on its own rather than failing.
+
+
+## Stopping it
+
+**Ctrl+C stops the app and closes the window.** Nothing asks for confirmation, because
+Ctrl+C is already the instruction.
+
+Getting there took two changes. The script used to end with *"Press Enter to close this
+window"*, which turned every deliberate stop into a second keypress; it now only holds
+the window open when the app failed to start and there is an error worth reading.
+
+And `run-app.cmd` no longer hosts the app in its own console. A batch file interrupted
+with Ctrl+C makes cmd.exe ask *"Terminate batch job (Y/N)?"*, and that prompt cannot be
+suppressed from inside the batch file — so the launcher starts the app in its own console
+and exits immediately, leaving no batch file to ask. The window you double-click closes
+at once; the app runs in the window that opens next to it.

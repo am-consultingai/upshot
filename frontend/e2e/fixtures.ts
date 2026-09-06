@@ -1,4 +1,9 @@
-import { test as base, expect, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  type APIRequestContext,
+  type Page,
+} from "@playwright/test";
 import { BASE_URL, CSRF, SESSION } from "../playwright.config";
 
 export interface SeedMeeting {
@@ -10,6 +15,10 @@ export interface SeedMeeting {
   turns?: { speaker: string; at_ms: number; text: string }[];
   summary_html?: string;
   notes?: Record<string, unknown>;
+  /** Write this many seconds of real two-track audio, so the page shows a player. */
+  audio_seconds?: number;
+  /** Pretend the retention sweep already removed this meeting's audio. */
+  audio_deleted_at?: string;
 }
 
 export interface SeedBody {
@@ -37,7 +46,10 @@ export const test = base.extend<{
   seed: async ({ request }, use) => {
     await use(async (meetings: SeedMeeting[]) => {
       const response = await request.post("/api/test/seed", {
-        headers: { "X-CSRF-Token": CSRF, Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}` },
+        headers: {
+          "X-CSRF-Token": CSRF,
+          Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+        },
         data: { meetings, reset: true },
       });
       expect(response.ok()).toBeTruthy();
@@ -46,7 +58,10 @@ export const test = base.extend<{
   seedBody: async ({ request }, use) => {
     await use(async (body: SeedBody) => {
       const response = await request.post("/api/test/seed", {
-        headers: { "X-CSRF-Token": CSRF, Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}` },
+        headers: {
+          "X-CSRF-Token": CSRF,
+          Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+        },
         data: { ...body, reset: true },
       });
       expect(response.ok()).toBeTruthy();
@@ -59,7 +74,10 @@ export { expect };
 /** Every spec starts from an empty library, whatever ran before it. */
 export async function reset(request: APIRequestContext): Promise<void> {
   const response = await request.post("/api/test/seed", {
-    headers: { "X-CSRF-Token": CSRF, Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}` },
+    headers: {
+      "X-CSRF-Token": CSRF,
+      Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+    },
     data: { meetings: [], reset: true },
   });
   expect(response.ok()).toBeTruthy();

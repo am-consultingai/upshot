@@ -57,7 +57,7 @@ def mirror(meeting: Meeting, **extra: Any) -> dict[str, Any]:
 
 def add_review_reason(folder: Path, reason: str) -> list[str]:
     payload = read(folder)
-    reasons = list(payload.get("review_reasons", []))
+    reasons = []
     if reason not in reasons:
         reasons.append(reason)
     payload["review_reasons"] = reasons

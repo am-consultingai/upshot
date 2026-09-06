@@ -4,7 +4,6 @@ import type { MessageKey } from "../locales/en";
 const TONE: Record<string, string> = {
   RECORDING: "bg-red-100 text-red-800",
   FAILED: "bg-red-100 text-red-800",
-  NEEDS_REVIEW: "bg-amber-100 text-amber-900",
   RENDERED: "bg-green-100 text-green-800",
   DELIVERED: "bg-green-100 text-green-800",
 };

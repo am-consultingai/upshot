@@ -252,6 +252,8 @@ in `tests/integration/test_completeness.py`:
    worker now honours a nightly window (`schedule.hour`, `schedule.hours`).
 
 ## D27 — Known gap: retention is configured but not swept
+> **Closed by D38.** The sweep exists; this entry is kept for the reasoning that led to it.
+
 `retention.audio_days` (default 30) and `retention.transcript_days` are in the shipped
 config, and nothing deletes anything yet. The retention sweep belongs to **M4** in
 `DESIGN.md` §17 and no phase in `EXECUTION-PLAN.md` implements or gates it, so it is left
@@ -405,3 +407,313 @@ GTX 1080 — Pascal has no fast FP16, and `DESIGN.md` §20.5 specifies int8 for 
 Rather than adding GPU-generation detection, the Windows launcher sets
 `asr.compute_type = "int8"` explicitly with a comment. Automatic detection is the better
 fix if a second GPU generation ever matters.
+
+## D33 — The microphone picker measures the same path the recorder uses
+
+The Settings screen now selects the microphone (`audio.input_device`, null = the Windows
+default) and shows a live meter beside it.
+
+The meter is a `LevelMonitor` built through `make_capture`, **not** a direct WASAPI open.
+That is the whole point: the level someone sees in Settings comes through the same
+factory, device resolution, and format negotiation a meeting would use, so a device that
+reads silent here reads silent in a meeting. A second, independent code path could
+happily show a moving bar for a source the recorder cannot open.
+
+Details worth keeping:
+
+- **The meter reports the recorder's own level while a meeting is running.** Two WASAPI
+  streams on one endpoint is a contention bug waiting to happen, and the honest reading
+  during a meeting is the one being recorded.
+- **A dB scale, not linear.** Ordinary speech peaks near 0.05 in linear amplitude, which
+  is one segment out of 24 — a working microphone would look broken. −60 dBFS…0 spreads
+  the usable range across the bar.
+- **Peak-hold with decay.** An instantaneous bar reads as dead between syllables.
+- **Silence is stated, not implied.** No signal for 2.5 s says so in words; that was the
+  failure the feature exists to catch, after an afternoon lost to a synthetic source that
+  was silent by configuration.
+- **`GET /api/audio/devices` never raises.** Settings must open on a machine with no
+  audio stack at all — CI, WSL, headless — so enumeration failure returns an empty list
+  and an `error` string.
+- **A configured device that has vanished falls back to the system default** with a
+  warning. Recording something beats refusing to start.
+- The e2e server now runs the synthetic source as `tone` rather than `silence`, so a
+  meter that stays dead is a test failure rather than the expected result.
+
+## D34 — One file per track, not a folder of chunks
+
+Audio is now `audio/me.wav` and `audio/them.wav`, appended to as the meeting runs. The
+per-minute chunk files are gone.
+
+This was a design error, and the user found it by asking the obvious question: a
+30-minute meeting was 30 files per track, so listening to it or sending it to someone
+meant reassembling it first. Chunking was chosen for durability, and durability is real —
+but it never required the *listener* to see chunks, and I compounded the mistake by first
+building a stitching endpoint and a merge step to hide the chunks rather than not
+creating them.
+
+What replaces it:
+
+- Each track file gets a 44-byte header at creation, and the RIFF/data sizes are
+  rewritten after every committed segment. **The file is a valid, playable WAV at every
+  moment**, verified mid-recording in the demo: 50.1 s readable while recording
+  continued. A crash therefore leaves a playable file rather than one needing repair.
+- The durability order is unchanged in spirit and still asserted:
+  `append → flush → fsync → rewrite header → fsync → manifest line → fsync`.
+- The manifest became an **index rather than a directory listing**: one line per
+  committed segment carrying its sample `offset` into the track file. Recovery compares
+  the file's own frame count against the last described offset, so audio that outlived
+  its manifest line is still found.
+- **Gaps are written as real silence.** Previously a lost 500 ms only advanced `t0_ms`,
+  so the file's timeline and the meeting's timeline diverged. Now the file *is* the
+  timeline, which is what makes the next point safe.
+- Transcription is **one pass per track** instead of one per chunk. Timestamps need no
+  shifting, and the model sees the whole track as context rather than one-minute windows.
+
+A bug this surfaced: the WAV header helper wrote `bits_per_sample = 2` instead of `16`,
+so decoders computed twice the true frame count. Caught because `recover()` then invented
+a phantom trailing segment.
+
+`app/audio/stitch.py` and `app/audio/merge.py` were deleted — the writer makes both
+unnecessary. Kept: `track_of()` still accepts the old `me/0001.wav` layout, because
+fixtures and imported audio use it.
+
+## D35 — Playback mixes on read; the disk keeps two tracks
+
+Two files per track is right for the pipeline and wrong for a listener. Transcription
+needs to know who spoke; someone pressing play wants the meeting, not a track.
+
+`GET /api/meetings/{id}/audio` now defaults to `track=mix`: both tracks summed into one
+mono stream, synthesised as the request is served. `me` and `them` remain addressable for
+checking what each side captured.
+
+Why on read rather than a third file: both tracks are mono 16-bit PCM on the same
+timeline (gaps became real silence in D34), so **output byte N maps to input byte N in
+each track**. Range requests stay exact and stateless — seeking to minute 22 reads only
+that window from each file, never the whole thing. A stored mix would cost 50% more disk
+and reintroduce a merge step; browser-side mixing would need the entire file decoded in
+memory, 460 MB for four hours, and two `<audio>` elements drift and break on seek.
+
+Details:
+
+- **Summed in int32 and clipped**, not averaged. Averaging makes every meeting 6 dB
+  quieter to guard against a case that only arises when two people are loud at the same
+  instant. A test covers saturation, because summing int16 directly wraps to a crackle.
+- **Mono, not stereo.** Hard-panned voices are fatiguing over headphones and lose a side
+  entirely on one earbud or a laptop speaker. The user chose this.
+- The shorter track is **padded**, not truncated: the meeting is as long as its longest
+  track.
+- Ranges are sample-aligned internally and trimmed, since a request may legitimately
+  begin or end mid-sample.
+
+The `?track=mix` URL is itself a complete WAV, so "save as" yields one shareable file of
+the whole meeting — sharing solved without storing anything extra.
+
+**Found later:** the `click_transcript_seeks` browser test had gone stale against this
+decision — it seeded a meeting with no audio on disk and asserted the player pointed at
+`?track=them`, so it was failing on both counts. The seed now writes two real tracks and
+the test asserts `?track=mix` and that the browser actually fetches it. A test that
+asserts the behaviour a decision removed is worse than no test.
+
+Verified against a real recording from the user's machine: the mix is sample-identical to
+`me + them`, and 300 random ranges including odd offsets match the whole file exactly.
+
+**Follow-up:** the per-track picker was removed from the meeting page at the user's
+request. Nobody wants to choose a track before listening to their own meeting; the page
+plays the mix and nothing else. `?track=me` / `?track=them` remain addressable for
+diagnosis, and `audio_tracks` is still reported so the page can say when a meeting has
+no audio at all.
+
+## D36 — Crosstalk between the tracks is detected, not left to the ear
+
+A microphone endpoint that also carries system audio records the far side a second time.
+Nothing downstream can distinguish that from two people saying the same thing, and the
+listener hears every remote voice twice. On a real machine this happened repeatedly with
+a Voicemeeter bus selected as the microphone: measured correlation between the tracks was
+**0.974**, i.e. the same signal.
+
+The transcribe stage now measures it — the first minute of both tracks, one FFT
+cross-correlation, reusing `analysis.cross_correlation` — logs the score, records it in
+`ctx.metrics`, and above 0.85 adds a review reason so it surfaces in the UI instead of
+being discovered by ear three sessions later.
+
+Threshold reasoning: a digital copy lands above 0.95; two people genuinely talking land
+near zero; speaker-into-microphone bleed across a room stays well below 0.85 because the
+acoustic path colours the signal heavily. It deliberately does **not** fire on partial
+leaks — a measured case at 0.651, where the user's own voice diluted the copy, goes
+unflagged. Catching that would mean flagging ordinary meetings held without headphones,
+and a warning on every meeting is a warning nobody reads.
+
+**Found by this work:** `tests/fixtures/meetings.py` seeded both tracks identically, so
+every fixture meeting was a perfect-crosstalk recording. The fixture now seeds per track.
+A fixture should not look like a broken machine.
+
+**Also fixed:** `WindowsToaster` does not support actions — it warns and drops them. Since
+the buttons *are* the learning mechanism (DETECTION.md §6), every detector notification
+had been shipping without them. Toasts with buttons now use
+`InteractableWindowsToaster`, falling back to a plain toast if that is unavailable, since
+a notification without its buttons still beats none.
+
+## D37 — The echo is subtracted on the way out, never out of the recording
+
+D36 measures the leak; this removes it. On a Voicemeeter bus routed to both the speakers
+and the recording device the far side arrives twice — once properly on `them`, and once
+copied into `me` — and the listener hears every remote voice as a slap echo while the ASR
+transcribes it twice.
+
+**The leak is not acoustic.** It never leaves the machine, so what lands on `me` is a
+digital copy of `them` scaled by one gain and delayed by one constant. Measured on the
+author's own recordings:
+
+| recording | correlation | delay | gain | energy removed |
+|---|---|---|---|---|
+| `2026-09-03_1833_597be5` | 0.974 | 1683 samples (+105.2 ms) | 1.715 | **94.8%** |
+| `2026-09-03_1916_ded850` | 0.980 | 1104 samples (+69.0 ms) | 1.490 | **96.0%** |
+| `2026-09-02_1842_a7763a` | 0.651 | 1800 samples (+112.5 ms) | 1.565 | 43.9% |
+
+Windowed at five seconds, the delay does not move at all (1683 in every window) and the
+gain moves by 0.02; inside the windows where the far side is actually talking the single
+tap removes **99%**. Fitting an 8-, 32- or 128-tap FIR instead was measured and buys at
+most two further points on one file and nothing on another. So: one gain, one delay,
+fitted by least squares — the scalar that actually minimises the residual, not a peak
+ratio.
+
+**Where it is applied.** Two places, from one model:
+
+- the ASR input — `audio/clean/me.wav`, written streaming, transcribed, then deleted.
+  `track_files` does not glob that subdirectory, and `track_of` still reads the track
+  from the stem, so nothing else in the pipeline notices.
+- the playback mixer — subtracted on read at a shifted byte offset, so range requests
+  stay exactly as cheap as they were in D35.
+
+**Where it is never applied:** the recording. `audio/me.wav` stays byte-for-byte what the
+device produced, and `?track=me` serves it unchanged for diagnosis. A cancellation is a
+judgment about a signal; a recording is evidence.
+
+**Which window it is fitted on.** Not "the first minute": `597be5` opens with ten seconds
+in which the far side has not said anything, and a real meeting can open with two minutes
+of it. Not the whole span either — the *correlation gate* would be diluted by every quiet
+minute and the leak would go unnoticed on any meeting where the far side is a minority of
+the audio. So the estimator reads up to `audio.echo_scan_s` (600 s) of each track and fits
+`audio.echo_window_s` (60 s) where `them` is loudest. That also fixed an existing
+full-file read: the D36 check called `read_wav` and sliced, i.e. pulled 460 MB into memory
+on a four-hour meeting to look at its first minute.
+
+**When it fires.** `audio.echo_cancel = auto` (the default) subtracts when correlation
+reaches `audio.echo_min_correlation` (0.85, D36's threshold). `on` subtracts whenever a
+model fits at all, which is the escape hatch for the 0.651 partial leak D36 deliberately
+declines to flag — subtracting there is measured to remove 43.9%, and the near voice is
+what survives. `off` measures and warns without touching anything.
+
+The review reason stays, reworded to say the echo was removed. The user's routing is still
+wrong and they should still know; what changed is that the meeting is no longer ruined
+while they fix it.
+
+**Guard rails.** A fit whose gain exceeds ±8 or whose reduction is under 5% is discarded
+rather than applied — that is noise being fitted to noise. Every failure path returns "no
+model" and transcribes the raw track; a diagnostic must never cost a meeting.
+
+**Found by this work:** `tests/fixtures/meetings.py` had no way to produce a leaking
+meeting, so nothing downstream of D36 could be tested end to end. `write_chunks` now takes
+`leak=`, and models the near voice at a quarter of the copy's amplitude, which is the
+ratio measured on the real recording.
+
+**Run on Windows, on the real recording, with the real model.** `2026-09-03_1833_597be5`
+transcribed twice on the author's GPU (ivrit-ai large-v3, CUDA, int8), once with
+`echo_cancel = off` and once with `auto`:
+
+```
+off   [me  ]  5.78- 9.22  ישנן צרות גדולות יותר
+      [me  ]  9.22-21.01  ישנן צרות גדולות יותר      ← the far side, leaked onto ME
+      [them] 11.02-21.36  יש לך טעות גדולות, יש לך טעות גדולות
+      [me  ] 21.01-27.69  כן, איזה כיף, בטח, נשמע מעולה
+
+auto  [me  ]  5.78- 9.22  ישנן צרות גדולות יותר.
+      [them] 11.02-21.36  יש לך טעות גדולות, יש לך טעות גדולות
+      [me  ] 14.85-27.69  כן, איזה כיף, בטח, נשמע מעולה.
+```
+
+Four segments become three. The duplicate — a ME segment spanning exactly the window in
+which only the far side was talking — is gone, and both of the near speaker's own
+utterances survive. Reproduced on two consecutive runs.
+
+**The cost, stated:** the closing ME segment now starts at 14.85 s rather than 21.01 s.
+Whisper extends a segment's start backwards across silence, and with the leak removed
+there is now six seconds of silence in front of that turn. So click-to-seek on it lands
+early. That is the trade: a wrong turn in the transcript, against a turn with a loose
+start timestamp. The second is plainly the better one, but it is a real cost and not a
+rounding error.
+
+**Removed:** `analysis.crosstalk()` lost its last caller — `estimate()` computes the
+correlation on its way to the gain and the delay, and returning only the first two of
+three numbers is not worth a second code path. `CROSSTALK_THRESHOLD` stays where it is,
+with its reasoning. The three unit tests that covered it (a duplicated track, two people
+talking, a silent track) are covered case for case in `tests/unit/test_audio_echo.py`.
+
+## D38 — Retention deletes the audio, keeps the meeting, and shows its work first
+
+`retention.audio_days` has shipped in the default config since the first release and
+nothing ever read it (**D27**). A key that promises deletion and does not delete is a trust
+problem — and the mirror of it, a sweep that quietly deletes a user's recordings, is a
+worse one. So the module splits in two: `plan()` decides and explains, `sweep()` acts, and
+`GET /api/retention` serves the plan without touching anything. The policy can be checked
+on a real machine before it is believed. `POST /api/retention/sweep` runs it on demand
+rather than waiting for the worker's next pass.
+
+**Two clocks, deliberately separate.** `audio_days` (30) removes the raw WAVs and keeps
+everything derived from them; a 45-minute meeting is ~85 MB of audio against a few
+kilobytes of transcript, so this is the one that earns its keep. `transcript_days` (`null`)
+removes the meeting outright and is off by default, per DESIGN.md §17: transcripts and
+summaries are kept indefinitely. `null` and `0` both mean *never*, and so does anything
+that is not a positive count.
+
+**What is never swept**, each reported by name rather than skipped in silence:
+
+| refused | why |
+|---|---|
+| still recording | a meeting stuck in RECORDING for six weeks is a crash, not an expired one |
+| a job is still queued | a retry enqueued last week must still find its audio this week |
+| not transcribed yet | until the transcript exists, the audio **is** the meeting |
+| outside the data folder | the folder path comes from the database and must never aim the delete elsewhere |
+
+That third row is the one that matters. Invariant 1 says recording is sacred; a retention
+policy is the one place the application deletes a recording on purpose, so it does it only
+once something has been derived from it. A meeting that failed to transcribe keeps its
+audio for ever, and the plan says so, which is a bug report rather than a silent leak.
+
+**Driven from the worker loop, not APScheduler.** The dependency is present and STACK.md
+names it for this job, but the sweep deletes the same folders and rows the pipeline reads,
+and running it on the thread that already serialises that work removes a whole class of
+race for the cost of one timestamp. It runs only when the queue has nothing runnable, so
+housekeeping never competes with a job, and at most once every `retention.sweep_hours`
+(6). The first call always runs, so a sweep happens shortly after every startup.
+
+**Deletion is stated, not inferred.** `meta.json` gets `audio_deleted_at` and
+`audio_bytes_freed`, and the meeting page reads it: *"The recording was deleted by the
+retention policy. The transcript and summary are kept."* Without that, a swept meeting and
+a recording that failed look identical — an empty player and the words "this meeting has
+no audio".
+
+**Reuse:** `MeetingService` gained `purge()` and `drop_audio()`, and `DELETE
+/api/meetings/{id}` now goes through the same `purge()` the sweep does, with the same
+containment check in one place instead of two.
+
+**Found by running it on Windows: a delete that lied.** The first version called
+`shutil.rmtree(..., ignore_errors=True)` and then wrote `audio_deleted_at`. Windows will
+not unlink a file another handle has open, so with a reader holding `them.wav` the sweep
+removed `me.wav`, swallowed the error, reported success, and marked the meeting swept —
+which means it would never have been looked at again. Half the audio gone, the record
+saying all of it was, and no retry. Linux would not have shown this: it unlinks open
+files happily.
+
+`remove_tree()` now raises with the names of the survivors, the mark is written only
+after the folder is actually gone, `bytes_freed` counts what went rather than what was
+there, and `purge()` removes the folder **before** the row, because a row deleted against
+a surviving folder orphans it with nothing left pointing at it. `DELETE
+/api/meetings/{id}` answers **409** with the reason instead of claiming success. The
+regression test reproduces it on Linux without mocking anything, by making the audio
+directory unwritable — `unlink` then fails the same way.
+
+Verified on Windows after the fix: the held-handle sweep reports
+`could not remove ...: 1 file(s) still held (them.wav)`, leaves `audio_deleted_at` unset,
+and the next sweep — once the handle is closed — removes the remainder, writes the mark,
+empties `audio_tracks` and turns the audio endpoint into a 404.

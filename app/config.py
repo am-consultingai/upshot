@@ -45,8 +45,15 @@ DEFAULTS: dict[str, Any] = {
     "profile": "auto",  # auto|gpu-live|cpu-deferred|remote-worker
     "worker_url": None,
     "job_policy": "auto",  # auto|asap|after_meeting|when_idle|scheduled
-    "ui": {"language": "en"},
-    "summary": {"language": "en"},  # en|he|auto
+    "ui": {
+        "language": "en",
+        "view": "list",  # list|calendar — the main screen's layout
+        "calendar_span": "week",  # day|week|month
+    },
+    # Follow the meeting. This app transcribes Hebrew by default (asr.default_language),
+    # so defaulting summaries to English meant an English write-up of a Hebrew meeting
+    # unless the user found the setting first.
+    "summary": {"language": "auto"},  # en|he|auto
     "asr": {
         "backend": "local",  # local|remote|fake
         "language_mode": "detect",  # detect|fixed
@@ -87,7 +94,21 @@ DEFAULTS: dict[str, Any] = {
         "hard_cut_s": 70,
         "queue_seconds": 10,
         "vad": "two_stage",
+        # The microphone endpoint, by PortAudio device index. null = the Windows default,
+        # which is what most people want and what every earlier version did.
+        "input_device": None,
+        # The playback endpoint whose loopback becomes the "them" track. null = whatever
+        # Windows currently calls the default output.
+        "output_device": None,
         "synthetic_realtime": True,  # synthetic capture paces itself at 1x
+        # Subtracting the far side from the near track (DECISIONS D37). "auto" does it
+        # when the two tracks are measurably the same signal, which is what a microphone
+        # bus carrying playback produces; "on" does it whenever a model fits at all, for
+        # a partial leak the threshold deliberately ignores; "off" never looks.
+        "echo_cancel": "auto",  # auto|on|off
+        "echo_min_correlation": 0.85,
+        "echo_scan_s": 600,  # how much of each track the estimate may read
+        "echo_window_s": 60,  # the stretch it is fitted on, chosen where THEM is loudest
     },
     "detection": {
         "mode": "shadow",  # shadow|on|off
@@ -139,6 +160,10 @@ DEFAULTS: dict[str, Any] = {
         "openai_base_url": None,  # any OpenAI-compatible endpoint
         "gemini_model": "gemini-2.5-pro",
         "gemini_base_url": "https://generativelanguage.googleapis.com/v1beta",
+        # Null means the prompt shipped in app/llm/prompts/system.md. A string replaces
+        # it outright: the Settings box shows the text that will be sent, so it has to be
+        # the text that is sent.
+        "summary_prompt": None,
         "claude_cli_path": "claude",
         "claude_cli_timeout_s": 600,
         "claude_cli_args": [],
@@ -159,7 +184,14 @@ DEFAULTS: dict[str, Any] = {
             "starttls": True,
         },
     },
-    "retention": {"audio_days": 30, "transcript_days": None},
+    "retention": {
+        # Days before the raw WAVs are deleted; the transcript and summary stay. null or
+        # 0 means never. `transcript_days` deletes the meeting outright and is off by
+        # default (DECISIONS D38).
+        "audio_days": 30,
+        "transcript_days": None,
+        "sweep_hours": 6,  # how often the worker looks; 0 disables the sweep entirely
+    },
     "enrichment": {"source": "null", "timeout_s": 2.0},  # null|fake
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
@@ -176,7 +208,10 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "asr.language_mode": ("detect", "fixed"),
     "asr.diarization": ("off", "onnx", "fake"),
     "audio.capture": ("wasapi", "synthetic"),
+    "ui.view": ("list", "calendar"),
+    "ui.calendar_span": ("day", "week", "month"),
     "audio.vad": ("two_stage", "energy"),
+    "audio.echo_cancel": ("auto", "on", "off"),
     "detection.mode": ("shadow", "on", "off"),
     "detection.sources": ("windows", "fake"),
     "llm.provider": ("anthropic", "openai", "gemini", "claude-subscription", "ollama", "fake"),
@@ -197,6 +232,23 @@ ENV_ALIASES: dict[str, str] = {
 
 
 # --------------------------------------------------------------------------- helpers
+
+
+def _unset(node: dict[str, Any], dotted: str) -> None:
+    """Remove a dotted key, and any branch left empty by its going."""
+    parts = dotted.split(".")
+    cur: Any = node
+    trail: list[tuple[dict[str, Any], str]] = []
+    for part in parts[:-1]:
+        if not isinstance(cur, dict) or part not in cur:
+            return
+        trail.append((cur, part))
+        cur = cur[part]
+    if isinstance(cur, dict):
+        cur.pop(parts[-1], None)
+    for parent, key in reversed(trail):
+        if isinstance(parent.get(key), dict) and not parent[key]:
+            parent.pop(key)
 
 
 def _walk(node: Mapping[str, Any], prefix: str = "") -> Iterator[tuple[str, Any]]:
@@ -349,10 +401,25 @@ def make_secret_store(backend: str) -> SecretStore:
 class Config:
     """Merged configuration with typed accessors."""
 
-    def __init__(self, data: dict[str, Any], *, source_file: Path | None = None) -> None:
+    def __init__(
+        self,
+        data: dict[str, Any],
+        *,
+        source_file: Path | None = None,
+        from_env: Mapping[str, Any] | None = None,
+    ) -> None:
         self._data = data
         self.source_file = source_file
         self._secrets: SecretStore | None = None
+        #: Values that came from ``MA_*`` rather than from the file. They must not be
+        #: written back: an environment override is meant to last for one run, and a
+        #: launcher that exports one on every start would otherwise make it permanent
+        #: the first time the user saves anything at all.
+        self._from_env: dict[str, Any] = dict(from_env or {})
+        #: Anything the running application set deliberately. This outranks the note
+        #: above — a provider chosen in Settings is a choice, whatever the environment
+        #: happened to say at startup.
+        self._explicit: set[str] = set()
 
     # -- construction
 
@@ -374,11 +441,14 @@ class Config:
             if not isinstance(file_layer, dict):
                 raise ConfigError(f"{path} must contain a JSON object")
             data = _merge(data, file_layer)
-        data = _merge(data, env_layer(environ))
+        env = env_layer(environ)
+        data = _merge(data, env)
+        cfg_from_env = dict(_walk(env))
         if overrides:
             for dotted, value in overrides.items():
                 _set(data, dotted, value)
-        cfg = cls(data, source_file=path)
+                cfg_from_env.pop(dotted, None)  # an explicit override is not the env
+        cfg = cls(data, source_file=path, from_env=cfg_from_env)
         cfg.validate()
         return cfg
 
@@ -392,6 +462,7 @@ class Config:
 
     def set(self, dotted: str, value: Any) -> None:
         _set(self._data, dotted, value)
+        self._explicit.add(dotted)
 
     def as_dict(self) -> dict[str, Any]:
         return copy.deepcopy(self._data)
@@ -412,6 +483,26 @@ class Config:
         """Persist to ``app_config.json`` — with every secret key stripped out."""
         target = path or self.source_file or paths.config_path()
         payload = copy.deepcopy(self._data)
+        # Undo the environment layer, so a value exported by a launcher is not silently
+        # promoted to permanent state by an unrelated save. What was on disk wins; if
+        # nothing was, the key goes and the default applies again.
+        on_disk: dict[str, Any] = {}
+        if target.exists():
+            try:
+                loaded = json.loads(target.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    on_disk = loaded
+            except (OSError, ValueError):
+                on_disk = {}
+        for dotted in self._from_env:
+            if dotted in self._explicit:
+                continue
+            try:
+                previous = _get(on_disk, dotted)
+            except KeyError:
+                _unset(payload, dotted)  # nothing on disk: let the default apply again
+            else:
+                _set(payload, dotted, previous)
         for dotted in SECRET_KEYS:
             parts = dotted.split(".")
             cur: Any = payload
@@ -467,7 +558,7 @@ class Config:
 
     @property
     def summary_language(self) -> str:
-        return str(self.get("summary.language", "en"))
+        return str(self.get("summary.language", "auto"))
 
     @property
     def profile(self) -> str:

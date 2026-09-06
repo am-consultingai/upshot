@@ -10,6 +10,10 @@ from app.log import get
 
 log = get(__name__)
 
+# Long enough for a normal request to finish, short enough that a held-open SSE stream
+# cannot keep the process alive.
+GRACEFUL_SHUTDOWN_S = 3
+
 
 class LocalServer:
     def __init__(self, app: Any, *, host: str = "127.0.0.1", port: int = 8000) -> None:
@@ -18,7 +22,22 @@ class LocalServer:
         if host not in ("127.0.0.1", "localhost", "::1"):
             raise ValueError(f"refusing to bind to {host!r}: the UI is local-only")
         self.config = uvicorn.Config(
-            app, host=host, port=port, log_level="warning", access_log=False, lifespan="on"
+            app,
+            host=host,
+            port=port,
+            log_level="warning",
+            access_log=False,
+            lifespan="on",
+            # uvicorn otherwise installs its own dictConfig with propagate=False, so its
+            # loggers — including the ASGI exception tracebacks — go to the console and
+            # never reach app.log. None leaves logging alone: its records propagate to the
+            # root logger and land in the file with everything else.
+            log_config=None,
+            # Without this, shutdown waits for in-flight responses to finish — and an SSE
+            # stream never finishes. The observed result is a process that releases the
+            # port on SIGTERM and then lives forever, which is how a stale instance came
+            # to shadow a later one for two days.
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_S,
         )
         self.server = uvicorn.Server(self.config)
         self._thread: threading.Thread | None = None

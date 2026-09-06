@@ -132,7 +132,7 @@ def test_chunk_files_are_16k_mono_s16(tmp_path: Path) -> None:
     writer = ChunkWriter(tmp_path, tracks=("me",), rate=RATE)
     writer.write_pcm("me", tone(75))
     writer.close()
-    with wave.open(str(tmp_path / "audio" / "me" / "0001.wav"), "rb") as handle:
+    with wave.open(str(tmp_path / "audio" / "me.wav"), "rb") as handle:
         assert handle.getnchannels() == 1
         assert handle.getsampwidth() == 2
         assert handle.getframerate() == RATE
@@ -153,7 +153,7 @@ def test_preroll_flush_is_chunk_one(tmp_path: Path) -> None:
     assert len(records) == 1
     assert records[0].t0_ms == 0
     assert records[0].samples == 30 * RATE
-    with wave.open(str(tmp_path / "audio" / "me" / "0001.wav"), "rb") as handle:
+    with wave.open(str(tmp_path / "audio" / "me.wav"), "rb") as handle:
         written = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
     assert np.array_equal(written, payload)
 

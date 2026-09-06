@@ -44,3 +44,10 @@ def rms(signal: np.ndarray) -> float:
     if audio.size == 0:
         return 0.0
     return float(np.sqrt(np.mean(np.square(audio))))
+
+
+#: A digital copy of one track into the other lands well above this; two people genuinely
+#: talking land near zero, and even speaker-into-microphone bleed across a room stays well
+#: below it, because the acoustic path colours the signal heavily. Fitting the leak — gain,
+#: delay and how much of the track it accounts for — is :mod:`app.audio.echo`.
+CROSSTALK_THRESHOLD = 0.85

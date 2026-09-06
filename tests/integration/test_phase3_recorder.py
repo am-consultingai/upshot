@@ -55,8 +55,10 @@ def test_commit_flushes_preroll_as_chunk_one(tmp_path: Path) -> None:
     assert first.t0_ms == 0
     assert 17_000 <= first.dur_ms <= 19_000, first.dur_ms
     assert result.folder == folder
-    with wave.open(str(folder / "audio" / "me" / "0001.wav"), "rb") as handle:
-        assert handle.getnframes() == first.samples
+    with wave.open(str(folder / "audio" / "me.wav"), "rb") as handle:
+        # One file per track: the pre-roll is the *start* of it, not a file of its own.
+        assert first.offset == 0, "the pre-roll must open the recording"
+        assert handle.getnframes() == sum(r.samples for r in records if r.track == "me")
 
 
 def test_device_change_recovery(tmp_path: Path) -> None:

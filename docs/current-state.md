@@ -1,14 +1,24 @@
 # Current state
 
-Where this repository stands on **2026-08-29**, after building `EXECUTION-PLAN.md` phases
-0–14 and the work that followed. Written to be read cold, by someone who was not here.
+Where this repository stands on **2026-09-06**. Written to be read cold, by someone who
+was not here.
+
+Open problems live in `known-issues.md`; interface gaps against the competition live in
+`UX-PRIOR-ART.md`. This file is what the thing *is* and what has actually been run.
+
+The first version of this file described a build that had never executed on Windows. The
+second described one that had never made a real LLM call. **Both are now false.** On
+2026-09-06 the application produced its first real summaries: a Hebrew meeting, summarized
+by Claude Code on the author's own subscription, rendered and filed. Most of what follows
+was learned by running it on Windows, and most of the bugs in `known-issues.md` were found
+that way rather than by tests.
 
 - **What it is:** a local Windows application that records both sides of a meeting,
   transcribes it locally, summarizes it with an LLM, renders HTML and files it in a
   browsable timeline. No cloud service is required; no Google account exists in this build.
 - **Design contract:** `DESIGN.md`, `TECHNICAL-DESIGN.md`, `DETECTION.md`, `STACK.md`,
-  `SECURITY-AND-AUTH.md`. Every judgment call made while building is in `DECISIONS.md`
-  (31 entries). Phase-by-phase status is in `PROGRESS.md`.
+  `SECURITY-AND-AUTH.md`. Every judgment call is in `DECISIONS.md` (38 entries).
+  Phase-by-phase status is in `PROGRESS.md`. The Windows runbook is `windows-run.md`.
 
 ---
 
@@ -16,16 +26,20 @@ Where this repository stands on **2026-08-29**, after building `EXECUTION-PLAN.m
 
 | | |
 |---|---|
-| Phases 0–14 | **complete**, one commit each |
-| Python suite | **338 passed, 24 skipped, 5 deselected** (`live_api`) |
-| Frontend | **17 vitest** unit tests, **20 Playwright** e2e tests, headless chromium |
-| `ruff` / `mypy --strict` | clean, 85 modules |
-| M0 `selftest pipeline` | ✅ 0.6 s against a 120 s budget |
-| M1 `selftest capture-e2e` | ✅ **synthetic capture mode** — see §4 |
-| M2 `selftest detect-e2e` | ✅ |
-| Size | 12.5k lines of app, 6.1k lines of tests, 89 config keys |
+| Phases 0–14 | complete |
+| Python suite | **436 passed, 25 skipped, 5 deselected** (`live_api`) |
+| Frontend | **31 vitest** unit tests, **26 Playwright** e2e tests |
+| `ruff` / `mypy --strict` | clean, 90 modules |
+| M0 / M1 / M2 selftests | green (M1 in synthetic capture mode — §5) |
+| Size | 14.9k lines of app, 7.9k lines of tests, 100 config keys |
+| Runs on Windows | **yes**, from source via `scripts/windows/run-app.cmd` |
+| Real transcription | **yes** — ivrit-ai large-v3 on CUDA, Hebrew, `device=cuda compute=int8` |
+| Real summarization | **yes** — Claude Code on the author's own subscription, Hebrew, on a real meeting |
+| Summary format | **free-form**: the prompt writes the document; the app imposes only a JSON envelope |
+| Echo cancellation | **run on Windows** on a real leaking recording with the real GPU model |
+| Retention sweep | **run on Windows**, including a delete that could not complete |
 
-The per-phase gate, which every commit passes:
+Gate, which every change passes:
 
 ```bash
 uv run ruff check . && uv run mypy app && uv run pytest -q && uv run python -m app.selftest all
@@ -33,141 +47,209 @@ uv run ruff check . && uv run mypy app && uv run pytest -q && uv run python -m a
 
 ---
 
-## 2. What exists
+## 2. What changed since the phases closed
 
-**Capture.** Two WASAPI streams (microphone + render loopback) → callbacks that only copy
-bytes → a writer thread that resamples to 16 kHz mono int16, cuts chunks on a VAD-silence
-boundary near 60 s (hard cut at 70 s), and writes `manifest.jsonl` with a durability order
-that is asserted by test: `writeframes → flush → fsync(wav) → append manifest → fsync`.
-A 60-second pre-roll ring means a detected meeting starts *before* the trigger. A device
-change costs a `gap_ms` marker, never the meeting.
+Grouped by what a reader would care about, not chronologically.
 
-**Pipeline.** SQLite job queue (`claim_next` is one `UPDATE … RETURNING`), a preemptible
-worker, five stages — transcribe, assemble, summarize, render, deliver — each idempotent
-and restartable. Exit criterion: a randomized 500-job fuzz loses nothing.
+### Audio storage: one file per track
 
-**ASR.** faster-whisper behind a protocol, with the CUDA probe, the Windows
-`add_dll_directory` **plus** PATH prepend fix, a warmup inference, CPU fallback, and
-`condition_on_previous_text=False`. Language is resolved once from the first chunk with
-speech and then pinned. Optional speaker diarization (§5).
+Recording used to write a chunk file per minute per track. It now writes **one growing WAV
+per track** — `audio/me.wav` and `audio/them.wav` — appended to as the meeting runs, with
+the RIFF sizes rewritten after every committed segment. The file is a valid, playable WAV
+at every moment; this was verified mid-recording (50.1 s readable while recording
+continued). `manifest.jsonl` became an *index* rather than a directory listing: one line
+per committed segment carrying its sample `offset`. Lost audio is written as real silence,
+so the file's timeline **is** the meeting's timeline. Transcription is now one pass per
+track instead of one per chunk. Full reasoning in `DECISIONS.md` **D34**.
 
-**Assembly.** Two segment lists merge into one speaker-tagged timeline: echo suppression
-(rapidfuzz ≥ 85 within an overlap window), 2-second coalescing, glossary correction,
-`transcript.json` + `transcript.md`, every turn indexed for search.
+### Playback: one stream, mixed on read
 
-**Summarization.** Map-reduce windowed by *real* tokens, six providers behind one protocol
-(§6), a JSON Schema contract, prompt caching on the Anthropic path, and sanity gates that
-raise `NEEDS_REVIEW` rather than accepting a bad summary silently.
+`GET /api/meetings/{id}/audio` defaults to `track=mix` — both tracks summed into one mono
+stream, synthesised as the request is served. Nothing extra is stored, and because both
+tracks are mono 16-bit PCM on the same timeline, a byte range maps 1:1 onto both files, so
+seeking stays cheap. Verified sample-identical to `me + them` against a real recording,
+with 300 random ranges (including odd offsets) matching exactly. **D35**.
 
-**Rendering and delivery.** One Jinja template → a styled page and a premailer-inlined
-email variant, RTL-correct by construction (logical CSS properties only, asserted), no
-external resources, `data-at-ms` so the summary seeks into the audio. Delivery defaults to
-**draft**: render, store, notify.
+### Settings: device pickers and live meters
 
-**Detection.** The four-tier state machine from `DETECTION.md`, pure evidence scoring
-tested against every worked example in §5, the ConsentStore watch with the re-arm that the
-API requires, and **shadow mode as the install default** — it evaluates and logs and
-commits nothing.
+The Settings screen now selects **both** endpoints — microphone (`audio.input_device`) and
+the playback device whose loopback becomes the `them` track (`audio.output_device`) — each
+with a live level meter beside it. The meter is built through `make_capture`, so what it
+shows comes through the same path a recording would use. dB scale (speech peaks near 0.05
+linear, which would be one segment out of 24), peak-hold with decay, and silence stated in
+words rather than implied. **D33**.
 
-**Interfaces.** FastAPI on 127.0.0.1 with Host-header, cookie-auth and CSRF middleware in
-that order; SSE; ranged audio. React + TanStack Query + Tailwind UI with en/he catalogues
-and runtime direction switching. A pystray tray whose every decision comes from one pure
-function.
+### Main screen: calendar view
 
-**Packaging.** PyInstaller one-dir spec with the hidden imports PyInstaller cannot see,
-an Inno per-user installer, and a `build.ps1` that runs `--selftest imports` and
-`--selftest pipeline` **against the freeze** and fails the build if either does.
+A **List / Calendar** toggle, and within the calendar **Day / Week / Month**. Day and week
+share a time-grid that reuses the existing tested overlap packer; month is a cell grid. All
+date arithmetic is pure functions in `frontend/src/lib/calendar.ts`, covered by 14 unit
+tests including DST, year boundaries and a month starting on Sunday. Labels come from
+`Intl.DateTimeFormat`, so Hebrew is correct with no translation table. The choice persists
+as `ui.view` / `ui.calendar_span`.
+
+### Crosstalk detection, and its removal
+
+A microphone endpoint that also carries system audio records the far side twice, and
+nothing downstream can tell that from two people saying the same thing. The transcribe
+stage measures correlation between the tracks, logs it, and above **0.85** adds a review
+reason. Measured on real recordings: a clean one scores 0.000, the leaking one 0.974.
+**D36**.
+
+That leak is now **removed** as well. It is not an acoustic echo — it never leaves the
+machine — so it is a digital copy of `them` at one gain and one delay. Fitted by least
+squares on the 60 s window where the far side is loudest, then subtracted in the two
+places it matters: the ASR input (`audio/clean/me.wav`, written, transcribed, deleted)
+and the playback mixer (on read, at a shifted offset, so range requests stay cheap).
+Measured on the author's recordings, one tap removes **94.8%** and **96.0%** of the near
+track's energy — 99% inside the windows where the far side is actually talking — and an
+8-, 32- or 128-tap filter was measured to buy at most two further points. The recording
+itself is never modified; `?track=me` still serves exactly what the device produced.
+`audio.echo_cancel` is `auto | on | off`. **D37**.
+
+### Retention finally sweeps
+
+`retention.audio_days` (30) now deletes something. The raw WAVs go; the transcript, the
+summary and the meeting row stay. `retention.transcript_days` (`null`) removes a meeting
+outright and is off by default. Nothing is swept while it is recording, while a job for it
+is queued, or before a transcript exists — until then the audio *is* the meeting — and
+every refusal is reported by name. `GET /api/retention` shows what the policy would do
+without doing it, `POST /api/retention/sweep` runs it now, and the worker runs it when the
+queue is idle, at most every `retention.sweep_hours` (6). The meeting page says the
+recording was deleted on purpose rather than showing an empty player. **D38**, closing
+**D27**.
+
+### Deleting a recording
+
+`DELETE /api/meetings/{id}` removes the folder and the row (jobs and indexed turns cascade),
+with a **Delete** action on each card. It refuses a meeting that is currently recording,
+and refuses any folder that is not inside the data root — the folder path comes from the
+database and must never be able to aim the delete somewhere else.
+
+### The Windows launcher
+
+`scripts/windows/run-app.cmd` is the whole interface. It stops any previous instance,
+picks a port that is actually free (probing `127.0.0.1`, because a Linux listener inside
+WSL answers there while Windows reports the port free), prints the resolved configuration
+before starting, and confines every download to `%LOCALAPPDATA%\meeting-agent-win` —
+nothing is written into the source tree and nothing touches PATH. `-Uninstall` removes it
+all. Ctrl+C stops the app with no prompt. See `windows-run.md`.
 
 ---
 
-## 3. How to run it
+## 3. Bugs found by running it on Windows
+
+Each of these was invisible to the test suite as it stood, and each now has a test.
+The last row was found this way too — by running the new sweep on Windows rather than
+by reasoning about it.
+
+| Bug | Cause |
+|---|---|
+| Process vanished mid-meeting, no traceback | Use-after-free in PortAudio: the writer thread called `is_active()` on a stream the stop path was closing. A native access violation, so no `except` could catch it. Fixed with a per-stream lifecycle lock plus a process-wide PortAudio lock |
+| Transcription died with `'str' object has no attribute 'dtype'` | `WhisperModel.detect_language` needs a float32 array, not a path. The test stub had modelled the wrong contract |
+| Recording failed with `-9999` | The Settings meter held the microphone; recording could not open it. The meter now yields, and the open retries across the handover |
+| The microphone was reopened ~4×/second | A React effect depended on `t`, which is a fresh function every render. Guarded now by a counter and a browser test |
+| An idle Settings tab reopened the mic every 5 minutes | A server-side cap that `EventSource` simply reconnected around. The browser now owns the meter's lifetime |
+| Closing a tab never released the microphone | `await asyncio.to_thread(release)` inside a `finally` — awaiting in a cancelled task raises before the release runs |
+| A stale instance shadowed a new one for two days | `uvicorn` had no `timeout_graceful_shutdown`, so an open SSE stream blocked shutdown forever after the port was released |
+| Notification buttons never appeared | `WindowsToaster` does not support actions; it warns and drops them. Since the buttons *are* the detector's learning mechanism, this had silently disabled it |
+| Toasts failed with `RPC_E_WRONG_THREAD` | WinRT objects belong to their creating thread's apartment; one toaster was shared across threads |
+| Every fixture meeting looked like a broken machine | `write_chunks` seeded both tracks identically, so all fixtures had perfect crosstalk |
+| The retention sweep reported deleting audio it had not deleted | `shutil.rmtree(ignore_errors=True)` cannot remove a file Windows has open. It removed one track, swallowed the error, and the mark was written anyway — so the meeting was recorded as swept, with half its audio still on disk and no retry. Linux unlinks open files, so nothing local could show it |
+
+---
+
+### Summaries became real, and free-form
+
+The first real LLM call in this project's life was made on 2026-09-06, through **Claude
+Code on the author's own subscription** (`llm.provider = claude-subscription`). The
+application never holds a credential: it spawns the CLI the user signed into themselves.
+Settings detects the install, offers to install it (Anthropic's own installer, in a visible
+console that then carries straight on into the login), and reports whether it is signed in.
+
+Getting there took four distinct faults in a row, each hiding the next — encoding, prompt
+placement, a worker that abandoned the pipeline, and a page that cached a 404. All are in
+`known-issues.md` under "Fixed on 2026-09-06", because the pattern is the lesson: every one
+presented as silence rather than as an error.
+
+Then the summariser was **replaced entirely**. The old one made the model fill a nine-field
+schema (`NOTES_SCHEMA`) which a Jinja template laid out into six fixed sections. That meant
+an edited prompt could change wording but never structure — which is not what a prompt
+editor implies. Removed: the schema, the map/reduce pipeline, `prompts/map.md`,
+`prompts/reduce.md`, `templates/`, the sanity gates, `NEEDS_REVIEW`, and the jinja2 and
+premailer dependencies.
+
+What remains imposed is one JSON envelope, `{summary_html, title?}`, kept only because it
+is what makes an answer extractable across providers. Everything inside is the prompt's:
+sections, order, headings, layout, inline CSS. Two things are stripped from the HTML before
+it reaches the page — `<script>` and `on*=` handlers — and nothing else.
+
+The prompt itself is editable in Settings, in full, and the summary records which prompt
+produced it (`prompt_versions.system = custom:<hash>`), so a summary can always say what
+made it. Editing the prompt and pressing Summarize redoes the work with no staleness check.
+
+### Importing a transcript recorded elsewhere
+
+`app/transcript_import.py` brings in text and audio produced somewhere else as a finished
+meeting, landing in `TRANSCRIBED` with nothing queued — the transcribe and assemble stages
+are skipped rather than run. Timestamps are spread across the recording in proportion to
+line length, which is a guess but a defensible one. Speakers cannot be recovered from a
+plain-text export, so every turn is labelled `THEM`; attribution in summaries of imported
+meetings is unreliable by construction.
+
+---
+
+## 4. How to run it
+
+**Windows (the real thing):** double-click `scripts\windows\run-app.cmd`. Everything else
+is in `docs/windows-run.md`.
+
+**Linux, with fakes:** `bash scripts/demo.sh` (override the port with `PORT=8055`).
 
 ```bash
-# headless: server + worker + detector, no tray
+# headless
 uv run python -m app.main
-
-# with the tray icon (Windows)
-uv run python -m app.tray
-
-# fakes end to end, for a demo with no model and no key
+# fakes end to end
 MA_AUDIO__CAPTURE='"synthetic"' MA_ASR__BACKEND='"fake"' MA_LLM__PROVIDER='"fake"' \
 MA_AUDIO__VAD='"energy"' uv run python -m app.main
 ```
 
-The frontend must be built once (`cd frontend && npm ci && npm run build`); FastAPI serves
-`frontend/dist`. `docs/windows-run.md` is the runbook for everything that needs Windows.
+The frontend must be built once (`cd frontend && npm ci && npm run build`).
 
 ---
 
-## 4. What is **not** proved
+## 5. What is still **not** proved
 
-This was built in a **WSL2 shell with Windows interop off**, so nothing has ever executed
-on Windows. 24 tests are written, collected and skipped; `PROGRESS.md` lists each with the
-command that closes it. The load-bearing ones:
-
-- **Phase 4's stop condition has not run.** `test_dual_stream_concurrent` decides whether
-  PyAudioWPatch can hold a capture and a loopback stream together for hours. Everything
-  downstream assumes it can. If it fails, descend the ladder in `TECHNICAL-DESIGN.md` §4.0
-  — only `app/audio/wasapi.py` changes.
-- **M1 ran in synthetic mode.** The fixture is fed through `SyntheticCapture` instead of
-  being played out a real render endpoint and captured on loopback. The same command
-  reports `mode=wasapi` on Windows.
-- **No frozen build exists.** `dist/` has never been produced.
-- **No real LLM call has been made** through any provider — every test uses an injected
-  transport. The Settings **Test** button closes that in one click per provider.
-- **Measurements still open:** clock drift and xruns (Phase 4), Hebrew tokens-per-word
-  (Phase 7, needs a key), language-detection confidence on a first chunk (Phase 5).
-  FTS5 presence is **closed** — it is available.
-
----
-
-## 5. Added after the phases, on request
-
-**Diarization** (`asr.diarization = off|onnx|fake`, **off by default**). Splits `THEM` into
-`THEM_1/2/3`; the `me` track is never relabelled because two-track capture already settles
-it. ONNX via sherpa-onnx rather than pyannote/torch — the design's "~2.5 GB" objection was
-a Linux number (`DECISIONS.md` D28). Measured: clustering threshold **0.6** is the only
-value correct on both reference recordings, 10–12× real time on CPU, ~19 MB of wheels plus
-~37 MB of models, no Hugging Face account. Hebrew accuracy is unmeasured.
-
-**Three behaviours the design declared but nothing wired** (D26): `POST /api/import` now
-ingests audio into real chunks and runs the pipeline; the glossary correction pass runs in
-`assemble`; and `job_policy = "scheduled"` honours a nightly window instead of silently
-behaving like `asap`.
-
-**Provider choice and secrets** (§6).
-
-**Bugs found by tests, each fixed** — Jinja autoescaping silently stripped the Hebrew font
-stack from every email; concurrent FTS5 queries on one connection raised `InterfaceError`;
-deep links like `/m/<id>` returned 404; two writer threads tripled a recording's duration;
-the e2e suite made a real HTTPS call to Google; provider selection snapped back until the
-server responded.
+- **Neither D37 nor D38 has run during a live recording.** Both have now run on Windows
+  against real audio and the real GPU model, driven directly rather than through the UI.
+  What has not happened is a meeting recorded, echo-cancelled and swept end to end while
+  the app runs normally.
+- **Only one provider has made a real call.** `claude-subscription` has now summarized a
+  real Hebrew meeting several times. Anthropic, OpenAI, Gemini and Ollama remain tested
+  only against injected transports; the free-form path in particular has never run against
+  any of them.
+- **Phase 4's stop condition has never been evaluated.** `test_dual_stream_concurrent`
+  decides whether a capture and a loopback stream survive together for hours. In practice
+  both streams have run together for minutes at a time without trouble, which is
+  encouraging but is not the test.
+- **The microphone signal the detector is built on is only half verified.** A probe
+  (`scripts/windows/probe-mic.py`) established on Windows that the ConsentStore follows
+  the host API rather than the device — WASAPI and DirectSound register, MME does not —
+  and that `voicemeeter.exe` holds the microphone continuously on this machine. What is
+  still unanswered is `DETECTION.md` §7's central claim that **muting does not release
+  the stream**, which the release grace and the whole end-of-meeting path assume. The
+  protocol is in `manual-checks.md`; it needs a real call.
+- **M1 still runs in synthetic capture mode** rather than playing a fixture out a real
+  render endpoint.
+- **No frozen build exists.** `dist/` has never been produced; there is no installer.
+- **Diarization has never run on this machine** (`asr.diarization = off`).
+- **Hebrew transcription quality is unmeasured.** It produces plausible Hebrew; nobody has
+  scored it.
 
 ---
 
-## 6. Summarization providers
+## 6. Known issues
 
-`llm.provider` ∈ `anthropic` (**default**) · `openai` · `gemini` · `claude-subscription` ·
-`ollama` · `fake`. Keys live in the OS credential store behind a **write-only**
-`PUT /api/settings/secrets`; the `GET` returns booleans. A meeting flagged `sensitive`
-still forces Ollama regardless of the setting.
-
-`claude-subscription` spawns the Claude Code CLI the user signed into themselves and
-**holds no credential** — see `inference-subscription.md` for the rules, the evidence and
-the mechanism.
-
----
-
-## 7. Known gaps, in the order I would close them
-
-1. **The Windows build has never run.** Everything in §4 depends on it.
-2. **No setup UI.** `bootstrap.py` and `preflight()` exist and are tested; first run today
-   is `--bootstrap` plus hand-editing `app_config.json`. `EXECUTION-PLAN.md` Phase 13 also
-   calls for a 5-second two-track test recording with live level meters — the one check
-   that proves capture works before a real meeting depends on it. No test in the plan's
-   Phase 13 table would have caught its absence.
-3. **Retention is configured but not swept** (D27). `retention.audio_days` defaults to 30
-   and nothing deletes anything. A config key that promises deletion and does not delete
-   is a trust problem.
-4. **Settings exposes 3 of 89 config keys.** About 18 deserve a UI; the rest are seams,
-   tuned defaults, or test-only switches.
+Moved to `known-issues.md` on 2026-09-06, and extended there with everything this session
+turned up. Fifteen open entries, ordered by what I would close first: no first-run setup,
+no frozen build, and an interface well behind the category (`UX-PRIOR-ART.md`).

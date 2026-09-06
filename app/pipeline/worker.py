@@ -70,6 +70,7 @@ class Worker:
         self.last_metrics: dict[str, dict[str, Any]] = {}
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_sweep: float | None = None
         self.queue.reset_running()
 
     # -- policy ------------------------------------------------------------
@@ -136,6 +137,7 @@ class Worker:
             job=job,
             should_yield=self.should_yield,
             services=self.services,
+            force=self.queue.take_rerun(job.meeting_id, job.stage),
         )
         handler = None
         folder = Path(meeting.folder)
@@ -175,8 +177,6 @@ class Worker:
             return
         target = STAGE_RUNNING_STATE[stage]
         meeting = self.dao.require_meeting(job.meeting_id)
-        if meeting.state == MeetingState.NEEDS_REVIEW:
-            return  # the flag is sticky: jobs keep running, the state keeps saying so
         if meeting.state != str(target):
             from app.pipeline.states import is_legal
 
@@ -194,8 +194,6 @@ class Worker:
             target = STAGE_DONE_STATE[stage]
             meeting = self.dao.require_meeting(job.meeting_id)
             current = MeetingState(meeting.state)
-            if current == MeetingState.NEEDS_REVIEW:
-                return
             if current != target and is_legal(current, target):
                 self.dao.set_state(job.meeting_id, target)
         self.queue.enqueue_next_stage(job)
@@ -219,12 +217,37 @@ class Worker:
 
     # -- the loop ----------------------------------------------------------
 
+    def maybe_sweep(self) -> Any:
+        """Run the retention policy, at most once every ``retention.sweep_hours``.
+
+        From the worker loop rather than a scheduler thread: the sweep deletes the same
+        folders and rows the pipeline reads, and running it on the thread that already
+        serialises that work removes a whole class of race for the cost of a timestamp.
+        The first call always runs, so a sweep happens shortly after every startup.
+        """
+        hours = float(self.config.get("retention.sweep_hours", 6))
+        if hours <= 0 or self.services is None:
+            return None
+        now = self.clock.monotonic()
+        if self._last_sweep is not None and now - self._last_sweep < hours * 3600:
+            return None
+        self._last_sweep = now
+        try:
+            from app.retention import sweep_services
+
+            return sweep_services(self.services)
+        except Exception as exc:  # a housekeeping task must never take the worker down
+            log.warning("retention sweep failed: %s", exc)
+            return None
+
     def run_forever(self, *, idle_sleep: float = 2.0, busy_sleep: float = 5.0) -> None:
         while not self.stop_event.is_set():
             if not self.may_run():
                 self.clock.sleep(busy_sleep)
                 continue
             if not self.run_once():
+                # Only with nothing else to do: housekeeping never competes with a job.
+                self.maybe_sweep()
                 self.clock.sleep(idle_sleep)
 
     def start(self) -> threading.Thread:

@@ -63,7 +63,8 @@ fake ASR is wired. Both close on Windows with the same command — see `docs/win
 phase tests did not reach (DECISIONS D26): `POST /api/import` now ingests audio into real
 chunks and runs the pipeline; the glossary correction pass runs in `assemble`; and the
 `scheduled` job policy honours a nightly window instead of behaving like `asap`.
-One gap is deliberately left open: the retention sweep (DECISIONS D27).
+The one gap left open at sign-off — the retention sweep (D27) — is now closed too: it
+landed in DECISIONS **D38**, and `retention.audio_days` finally deletes something.
 
 ## Diarization (added after the phases, on request)
 
@@ -122,3 +123,25 @@ by default. Nothing else is skipped.
 | `test_windows_dll_dirs_registered` — `add_dll_directory` **and** the PATH prepend | 1 | Windows: `uv run pytest -m windows` |
 | `live_api` — Hebrew tokens-per-word, cache hit on window 2, live smoke, cross-language summary, Ollama | 5 (deselected) | `uv run pytest -m live_api` with an Anthropic key, or `python -m app.selftest live-llm` |
 | ONNX diarization — well-formed turns, real speaker separation | 2 | `uv sync --extra diarization`, download the models, then `MA_DIARIZATION_MODELS=<dir> uv run pytest -q tests/e2e/test_diarization_onnx.py` |
+
+---
+
+## After the phases: Windows, 2026-09-01 to 2026-09-03
+
+The application ran on Windows for the first time. What that changed is in
+`current-state.md`; the rationale for each design change is in `DECISIONS.md` D33–D36.
+
+| Area | Status | Proved by |
+|---|---|---|
+| Real two-track capture on Windows hardware | **working** | `me.wav` peak 19418 from a real microphone; both endpoints opened concurrently |
+| Real Hebrew transcription, GPU | **working** | `device=cuda compute=int8`, ivrit-ai large-v3, `language he detected (p=1.00)` |
+| Full pipeline to RENDERED on Windows | **working** | `assembled 4 segments into 3 turns`, `rendered summary.html` |
+| One file per track (D34) | **working** | valid mid-recording at 50.1 s; manifest offsets contiguous |
+| Mixed playback (D35) | **working** | sample-identical to `me + them`; 300 random ranges exact |
+| Settings device pickers + live meters | **working** | both meters open their device once, asserted by a browser test |
+| Calendar view (day/week/month) | **working** | 14 unit tests incl. DST and year boundaries; 2 Playwright tests |
+| Meeting deletion | **working** | folder removed, rows cascade, refuses outside the data root |
+| Crosstalk detection (D36) | **working** | 0.000 on a clean recording, 0.974 on a leaking one |
+| `test_dual_stream_concurrent` | **still not run** | the Phase 4 stop condition remains unevaluated |
+| Real LLM call | **still not made** | every run used `llm.provider = fake` |
+| Frozen build / installer | **still not produced** | `dist/` does not exist |
