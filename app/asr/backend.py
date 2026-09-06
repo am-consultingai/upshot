@@ -162,3 +162,16 @@ def max_consecutive_repeats(segments: Sequence[Segment]) -> int:
             previous = text
         longest = max(longest, run)
     return longest
+
+
+def track_of(wav: Path) -> str:
+    """Which track a file belongs to.
+
+    Audio is one file per track (``audio/me.wav``), so the stem names the track. The
+    parent-folder form is still accepted: fixtures and imported audio use it.
+    """
+    if wav.stem in ("me", "them"):
+        return str(wav.stem)
+    if wav.parent.name in ("me", "them"):
+        return str(wav.parent.name)
+    return "them"

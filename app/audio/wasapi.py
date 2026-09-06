@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import contextlib
 import queue
+import threading
 import time
 from typing import Any
 
 from app.audio.capture import AudioFormat, CaptureStats, StreamError
-from app.audio.devices import DeviceInfo, resolve_track
+from app.audio.devices import PORTAUDIO_LOCK, DeviceInfo, resolve_track
 from app.log import get
 
 log = get(__name__)
+
+OPEN_ATTEMPTS = 4
+OPEN_RETRY_S = 0.25
 
 
 class WasapiCapture:
@@ -39,6 +43,9 @@ class WasapiCapture:
         self.frames: queue.Queue[bytes] = queue.Queue(maxsize=1)
         self._host: Any = None
         self._stream: Any = None
+        # Guards this stream's handle. Held across close, so no other thread can be
+        # inside a PortAudio call on a stream that is being freed.
+        self._lifecycle = threading.RLock()
         self.running = False
 
     # -- lifecycle ---------------------------------------------------------
@@ -53,23 +60,46 @@ class WasapiCapture:
         self.format = AudioFormat(rate=device.rate, channels=device.channels, dtype="float32")
         maxsize = max(2, int(self.queue_seconds * device.rate / self.block_frames))
         self.frames = queue.Queue(maxsize=maxsize)
-        self._host = pyaudio.PyAudio()
-        try:
-            self._stream = self._host.open(
-                format=pyaudio.paFloat32,
-                channels=device.channels,
-                rate=device.rate,
-                frames_per_buffer=self.block_frames,
-                input=True,
-                input_device_index=device.index,
-                stream_callback=self._callback,
-            )
-        except OSError as exc:
-            self._host.terminate()
-            self._host = None
-            raise StreamError(f"cannot open {self.track} stream on {device.name!r}: {exc}") from exc
-        self.running = True
-        self._stream.start_stream()
+        # Whole open under both locks, in the same order stop() takes them: PortAudio
+        # must not be initialising a host on one thread while another terminates one.
+        with self._lifecycle, PORTAUDIO_LOCK:
+            self._host = pyaudio.PyAudio()
+            # An endpoint that was open a moment ago is not instantly reopenable: WASAPI
+            # reports -9999 ("Unanticipated host error") while the previous client's
+            # stream is still tearing down. Handing the microphone from the settings
+            # meter to the recorder hits exactly that window, so retry before giving up.
+            last: OSError | None = None
+            for attempt in range(OPEN_ATTEMPTS):
+                try:
+                    self._stream = self._host.open(
+                        format=pyaudio.paFloat32,
+                        channels=device.channels,
+                        rate=device.rate,
+                        frames_per_buffer=self.block_frames,
+                        input=True,
+                        input_device_index=device.index,
+                        stream_callback=self._callback,
+                    )
+                    last = None
+                    break
+                except OSError as exc:
+                    last = exc
+                    if attempt + 1 < OPEN_ATTEMPTS:
+                        log.warning(
+                            "%s stream on %r did not open (%s); retrying",
+                            self.track,
+                            device.name,
+                            exc,
+                        )
+                        time.sleep(OPEN_RETRY_S)
+            if last is not None:
+                self._host.terminate()
+                self._host = None
+                raise StreamError(
+                    f"cannot open {self.track} stream on {device.name!r}: {last}"
+                ) from last
+            self.running = True
+            self._stream.start_stream()
         log.info(
             "opened %s stream: %s @ %d Hz, %d ch",
             self.track,
@@ -79,16 +109,17 @@ class WasapiCapture:
         )
 
     def stop(self) -> None:
-        self.running = False
-        stream, self._stream = self._stream, None
-        host, self._host = self._host, None
-        if stream is not None:
-            with contextlib.suppress(Exception):
-                stream.stop_stream()
-            with contextlib.suppress(Exception):
-                stream.close()
-        if host is not None:
-            host.terminate()
+        with self._lifecycle, PORTAUDIO_LOCK:
+            self.running = False
+            stream, self._stream = self._stream, None
+            host, self._host = self._host, None
+            if stream is not None:
+                with contextlib.suppress(Exception):
+                    stream.stop_stream()
+                with contextlib.suppress(Exception):
+                    stream.close()
+            if host is not None:
+                host.terminate()
 
     # -- the callback ------------------------------------------------------
 
@@ -120,10 +151,15 @@ class WasapiCapture:
             return None
 
     def is_alive(self) -> bool:
-        stream = self._stream
-        if stream is None:
-            return False
-        try:
-            return bool(stream.is_active())
-        except Exception:
-            return False
+        # Under the lifecycle lock: reading `self._stream` and then calling into it is
+        # only safe while stop() cannot run in between. Without this the writer thread
+        # calls is_active() on a stream the stop path has already closed, which is a
+        # native crash rather than a Python exception.
+        with self._lifecycle:
+            stream = self._stream
+            if stream is None:
+                return False
+            try:
+                return bool(stream.is_active())
+            except Exception:
+                return False

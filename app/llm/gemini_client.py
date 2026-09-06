@@ -13,7 +13,7 @@ from app.config import Config
 from app.errors import PermanentError, RecoverableError
 from app.llm.client import LlmResult
 from app.llm.repair import complete_with_repair, schema_instruction
-from app.llm.schema import NOTES_SCHEMA
+from app.llm.schema import FREE_SCHEMA
 from app.log import get
 
 log = get(__name__)
@@ -88,7 +88,7 @@ class GeminiClient:
         *,
         system_blocks: Sequence[dict[str, Any]],
         user: str,
-        schema: dict[str, Any] = NOTES_SCHEMA,
+        schema: dict[str, Any] = FREE_SCHEMA,
         max_tokens: int = 16000,
     ) -> LlmResult:
         system = "\n\n".join(str(block.get("text", "")) for block in system_blocks)

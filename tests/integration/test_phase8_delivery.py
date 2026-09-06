@@ -50,8 +50,12 @@ def test_render_writes_both_variants(tmp_path: Path) -> None:
     render.run(h.context(meeting, JobStage.RENDER, services=Services()))
     ui, email = render.output_paths(meeting.path)
     assert ui.exists() and email.exists()
-    assert "<style" in ui.read_text(encoding="utf-8")
-    assert "<style" not in email.read_text(encoding="utf-8")
+    # No stylesheet of ours in either any more. The template that carried one is gone, so
+    # whatever styling the page has is the prompt's own — injecting a reset would be the
+    # app deciding how the document looks, which is the thing free-form removed.
+    body = ui.read_text(encoding="utf-8")
+    assert "<style" not in body and "<style" not in email.read_text(encoding="utf-8")
+    assert 'dir="' in body, "direction still follows the summary language"
 
 
 def test_rerender_without_llm(tmp_path: Path) -> None:
@@ -112,7 +116,9 @@ def test_smtp_send_to_fake_server(tmp_path: Path) -> None:
         assert received.subject
         assert received.part("plain") and "<" not in received.part("plain")  # type: ignore[operator]
         html = received.part("html")
-        assert html and "<style" not in html and "style=" in html
+        # Inline styles are the model's business now; all the email must guarantee is a
+        # HTML part that is not carrying a stylesheet a mail client would strip.
+        assert html and "<style" not in html
         assert meta.read(meeting.path)["delivery"]["sent"] is True
 
 

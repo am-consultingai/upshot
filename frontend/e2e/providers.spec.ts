@@ -58,9 +58,15 @@ test("claude_subscription_shows_install_state", async ({ page }) => {
   const row = page.locator('[data-provider="claude-subscription"]');
   await expect(row.getByTestId("provider-hint")).toBeVisible();
   const ready = await row.getAttribute("data-ready");
+  const signedIn = await row.getAttribute("data-signed-in");
   if (ready === "false") {
+    await expect(row.getByTestId("provider-install")).toBeEnabled();
     await expect(row.getByTestId("provider-signin")).toBeDisabled();
     await expect(row.getByTestId("provider-hint")).toHaveText(/not installed/i);
+  } else if (signedIn === "true") {
+    // Offering "Sign in" to someone already signed in is not a next step.
+    await expect(row.getByTestId("provider-signin")).toHaveCount(0);
+    await expect(row.getByTestId("provider-hint")).toHaveText(/ready to summarize/i);
   } else {
     await expect(row.getByTestId("provider-signin")).toBeEnabled();
     await expect(row.getByTestId("provider-hint")).toHaveText(/never sees your credentials/i);

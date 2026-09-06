@@ -218,6 +218,82 @@
         "summary": "Index"
       }
     },
+    "/api/audio/devices": {
+      "get": {
+        "description": "Microphones the settings screen can offer. Never raises: a machine with no audio\nstack (or WSL) must still be able to open Settings.",
+        "operationId": "audio_devices_api_audio_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Audio Devices Api Audio Devices Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Audio Devices"
+      }
+    },
+    "/api/audio/level": {
+      "get": {
+        "description": "Server-sent input levels for the Settings meters.\n\n``me`` is the microphone, ``them`` the system-audio loopback. They are different\nendpoints, so both can be metered at once — which is also the quickest way to see\ncrosstalk: if both bars move when only the far side is talking, the microphone is\npicking up system audio.\n\nWhile a meeting is recording the endpoints are already open, so this reports the\nrecorder's own levels rather than fighting it for them.",
+        "operationId": "audio_level_api_audio_level_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track",
+            "required": false,
+            "schema": {
+              "default": "me",
+              "title": "Track",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Audio Level"
+      }
+    },
     "/api/detector/events": {
       "get": {
         "operationId": "detector_events_api_detector_events_get",
@@ -437,6 +513,48 @@
         "summary": "Import Audio"
       }
     },
+    "/api/llm/install": {
+      "post": {
+        "description": "Install Claude Code in a console the user can watch.\n\nTwo tiers, chosen in ``install_plan``: winget where it genuinely runs, and Anthropic's\nown installer where it does not. Neither is run blind — the exact command is rendered\nbeside the button before it is pressed.",
+        "operationId": "llm_install_api_llm_install_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Install Api Llm Install Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Llm Install"
+      }
+    },
+    "/api/llm/prompt": {
+      "get": {
+        "description": "The summarizing prompt: the one in force, and the shipped one to revert to.",
+        "operationId": "llm_prompt_api_llm_prompt_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Prompt Api Llm Prompt Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Llm Prompt"
+      }
+    },
     "/api/llm/signin": {
       "post": {
         "description": "Launch Anthropic's own login. We never see the credential it creates.",
@@ -525,6 +643,27 @@
           }
         },
         "summary": "Llm Test"
+      }
+    },
+    "/api/llm/update": {
+      "post": {
+        "description": "Update the Claude Code this application resolved — not whichever one PATH favours.\n\nOffered only where the app is already reporting a problem it cannot otherwise fix:\na build too old to say whether it is signed in. Installs that update themselves never\nreach that state, so this is the resolution to a complaint rather than a standing\nfeature.",
+        "operationId": "llm_update_api_llm_update_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Update Api Llm Update Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Llm Update"
       }
     },
     "/api/meetings": {
@@ -634,6 +773,46 @@
       }
     },
     "/api/meetings/{meeting_id}": {
+      "delete": {
+        "description": "Remove a meeting: its folder on disk and its rows. There is no undo.",
+        "operationId": "delete_meeting_api_meetings__meeting_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Meeting Api Meetings  Meeting Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Meeting"
+      },
       "get": {
         "operationId": "get_meeting_api_meetings__meeting_id__get",
         "parameters": [
@@ -725,7 +904,7 @@
     },
     "/api/meetings/{meeting_id}/audio": {
       "get": {
-        "description": "Range-request only, gated by the same cookie.",
+        "description": "``mix`` (default) is the whole meeting; ``me``/``them`` are the raw tracks.",
         "operationId": "get_audio_api_meetings__meeting_id__audio_get",
         "parameters": [
           {
@@ -742,25 +921,9 @@
             "name": "track",
             "required": false,
             "schema": {
-              "default": "them",
+              "default": "mix",
               "title": "Track",
               "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "seq",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Seq"
             }
           }
         ],
@@ -789,6 +952,7 @@
     },
     "/api/meetings/{meeting_id}/jobs/{stage}/retry": {
       "post": {
+        "description": "Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.",
         "operationId": "retry_stage_api_meetings__meeting_id__jobs__stage__retry_post",
         "parameters": [
           {
@@ -807,6 +971,16 @@
             "schema": {
               "title": "Stage",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
             }
           }
         ],
@@ -1033,6 +1207,48 @@
           }
         },
         "summary": "Recording Stop"
+      }
+    },
+    "/api/retention": {
+      "get": {
+        "description": "What the retention policy would delete right now. Reads; deletes nothing.\n\nA key that promises deletion and never deletes is a trust problem (D27); a sweep that\ndeletes silently is a worse one. This is how the policy is checked before it is\nbelieved, including which meetings it declined to touch and why.",
+        "operationId": "retention_policy_api_retention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retention Policy Api Retention Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Retention Policy"
+      }
+    },
+    "/api/retention/sweep": {
+      "post": {
+        "description": "Apply the policy now rather than waiting for the worker's next pass.",
+        "operationId": "retention_sweep_api_retention_sweep_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retention Sweep Api Retention Sweep Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Retention Sweep"
       }
     },
     "/api/settings": {

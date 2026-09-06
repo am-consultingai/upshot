@@ -21,3 +21,10 @@ tests/fixtures/*.wav
 reports/
 .demo/
 .venv-win/
+# run-app.ps1 keeps its runtime outside the source tree by default; these cover the
+# case where someone points -WorkDir back into the repo.
+.uv-*/
+
+# Real meeting recordings used for manual checks. Never committed: they are
+# third-party audio and transcripts, and 13 MB of mp3 has no place in git.
+tests/transcripts/

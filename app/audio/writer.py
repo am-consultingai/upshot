@@ -1,16 +1,26 @@
-"""Resample → mono → int16 → chunk WAVs → manifest (TECHNICAL-DESIGN.md §4.2–§4.4).
+"""Resample → mono → int16 → one WAV per track → manifest (TECHNICAL-DESIGN.md §4.2–§4.4).
+
+A meeting is *one recording*, so it is one file per track: ``audio/me.wav`` and
+``audio/them.wav``. They are appended to as the meeting runs and are valid, playable
+WAVs at every moment — the RIFF sizes are rewritten with each committed segment — so a
+meeting can be listened to or shared without any reassembly step.
 
 The durability order is load-bearing and asserted by a test:
 
-    writeframes → flush → fsync(wav) → append manifest line → fsync(manifest)
+    append PCM → flush → fsync(wav) → rewrite header → fsync(wav)
+        → append manifest line → fsync(manifest)
 
-A chunk does not exist until its manifest line is durable.
+The manifest is now an index rather than a directory listing: one line per committed
+segment, recording its sample ``offset`` into the track file. Audio before the last
+durable manifest line is guaranteed on disk; the header rewrite means anything after it
+is still playable rather than lost.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import struct
 import wave
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -27,8 +37,48 @@ INT16_MAX = 32767
 MANIFEST_NAME = "manifest.jsonl"
 
 
+HEADER_BYTES = 44
+
+
+def track_name(track: str) -> str:
+    return f"{track}.wav"
+
+
+def track_path(folder: Path, track: str) -> Path:
+    return Path(folder) / "audio" / track_name(track)
+
+
+def track_files(folder: Path) -> dict[str, Path]:
+    """The track files that exist, by track name."""
+    audio = Path(folder) / "audio"
+    if not audio.exists():
+        return {}
+    return {
+        path.stem: path
+        for path in sorted(audio.glob("*.wav"))
+        if path.stem in ("me", "them") and path.stat().st_size > HEADER_BYTES
+    }
+
+
+def wav_header(*, data_bytes: int, rate: int, channels: int = 1, width: int = 2) -> bytes:
+    """A 44-byte PCM header. Rewritten in place as the file grows."""
+    block = channels * width
+    return b"".join(
+        (
+            b"RIFF",
+            struct.pack("<I", 36 + data_bytes),
+            b"WAVEfmt ",
+            struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, width * 8),
+            b"data",
+            struct.pack("<I", data_bytes),
+        )
+    )
+
+
 @dataclass(frozen=True)
 class ChunkRecord:
+    """One committed segment of a track file. ``offset`` is its first sample."""
+
     seq: int
     track: str
     file: str
@@ -37,6 +87,7 @@ class ChunkRecord:
     samples: int
     closed: bool = True
     gap_ms: int = 0
+    offset: int = 0
 
     def as_line(self) -> str:
         payload: dict[str, Any] = {
@@ -46,6 +97,7 @@ class ChunkRecord:
             "t0_ms": self.t0_ms,
             "dur_ms": self.dur_ms,
             "samples": self.samples,
+            "offset": self.offset,
             "closed": self.closed,
         }
         if self.gap_ms:
@@ -147,6 +199,7 @@ class ChunkWriter:
         self.records: list[ChunkRecord] = []
         self.events: list[str] = []
         self._manifest: Any = None
+        self._files: dict[str, Any] = {}
         self._opened = False
 
     # -- paths -------------------------------------------------------------
@@ -163,10 +216,25 @@ class ChunkWriter:
         """Nothing touches the disk until there is something real to write."""
         if self._opened:
             return
+        self.audio_dir.mkdir(parents=True, exist_ok=True)
         for track in self.tracks:
-            (self.audio_dir / track).mkdir(parents=True, exist_ok=True)
+            path = track_path(self.folder, track)
+            handle = path.open("wb")
+            handle.write(wav_header(data_bytes=0, rate=self.rate))
+            handle.flush()
+            os.fsync(handle.fileno())
+            self._files[track] = handle
         self._manifest = self.manifest_path.open("a", encoding="utf-8")
         self._opened = True
+
+    def _update_header(self, track: str) -> None:
+        """Keep the file a valid WAV as it grows, so it plays mid-meeting and survives a
+        crash without any repair step."""
+        handle = self._files[track]
+        data_bytes = self.state[track].samples_written * 2
+        handle.seek(0)
+        handle.write(wav_header(data_bytes=data_bytes, rate=self.rate))
+        handle.seek(0, os.SEEK_END)
 
     # -- writing -----------------------------------------------------------
 
@@ -234,32 +302,42 @@ class ChunkWriter:
         samples = state.take(count)
         self._ensure_open()
         state.seq += 1
-        name = f"{state.seq:04d}.wav"
-        path = self.audio_dir / track / name
-        with wave.open(str(path), "wb") as handle:
-            handle.setnchannels(1)
-            handle.setsampwidth(2)
-            handle.setframerate(self.rate)
-            handle.writeframes(samples.tobytes())
-        self.events.append(f"write:{track}/{name}")
-        with path.open("rb+") as raw:
-            raw.flush()
-            os.fsync(raw.fileno())
-        self.events.append(f"fsync-wav:{track}/{name}")
+        name = track_name(track)
+        handle = self._files[track]
 
+        # Lost audio becomes real silence in the file, so the file's timeline *is* the
+        # meeting's timeline. Anything else and playback would quietly compress a gap and
+        # every timestamp after it would be wrong.
         gap_ms = state.pending_gap_ms
         state.pending_gap_ms = 0
+        if gap_ms:
+            silence = np.zeros(round(gap_ms * self.rate / 1000), dtype=np.int16)
+            handle.write(silence.tobytes())
+            state.samples_written += len(silence)
+
+        offset = state.samples_written
+        handle.write(samples.tobytes())
+        handle.flush()
+        os.fsync(handle.fileno())
+        self.events.append(f"write:{track}/{name}")
+        state.samples_written += len(samples)
+        self._update_header(track)
+        handle.flush()
+        os.fsync(handle.fileno())
+        self.events.append(f"fsync-wav:{track}/{name}")
+
         t0_ms = state.t0_ms + gap_ms
         dur_ms = round(len(samples) * 1000 / self.rate)
         record = ChunkRecord(
             seq=state.seq,
             track=track,
-            file=f"{track}/{name}",
+            file=name,
             t0_ms=t0_ms,
             dur_ms=dur_ms,
             samples=len(samples),
             closed=True,
             gap_ms=gap_ms,
+            offset=offset,
         )
         assert self._manifest is not None
         self._manifest.write(record.as_line() + "\n")
@@ -269,7 +347,6 @@ class ChunkWriter:
         self.events.append(f"fsync-manifest:{track}/{name}")
 
         state.t0_ms = t0_ms + dur_ms
-        state.samples_written += len(samples)
         self.records.append(record)
         return record
 
@@ -282,6 +359,12 @@ class ChunkWriter:
     def close(self) -> list[ChunkRecord]:
         for track in self.tracks:
             self.flush_track(track)
+        for track, handle in list(self._files.items()):
+            self._update_header(track)
+            handle.flush()
+            os.fsync(handle.fileno())
+            handle.close()
+            del self._files[track]
         if self._manifest is not None:
             self._manifest.flush()
             os.fsync(self._manifest.fileno())
@@ -328,6 +411,7 @@ def read_manifest(folder: Path) -> tuple[list[ChunkRecord], int]:
                     samples=int(payload["samples"]),
                     closed=bool(payload.get("closed", True)),
                     gap_ms=int(payload.get("gap_ms", 0)),
+                    offset=int(payload.get("offset", 0)),
                 )
             )
         except (KeyError, TypeError, ValueError):
@@ -345,43 +429,75 @@ def wav_duration(path: Path) -> tuple[int, int]:
 def recover(folder: Path) -> list[ChunkRecord]:
     """Everything on disk, whether or not the manifest survived.
 
-    Chunks whose manifest line was lost are re-derived from their WAV headers, so a
-    meeting is reconstructible from disk with the app dead.
+    The track file's own header is authoritative: because it is rewritten with every
+    committed segment, audio that outlived its manifest line is still described by it.
+    A meeting is therefore reconstructible from disk with the app dead and the manifest
+    truncated.
     """
     folder = Path(folder)
     records, _torn = read_manifest(folder)
-    known = {record.file for record in records}
-    audio_dir = folder / "audio"
-    if not audio_dir.exists():
-        return records
-    for track_dir in sorted(p for p in audio_dir.iterdir() if p.is_dir()):
-        track = track_dir.name
-        by_seq = {record.seq: record for record in records if record.track == track}
-        cursor = 0
-        for wav_path in sorted(track_dir.glob("*.wav")):
-            seq = int(wav_path.stem)
-            existing = by_seq.get(seq)
-            if existing is not None:
-                cursor = existing.t0_ms + existing.dur_ms
-                continue
-            if f"{track}/{wav_path.name}" in known:
-                continue
-            samples, dur_ms = wav_duration(wav_path)
-            records.append(
-                ChunkRecord(
-                    seq=seq,
-                    track=track,
-                    file=f"{track}/{wav_path.name}",
-                    t0_ms=cursor,
-                    dur_ms=dur_ms,
-                    samples=samples,
-                    closed=True,
-                )
+    for track, path in sorted(track_files(folder).items()):
+        known = [record for record in records if record.track == track]
+        on_disk, _ms = wav_duration(path)
+        described = max((r.offset + r.samples for r in known), default=0)
+        if on_disk <= described:
+            continue
+        # A tail the manifest never got to mention. It is real audio: keep it.
+        trailing = on_disk - described
+        seq = max((r.seq for r in known), default=0) + 1
+        t0_ms = max((r.t0_ms + r.dur_ms for r in known), default=0)
+        records.append(
+            ChunkRecord(
+                seq=seq,
+                track=track,
+                file=track_name(track),
+                t0_ms=t0_ms,
+                dur_ms=round(trailing * 1000 / 16000),
+                samples=trailing,
+                closed=False,
+                offset=described,
             )
-            cursor += dur_ms
+        )
+        log.warning("recovered %d unlisted samples at the end of %s", trailing, path.name)
     records.sort(key=lambda record: (record.track, record.seq))
     return records
 
 
 def manifest_as_dicts(records: list[ChunkRecord]) -> list[dict[str, Any]]:
     return [asdict(record) for record in records]
+
+
+def track_summary(folder: Path, *, windows: int = 240) -> dict[str, dict[str, float]]:
+    """Per-track duration and peak level, for the UI's player.
+
+    The peak is sampled rather than exact: a four-hour track is ~460 MB and a page load
+    must not read all of it. ``windows`` evenly spaced reads are plenty to answer the
+    only question being asked — is there anything on this track at all.
+    """
+    out: dict[str, dict[str, float]] = {}
+    for track, path in sorted(track_files(folder).items()):
+        try:
+            with wave.open(str(path), "rb") as handle:
+                frames = handle.getnframes()
+                rate = handle.getframerate()
+                width = handle.getsampwidth() * handle.getnchannels()
+                step = max(1, frames // max(1, windows))
+                block = min(step, rate)  # at most a second per probe
+                peak = 0
+                for start in range(0, frames, step):
+                    handle.setpos(start)
+                    chunk = handle.readframes(min(block, frames - start))
+                    if not chunk:
+                        break
+                    values = np.frombuffer(chunk, dtype=np.int16)
+                    if values.size:
+                        peak = max(peak, int(np.abs(values).max()))
+        except Exception as exc:  # a track still being written, or truncated
+            log.warning("could not summarise %s: %s", path.name, exc)
+            continue
+        out[track] = {
+            "seconds": round(frames / float(rate), 2) if rate else 0.0,
+            "peak": round(peak / 32768.0, 4),
+            "bytes": float(width * frames + HEADER_BYTES),
+        }
+    return out

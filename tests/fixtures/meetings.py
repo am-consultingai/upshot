@@ -19,9 +19,11 @@ from app.pipeline.states import JobStage, MeetingState
 RATE = 16000
 
 
-def speechish(seconds: float, seed: int = 5, rate: int = RATE) -> np.ndarray:
+def speechish(
+    seconds: float, seed: int = 5, rate: int = RATE, amplitude: float = 0.15
+) -> np.ndarray:
     rng = np.random.default_rng(seed)
-    return (rng.normal(0, 0.15, int(seconds * rate)) * 32767).astype(np.int16)
+    return (rng.normal(0, amplitude, int(seconds * rate)) * 32767).astype(np.int16)
 
 
 def silence(seconds: float, rate: int = RATE) -> np.ndarray:
@@ -34,11 +36,29 @@ def write_chunks(
     seconds: float = 120.0,
     tracks: tuple[str, ...] = ("me", "them"),
     quiet_tracks: tuple[str, ...] = (),
+    leak: float = 0.0,
+    leak_delay: int = 1683,
 ) -> list:  # type: ignore[type-arg]
+    """``leak`` reproduces a microphone bus that also carries playback (D36/D37)."""
     writer = ChunkWriter(folder, tracks=tracks, rate=RATE)
+    # A distinct seed per track. Sharing one made both tracks byte-identical, which is
+    # precisely the fault the crosstalk check looks for — a fixture should not look like
+    # a broken machine. When the bus leaks, the near voice is the quiet part of its own
+    # track: measured on a real recording it is a quarter of what the copy contributes.
+    near = 0.04 if leak else 0.15
+    payloads = {
+        track: silence(seconds)
+        if track in quiet_tracks
+        else speechish(seconds, seed=5 + index, amplitude=near if track == "me" else 0.15)
+        for index, track in enumerate(tracks)
+    }
+    if leak and {"me", "them"} <= set(payloads):
+        from app.audio.echo import aligned
+
+        copy = leak * aligned(payloads["them"], leak_delay, len(payloads["me"]))
+        payloads["me"] = np.clip(payloads["me"] + copy, -32768, 32767).astype(np.int16)
     for track in tracks:
-        payload = silence(seconds) if track in quiet_tracks else speechish(seconds)
-        writer.write_pcm(track, payload)
+        writer.write_pcm(track, payloads[track])
     return writer.close()
 
 

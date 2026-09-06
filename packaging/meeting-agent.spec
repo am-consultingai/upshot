@@ -38,7 +38,6 @@ hiddenimports = [
 ]
 
 datas = [
-    (str(ROOT / "templates"), "templates"),
     (str(ROOT / "app" / "llm" / "prompts"), "app/llm/prompts"),
     (str(ROOT / "app" / "db" / "schema.sql"), "app/db"),
     (str(ROOT / "app" / "db" / "migrations"), "app/db/migrations"),

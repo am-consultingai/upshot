@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -176,14 +177,30 @@ class WindowsToastNotifier(BaseNotifier):
         super().__init__(debounce_s=debounce_s, clock=clock)
         self.app_id = app_id
         self.on_action = on_action
-        self._toaster: Any = None
+        # WinRT objects belong to the COM apartment of the thread that made them. A
+        # toaster built on the main thread and used from the recorder or worker thread
+        # raises RPC_E_WRONG_THREAD ("marshalled for a different thread"), which is how
+        # the first real Windows run lost its "recording started" notification. One
+        # toaster per thread keeps every call inside the apartment that owns it.
+        self._toasters = threading.local()
 
-    def toaster(self) -> Any:
-        if self._toaster is None:
-            from windows_toasts import WindowsToaster
+    def toaster(self, interactable: bool) -> Any:
+        """``WindowsToaster`` silently drops buttons — it warns and shows a plain toast.
 
-            self._toaster = WindowsToaster(self.app_id)
-        return self._toaster
+        Since the buttons *are* the learning mechanism (DETECTION.md §6), anything with
+        actions has to go through ``InteractableWindowsToaster``. Both are cached per
+        thread, because a WinRT object belongs to its creating thread's apartment.
+        """
+        cache = getattr(self._toasters, "cache", None)
+        if cache is None:
+            cache = {}
+            self._toasters.cache = cache
+        if interactable not in cache:
+            from windows_toasts import InteractableWindowsToaster, WindowsToaster
+
+            builder = InteractableWindowsToaster if interactable else WindowsToaster
+            cache[interactable] = builder(self.app_id)
+        return cache[interactable]
 
     def show(self, toast: Toast) -> None:
         if not self._should_emit(toast.key):
@@ -198,9 +215,24 @@ class WindowsToastNotifier(BaseNotifier):
                 payload.AddAction(ToastButton(button.label, arguments=button.action))
             if self.on_action is not None:
                 payload.on_activated = lambda event: self._activated(toast, event)
-            self.toaster().show_toast(payload)
+            self.toaster(bool(toast.buttons)).show_toast(payload)
         except Exception as exc:
             log.warning("toast failed: %s", exc)
+            if toast.buttons:
+                # An interactable toaster needs a registered AUMID and is not available
+                # everywhere. A notification without its buttons still beats none.
+                self._show_plain(toast)
+
+    def _show_plain(self, toast: Toast) -> None:
+        try:
+            from windows_toasts import Toast as WinToast
+
+            payload = WinToast()
+            payload.text_fields = [toast.title, toast.body]
+            self.toaster(False).show_toast(payload)
+            log.warning("showed %r without its buttons", toast.key)
+        except Exception as exc:
+            log.warning("plain toast failed too: %s", exc)
 
     def _activated(self, toast: Toast, event: Any) -> None:  # pragma: no cover - Windows only
         argument = str(getattr(event, "arguments", ""))

@@ -13,7 +13,7 @@ import pytest
 
 from app.config import default_config
 from app.llm.client import AnthropicClient, system_blocks
-from app.llm.schema import NOTES_SCHEMA, validate
+from app.llm.schema import FREE_SCHEMA, validate
 from app.llm.tokens import CachingCounter, tokens_per_word
 from app.pipeline.stages.summarize import split_windows
 
@@ -64,7 +64,7 @@ def test_live_smoke() -> None:
     result = client.complete_json(
         system_blocks=system_blocks("You write meeting notes as JSON.", None),
         user=HEBREW_TRANSCRIPT,
-        schema=NOTES_SCHEMA,
+        schema=FREE_SCHEMA,
         max_tokens=8000,
     )
     validate(result.data)
@@ -82,7 +82,7 @@ def test_cross_language_summary() -> None:
             "You write meeting notes as JSON.\n\n" + language_instruction("en"), None
         ),
         user=HEBREW_TRANSCRIPT,
-        schema=NOTES_SCHEMA,
+        schema=FREE_SCHEMA,
         max_tokens=8000,
     )
     tldr = " ".join(result.data["tldr"])

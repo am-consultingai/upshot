@@ -6,7 +6,7 @@ import hashlib
 import wave
 from pathlib import Path
 
-from app.asr.backend import Segment, Word
+from app.asr.backend import Segment, Word, track_of
 
 SENTENCES: tuple[str, ...] = (
     "בוא נתחיל עם הסטטוס של הפרויקט",
@@ -52,7 +52,9 @@ class FakeAsr:
     def _seed(self, wav: Path) -> int:
         # The track is part of the key: the two tracks must not produce identical text,
         # or echo suppression would (correctly) delete one of them.
-        key = f"{wav.parent.name}/{wav.name}"
+        # Seed on the track, not the folder: both tracks are now sibling files, and
+        # seeding on the name alone made every track produce identical text.
+        key = f"{track_of(wav)}/{wav.name}"
         return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16)
 
     # -- protocol
@@ -68,7 +70,7 @@ class FakeAsr:
         self.transcribe_calls.append(
             {"wav": wav, "language": language, "initial_prompt": initial_prompt}
         )
-        track = wav.parent.name if wav.parent.name in ("me", "them") else "them"
+        track = track_of(wav)
         speaker = "ME" if track == "me" else "THEM"
         duration = self._duration_s(wav)
         seed = self._seed(wav)
