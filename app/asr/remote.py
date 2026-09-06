@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.asr.backend import AsrBackend, Segment, Word
+from app.asr.backend import AsrBackend, Segment, Word, track_of
 from app.log import get
 
 log = get(__name__)
@@ -88,7 +88,7 @@ class RemoteAsr:
             )
         response.raise_for_status()
         payload: dict[str, Any] = response.json()
-        track = wav.parent.name if wav.parent.name in ("me", "them") else "them"
+        track = track_of(wav)
         return [
             Segment(
                 id=int(item.get("id", index)),

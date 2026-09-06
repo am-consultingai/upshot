@@ -43,6 +43,10 @@ class Services:
     def close(self) -> None:
         if self.worker is not None:
             self.worker.stop()
+        # The detector was started but never stopped here, so it kept polling against a
+        # closing database during shutdown.
+        if self.detector is not None:
+            self.detector.stop()
         self.conn.close()
 
 

@@ -87,6 +87,11 @@ class JobQueue:
         self.clock = clock or SystemClock()
         self.rng = rng or random.Random()
         self.max_attempts = max_attempts
+        #: Stages the user has explicitly asked to redo. In memory rather than in the
+        #: jobs table on purpose: it describes one press of a button, not a property of
+        #: the job, and it must not survive a restart — a forced re-run that outlived the
+        #: process would silently re-bill every meeting on disk.
+        self._rerun: set[tuple[str, str]] = set()
 
     # -- writing -----------------------------------------------------------
 
@@ -196,6 +201,18 @@ class JobQueue:
         if count:
             log.info("crash recovery: reset %d running job(s) to pending", count)
         return count
+
+    def request_rerun(self, meeting_id: str, stage: JobStage | str) -> None:
+        """Redo this stage from scratch, whatever its output on disk looks like."""
+        self._rerun.add((meeting_id, str(stage)))
+
+    def take_rerun(self, meeting_id: str, stage: JobStage | str) -> bool:
+        """Consume the request, so it applies to exactly one run."""
+        key = (meeting_id, str(stage))
+        if key in self._rerun:
+            self._rerun.discard(key)
+            return True
+        return False
 
     def retry(self, meeting_id: str, stage: JobStage | str) -> Job:
         """Re-run one stage: pending again, attempts reset."""

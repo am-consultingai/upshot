@@ -78,7 +78,14 @@ class RecordingModel:
 
         return iter([RawSegment()]), Info()
 
-    def detect_language(self, path: str):  # type: ignore[no-untyped-def]
+    def detect_language(self, audio, **kwargs):  # type: ignore[no-untyped-def]
+        # The real WhisperModel.detect_language takes a 1D float32 array at 16 kHz and
+        # immediately reads `.dtype`. The old stub took a str and so hid a crash that
+        # only appeared on a real machine — model this contract, not a convenient one.
+        assert hasattr(audio, "dtype"), (
+            f"detect_language needs an ndarray, got {type(audio).__name__}"
+        )
+        self.calls.append({"detect_language": audio.shape})
         return "en", 0.87, []
 
 
@@ -491,3 +498,40 @@ def test_configured_cuda_dir_accepts_a_list(tmp_path: Path) -> None:
         system_dirs=(),
     )
     assert found == [first, second]
+
+
+def test_detect_language_is_given_audio_not_a_path(tmp_path: Path) -> None:
+    """faster-whisper's detect_language reads `.dtype` off its argument. Passing the
+    path raised "'str' object has no attribute 'dtype'" and failed a real meeting."""
+
+    wav = make_wav(tmp_path / "me" / "0001.wav", 2)
+    model = RecordingModel()
+    backend = LocalAsr(default_config(), model_factory=lambda **kw: model)
+    language, probability = backend.detect_language(wav)
+    assert (language, probability) == ("en", 0.87)
+    detected = [c for c in model.calls if "detect_language" in c]
+    assert detected, "detect_language was never reached"
+
+
+def test_detect_language_survives_an_api_change(tmp_path: Path) -> None:
+    """If the helper ever changes shape again, fall back rather than lose the meeting."""
+
+    class Hostile(RecordingModel):
+        def detect_language(self, audio, **kwargs):  # type: ignore[no-untyped-def]
+            raise AttributeError("'str' object has no attribute 'dtype'")
+
+    wav = make_wav(tmp_path / "me" / "0001.wav", 2)
+    backend = LocalAsr(default_config(), model_factory=lambda **kw: Hostile())
+    # Falls through to transcribe(), which reports the language on its Info object.
+    assert backend.detect_language(wav) == ("en", 0.99)
+
+
+def test_decode_audio_returns_float32_mono(tmp_path: Path) -> None:
+    import numpy as np
+
+    from app.asr.local import decode_audio
+
+    wav = make_wav(tmp_path / "me" / "0001.wav", 2)
+    audio = decode_audio(wav)
+    assert audio.dtype == np.float32
+    assert audio.ndim == 1

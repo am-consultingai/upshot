@@ -6,6 +6,7 @@ machine with no audio stack at all, which is what ``test_imports_all_modules`` a
 
 from __future__ import annotations
 
+import threading
 import wave
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,6 +17,15 @@ from typing import Any
 from app.log import get
 
 log = get(__name__)
+
+
+# PortAudio's Pa_Initialize/Pa_Terminate are reference-counted but NOT thread-safe, and
+# a stream handle must not be touched while another thread is closing it. Both happen
+# here: the recorder tears its streams down while the settings meter opens one, and the
+# writer thread polls a stream the stop path is freeing. Either race crashes the process
+# inside _portaudiowpatch with 0xc0000005 — a native access violation, so no Python
+# `except` can catch it and nothing reaches the log. Every open/close goes through this.
+PORTAUDIO_LOCK = threading.RLock()
 
 
 class NoDeviceError(RuntimeError):
@@ -59,11 +69,13 @@ def _pyaudio_module() -> Any:
 def audio_host() -> Iterator[Any]:
     """A PyAudio instance that is always terminated."""
     pyaudio = _pyaudio_module()
-    host = pyaudio.PyAudio()
+    with PORTAUDIO_LOCK:
+        host = pyaudio.PyAudio()
     try:
         yield host
     finally:
-        host.terminate()
+        with PORTAUDIO_LOCK:
+            host.terminate()
 
 
 def _wasapi_info(host: Any) -> dict[str, Any]:
@@ -81,6 +93,65 @@ def list_devices() -> list[DeviceInfo]:
             DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
             for index in range(host.get_device_count())
         ]
+
+
+def list_inputs(host: Any | None = None) -> list[DeviceInfo]:
+    """Real microphones: input endpoints that are not loopback companions.
+
+    Deduplicated by name — WASAPI commonly exposes the same physical microphone several
+    times, and a dropdown with four identical entries is worse than useless.
+    """
+    if host is None:
+        with audio_host() as own:
+            return list_inputs(own)
+    seen: dict[str, DeviceInfo] = {}
+    for index in range(host.get_device_count()):
+        device = DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
+        if not device.is_input or device.is_loopback:
+            continue
+        seen.setdefault(device.name, device)
+    return list(seen.values())
+
+
+def input_by_index(index: int, host: Any | None = None) -> DeviceInfo:
+    if host is None:
+        with audio_host() as own:
+            return input_by_index(index, own)
+    try:
+        device = DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
+    except OSError as exc:
+        raise NoDeviceError(f"no audio endpoint with index {index}") from exc
+    if not device.is_input:
+        raise NoDeviceError(f"endpoint {index} ({device.name!r}) is not an input")
+    return device
+
+
+def list_outputs(host: Any | None = None) -> list[DeviceInfo]:
+    """Playback endpoints, deduplicated by name. The loopback of the chosen one is what
+    the ``them`` track records."""
+    if host is None:
+        with audio_host() as own:
+            return list_outputs(own)
+    seen: dict[str, DeviceInfo] = {}
+    for index in range(host.get_device_count()):
+        device = DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
+        if device.max_output_channels <= 0 or device.is_loopback:
+            continue
+        seen.setdefault(device.name, device)
+    return list(seen.values())
+
+
+def output_by_index(index: int, host: Any | None = None) -> DeviceInfo:
+    if host is None:
+        with audio_host() as own:
+            return output_by_index(index, own)
+    try:
+        device = DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
+    except OSError as exc:
+        raise NoDeviceError(f"no audio endpoint with index {index}") from exc
+    if device.max_output_channels <= 0:
+        raise NoDeviceError(f"endpoint {index} ({device.name!r}) is not a playback device")
+    return device
 
 
 def default_render(host: Any | None = None) -> DeviceInfo:
@@ -121,15 +192,24 @@ def loopback_for(render: DeviceInfo, host: Any | None = None) -> DeviceInfo:
     raise NoDeviceError(f"no loopback companion for {render.name!r}")
 
 
-def resolve_track(track: str, host: Any | None = None) -> DeviceInfo:
-    """``me`` is the default capture endpoint; ``them`` is the render loopback."""
+def resolve_track(
+    track: str, host: Any | None = None, *, output_index: int | None = None
+) -> DeviceInfo:
+    """``me`` is the default capture endpoint; ``them`` is a render endpoint's loopback.
+
+    ``output_index`` selects which playback device to listen to; without it, whatever
+    Windows currently calls the default.
+    """
     if host is None:
         with audio_host() as own:
-            return resolve_track(track, own)
+            return resolve_track(track, own, output_index=output_index)
     if track == "me":
         return default_capture(host)
     if track == "them":
-        return loopback_for(default_render(host), host)
+        render = (
+            default_render(host) if output_index is None else output_by_index(output_index, host)
+        )
+        return loopback_for(render, host)
     raise ValueError(f"unknown track {track!r}")
 
 

@@ -48,6 +48,11 @@ class AuthState:
         self._used.add(token)
         return True
 
+    def was_issued_here(self, token: str) -> bool:
+        """False for a token this process never minted — which usually means the link
+        came from a *different* Meeting Agent answering on the same port."""
+        return token in self._tokens or token in self._used
+
     def valid_session(self, value: str | None) -> bool:
         return bool(value) and secrets.compare_digest(str(value), self.session_secret)
 
@@ -143,12 +148,33 @@ class AuthMiddleware:
             return
         token = _query(scope, "k")
         if token:
-            if not self.auth.redeem(token):
-                await JSONResponse({"detail": "this link has already been used"}, 401)(
-                    scope, receive, send
-                )
+            if self.auth.redeem(token):
+                await self.app(scope, receive, self._with_cookies(send))
                 return
-            await self.app(scope, receive, self._with_cookies(send))
+            # A spent token must not lock out a browser that already holds a session.
+            # The launcher opens the link itself, so the printed one gets clicked second
+            # — same browser, cookie already set, and refusing it strands the user with
+            # no way back in short of restarting the app. A stale token adds nothing to
+            # a request that is already authorized, so ignore it and carry on.
+            if self.auth.valid_session(_cookies(scope).get(SESSION_COOKIE)):
+                await self.app(scope, receive, send)
+                return
+            host = _header(scope, "host") or "127.0.0.1:8000"
+            if not self.auth.was_issued_here(token):
+                log.warning("authorize link was not issued by this process: %s", host)
+                detail = (
+                    "this link was not issued by the app answering on this port — "
+                    "another Meeting Agent is probably already running here "
+                    "(on WSL, a Linux instance shadows the Windows one). "
+                    "Stop it, or start this one on a different port."
+                )
+            else:
+                detail = (
+                    "this link has already been used — open "
+                    f"http://{host}/ in the browser you first authorized, "
+                    "or restart the app for a fresh link"
+                )
+            await JSONResponse({"detail": detail}, 401)(scope, receive, send)
             return
         if not self.auth.valid_session(_cookies(scope).get(SESSION_COOKIE)):
             await JSONResponse({"detail": NO_COOKIE_MESSAGE}, 401)(scope, receive, send)

@@ -832,7 +832,7 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
     from app.audio.analysis import cross_correlation
     from app.audio.fake import SyntheticCapture
     from app.audio.recorder import Recorder
-    from app.audio.writer import read_manifest
+    from app.audio.writer import read_manifest, track_files
     from app.clock import SystemClock
     from app.config import Config
     from app.db.dao import Dao, connect
@@ -1001,7 +1001,8 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
         durations = {
             track: sum(r.dur_ms for r in records if r.track == track) for track in ("me", "them")
         }
-        tracks_present = {track for track in ("me", "them") if (folder / "audio" / track).is_dir()}
+        # One file per track, so presence is a file rather than a directory.
+        tracks_present = set(track_files(folder))
 
         services.worker.drain()
         tray_states.append(tray_label())

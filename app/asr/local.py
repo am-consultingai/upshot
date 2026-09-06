@@ -21,7 +21,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from app import paths
-from app.asr.backend import Segment, Word
+from app.asr.backend import Segment, Word, track_of
 from app.asr.models import ModelChoice, resolve
 from app.config import Config
 from app.log import get
@@ -174,6 +174,32 @@ def _default_factory(**kwargs: Any) -> Any:  # pragma: no cover - needs the real
     return WhisperModel(**kwargs)
 
 
+def decode_audio(wav: Path) -> Any:
+    """A WAV as the 1D float32 mono array at 16 kHz that faster-whisper's
+    ``detect_language`` requires.
+
+    Prefers the library's own decoder so resampling matches what ``transcribe`` does
+    internally; falls back to ``wave`` since our chunks are already 16 kHz mono int16.
+    """
+    try:
+        from faster_whisper.audio import decode_audio as _decode
+
+        return _decode(str(wav), sampling_rate=16000)
+    except Exception:  # pragma: no cover - only when the helper moves or av is absent
+        import wave
+
+        import numpy as np
+
+        with wave.open(str(wav), "rb") as handle:
+            frames = handle.readframes(handle.getnframes())
+            channels = handle.getnchannels()
+        audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        if channels > 1:
+            usable = audio.size - (audio.size % channels)
+            audio = audio[:usable].reshape(-1, channels).mean(axis=1)
+        return audio
+
+
 class LocalAsr:
     """faster-whisper, loaded lazily and unloaded before the LLM stage."""
 
@@ -275,7 +301,7 @@ class LocalAsr:
         word_timestamps: bool = True,
     ) -> list[Segment]:
         self.load()
-        track = wav.parent.name if wav.parent.name in ("me", "them") else "them"
+        track = track_of(wav)
         speaker = "ME" if track == "me" else "THEM"
         out: list[Segment] = []
         for index, raw in enumerate(
@@ -314,8 +340,17 @@ class LocalAsr:
         model = self.load()
         detect = getattr(model, "detect_language", None)
         if detect is not None:
-            language, probability, *_rest = detect(str(wav))
-            return str(language), float(probability)
+            try:
+                # `transcribe` takes a path; `detect_language` does NOT — it wants a 1D
+                # float32 array at 16 kHz and calls `.dtype` on whatever it is given. A
+                # path here raised "'str' object has no attribute 'dtype'" and cost a
+                # whole meeting.
+                language, probability, *_rest = detect(decode_audio(wav))
+                return str(language), float(probability)
+            except Exception as exc:
+                # Never let a detection-API change take the transcript with it: the
+                # transcribe path below reaches the same answer, just more slowly.
+                log.warning("detect_language failed (%s); falling back to transcribe", exc)
         _segments, info = model.transcribe(str(wav), language=None, vad_filter=True)
         return str(info.language), float(info.language_probability)
 

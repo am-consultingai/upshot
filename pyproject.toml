@@ -7,8 +7,6 @@ dependencies = [
     "fastapi>=0.120",
     "uvicorn>=0.38",
     "python-multipart>=0.0.20",
-    "jinja2>=3.1",
-    "premailer>=3.10",
     "anthropic>=0.69",
     "httpx>=0.28",
     "jsonschema>=4.23",
@@ -82,12 +80,12 @@ plugins = []
 
 [[tool.mypy.overrides]]
 module = [
-    "soxr.*", "premailer.*", "pystray.*", "pyaudiowpatch.*", "pyaudio.*",
+    "soxr.*", "pystray.*", "pyaudiowpatch.*", "pyaudio.*",
     "pycaw.*", "comtypes.*", "win32api.*", "win32con.*", "win32gui.*",
     "win32event.*", "winreg.*", "windows_toasts.*", "faster_whisper.*",
     "apscheduler.*", "keyring.*", "psutil.*", "PIL.*", "rapidfuzz.*",
     "bs4.*", "aiosmtpd.*", "win32com.*", "pythoncom.*", "win32file.*",
-    "ctranslate2.*", "huggingface_hub.*", "jsonschema.*", "premailer.*", "openai.*",
+    "ctranslate2.*", "huggingface_hub.*", "jsonschema.*", "openai.*",
     "winerror.*", "win32event.*", "pystray.*", "sherpa_onnx.*",
 ]
 ignore_missing_imports = true

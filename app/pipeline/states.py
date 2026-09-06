@@ -22,7 +22,6 @@ class MeetingState(StrEnum):
     FAILED = "FAILED"
     INTERRUPTED = "INTERRUPTED"
     DISCARDED = "DISCARDED"
-    NEEDS_REVIEW = "NEEDS_REVIEW"
 
 
 class JobStage(StrEnum):
@@ -81,7 +80,7 @@ STAGE_DONE_STATE: dict[JobStage, MeetingState] = {
 }
 
 #: States a meeting can still be worked on from.
-ACTIVE: frozenset[MeetingState] = frozenset(PIPELINE[:-1]) | {M.NEEDS_REVIEW}
+ACTIVE: frozenset[MeetingState] = frozenset(PIPELINE[:-1])
 
 #: States from which a retry may re-enter the pipeline.
 RETRYABLE_ENTRY: frozenset[MeetingState] = frozenset(
@@ -99,10 +98,6 @@ def _build() -> frozenset[tuple[MeetingState, MeetingState]]:
         pairs.add((state, M.FAILED))
         pairs.add((state, M.INTERRUPTED))
         pairs.add((state, M.DISCARDED))
-        pairs.add((state, M.NEEDS_REVIEW))
-    # review is a flag on an otherwise finished meeting: it may continue forward
-    for state in (M.SUMMARIZED, M.RENDERED, M.DELIVERED, M.TRANSCRIBED):
-        pairs.add((M.NEEDS_REVIEW, state))
     # retry / re-run
     for state in RETRYABLE_ENTRY:
         pairs.add((M.FAILED, state))
