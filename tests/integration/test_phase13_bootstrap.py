@@ -154,7 +154,9 @@ def test_packaging_files_exist() -> None:
         "comtypes",
     ):
         assert hidden in spec, f"{hidden} must be declared as a hidden import"
-    assert "templates" in spec and "app/llm/prompts" in spec
+    # No templates any more: the summary is the document the prompt wrote, so there is
+    # no Jinja layout left to bundle.
+    assert "app/llm/prompts" in spec
 
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
     assert "PrivilegesRequired=lowest" in installer, "the installer must not need admin"

@@ -55,8 +55,6 @@ def test_frozen_selftest_pipeline(tmp_path: Path) -> None:
 def test_frozen_resources_present() -> None:
     internal = DIST / "_internal"
     root = internal if internal.exists() else DIST
-    assert (root / "templates" / "summary.html.j2").exists()
-    assert (root / "templates" / "_email.css").exists()
     assert (root / "app" / "llm" / "prompts" / "system.md").exists()
     assert (root / "app" / "db" / "migrations" / "0001_initial.sql").exists()
     assert (DIST / "ffmpeg.exe").exists() or (root / "ffmpeg.exe").exists()

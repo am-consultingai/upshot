@@ -76,3 +76,50 @@ test("rtl_direction", async ({ page, seed }) => {
   // in RTL the card's text starts on the right side of the container
   expect(box!.x + box!.width).toBeGreaterThan(container!.x + container!.width / 2);
 });
+
+test("calendar_toggle_and_spans", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("timeline")).toBeVisible();
+
+  // List is the default and the calendar is not mounted.
+  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
+
+  await page.getByTestId("view-calendar").click();
+  await expect(page.getByTestId("calendar-controls")).toBeVisible();
+  // Week is the default span, so the time grid renders seven day columns.
+  await expect(page.getByTestId("calendar-timegrid")).toBeVisible();
+  await expect(page.getByTestId("calendar-daycolumn")).toHaveCount(7);
+
+  await page.getByTestId("span-day").click();
+  await expect(page.getByTestId("calendar-daycolumn")).toHaveCount(1);
+
+  await page.getByTestId("span-month").click();
+  await expect(page.getByTestId("calendar-monthgrid")).toBeVisible();
+  const cells = await page.getByTestId("calendar-daycell").count();
+  expect(cells % 7).toBe(0);
+  expect(cells).toBeGreaterThanOrEqual(28);
+
+  // Navigation moves the period and Today comes back.
+  const period = await page.getByTestId("calendar-period").textContent();
+  await page.getByTestId("calendar-next").click();
+  await expect(page.getByTestId("calendar-period")).not.toHaveText(period ?? "");
+  await page.getByTestId("calendar-today").click();
+  await expect(page.getByTestId("calendar-period")).toHaveText(period ?? "");
+
+  // And back to the list.
+  await page.getByTestId("view-list").click();
+  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
+});
+
+test("calendar_choice_survives_a_reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("view-calendar").click();
+  await page.getByTestId("span-month").click();
+  await expect(page.getByTestId("calendar-monthgrid")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("calendar-monthgrid")).toBeVisible();
+
+  await page.getByTestId("view-list").click(); // leave the default as it was
+  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
+});

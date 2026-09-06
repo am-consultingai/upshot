@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type Locale } from "../i18n";
 import ProviderSettings from "../components/ProviderSettings";
+import PromptSettings from "../components/PromptSettings";
+import MicMeter from "../components/MicMeter";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -11,6 +13,7 @@ interface ConfigShape {
   data_root?: string | null;
   ui?: { language?: string };
   summary?: { language?: string };
+  audio?: { input_device?: number | null; output_device?: number | null };
 }
 
 export default function Settings() {
@@ -18,6 +21,7 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const [dataRoot, setDataRoot] = useState("");
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const audio = useQuery({ queryKey: ["audio-devices"], queryFn: api.audioDevices });
   const save = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
@@ -32,8 +36,89 @@ export default function Settings() {
   const warnings = settings.data?.warnings ?? [];
   const localWarning = /onedrive|dropbox|google drive/i.test(dataRoot);
 
+  const devices = audio.data?.devices ?? [];
+  const outputs = audio.data?.outputs ?? [];
+  const selectedDevice = config.audio?.input_device ?? null;
+  const selectedOutput = config.audio?.output_device ?? null;
+
   return (
     <section data-testid="settings-page">
+      {/* Selector and meter share a row: neither needs the full width, and side by side
+          the level reads as belonging to the device above it. */}
+      <div className="mb-6 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="mic-device">
+            {t("settings.microphone")}
+          </label>
+          {devices.length === 0 ? (
+            <div data-testid="mic-unavailable" className="text-sm text-neutral-600">
+              <p>
+                {audio.data && audio.data.platform !== "win32"
+                  ? t("settings.micWrongHost")
+                  : t("settings.micUnavailable")}
+              </p>
+              {audio.data?.error && (
+                <p data-testid="mic-error" className="mt-1 font-mono text-xs text-neutral-500">
+                  {audio.data.error}
+                </p>
+              )}
+              {audio.data && (
+                <p className="mt-1 text-xs text-neutral-500">
+                  host: {audio.data.platform} · capture: {audio.data.capture}
+                </p>
+              )}
+            </div>
+          ) : (
+            <select
+              id="mic-device"
+              data-testid="mic-device"
+              value={selectedDevice === null ? "" : String(selectedDevice)}
+              onChange={(event) => {
+                const raw = event.target.value;
+                save.mutate({ "audio.input_device": raw === "" ? null : Number(raw) });
+              }}
+              className="w-full rounded border border-neutral-300 px-2 py-1"
+            >
+              <option value="">{t("settings.microphoneDefault")}</option>
+              {devices.map((device) => (
+                <option key={device.index} value={device.index}>
+                  {device.name}
+                  {device.is_default ? " ✓" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <MicMeter device={selectedDevice} track="me" />
+
+        <div>
+          <label className="mb-1 block text-sm font-medium" htmlFor="output-device">
+            {t("settings.systemAudio")}
+          </label>
+          <select
+            id="output-device"
+            data-testid="output-device"
+            value={selectedOutput === null ? "" : String(selectedOutput)}
+            onChange={(event) => {
+              const raw = event.target.value;
+              save.mutate({ "audio.output_device": raw === "" ? null : Number(raw) });
+            }}
+            className="w-full rounded border border-neutral-300 px-2 py-1"
+            disabled={outputs.length === 0}
+          >
+            <option value="">{t("settings.outputDefault")}</option>
+            {outputs.map((device) => (
+              <option key={device.index} value={device.index}>
+                {device.name}
+                {device.is_default ? " ✓" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-neutral-500">{t("settings.systemAudioNote")}</p>
+        </div>
+        <MicMeter device={null} track="them" hint={t("settings.systemAudioLevel")} />
+      </div>
+
       <label className="mb-1 block text-sm font-medium" htmlFor="data-root">
         {t("settings.dataRoot")}
       </label>
@@ -89,6 +174,7 @@ export default function Settings() {
       </select>
 
       <ProviderSettings />
+      <PromptSettings />
 
       <div className="mt-4">
         <button

@@ -6,11 +6,12 @@ summarised into English produces an LTR document.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app import meta, paths
+from app import meta
 from app.clock import parse_iso
 from app.log import get
 from app.pipeline.artifacts import up_to_date
@@ -56,35 +57,10 @@ def direction_for(language: str) -> str:
     return "rtl" if language.split("-")[0] in RTL_LANGUAGES else "ltr"
 
 
-def labels_for(language: str) -> dict[str, str]:
-    return LABELS.get(language.split("-")[0], LABELS["en"])
-
-
-def template_dir() -> Path:
-    return paths.resource("templates")
-
-
-def stylesheet() -> str:
-    return (template_dir() / "_email.css").read_text(encoding="utf-8")
-
-
 @dataclass(frozen=True)
 class Rendered:
     ui: str
     email: str
-
-
-def _environment() -> Any:
-    from jinja2 import Environment, FileSystemLoader, select_autoescape
-
-    env = Environment(
-        loader=FileSystemLoader(str(template_dir())),
-        autoescape=select_autoescape(["html", "j2"]),
-        trim_blocks=False,
-        lstrip_blocks=False,
-        keep_trailing_newline=True,
-    )
-    return env
 
 
 def meta_line(meeting: dict[str, Any], labels: dict[str, str]) -> str:
@@ -101,82 +77,50 @@ def meta_line(meeting: dict[str, Any], labels: dict[str, str]) -> str:
     return " · ".join(parts)
 
 
-def render_html(
-    notes: dict[str, Any],
-    *,
-    language: str,
-    meeting: dict[str, Any] | None = None,
-) -> Rendered:
-    """One template, two passes: a styled page and a CSS-inlined email body."""
-    env = _environment()
-    template = env.get_template("summary.html.j2")
-    labels = labels_for(language)
-    context = {
-        "notes": notes,
-        "lang": language,
-        "dir": direction_for(language),
-        "labels": labels,
-        "css": stylesheet(),
-        "meta_line": meta_line(meeting or {}, labels),
-    }
-    ui = template.render(**context, include_style=True)
-    email_source = template.render(**context, include_style=True)
-    email = inline_css(email_source)
-    return Rendered(ui=ui, email=email)
+#: Model-authored HTML goes straight into a page the user opens, so the two things that
+#: turn a document into code come out first. Everything else — structure, styling,
+#: tables, inline CSS — is left exactly as written, because that is the whole point.
+_SCRIPT = re.compile(r"<script\b.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+_HANDLER = re.compile(r"\son[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
 
 
-def inline_css(html: str) -> str:
-    """premailer inlines every rule; Gmail's handling of ``<style>`` is unreliable."""
-    from premailer import Premailer
-
-    inliner = Premailer(
-        html,
-        base_url=None,
-        remove_classes=False,
-        keep_style_tags=False,
-        strip_important=False,
-        disable_validation=True,
-        disable_leftover_css=True,
-        # `text-align: start` is logical; premailer would mirror it into an
-        # `align="start"` attribute, which is not a legal value for that attribute.
-        disable_basic_attributes=["align"],
-        cssutils_logging_level=50,
-    )
-    return str(inliner.transform())
+def sanitize(html: str) -> str:
+    return _HANDLER.sub("", _SCRIPT.sub("", html))
 
 
-def plaintext(notes: dict[str, Any], language: str) -> str:
-    """The ``text/plain`` alternative — a mail client that shows no HTML still reads."""
-    labels = labels_for(language)
-    lines = [str(notes.get("title", "")), ""]
-    lines.append(labels["tldr"])
-    lines.extend(f"- {line}" for line in notes.get("tldr", []))
-    for topic in notes.get("topics", []):
-        lines.extend(["", str(topic.get("heading", ""))])
-        lines.extend(f"- {point}" for point in topic.get("points", []))
-    if notes.get("decisions"):
-        lines.extend(["", labels["decisions"]])
-        for decision in notes["decisions"]:
-            who = decision.get("who_decided", "")
-            lines.append(f"- {who} {decision.get('what', '')}".strip())
-    if notes.get("action_items"):
-        lines.extend(["", labels["actions"]])
-        for item in notes["action_items"]:
-            due = f" ({labels['due']} {item['due']})" if item.get("due") else ""
-            lines.append(f"- {item.get('who', '')}: {item.get('what', '')}{due}")
-    lines.extend(["", labels["footer"]])
-    return "\n".join(lines) + "\n"
+def render_free(notes: dict[str, Any], *, language: str) -> Rendered:
+    """Free-form: the prompt wrote the document, so nothing here relays it out."""
+    body = sanitize(str(notes.get("summary_html", "")))
+    direction = direction_for(language)
+    page = f'<div dir="{direction}" lang="{language}" class="ma-free">{body}</div>'
+    return Rendered(ui=page, email=page)
 
 
 def output_paths(folder: Path) -> tuple[Path, Path]:
     return Path(folder) / UI_NAME, Path(folder) / EMAIL_NAME
 
 
+def plaintext(notes: dict[str, Any], language: str) -> str:
+    """A text/plain alternative for the email, from whatever HTML the prompt produced.
+
+    Crude on purpose: tags out, entities in, blank lines collapsed. There is no structure
+    left to walk — that was the point of removing the schema — so there is nothing
+    cleverer to do than strip the markup.
+    """
+    import html as html_module
+
+    body = sanitize(str(notes.get("summary_html", "")))
+    body = re.sub(r"<(br|/p|/div|/h[1-6]|/li|/tr)\s*>", "\n", body, flags=re.IGNORECASE)
+    text = html_module.unescape(re.sub(r"<[^>]+>", "", body))
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line) + "\n"
+
+
 def run(ctx: StageContext) -> None:
     folder = ctx.folder
     source = notes_path(folder)
     ui_path, email_path = output_paths(folder)
-    if up_to_date(ui_path, [source]) and up_to_date(email_path, [source]):
+    if not ctx.force and up_to_date(ui_path, [source]) and up_to_date(email_path, [source]):
         log.info("summary HTML is current; skipping")
         return
     if not source.exists():
@@ -186,7 +130,7 @@ def run(ctx: StageContext) -> None:
     language = ctx.meeting.summary_language or ctx.config.summary_language
     if language == "auto":
         language = ctx.meeting.language or ctx.config.default_language
-    rendered = render_html(notes, language=language, meeting=ctx.meeting.as_dict())
+    rendered = render_free(notes, language=language)
     ui_path.write_text(rendered.ui, encoding="utf-8")
     email_path.write_text(rendered.email, encoding="utf-8")
     meta.mirror(ctx.refresh(), summary_language=language, rendered=True)

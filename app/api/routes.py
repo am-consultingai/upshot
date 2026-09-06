@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +25,28 @@ from app.services import Services
 log = get(__name__)
 
 HEARTBEAT_S = 15.0
+# 20 Hz reads as continuous without flooding the SSE stream.
+LEVEL_INTERVAL_S = 0.05
+# A backstop against a wedged client, not a routine timeout. The browser owns the meter's
+# lifetime: it closes the stream when the tab is hidden and reopens it when shown. An
+# earlier five-minute cap here was pointless — EventSource simply reconnected, so the
+# microphone stayed open anyway and the log gained an entry every five minutes.
+LEVEL_MAX_S = 1800.0
+
+
+def _sse(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+def _level_event(rms: float, peak: float, *, source: str, clipped: bool = False) -> str:
+    return _sse(
+        {
+            "rms": round(float(rms), 4),
+            "peak": round(float(peak), 4),
+            "source": source,
+            "clipped": clipped,
+        }
+    )
 
 
 def services_of(request: Request) -> Services:
@@ -110,6 +135,14 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
         raise HTTPException(503, "no recorder in this process")
     if svc.recorder.committed:
         raise HTTPException(409, "already recording")
+    # The Settings meter may be holding the microphone. Release it *before* arming:
+    # WASAPI gives one capture stream per endpoint, and the recorder must win.
+    from app.audio import monitor as meter
+
+    held = [name for name in ("me", "them") if meter.active(name) is not None]
+    if held:
+        log.info("taking %s back from the settings meters", " and ".join(held))
+    meter.release()  # every track: the recorder needs both endpoints
     meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
     svc.recorder.start(meeting.path, meeting.id)
     svc.recorder.start_thread()
@@ -171,7 +204,16 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
         for job in svc.queue.for_meeting(meeting_id)
     ]
     payload["evidence"] = meeting.evidence
-    payload["review_reasons"] = meta.review_reasons(meeting.path)
+    mirrored = meta.read(meeting.path)
+    # A meeting whose audio the retention policy removed is not a meeting that failed to
+    # record, and the page must not say so.
+    payload["audio_deleted_at"] = mirrored.get("audio_deleted_at")
+    # Which tracks exist and whether either actually has anything on it. The player used
+    # to be hardwired to "them", so a meeting where nobody else spoke played silence and
+    # looked broken.
+    from app.audio.writer import track_summary
+
+    payload["audio_tracks"] = track_summary(meeting.path)
     return payload
 
 
@@ -240,20 +282,59 @@ def get_summary(request: Request, meeting_id: str) -> Response:
     return Response(path.read_text(encoding="utf-8"), media_type="text/html; charset=utf-8")
 
 
+def _parse_range(header: str, size: int) -> tuple[int, int]:
+    try:
+        spec = header.split("=", 1)[1]
+        first, _, last = spec.partition("-")
+        start = int(first) if first else 0
+        end = int(last) if last else size - 1
+    except (IndexError, ValueError) as exc:
+        raise HTTPException(416, "malformed Range header") from exc
+    if start >= size:
+        raise HTTPException(416, "range beyond the end of the file")
+    return start, min(end, size - 1)
+
+
 @router.get("/meetings/{meeting_id}/audio")
-def get_audio(
-    request: Request, meeting_id: str, track: str = "them", seq: int | None = None
-) -> Response:
-    """Range-request only, gated by the same cookie."""
+def get_audio(request: Request, meeting_id: str, track: str = "mix") -> Response:
+    """``mix`` (default) is the whole meeting; ``me``/``them`` are the raw tracks."""
+    from app.audio.writer import track_path
+
     svc = services_of(request)
     meeting = svc.dao.require_meeting(meeting_id)
-    directory = meeting.path / "audio" / track
-    if not directory.exists():
+
+    if track == "mix":
+        # The whole meeting as one stream, mixed on read. Nothing extra on disk, and the
+        # byte range maps 1:1 onto both tracks, so seeking stays cheap.
+        from app.audio.mix import layout_for, read_range
+
+        layout = layout_for(meeting.path)
+        if layout is None:
+            raise HTTPException(404, "no audio for this meeting")
+        range_header = request.headers.get("range")
+        if not range_header:
+            return Response(
+                read_range(layout, 0, layout.size - 1),
+                media_type="audio/wav",
+                headers={"Accept-Ranges": "bytes", "Content-Length": str(layout.size)},
+            )
+        start, end = _parse_range(range_header, layout.size)
+        return Response(
+            read_range(layout, start, end),
+            status_code=206,
+            media_type="audio/wav",
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{layout.size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(end - start + 1),
+            },
+        )
+
+    if track not in ("me", "them"):
+        raise HTTPException(404, "no such track")
+    path = track_path(meeting.path, track)
+    if not path.exists():
         raise HTTPException(404, "no audio for this track")
-    files = sorted(directory.glob("*.wav"))
-    if not files:
-        raise HTTPException(404, "no audio for this track")
-    path = files[min(max(seq or 1, 1), len(files)) - 1]
     size = path.stat().st_size
     range_header = request.headers.get("range")
     if not range_header:
@@ -274,25 +355,71 @@ def get_audio(
     )
 
 
-def _parse_range(header: str, size: int) -> tuple[int, int]:
+@router.delete("/meetings/{meeting_id}")
+def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    """Remove a meeting: its folder on disk and its rows. There is no undo."""
+    svc = services_of(request)
+    meeting = svc.dao.require_meeting(meeting_id)
+    recorder = svc.recorder
+    if recorder is not None and recorder.committed and recorder.meeting_id == meeting_id:
+        raise HTTPException(409, "this meeting is still recording")
+
     try:
-        spec = header.split("=", 1)[1]
-        first, _, last = spec.partition("-")
-        start = int(first) if first else 0
-        end = int(last) if last else size - 1
-    except (IndexError, ValueError) as exc:
-        raise HTTPException(416, "malformed Range header") from exc
-    if start >= size:
-        raise HTTPException(416, "range beyond the end of the file")
-    return start, min(end, size - 1)
+        # Never delete outside the data root, whatever the database says the folder is.
+        folder = svc.meetings.purge(meeting)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except OSError as exc:
+        # Windows will not unlink a file something has open. Saying so beats deleting the
+        # row against a folder that survived, which orphans it with nothing pointing at it.
+        raise HTTPException(409, str(exc)) from exc
+    svc.events.publish("meeting", meeting_id=meeting_id, action="deleted")
+    return {"deleted": meeting_id, "folder": str(folder)}
+
+
+@router.get("/retention")
+def retention_policy(request: Request) -> dict[str, Any]:
+    """What the retention policy would delete right now. Reads; deletes nothing.
+
+    A key that promises deletion and never deletes is a trust problem (D27); a sweep that
+    deletes silently is a worse one. This is how the policy is checked before it is
+    believed, including which meetings it declined to touch and why.
+    """
+    from app.retention import plan
+
+    svc = services_of(request)
+    return plan(
+        dao=svc.dao,
+        queue=svc.queue,
+        meetings=svc.meetings,
+        config=svc.config,
+        clock=svc.clock,
+        recorder=svc.recorder,
+    ).as_dict()
+
+
+@router.post("/retention/sweep")
+def retention_sweep(request: Request) -> dict[str, Any]:
+    """Apply the policy now rather than waiting for the worker's next pass."""
+    from app.retention import sweep_services
+
+    return sweep_services(services_of(request)).as_dict()
 
 
 @router.post("/meetings/{meeting_id}/jobs/{stage}/retry")
-def retry_stage(request: Request, meeting_id: str, stage: str) -> dict[str, Any]:
+def retry_stage(
+    request: Request, meeting_id: str, stage: str, force: bool = False
+) -> dict[str, Any]:
+    """Re-run a stage. With ``force``, redo the work rather than reuse what is on disk."""
     svc = services_of(request)
     if stage not in {str(item) for item in STAGE_ORDER}:
         raise HTTPException(404, f"no such stage {stage!r}")
     svc.dao.require_meeting(meeting_id)
+    if force:
+        # A button press is a decision. Every later stage is redone too, or a fresh
+        # summary would be rendered from the previous one's HTML.
+        for later in STAGE_ORDER[STAGE_ORDER.index(JobStage(stage)) :]:
+            svc.queue.request_rerun(meeting_id, later)
     job = svc.queue.retry(meeting_id, JobStage(stage))
     svc.events.publish("job", meeting_id=meeting_id, stage=stage, state=job.state)
     return {"stage": job.stage, "state": job.state, "attempts": job.attempts}
@@ -360,6 +487,147 @@ def put_glossary(request: Request, body: GlossaryPut) -> dict[str, Any]:
     return get_glossary(request)
 
 
+# ----------------------------------------------------------------------------- audio
+
+
+@router.get("/audio/devices")
+def audio_devices(request: Request) -> dict[str, Any]:
+    """Microphones the settings screen can offer. Never raises: a machine with no audio
+    stack (or WSL) must still be able to open Settings."""
+    from app.audio import monitor as meter
+
+    svc = services_of(request)
+    selected = svc.config.get("audio.input_device")
+    meter_opens = meter.acquisitions()
+    selected_output = svc.config.get("audio.output_device")
+    outputs: list[dict[str, Any]] = []
+    try:
+        from app.audio.devices import (
+            NoDeviceError,
+            default_capture,
+            default_render,
+            list_inputs,
+            list_outputs,
+        )
+
+        def describe(items: Any, fallback: int | None) -> list[dict[str, Any]]:
+            return [
+                {
+                    "index": device.index,
+                    "name": device.name,
+                    "rate": device.rate,
+                    "channels": device.channels,
+                    "is_default": device.index == fallback,
+                }
+                for device in items
+            ]
+
+        try:
+            capture_default: int | None = default_capture().index
+        except NoDeviceError:
+            capture_default = None
+        try:
+            render_default: int | None = default_render().index
+        except NoDeviceError:
+            render_default = None
+        devices = describe(list_inputs(), capture_default)
+        outputs = describe(list_outputs(), render_default)
+        error = None
+    except Exception as exc:
+        devices, outputs, error = [], [], str(exc)
+    return {
+        "devices": devices,
+        "outputs": outputs,
+        "selected": None if selected is None else int(selected),
+        "selected_output": None if selected_output is None else int(selected_output),
+        "error": error,
+        # Which machine actually answered. An empty list on "linux" means the request
+        # reached a WSL instance, not the Windows app — a distinction that has already
+        # cost a day once.
+        "platform": sys.platform,
+        # Diagnostics: one open per Settings visit is healthy. A climbing number means
+        # something is reopening the device in a loop.
+        "meter_opens": meter_opens,
+        "capture": str(svc.config.get("audio.capture")),
+    }
+
+
+@router.get("/audio/level")
+async def audio_level(
+    request: Request, device: int | None = None, track: str = "me"
+) -> StreamingResponse:
+    """Server-sent input levels for the Settings meters.
+
+    ``me`` is the microphone, ``them`` the system-audio loopback. They are different
+    endpoints, so both can be metered at once — which is also the quickest way to see
+    crosstalk: if both bars move when only the far side is talking, the microphone is
+    picking up system audio.
+
+    While a meeting is recording the endpoints are already open, so this reports the
+    recorder's own levels rather than fighting it for them.
+    """
+    svc = services_of(request)
+    if track not in ("me", "them"):
+        raise HTTPException(404, "no such track")
+    recorder = svc.recorder
+
+    async def stream() -> Any:
+        from app.audio import monitor as meter
+
+        holding = False
+        deadline = time.monotonic() + LEVEL_MAX_S
+        try:
+            while time.monotonic() < deadline:
+                recording = recorder is not None and recorder.is_active()
+                if recording:
+                    # The recorder owns the endpoint now. Drop the preview stream rather
+                    # than hold a second one open, and report the level being recorded.
+                    if holding:
+                        await asyncio.to_thread(meter.release, track)
+                        holding = False
+                    assert recorder is not None
+                    level = float(recorder.levels().get(track, 0.0))
+                    yield _level_event(level, level, source="recorder")
+                else:
+                    if not holding:
+                        try:
+                            await asyncio.to_thread(
+                                meter.acquire, svc.config, device if track == "me" else None, track
+                            )
+                        except Exception as exc:
+                            yield _sse({"error": str(exc)})
+                            return
+                        holding = True
+                    current = meter.active(track)
+                    reading = current.read() if current is not None else None
+                    if reading is None:
+                        holding = False
+                        continue
+                    if reading.error:
+                        yield _sse({"error": reading.error})
+                        return
+                    yield _level_event(
+                        reading.rms, reading.peak, source="monitor", clipped=reading.clipped
+                    )
+                await asyncio.sleep(LEVEL_INTERVAL_S)
+            # Tell the client this was deliberate, so it closes instead of reconnecting.
+            yield _sse({"done": True})
+        finally:
+            if holding:
+                # Synchronously, NOT via `await asyncio.to_thread`: a browser closing the
+                # tab cancels this task, and awaiting anything in a cancelled task raises
+                # CancelledError at the await — so the release never ran and the
+                # microphone stayed open until the backstop fired. The monitor thread
+                # polls its stop flag every 50 ms, so this returns promptly.
+                meter.release(track)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 # --------------------------------------------------------------------------- settings
 
 
@@ -370,9 +638,29 @@ def get_settings(request: Request) -> dict[str, Any]:
     return {"config": svc.config.redacted_dump(), "warnings": svc.config.warnings()}
 
 
+def refuse_unusable_provider(svc: Services, values: dict[str, Any]) -> None:
+    """The subscription provider without its CLI fails hours later, not now.
+
+    Nothing rejects the selection today, so the failure surfaces in the summarize stage
+    — permanently, at the end of a meeting already recorded and transcribed. Refusing
+    the selection costs a click; refusing it later costs the summary.
+    """
+    if values.get("llm.provider") != "claude-subscription":
+        return
+    from app.llm.claude_cli import ClaudeCliClient
+
+    if not ClaudeCliClient(svc.config).status().installed:
+        raise HTTPException(
+            409,
+            "Claude Code is not installed on this machine. Install it first — the app "
+            "never handles your credentials.",
+        )
+
+
 @router.put("/settings")
 def put_settings(request: Request, body: SettingsPut) -> dict[str, Any]:
     svc = services_of(request)
+    refuse_unusable_provider(svc, body.values)
     for dotted, value in body.values.items():
         svc.config.set(dotted, value)
     svc.config.validate()
@@ -430,7 +718,12 @@ def llm_status(request: Request) -> dict[str, Any]:
     def has(name: str, env: str) -> bool:
         return bool(svc.config.secret(name, env=env))
 
+    from app.llm.claude_cli import INSTALL_DOCS_URL, install_plan, update_command
+
     cli = ClaudeCliClient(svc.config).status()
+    # Only probed when there is something to install: winget's own start-up is slow
+    # enough to be felt on every settings load otherwise.
+    plan = install_plan() if not cli.installed else None
     providers = [
         {
             "id": "anthropic",
@@ -458,7 +751,19 @@ def llm_status(request: Request) -> dict[str, Any]:
             "label": "Claude Code (your own subscription)",
             "needs": "cli",
             "ready": cli.installed,
+            # Three-valued on purpose: `None` means the build is too old to be asked,
+            # which is a different thing from being signed out and reads differently.
+            "signed_in": cli.signed_in,
+            "account": cli.account,
+            # The binary actually resolved, so the hint below can be pinned to it.
+            "path": cli.path,
             "detail": cli.version or cli.detail,
+            "can_install": plan is not None,
+            # Shown beside the button, so the command is disclosed before it is clicked.
+            "install_command": plan.display if plan else "",
+            "install_method": plan.method if plan else "",
+            "install_docs": INSTALL_DOCS_URL,
+            "update_hint": update_command(cli.path) if cli.installed else "",
         },
         {
             "id": "ollama",
@@ -471,33 +776,138 @@ def llm_status(request: Request) -> dict[str, Any]:
     return {"active": str(svc.config.get("llm.provider")), "providers": providers}
 
 
+def launch_console(command: list[str], failure: str) -> dict[str, Any]:
+    r"""Run an interactive command in a console of its own, and report what ran.
+
+    The working directory is the point. Inheriting this process's own means, under the
+    Windows launcher, a source tree on a ``\\wsl.localhost`` UNC path — where Claude
+    Code's startup watch of ``.claude/`` dies with ``EISDIR`` before a login can be
+    shown — and, after an Inno install, the program directory itself.
+
+    A frozen build owns no console (``console=False``), so an interactive child is given
+    one explicitly rather than inheriting anything.
+
+    Two attempts, because ``CreateProcess`` has been seen refusing the first with
+    ``WinError 5`` while the second works: the interpreter is resolved by name, then by
+    absolute path. Every attempt is logged with its full context — a launch that fails
+    silently is indistinguishable from a button that does nothing, and that is exactly
+    how the last one was reported.
+    """
+    import subprocess
+
+    from app.llm.claude_cli import child_env, creation_flags, workdir
+
+    if sys.platform != "win32":
+        # No assumption about which terminal emulator exists; the UI shows the command.
+        return {"launched": False, "command": " ".join(command)}
+
+    where = workdir()
+    attempts: list[list[str]] = [command]
+    absolute = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32"
+    absolute = absolute / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    if command and command[0].lower() == "powershell.exe" and absolute.exists():
+        attempts.append([str(absolute), *command[1:]])
+
+    problems: list[str] = []
+    for index, argv in enumerate(attempts, start=1):
+        try:
+            subprocess.Popen(
+                argv,
+                cwd=where,
+                env=child_env(),
+                creationflags=creation_flags(visible=True),
+            )
+        except Exception as exc:
+            problems.append(f"{argv[0]}: {exc}")
+            log.error(
+                "console launch attempt %d/%d failed: exe=%s cwd=%s args=%d chars: %s",
+                index,
+                len(attempts),
+                argv[0],
+                where,
+                len(" ".join(argv)),
+                exc,
+                exc_info=True,
+            )
+            continue
+        log.info("launched %s in %s (attempt %d)", argv[0], where, index)
+        return {"launched": True, "command": " ".join(command)}
+
+    raise HTTPException(500, f"{failure}: {'; '.join(problems)}")
+
+
+@router.get("/llm/prompt")
+def llm_prompt(request: Request) -> dict[str, Any]:
+    """The summarizing prompt: the one in force, and the shipped one to revert to."""
+    from app.llm.prompts import load as load_prompt
+
+    svc = services_of(request)
+    shipped = load_prompt("system")
+    custom = svc.config.get("llm.summary_prompt")
+    custom_text = custom.strip() if isinstance(custom, str) and custom.strip() else ""
+    return {
+        "text": custom_text or shipped.text,
+        "default": shipped.text,
+        "custom": bool(custom_text),
+        "version": shipped.version,
+    }
+
+
 @router.post("/llm/signin")
 def llm_signin(request: Request) -> dict[str, Any]:
     """Launch Anthropic's own login. We never see the credential it creates."""
-    import subprocess
-    import sys
-
-    from app.llm.claude_cli import ClaudeCliClient
+    from app.llm.claude_cli import ClaudeCliClient, login_console
 
     svc = services_of(request)
     client = ClaudeCliClient(svc.config)
-    path = client.resolve()
-    if path is None:
+    if client.resolve() is None:
         raise HTTPException(
             409,
             "Claude Code is not installed. Install it, then sign in — the app never "
             "handles your credentials.",
         )
-    command = [path]
-    try:
-        if sys.platform == "win32":
-            subprocess.Popen(command, creationflags=0x00000010)  # CREATE_NEW_CONSOLE
-            launched = True
-        else:
-            launched = False  # no assumption about which terminal emulator exists
-    except Exception as exc:
-        raise HTTPException(500, f"could not launch Claude Code: {exc}") from exc
-    return {"launched": launched, "command": " ".join(command)}
+    return launch_console(login_console(client.login_command()), "could not launch Claude Code")
+
+
+@router.post("/llm/install")
+def llm_install(request: Request) -> dict[str, Any]:
+    """Install Claude Code in a console the user can watch.
+
+    Two tiers, chosen in ``install_plan``: winget where it genuinely runs, and Anthropic's
+    own installer where it does not. Neither is run blind — the exact command is rendered
+    beside the button before it is pressed.
+    """
+    from app.llm.claude_cli import INSTALL_DOCS_URL, install_plan
+
+    plan = install_plan()
+    if plan is None:
+        return {"launched": False, "command": "", "docs": INSTALL_DOCS_URL}
+    result = launch_console(plan.argv, f"could not start the {plan.method} install")
+    result["command"] = plan.display  # the line the user was shown, not the wrapper
+    result["docs"] = INSTALL_DOCS_URL
+    return result
+
+
+@router.post("/llm/update")
+def llm_update(request: Request) -> dict[str, Any]:
+    """Update the Claude Code this application resolved — not whichever one PATH favours.
+
+    Offered only where the app is already reporting a problem it cannot otherwise fix:
+    a build too old to say whether it is signed in. Installs that update themselves never
+    reach that state, so this is the resolution to a complaint rather than a standing
+    feature.
+    """
+    from app.llm.claude_cli import ClaudeCliClient, update_command
+
+    svc = services_of(request)
+    path = ClaudeCliClient(svc.config).resolve()
+    if path is None:
+        raise HTTPException(409, "Claude Code is not installed, so there is nothing to update.")
+    command = update_command(path)
+    return launch_console(
+        ["powershell.exe", "-NoProfile", "-NoExit", "-Command", f"{command}"],
+        "could not start the update",
+    ) | {"command": command}
 
 
 @router.post("/llm/test")
@@ -590,6 +1000,20 @@ async def sse(request: Request) -> StreamingResponse:
     )
 
 
+def _seed_audio(svc: Services, folder: Path, seconds: float) -> None:
+    """Two real tracks, so a seeded meeting has a player rather than a placeholder."""
+    import numpy as np
+
+    from app.audio.writer import ChunkWriter
+
+    rate = svc.config.sample_rate
+    index = np.arange(int(seconds * rate))
+    writer = ChunkWriter(folder, rate=rate)
+    for track, hz in (("me", 220), ("them", 330)):
+        writer.write_pcm(track, np.round(np.sin(2 * np.pi * hz * index / rate) * 8000))
+    writer.close()
+
+
 # --------------------------------------------------------------------------- test seed
 
 
@@ -671,6 +1095,10 @@ def test_router() -> APIRouter:
                     process=item.get("process"),
                     meeting_id=meeting.id,
                 )
+            if item.get("audio_seconds"):
+                _seed_audio(svc, folder, float(item["audio_seconds"]))
+            if item.get("audio_deleted_at"):
+                meta.update(folder, audio_deleted_at=item["audio_deleted_at"])
             if item.get("summary_html"):
                 (folder / "summary.html").write_text(item["summary_html"], encoding="utf-8")
             if item.get("notes"):

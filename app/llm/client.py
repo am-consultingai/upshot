@@ -14,7 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from app.config import Config
 from app.errors import PermanentError, RecoverableError
 from app.llm.repair import complete_with_repair
-from app.llm.schema import NOTES_SCHEMA, validate
+from app.llm.schema import FREE_SCHEMA, validate
 from app.log import get
 
 log = get(__name__)
@@ -124,7 +124,7 @@ class AnthropicClient:
         *,
         system_blocks: Sequence[dict[str, Any]],
         user: str,
-        schema: dict[str, Any] = NOTES_SCHEMA,
+        schema: dict[str, Any] = FREE_SCHEMA,
         max_tokens: int = 16000,
     ) -> LlmResult:
         request = self.build_request(
@@ -232,7 +232,7 @@ class OllamaClient:
         *,
         system_blocks: Sequence[dict[str, Any]],
         user: str,
-        schema: dict[str, Any] = NOTES_SCHEMA,
+        schema: dict[str, Any] = FREE_SCHEMA,
         max_tokens: int = 16000,
     ) -> LlmResult:
         system_text = "\n\n".join(str(block.get("text", "")) for block in system_blocks)
@@ -288,87 +288,22 @@ class FakeLlm:
         *,
         system_blocks: Sequence[dict[str, Any]],
         user: str,
-        schema: dict[str, Any] = NOTES_SCHEMA,
+        schema: dict[str, Any] = FREE_SCHEMA,
         max_tokens: int = 16000,
     ) -> LlmResult:
+        """A believable free-form answer, and nothing structured to invent any more."""
         self.calls.append({"system": list(system_blocks), "user": user, "schema": schema})
         properties = schema.get("properties", {})
-        if "title" not in properties and "topics" not in properties:
+        if "summary_html" not in properties:
             # An arbitrary small schema — the /api/llm/test probe uses one. Satisfy it
-            # rather than returning meeting notes that would fail validation.
+            # rather than returning a summary that would fail validation.
             return LlmResult(data=_minimal_for(schema), model="fake")
-        reduced = schema is not NOTES_SCHEMA and "title" not in properties
         lines = [line for line in user.splitlines() if line.strip()]
         first = lines[0][:110] if lines else "Meeting"
-        # The reduce step is handed JSON, not transcript text: read the meeting out of it
-        # so the fake's title looks like a title rather than like a serialized payload.
-        if user.lstrip().startswith("{"):
-            try:
-                payload = json.loads(user)
-            except ValueError:
-                payload = {}
-            meeting = payload.get("meeting", {}) if isinstance(payload, dict) else {}
-            windows = payload.get("windows", []) if isinstance(payload, dict) else []
-            points = [
-                point
-                for window in windows
-                for topic in window.get("topics", [])
-                for point in topic.get("points", [])
-            ]
-            first = str(meeting.get("title") or (points[0] if points else "Meeting"))[:110]
-        at_ms = _first_at_ms(user)
-        topics = [
-            {
-                "heading": "Status",
-                "points": [line[:160] for line in lines[:3]] or ["no content"],
-                "quotes": [{"who": "THEM", "text": first, "at_ms": at_ms}],
-            }
-        ]
-        decisions = [
-            {
-                "what": "Ship the release next week",
-                "rationale": "the blocking bug is fixed",
-                "who_decided": "ME",
-                "at_ms": at_ms,
-            }
-        ]
-        actions = [
-            {
-                "who": "ME" if index % 2 == 0 else "THEM",
-                "what": f"follow up #{index + 1}",
-                "due": None,
-                "confidence": 0.8,
-            }
-            for index in range(self.action_items)
-        ]
-        if self.unknown_owner and actions:
-            actions[0] = {**actions[0], "who": "Someone Not In This Meeting"}
-        if reduced:
-            data: dict[str, Any] = {
-                "topics": topics,
-                "decisions": decisions,
-                "action_items": actions,
-                "quotes": [{"who": "THEM", "text": first, "at_ms": at_ms}],
-            }
-        else:
-            data = {
-                "title": (first[:60] or "Meeting").strip(),
-                "tldr": [f"point {index + 1}" for index in range(self.tldr_items)],
-                "participants": [{"name": "ME", "track": "ME"}, {"name": "THEM", "track": "THEM"}],
-                "topics": topics,
-                "decisions": decisions,
-                "action_items": actions,
-                "open_questions": [],
-                "risks": [],
-                "follow_up_email": {
-                    "subject": f"Notes: {first[:40]}".strip(),
-                    "body_md": "- point 1\n- point 2\n",
-                },
-            }
+        body = "".join(f"<p>{line[:200]}</p>" for line in lines[:5])
         return LlmResult(
-            data=data,
+            data={"summary_html": f"<h1>{first}</h1>{body}", "title": first},
             model="fake",
-            usage={"input_tokens": self.count_tokens(user), "cache_read_input_tokens": 1},
         )
 
     def count_tokens(self, text: str) -> int:

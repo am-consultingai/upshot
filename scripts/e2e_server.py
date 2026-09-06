@@ -31,6 +31,9 @@ def main() -> int:
         asr__backend="fake",
         llm__provider="fake",
         audio__capture="synthetic",
+        # A tone rather than the default silence, so the Settings meter has something to
+        # show — and so a meter that stays dead in e2e is a real failure.
+        audio__synthetic_pattern="tone",
         audio__vad="energy",
         delivery__notifier="fake",
         secrets__backend="memory",

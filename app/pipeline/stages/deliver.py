@@ -37,7 +37,8 @@ def notifier_for(ctx: StageContext) -> Any:
 
 
 def subject_for(notes: dict[str, Any], meeting_title: str | None) -> str:
-    email = notes.get("follow_up_email") or {}
+    # No drafted-email field any more: the summary the prompt wrote *is* the email.
+    email: dict[str, Any] = {}
     subject = str(email.get("subject") or "").strip()
     return subject or f"Meeting notes: {notes.get('title') or meeting_title or 'untitled'}"
 

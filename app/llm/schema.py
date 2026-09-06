@@ -1,109 +1,23 @@
-"""``notes.json`` — the contract between the model and everything downstream (§9.3)."""
+"""``notes.json`` — what the summarizer writes, and the only shape still imposed.
+
+The nine-field schema that used to live here is gone: it fixed the sections, and a
+prompt asking for a differently shaped document could not have any visible effect.
+What remains is the JSON envelope, kept only because it is what makes an answer
+extractable across every provider — everything inside ``summary_html`` is the
+prompt's to decide.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
-NOTES_SCHEMA: dict[str, Any] = {
+FREE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["title", "tldr", "topics", "decisions", "action_items"],
+    "required": ["summary_html"],
     "properties": {
-        "title": {"type": "string", "maxLength": 120},
-        "tldr": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 6},
-        "participants": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "name": {"type": "string"},
-                    "role": {"type": "string"},
-                    "track": {"enum": ["ME", "THEM"]},
-                },
-            },
-        },
-        "topics": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["heading", "points"],
-                "properties": {
-                    "heading": {"type": "string"},
-                    "points": {"type": "array", "items": {"type": "string"}},
-                    "quotes": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": False,
-                            "properties": {
-                                "who": {"type": "string"},
-                                "text": {"type": "string"},
-                                "at_ms": {"type": "integer"},
-                            },
-                        },
-                    },
-                },
-            },
-        },
-        "decisions": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "what": {"type": "string"},
-                    "rationale": {"type": "string"},
-                    "who_decided": {"type": "string"},
-                    "at_ms": {"type": "integer"},
-                },
-            },
-        },
-        "action_items": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "who": {"type": "string"},
-                    "what": {"type": "string"},
-                    "due": {"type": ["string", "null"]},
-                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                },
-            },
-        },
-        "open_questions": {"type": "array", "items": {"type": "string"}},
-        "risks": {"type": "array", "items": {"type": "string"}},
-        "follow_up_email": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {"subject": {"type": "string"}, "body_md": {"type": "string"}},
-        },
-    },
-}
-
-#: The reduced schema each map window fills in.
-MAP_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["topics", "decisions", "action_items"],
-    "properties": {
-        "topics": NOTES_SCHEMA["properties"]["topics"],
-        "decisions": NOTES_SCHEMA["properties"]["decisions"],
-        "action_items": NOTES_SCHEMA["properties"]["action_items"],
-        "quotes": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "who": {"type": "string"},
-                    "text": {"type": "string"},
-                    "at_ms": {"type": "integer"},
-                },
-            },
-        },
+        "summary_html": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
     },
 }
 
@@ -117,7 +31,7 @@ def validate(payload: Any, schema: dict[str, Any] | None = None) -> dict[str, An
     import jsonschema
 
     try:
-        jsonschema.validate(payload, schema or NOTES_SCHEMA)
+        jsonschema.validate(payload, schema or FREE_SCHEMA)
     except jsonschema.ValidationError as exc:
         raise ValidationError(
             f"{'/'.join(str(p) for p in exc.absolute_path)}: {exc.message}"

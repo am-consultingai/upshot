@@ -1,7 +1,8 @@
-"""The transcribe stage: chunk WAVs → one segment list, language resolved once."""
+"""The transcribe stage: one WAV per track → one segment list, language resolved once."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -11,8 +12,9 @@ from app import meta
 from app.asr.backend import AsrBackend, Segment
 from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
 from app.asr.language import resolve_language
+from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
-from app.audio.writer import ChunkRecord, recover
+from app.audio.writer import ChunkRecord, recover, track_files, track_path
 from app.log import get
 from app.pipeline.artifacts import up_to_date
 from app.pipeline.context import StageContext
@@ -21,23 +23,25 @@ log = get(__name__)
 
 SEGMENTS_NAME = "segments.json"
 
+#: Where the echo-cancelled copy of a track lives while it is being transcribed.
+CLEAN_DIR = "clean"
+
 
 def segments_path(folder: Path) -> Path:
     return Path(folder) / SEGMENTS_NAME
 
 
+def clean_path(folder: Path, track: str) -> Path:
+    return Path(folder) / "audio" / CLEAN_DIR / f"{track}.wav"
+
+
 def _chunk_inputs(folder: Path) -> list[Path]:
-    audio = Path(folder) / "audio"
-    if not audio.exists():
-        return []
-    return sorted(audio.glob("*/*.wav"))
+    return sorted(track_files(folder).values())
 
 
 def first_chunks(records: list[ChunkRecord], folder: Path) -> dict[str, Path]:
-    out: dict[str, Path] = {}
-    for record in sorted(records, key=lambda r: (r.track, r.seq)):
-        out.setdefault(record.track, Path(folder) / "audio" / record.file)
-    return out
+    """Where language detection looks. One file per track now, so this is that file."""
+    return track_files(folder)
 
 
 def build_initial_prompt(ctx: StageContext, previous_sentence: str | None) -> str | None:
@@ -52,6 +56,91 @@ def build_initial_prompt(ctx: StageContext, previous_sentence: str | None) -> st
         previous_sentence=previous_sentence,
         max_tokens=int(ctx.config.get("asr.initial_prompt_max_tokens", 200)),
     )
+
+
+def _measure_echo(ctx: StageContext) -> EchoModel | None:
+    """Measure the leak between the tracks, and decide whether to subtract it.
+
+    A microphone pointed at a virtual bus that also carries playback records the far side
+    a second time. Nothing downstream can tell that apart from two people saying the same
+    thing, and the user hears every remote voice twice — so it is measured here, where
+    both tracks are on disk, rather than left to be discovered by ear.
+
+    The model returned (if any) is what the ASR input and the playback mixer both
+    subtract. The recording itself is never touched.
+    """
+    from app.audio.analysis import CROSSTALK_THRESHOLD
+    from app.audio.echo import measure
+
+    mode = str(ctx.config.get("audio.echo_cancel", "auto"))
+    files = track_files(ctx.folder)
+    if len(files) < 2:
+        return None
+    try:
+        model = measure(
+            files["me"],
+            files["them"],
+            scan_s=float(ctx.config.get("audio.echo_scan_s", 600)),
+            window_s=float(ctx.config.get("audio.echo_window_s", 60)),
+        )
+    except Exception as exc:  # pragma: no cover - diagnostics must never fail a meeting
+        log.debug("could not measure crosstalk: %s", exc)
+        return None
+    if model is None:
+        ctx.metrics["crosstalk"] = 0.0
+        return None
+
+    log.info(
+        "track crosstalk %.2f at %.0f ms (gain %.2f, removes %.0f%%)",
+        model.correlation,
+        model.delay_ms,
+        model.gain,
+        model.reduction * 100,
+    )
+    ctx.metrics["crosstalk"] = round(model.correlation, 3)
+
+    threshold = float(ctx.config.get("audio.echo_min_correlation", CROSSTALK_THRESHOLD))
+    leaking = model.correlation >= threshold
+    if not leaking and mode != "on":
+        # A partial leak — the near voice diluting the copy — is deliberately left alone:
+        # flagging it would flag every meeting held without headphones (D36).
+        return None
+    if leaking:
+        log.warning(
+            "the two tracks are %.0f%% the same signal — the selected microphone is "
+            "capturing system audio, so the far side is recorded twice",
+            model.correlation * 100,
+        )
+    if mode == "off":
+        meta.add_review_reason(ctx.folder, "microphone is also capturing system audio")
+        return None
+    meta.update(ctx.folder, echo=model.as_dict())
+    meta.add_review_reason(
+        ctx.folder, "microphone is also capturing system audio (removed on playback)"
+    )
+    ctx.metrics["echo"] = model.as_dict()
+    return model
+
+
+def _asr_inputs(ctx: StageContext, model: EchoModel | None) -> dict[str, Path]:
+    """The files handed to the ASR: the near track with the far side subtracted.
+
+    Written beside the recording rather than over it — ``audio/clean/me.wav``, which
+    ``track_files`` does not glob — so the raw recording stays exactly what the device
+    produced and the cleaned copy can be thrown away and rebuilt.
+    """
+    files = dict(track_files(ctx.folder))
+    if model is None or "me" not in files or "them" not in files:
+        return files
+    from app.audio.echo import clean_track
+
+    try:
+        files["me"] = clean_track(files["me"], files["them"], clean_path(ctx.folder, "me"), model)
+    except Exception as exc:  # pragma: no cover - never lose a meeting over this
+        log.warning("could not subtract the echo; transcribing the raw track: %s", exc)
+        return dict(track_files(ctx.folder))
+    log.info("transcribing the echo-cancelled near track")
+    return files
 
 
 def _participants(ctx: StageContext) -> tuple[str, ...]:
@@ -81,12 +170,13 @@ def run(ctx: StageContext) -> None:
     output = segments_path(folder)
     inputs = _chunk_inputs(folder)
     if not inputs:
-        raise FileNotFoundError(f"no chunk files under {folder / 'audio'}")
+        raise FileNotFoundError(f"no track audio under {folder / 'audio'}")
     if up_to_date(output, inputs):
         log.info("transcript segments are current; skipping")
         return
 
     records = recover(folder)
+    echo_model = _measure_echo(ctx)
     backend = backend_for(ctx)
     decision = resolve_language(backend, first_chunks(records, folder), ctx.config)
     ctx.dao.update_meeting(
@@ -101,23 +191,22 @@ def run(ctx: StageContext) -> None:
         decision.confidence,
     )
 
+    # One pass per track over the whole file. Lost audio was written as silence, so the
+    # file's timeline is the meeting's timeline and the timestamps need no shifting. It
+    # also gives the model the entire track as context instead of one-minute windows.
     segments: list[Segment] = []
-    previous_sentence: str | None = None
-    for record in sorted(records, key=lambda r: (r.t0_ms, r.track, r.seq)):
-        ctx.checkpoint()
-        wav = folder / "audio" / record.file
-        if not wav.exists():
-            log.warning("chunk %s is in the manifest but missing on disk", record.file)
-            continue
-        prompt = build_initial_prompt(ctx, previous_sentence)
-        chunk_segments = backend.transcribe(
-            wav, language=decision.language, initial_prompt=prompt, word_timestamps=True
-        )
-        offset_s = record.t0_ms / 1000.0
-        for segment in chunk_segments:
-            segments.append(segment.shifted(offset_s, new_id=len(segments)))
-        if chunk_segments:
-            previous_sentence = chunk_segments[-1].text[-200:]
+    prompt = build_initial_prompt(ctx, None)
+    try:
+        for _track, wav in sorted(_asr_inputs(ctx, echo_model).items()):
+            ctx.checkpoint()
+            track_segments = backend.transcribe(
+                wav, language=decision.language, initial_prompt=prompt, word_timestamps=True
+            )
+            segments.extend(track_segments)
+    finally:
+        _discard_clean(folder)
+    segments.sort(key=lambda segment: (segment.start, segment.track))
+    segments = [segment.shifted(0.0, new_id=index) for index, segment in enumerate(segments)]
 
     segments = _diarize(ctx, segments, records)
 
@@ -143,6 +232,17 @@ def run(ctx: StageContext) -> None:
     ctx.metrics["language"] = decision.language
 
 
+def _discard_clean(folder: Path) -> None:
+    """The cleaned copy is derived: keeping it would silently double the near track."""
+    directory = Path(folder) / "audio" / CLEAN_DIR
+    if not directory.exists():
+        return
+    for path in directory.glob("*.wav"):
+        path.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        directory.rmdir()
+
+
 def _diarize(
     ctx: StageContext, segments: list[Segment], records: list[ChunkRecord]
 ) -> list[Segment]:
@@ -152,26 +252,20 @@ def _diarize(
     boundaries. So the loopback track is reassembled on the meeting's timeline (gaps
     become silence) and clustered once.
     """
-    from app.asr.diarize import concat_track, make_diarizer, speaker_count
+    from app.asr.diarize import make_diarizer, speaker_count
 
     diarizer = make_diarizer(ctx.config)
     if diarizer is None:
         return segments
     rate = ctx.config.sample_rate
-    chunks: list[tuple[float, Any]] = []
-    for record in sorted(records, key=lambda r: r.seq):
-        if record.track != "them":
-            continue
-        wav = ctx.folder / "audio" / record.file
-        if not wav.exists():
-            continue
-        pcm, chunk_rate = read_wav(wav)
-        if chunk_rate != rate:  # pragma: no cover - chunks are written at the storage rate
-            continue
-        chunks.append((record.t0_ms / 1000.0, pcm))
-    if not chunks:
+    wav = track_path(ctx.folder, "them")
+    if not wav.exists():
         return segments
-    track = concat_track(chunks, rate)
+    track, track_rate = read_wav(wav)
+    if track_rate != rate:  # pragma: no cover - written at the storage rate
+        return segments
+    if not len(track):
+        return segments
     minutes = len(track) / rate / 60
     if minutes > LONG_TRACK_MINUTES:
         log.warning("diarizing %.0f minutes in one pass; this is memory-hungry", minutes)

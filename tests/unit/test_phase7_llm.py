@@ -11,16 +11,13 @@ from app.errors import PermanentError, RecoverableError
 from app.llm.client import AnthropicClient, FakeLlm, OllamaClient, make_client, system_blocks
 from app.llm.prompts import load as load_prompt
 from app.llm.prompts import versions
-from app.llm.schema import MAP_SCHEMA, NOTES_SCHEMA, ValidationError, validate
+from app.llm.schema import FREE_SCHEMA, ValidationError, validate
 from app.llm.tokens import CachingCounter, CharCounter, tokens_per_word
 from app.pipeline.stages.summarize import language_instruction, split_windows
 
 VALID_NOTES: dict[str, Any] = {
     "title": "Weekly sync",
-    "tldr": ["we shipped", "we did not break anything"],
-    "topics": [{"heading": "Release", "points": ["ship on Tuesday"]}],
-    "decisions": [{"what": "ship", "who_decided": "ME", "at_ms": 1000}],
-    "action_items": [{"who": "ME", "what": "cut the tag", "due": None, "confidence": 0.9}],
+    "summary_html": "<h1>Weekly sync</h1><p>we shipped, we did not break anything</p>",
 }
 
 
@@ -34,27 +31,22 @@ def test_schema_accepts_a_good_payload() -> None:
 @pytest.mark.parametrize(
     "mutation",
     [
-        pytest.param(lambda n: n.pop("title"), id="missing_required_title"),
-        pytest.param(lambda n: n.update(tldr="not a list"), id="wrong_type_tldr"),
-        pytest.param(lambda n: n.update(title="x" * 121), id="title_too_long"),
-        pytest.param(lambda n: n.update(extra_field=1), id="extra_property"),
-        pytest.param(lambda n: n.update(tldr=["only one"]), id="tldr_too_short"),
-        pytest.param(
-            lambda n: n["action_items"].append({"who": "ME", "confidence": 5}),
-            id="confidence_out_of_range",
-        ),
+        pytest.param(lambda n: n.pop("summary_html"), id="missing_the_document"),
+        pytest.param(lambda n: n.update(summary_html=""), id="empty_document"),
+        pytest.param(lambda n: n.update(summary_html=["not", "a", "string"]), id="wrong_type"),
+        pytest.param(lambda n: n.update(topics=[]), id="a_field_from_the_old_schema"),
     ],
 )
 def test_schema_rejects_malformed(mutation) -> None:  # type: ignore[no-untyped-def]
+    """All that is still enforced is the envelope: one non-empty document, and no more.
+
+    The nine-field schema this used to police is gone. It fixed the sections, so a prompt
+    asking for a differently shaped document could have no visible effect at all.
+    """
     notes = json.loads(json.dumps(VALID_NOTES))
     mutation(notes)
     with pytest.raises(ValidationError):
         validate(notes)
-
-
-def test_map_schema_is_the_reduced_one() -> None:
-    assert set(MAP_SCHEMA["required"]) == {"topics", "decisions", "action_items"}
-    assert "title" not in MAP_SCHEMA["properties"]
 
 
 # ------------------------------------------------------------------ windowing
@@ -100,14 +92,14 @@ def test_cache_control_placement() -> None:
     client = AnthropicClient(default_config(), client=object())
     blocks = system_blocks("SYSTEM PROMPT", "GLOSSARY BLOCK")
     request = client.build_request(
-        system_blocks=blocks, user="VOLATILE TRANSCRIPT", schema=NOTES_SCHEMA, max_tokens=16000
+        system_blocks=blocks, user="VOLATILE TRANSCRIPT", schema=FREE_SCHEMA, max_tokens=16000
     )
     assert all("cache_control" in block for block in request["system"])
     assert request["system"][-1]["text"] == "GLOSSARY BLOCK"
     assert request["messages"] == [{"role": "user", "content": "VOLATILE TRANSCRIPT"}]
     assert "cache_control" not in json.dumps(request["messages"])
     assert request["thinking"] == {"type": "adaptive"}
-    assert request["output_config"]["format"]["schema"] is NOTES_SCHEMA
+    assert request["output_config"]["format"]["schema"] is FREE_SCHEMA
     assert request["output_config"]["effort"] == "high"
     assert request["fallbacks"] == "default"
     assert request["betas"] == ["server-side-fallback-2026-07-01"]
@@ -125,31 +117,31 @@ class Response:
 def test_refusal_is_permanent() -> None:
     client = AnthropicClient(default_config(), client=object())
     with pytest.raises(PermanentError) as info:
-        client.interpret(Response("refusal", category="cyber"), NOTES_SCHEMA)
+        client.interpret(Response("refusal", category="cyber"), FREE_SCHEMA)
     assert info.value.category == "cyber"
 
 
 def test_max_tokens_is_recoverable() -> None:
     client = AnthropicClient(default_config(), client=object())
     with pytest.raises(RecoverableError):
-        client.interpret(Response("max_tokens"), NOTES_SCHEMA)
+        client.interpret(Response("max_tokens"), FREE_SCHEMA)
 
 
 def test_non_json_is_recoverable() -> None:
     client = AnthropicClient(default_config(), client=object())
     with pytest.raises(RecoverableError):
-        client.interpret(Response(text="I'm afraid I can't do that"), NOTES_SCHEMA)
+        client.interpret(Response(text="I'm afraid I can't do that"), FREE_SCHEMA)
 
 
 def test_invalid_payload_raises_validation_error() -> None:
     client = AnthropicClient(default_config(), client=object())
     with pytest.raises(ValidationError):
-        client.interpret(Response(text=json.dumps({"title": "x"})), NOTES_SCHEMA)
+        client.interpret(Response(text=json.dumps({"title": "x"})), FREE_SCHEMA)
 
 
 def test_good_response_is_parsed() -> None:
     client = AnthropicClient(default_config(), client=object())
-    result = client.interpret(Response(text=json.dumps(VALID_NOTES)), NOTES_SCHEMA)
+    result = client.interpret(Response(text=json.dumps(VALID_NOTES)), FREE_SCHEMA)
     assert result.data["title"] == "Weekly sync"
     assert result.cache_read_tokens == 7
 
@@ -191,12 +183,11 @@ def test_sensitive_meetings_route_to_ollama() -> None:
 
 
 def test_prompt_version_front_matter() -> None:
-    for name in ("system", "map", "reduce"):
-        prompt = load_prompt(name)
-        assert prompt.version and prompt.version != "0"
-        assert "version:" not in prompt.text
-        assert prompt.text
-    assert set(versions("system", "map", "reduce")) == {"system", "map", "reduce"}
+    prompt = load_prompt("system")
+    assert prompt.version and prompt.version != "0"
+    assert "version:" not in prompt.text
+    assert prompt.text
+    assert set(versions("system")) == {"system"}
 
 
 def test_output_language_in_prompt() -> None:
@@ -209,4 +200,4 @@ def test_fake_llm_is_schema_valid() -> None:
     fake = FakeLlm()
     result = fake.complete_json(system_blocks=system_blocks("s", None), user="**[00:12] ME:** hi")
     validate(result.data)
-    assert result.data["topics"][0]["quotes"][0]["at_ms"] == 12_000
+    assert "<h1>" in result.data["summary_html"]

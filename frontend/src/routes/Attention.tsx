@@ -4,7 +4,7 @@ import { api, type Meeting } from "../api";
 import { useI18n } from "../i18n";
 import StateBadge from "../components/StateBadge";
 
-const ATTENTION_STATES = ["FAILED", "NEEDS_REVIEW", "DISCARDED", "INTERRUPTED"];
+const ATTENTION_STATES = ["FAILED", "DISCARDED", "INTERRUPTED"];
 
 export default function Attention() {
   const { t } = useI18n();

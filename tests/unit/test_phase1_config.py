@@ -27,7 +27,7 @@ def test_config_layer_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert cfg.profile == "gpu-live"  # env beats file
     assert cfg.job_policy == "when_idle"  # file beats default
     assert cfg.ui_language == "he"  # file beats default
-    assert cfg.summary_language == "en"  # default survives
+    assert cfg.summary_language == "auto"  # default survives: follow the meeting
     assert cfg.get("audio.chunk_s") == 60
 
 
@@ -107,3 +107,41 @@ def test_synced_folder_warning(app_home: Path) -> None:
     clean = default_config()
     clean.set("data_root", str(app_home / "meetings"))
     assert clean.warnings() == []
+
+
+def test_env_override_does_not_become_permanent(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A launcher exports MA_* for one run; an unrelated save must not adopt it.
+
+    The Windows launcher set MA_LLM__PROVIDER on every start. Saving anything at all then
+    wrote that value into app_config.json, so the provider chosen on the Settings screen
+    appeared to revert by itself and could never be made to stick.
+    """
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"llm": {"provider": "anthropic"}}), encoding="utf-8")
+
+    config = Config.load(file=path, environ={"MA_LLM__PROVIDER": '"fake"'})
+    assert config.get("llm.provider") == "fake", "the override still applies to this run"
+    config.set("audio.min_meeting_s", 5)
+    config.save()
+    assert json.loads(path.read_text())["llm"]["provider"] == "anthropic"
+
+
+def test_a_deliberate_choice_outranks_the_environment(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Choosing a provider in Settings is a decision, whatever the launcher exported."""
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"llm": {"provider": "anthropic"}}), encoding="utf-8")
+
+    config = Config.load(file=path, environ={"MA_LLM__PROVIDER": '"fake"'})
+    config.set("llm.provider", "claude-subscription")
+    config.save()
+    assert json.loads(path.read_text())["llm"]["provider"] == "claude-subscription"
+
+
+def test_an_env_key_absent_from_disk_is_dropped_not_frozen(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """With nothing on disk to restore, the key goes and the default applies again."""
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({}), encoding="utf-8")
+
+    config = Config.load(file=path, environ={"MA_LLM__PROVIDER": '"fake"'})
+    config.save()
+    assert "provider" not in json.loads(path.read_text()).get("llm", {})
