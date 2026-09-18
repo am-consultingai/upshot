@@ -123,3 +123,43 @@ test("calendar_choice_survives_a_reload", async ({ page }) => {
   await page.getByTestId("view-list").click(); // leave the default as it was
   await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
 });
+
+test("recording_shows_a_live_waveform_on_every_page", async ({ page, seed }) => {
+  await seed([]);
+  await gotoApp(page);
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+
+  await page.getByTestId("start-recording").click();
+  const bar = page.getByTestId("recording-bar");
+  await expect(bar).toBeVisible();
+
+  // The synthetic source is a tone: a working waveform paints coloured bars, not just the
+  // grey centre lines.
+  const coloured = () =>
+    page.getByTestId("recording-waveform").locator("canvas").evaluate((node) => {
+      const canvas = node as HTMLCanvasElement;
+      const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+      let count = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        const [r, g, b, a] = [data[index], data[index + 1], data[index + 2], data[index + 3]];
+        if (a > 0 && Math.max(r, g, b) - Math.min(r, g, b) > 60) count += 1;
+      }
+      return count;
+    });
+  await expect.poll(coloured, { timeout: 10_000 }).toBeGreaterThan(50);
+
+  // Not only on the timeline.
+  await page.getByTestId("nav-settings").click();
+  await expect(bar).toBeVisible();
+
+  await bar.getByTestId("recording-bar-stop").click();
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+});
+
+test("a_dead_backend_says_so_instead_of_something_went_wrong", async ({ page }) => {
+  await gotoApp(page);
+  // What a crashed application looks like from the page: requests stop being answered.
+  await page.route("**/api/status", (route) => route.abort());
+  await expect(page.getByTestId("connection-lost")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("connection-lost")).toContainText("run-app.cmd");
+});
