@@ -110,3 +110,20 @@ def test_silence_pattern_is_quiet(tmp_path: Path) -> None:
     assert all(value < 0.001 for value in recorder.levels().values())
     ring = recorder.runtime["me"].ring.peek()
     assert np.max(np.abs(ring)) == 0
+
+
+def test_a_committed_recorder_refuses_to_be_discarded(tmp_path: Path) -> None:
+    """Discarding is for a wake that came to nothing. Once a meeting is being written,
+    closing the streams would end it silently, halfway through."""
+    folder = tmp_path / "meeting"
+    recorder = make_recorder(tmp_path)
+    recorder.start(folder, "m1")
+    pump_seconds(recorder, 5)
+
+    recorder.discard()
+
+    assert recorder.committed, "still recording"
+    assert recorder.runtime, "the streams are still open"
+    pump_seconds(recorder, 5)
+    result = recorder.stop()
+    assert result.total_duration_ms > 9000, "all ten seconds were written"

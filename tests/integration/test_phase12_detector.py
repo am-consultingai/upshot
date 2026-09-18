@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -149,11 +150,18 @@ def test_ignored_process_never_wakes(tmp_path: Path) -> None:
 
 
 def test_sustain_required(tmp_path: Path) -> None:
-    """Nine seconds above the threshold is not a meeting; ten is."""
+    """Evidence has to hold for `detection.sustain_s` before it counts as a meeting.
+
+    Written against the configured window rather than a number, because the window is a
+    tuning decision: it was halved to 5 s so a detection reaches the screen while the
+    meeting is still starting, and a test that hardcodes 10 turns that into a failure
+    instead of a choice.
+    """
     h = build(tmp_path)
+    window = int(h.detector.sustain_s)
     strong_evidence(h)
-    h.seconds(9)
-    assert h.detector.state is DetectorState.AWAKE, "9 s must not commit"
+    h.seconds(window - 1)
+    assert h.detector.state is DetectorState.AWAKE, "a second short must not commit"
     h.vad.set(me=False, them=False)
     h.titles.window_titles = []
     h.seconds(1)
@@ -161,7 +169,7 @@ def test_sustain_required(tmp_path: Path) -> None:
     assert h.dao.list_meetings() == []
 
     strong_evidence(h)
-    h.seconds(11)
+    h.seconds(window + 1)
     assert h.detector.state is DetectorState.RECORDING
     assert len(h.dao.list_meetings()) == 1
 
@@ -347,3 +355,180 @@ def test_near_miss_below_watermark_is_not_logged(tmp_path: Path, mode: str) -> N
     h.seconds(91)
     assert h.detector.state is DetectorState.IDLE
     assert h.dao.detector_events() == []
+
+
+def test_switching_the_mode_takes_effect_without_a_restart(tmp_path: Path) -> None:
+    """Settings writes the mode into the live config, so the loop has to read it every
+    tick. A detector that only learned its mode at startup would make the switch a lie."""
+    h = build(tmp_path, detection__mode="off")
+    strong_evidence(h)
+    h.seconds(20)
+    assert h.dao.detector_events() == [], "off means off"
+
+    h.detector.config.set("detection.mode", "shadow")
+    h.seconds(20)
+    events = h.dao.detector_events()
+    assert events and events[0].outcome == Outcome.SHADOW
+    assert h.dao.list_meetings() == [], "watching still records nothing"
+
+    # A wake that has been decided is not reconsidered while the microphone stays held,
+    # so the next meeting starts the way a real one does: the app lets go, and takes it
+    # again.
+    h.mic.release()
+    h.seconds(5)
+    h.detector.config.set("detection.mode", "on")
+    strong_evidence(h)
+    h.seconds(20)
+    assert h.dao.list_meetings(), "and now it records"
+
+
+def test_a_manual_recording_survives_the_detector_waking_on_it(tmp_path: Path) -> None:
+    """The likeliest thing to happen in shadow mode: the call that woke the detector is
+    the call the user then presses Start on. Every way out of a wake discards the
+    recorder, so detecting through that recording would have closed its streams."""
+    h = build(tmp_path, detection__mode="shadow")
+    strong_evidence(h)
+    h.seconds(2)
+    assert h.detector.state is DetectorState.AWAKE
+
+    folder = h.root / "meetings" / "manual"
+    h.recorder.start(folder, "manual")
+    h.seconds(30)
+
+    assert h.detector.state is DetectorState.IDLE, "the wake was dropped, not decided"
+    assert h.recorder.committed, "the recording is still running"
+    assert h.dao.detector_events() == [], "nothing was scored through someone else's recording"
+    result = h.recorder.stop()
+    assert result.total_duration_ms > 20_000, "the audio kept being written throughout"
+
+
+def test_waking_takes_the_endpoints_back_from_the_settings_meters(tmp_path: Path) -> None:
+    """One capture stream per endpoint: a Settings meter left open would make every wake
+    fail to arm, silently, for as long as the microphone was held."""
+    from app.audio import monitor as meter
+
+    h = build(tmp_path, detection__mode="shadow")
+    meter.acquire(h.detector.config, None, "me")
+    assert meter.active("me") is not None
+    try:
+        strong_evidence(h)
+        h.seconds(2)
+        assert h.detector.state is DetectorState.AWAKE, "the wake armed the recorder"
+        assert meter.active("me") is None, "the preview stream was not released"
+    finally:
+        meter.release()
+
+
+# ------------------------------------------- furniture vs. an app joining a call
+
+VOICEMEETER = r"C:\Program Files (x86)\VB\Voicemeeter\voicemeeter.exe"
+CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+
+
+def held_for(h: Harness, seconds: float) -> int:
+    """`LastUsedTimeStart` as Windows reports it: a FILETIME, in ms since 1601."""
+    from app.detect.detector import FILETIME_EPOCH
+
+    taken = h.clock.now() - timedelta(seconds=seconds)
+    return int((taken - FILETIME_EPOCH).total_seconds() * 1000)
+
+
+def test_furniture_holding_the_microphone_is_not_a_meeting(tmp_path: Path) -> None:
+    """Voicemeeter routes all audio on the author's machine and holds the microphone from
+    boot to shutdown — 234 minutes when this was measured. Windows lists it first, so the
+    detector woke on it, scored it, gave up, and was then deaf to the Meet call that
+    started minutes later. Nothing here names it: it is old, and meetings are new."""
+    from app.detect.registry import MicHolder
+
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.holders = [MicHolder(process=VOICEMEETER, since_ms=held_for(h, 4 * 3600))]
+    h.titles.window_titles = ["clickup"]
+    h.vad.set(me=True, them=True)
+    h.seconds(100)
+    assert h.detector.state is DetectorState.IDLE
+    assert h.dao.detector_events() == [], "scenery is not an event"
+
+    # The call starts. The browser takes the microphone; Voicemeeter never let go.
+    h.mic.holders = [
+        MicHolder(process=VOICEMEETER, since_ms=held_for(h, 4 * 3600)),
+        MicHolder(process=CHROME, since_ms=held_for(h, 1)),
+    ]
+    h.titles.window_titles = ["Meet – rbn-nmqs-jbm - Google Chrome"]
+    h.seconds(15)
+
+    scored = [event for event in h.dao.detector_events() if event.outcome == Outcome.SHADOW]
+    assert scored, "the browser joining the call was never scored"
+    assert "chrome.exe" in scored[0].process
+    assert scored[0].peak_score >= h.detector.threshold
+
+
+def test_a_hold_that_began_just_before_startup_still_counts(tmp_path: Path) -> None:
+    """The first look has no previous one to compare against, so it asks Windows how old
+    each hold is. A call joined seconds before the app started is still a meeting."""
+    from app.detect.registry import MicHolder
+
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.holders = [MicHolder(process=CHROME, since_ms=held_for(h, 5))]
+    h.titles.window_titles = ["Meet – rbn-nmqs-jbm - Google Chrome"]
+    h.vad.set(me=True, them=True)
+    h.seconds(15)
+    assert [e.outcome for e in h.dao.detector_events()] == [Outcome.SHADOW]
+
+
+def test_an_unreadable_timestamp_is_treated_as_recent(tmp_path: Path) -> None:
+    """The ConsentStore is an undocumented artifact. A machine that does not report when
+    a hold began must still detect meetings — failing closed would mean detecting nothing
+    at all, and saying nothing about it."""
+    from app.detect.registry import MicHolder
+
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.holders = [MicHolder(process=CHROME, since_ms=0)]
+    h.titles.window_titles = ["Meet – rbn-nmqs-jbm - Google Chrome"]
+    h.vad.set(me=True, them=True)
+    h.seconds(15)
+    assert [e.outcome for e in h.dao.detector_events()] == [Outcome.SHADOW]
+
+
+def test_taking_the_microphone_again_is_news(tmp_path: Path) -> None:
+    """A verdict is about one acquisition. Let go and take it again — a second call on
+    the same machine — and the detector has to look afresh."""
+    from app.detect.registry import MicHolder
+
+    h = build(tmp_path, detection__mode="shadow")
+    h.titles.window_titles = ["Meet – rbn-nmqs-jbm - Google Chrome"]
+    h.vad.set(me=True, them=True)
+    h.mic.holders = [MicHolder(process=CHROME, since_ms=held_for(h, 1))]
+    h.seconds(15)
+    assert len(h.dao.detector_events()) == 1
+
+    h.seconds(20)
+    assert len(h.dao.detector_events()) == 1, "one acquisition, one verdict"
+
+    h.mic.holders = []  # the call ends
+    h.seconds(2)
+    h.mic.holders = [MicHolder(process=CHROME, since_ms=held_for(h, 1))]  # and another starts
+    h.seconds(15)
+    assert len(h.dao.detector_events()) == 2
+
+
+def test_a_recording_ends_when_its_own_app_lets_go(tmp_path: Path) -> None:
+    """The grace window asks whether *the meeting's* app released the microphone. Any
+    holder would do before, so a permanent one kept every detected meeting running."""
+    from app.detect.registry import MicHolder
+
+    h = build(tmp_path, detection__mode="on")
+    h.mic.holders = [
+        MicHolder(process=VOICEMEETER, since_ms=held_for(h, 4 * 3600)),
+        MicHolder(process=CHROME, since_ms=held_for(h, 1)),
+    ]
+    h.titles.window_titles = ["Meet – rbn-nmqs-jbm - Google Chrome"]
+    h.vad.set(me=True, them=True)
+    h.seconds(15)
+    assert h.detector.state is DetectorState.RECORDING
+
+    # The call ends: the browser lets go, Voicemeeter does not.
+    h.mic.holders = [MicHolder(process=VOICEMEETER, since_ms=held_for(h, 4 * 3600))]
+    h.seconds(h.detector.grace_s + 5)
+    assert h.detector.meeting_id is None, "the meeting was never ended"
+    assert h.detector.state not in (DetectorState.RECORDING, DetectorState.GRACE)
+    assert h.dao.list_meetings()[0].state == MeetingState.RECORDED

@@ -81,7 +81,10 @@ def build(
         from app.audio.factory import make_capture
 
         services.recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=clock)
-    if with_recorder and str(cfg.get("detection.mode", "shadow")) != "off":
+    # Built whatever the mode is. `tick` does nothing while detection is off, and
+    # building it unconditionally is what lets Settings turn detection on without a
+    # restart — a switch that needs the application restarted is not a switch.
+    if with_recorder:
         from app.detect.detector import Detector
         from app.detect.factory import make_sources
 
