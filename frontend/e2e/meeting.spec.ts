@@ -240,6 +240,50 @@ test("view_prompt_opens_the_prompt_in_settings", async ({ page, seed }) => {
   await expect(page.getByTestId("prompt-text")).toBeInViewport();
 });
 
+/**
+ * The model writes structured HTML and it was rendering as one flat wall of text:
+ * Tailwind's preflight strips heading sizes, list markers and every margin, and
+ * nothing styled the injected subtree back. Asserting computed style rather than
+ * the presence of a class, because a class that matches no rule is the bug.
+ */
+test("summary_html_keeps_its_structure", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-prose",
+      title: "Structured summary",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      summary_html: `<h2>Decisions</h2><p>We moved it.</p>
+<ul><li>First point</li><li>Second point</li></ul>
+<blockquote>Quoted</blockquote>`,
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-prose");
+  const summary = page.getByTestId("summary-html");
+  await expect(summary).toContainText("Decisions");
+
+  const heading = summary.locator("h2").first();
+  const list = summary.locator("ul").first();
+
+  // A heading the same size as body text is the symptom users reported.
+  const [headingSize, bodySize] = await Promise.all([
+    heading.evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+    summary.locator("p").first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+  ]);
+  expect(headingSize).toBeGreaterThan(bodySize);
+
+  expect(
+    await heading.evaluate((el) => parseFloat(getComputedStyle(el).marginBottom)),
+  ).toBeGreaterThan(0);
+
+  // Bullets, and an indent that follows the writing direction rather than sitting
+  // on the left whatever the language.
+  expect(await list.evaluate((el) => getComputedStyle(el).listStyleType)).toBe("disc");
+  expect(
+    await list.evaluate((el) => parseFloat(getComputedStyle(el).paddingInlineStart)),
+  ).toBeGreaterThan(0);
+});
+
 test("needs_attention_and_glossary_are_gone", async ({ page }) => {
   await gotoApp(page);
   await expect(page.getByTestId("nav-timeline")).toBeVisible();
