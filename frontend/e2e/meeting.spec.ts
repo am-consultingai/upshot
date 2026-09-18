@@ -360,3 +360,82 @@ test("the_nudge_starts_the_recording_it_offers", async ({ page, seedBody, seedMo
   await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
   await page.getByTestId("recording-bar-stop").click();
 });
+
+/**
+ * The verification loop, which is the point of keeping the recording at all.
+ *
+ * A generated claim leads to the transcript passage behind it; that passage leads
+ * to the audio; the audio leads back to the line being spoken. Granola, the
+ * best-regarded product in this category, cannot do the last two hops — it
+ * transcribes and discards, and its own reviewers list "no playback for
+ * verification" as the gap.
+ */
+test("transcript_seeks_the_audio_and_playback_marks_the_line", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-loop",
+      title: "Verifiable",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: [
+        { speaker: "ME", at_ms: 0, text: "opening remark" },
+        { speaker: "THEM", at_ms: 2000, text: "the second turn" },
+      ],
+      audio_seconds: 4,
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-loop");
+
+  const audio = page.getByTestId("audio");
+  await expect(audio).toBeVisible();
+
+  // Clicking the second turn seeks the transport to that turn's start.
+  await page.getByTestId("transcript-turn").nth(1).click();
+  await expect
+    .poll(async () => audio.evaluate((el) => (el as HTMLAudioElement).currentTime), {
+      timeout: 5000,
+    })
+    .toBeGreaterThanOrEqual(1.9);
+
+  // And the line being spoken is marked, so the loop closes back to the text.
+  await expect(page.getByTestId("transcript-turn").nth(1)).toHaveAttribute(
+    "data-speaking",
+    "true",
+  );
+  await expect(page.getByTestId("transcript-turn").nth(0)).not.toHaveAttribute(
+    "data-speaking",
+    "true",
+  );
+});
+
+/**
+ * Drawing a waveform means decoding the whole file — roughly 58 MB an hour at
+ * 16 kHz — so it must not happen merely because someone opened the page to read
+ * a summary. It is opt-in, and the library is a separate chunk that is not
+ * fetched until it is asked for.
+ */
+test("the_waveform_is_opt_in", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-wave",
+      title: "Has audio",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: [{ speaker: "ME", at_ms: 0, text: "hello" }],
+      audio_seconds: 3,
+    },
+  ]);
+
+  const chunks: string[] = [];
+  page.on("request", (request) => {
+    if (/wavesurfer/i.test(request.url())) chunks.push(request.url());
+  });
+
+  await gotoApp(page, "/m/e2e-wave");
+  await expect(page.getByTestId("toggle-waveform")).toHaveAttribute("aria-expanded", "false");
+  expect(chunks, "wavesurfer must not load until asked for").toEqual([]);
+
+  await page.getByTestId("toggle-waveform").click();
+  await expect(page.getByTestId("toggle-waveform")).toHaveAttribute("aria-expanded", "true");
+  await expect.poll(() => chunks.length, { timeout: 10000 }).toBeGreaterThan(0);
+});
