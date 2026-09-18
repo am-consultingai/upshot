@@ -39,19 +39,19 @@ export default function RecordingBar() {
   const paused = recorder.paused;
 
   return (
-    <div data-testid="recording-bar" data-paused={paused} className="border-b border-red-200 bg-red-50">
+    <div data-testid="recording-bar" data-paused={paused} className="border-b border-danger bg-danger-quiet">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2">
-        <Link to={`/m/${meetingId}`} className="flex items-center gap-2 font-medium text-red-700">
+        <Link to={`/m/${meetingId}`} className="flex items-center gap-2 font-medium text-danger">
           <span className="relative flex size-3" aria-hidden="true">
             {!paused && (
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-red-400 opacity-75" />
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-danger opacity-75" />
             )}
-            <span className={`relative inline-flex size-3 rounded-full ${paused ? "bg-neutral-400" : "bg-red-600"}`} />
+            <span className={`relative inline-flex size-3 rounded-full ${paused ? "bg-line-strong" : "bg-danger"}`} />
           </span>
           {paused ? t("recording.paused") : t("timeline.recording")}
         </Link>
         {meeting.data && (
-          <span data-testid="recording-bar-elapsed" className="text-sm tabular-nums text-red-800">
+          <span data-testid="recording-bar-elapsed" className="text-sm tabular-nums text-danger">
             {formatElapsed(meeting.data.started_at, now)}
           </span>
         )}
@@ -62,7 +62,7 @@ export default function RecordingBar() {
           data-testid="recording-bar-stop"
           busy={stop.isPending}
           onClick={() => stop.mutate()}
-          className="rounded bg-red-600 px-3 py-1 text-sm text-white"
+          className="rounded bg-danger px-3 py-1 text-sm text-on-solid"
         >
           {t("timeline.stop")}
         </BusyButton>
