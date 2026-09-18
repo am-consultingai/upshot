@@ -1,12 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, type Job } from "../api";
 import { useI18n } from "../i18n";
+import type { MessageKey } from "../locales/en";
+import { formatElapsed } from "../lib/format";
 import StateBadge from "../components/StateBadge";
+import BusyButton, { Spinner } from "../components/BusyButton";
 
 function contentDirection(language: string | null): "rtl" | "ltr" {
   return language === "he" ? "rtl" : "ltr";
+}
+
+/** What each stage is doing, in words. "summarize: running" told nobody anything. */
+const STAGE_LABEL: Record<string, MessageKey> = {
+  transcribe: "meeting.stageTranscribe",
+  assemble: "meeting.stageAssemble",
+  summarize: "meeting.stageSummarize",
+  render: "meeting.stageRender",
+  deliver: "meeting.stageDeliver",
+};
+
+/** The stage actually working, else the first one waiting. */
+function currentJob(jobs: Job[]): Job | undefined {
+  return jobs.find((job) => job.state === "running") ?? jobs.find((job) => job.state === "pending");
 }
 
 export default function MeetingPage() {
@@ -45,10 +62,15 @@ export default function MeetingPage() {
   // Summarizing is the one pipeline stage worth running on demand: it is the only one
   // whose output you might want again after editing the prompt, and re-running it costs
   // tokens, so it stays a deliberate press rather than anything automatic.
+  // When Summarize was last pressed. Until a meeting fetch newer than the press arrives,
+  // the jobs on screen predate it and show nothing running — the spinner would blink off
+  // between the click and the first poll.
+  const [pressedAt, setPressedAt] = useState<number | null>(null);
   const summarize = useMutation({
     // force: pressing this means redo it, not "redo it if you think it is stale".
     mutationFn: () => api.retry(id, "summarize", true),
     onSuccess: () => {
+      setPressedAt(Date.now());
       setPipelineBusy(true);
       queryClient.invalidateQueries();
     },
@@ -59,6 +81,17 @@ export default function MeetingPage() {
   const jobs = meeting.data?.jobs ?? [];
   const running = jobs.filter((job) => job.state === "pending" || job.state === "running");
   const failed = jobs.filter((job) => job.state === "failed");
+  const current = currentJob(jobs);
+  const awaitingFirstPoll = pressedAt !== null && meeting.dataUpdatedAt < pressedAt;
+  const working = summarize.isPending || awaitingFirstPoll || running.length > 0;
+
+  // Ticks only while something is working, for the elapsed time beside the spinner.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!working) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [working]);
   useEffect(() => {
     if (running.length > 0 && !pipelineBusy) {
       setPipelineBusy(true);
@@ -127,16 +160,16 @@ export default function MeetingPage() {
           {meeting.data.title ?? id}
         </h1>
         <StateBadge state={meeting.data.state} />
-        <button
-          type="button"
+        <BusyButton
           data-testid="rename"
+          busy={rename.isPending}
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           onClick={() =>
             rename.mutate(`${meeting.data?.title ?? id} (renamed)`)
           }
         >
           {t("meeting.rename")}
-        </button>
+        </BusyButton>
       </header>
 
       {meeting.data.evidence.length > 0 && (
@@ -177,15 +210,23 @@ export default function MeetingPage() {
         <h2 className="text-sm font-semibold text-neutral-500">
           {t("meeting.summary")}
         </h2>
-        <button
-          type="button"
+        <BusyButton
           data-testid="summarize"
-          disabled={summarize.isPending}
+          busy={working}
           onClick={() => summarize.mutate()}
-          className="rounded border border-neutral-300 px-2 py-0.5 text-xs disabled:opacity-40"
+          className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
         >
           {summary.data ? t("meeting.resummarize") : t("meeting.summarize")}
-        </button>
+        </BusyButton>
+        {/* The prompt decides everything about the summary, so the way to change the
+            summary is one click away from it. */}
+        <Link
+          to="/settings#prompt"
+          data-testid="view-prompt"
+          className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
+        >
+          {t("meeting.viewPrompt")}
+        </Link>
         {summary.data && (
           <button
             type="button"
@@ -196,9 +237,25 @@ export default function MeetingPage() {
             {copied ? t("meeting.copied") : t("meeting.copy")}
           </button>
         )}
-        {running.length > 0 && (
-          <span className="text-xs text-neutral-600" data-testid="stage-running">
-            {running.map((job) => `${job.stage}: ${job.state}`).join(", ")}
+        {working && (
+          <span
+            className="inline-flex items-center gap-1.5 text-xs text-neutral-700"
+            data-testid="stage-running"
+            data-stage={current?.stage ?? ""}
+            data-state={current?.state ?? ""}
+            role="status"
+          >
+            <Spinner className="text-blue-600" />
+            {current?.state === "running"
+              ? `${t(STAGE_LABEL[current.stage] ?? "meeting.stageWorking")}…`
+              : `${t("meeting.stageWaiting")}: ${t(
+                  STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
+                )}`}
+            {current?.state === "running" && current.started_at && (
+              <span className="tabular-nums text-neutral-500" data-testid="stage-elapsed">
+                {formatElapsed(current.started_at, now)}
+              </span>
+            )}
           </span>
         )}
       </div>

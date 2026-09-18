@@ -5,6 +5,7 @@ import { useI18n, type Locale } from "../i18n";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import MicMeter from "../components/MicMeter";
+import BusyButton from "../components/BusyButton";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -14,7 +15,15 @@ interface ConfigShape {
   ui?: { language?: string };
   summary?: { language?: string };
   audio?: { input_device?: number | null; output_device?: number | null };
+  detection?: { mode?: string };
 }
+
+/** What the three detection modes mean, said in terms of what happens to you. */
+const DETECTION_MODES = [
+  { value: "shadow", label: "settings.detectionWatch" },
+  { value: "on", label: "settings.detectionAuto" },
+  { value: "off", label: "settings.detectionOff" },
+] as const;
 
 export default function Settings() {
   const { t, locale, setLocale } = useI18n();
@@ -173,18 +182,38 @@ export default function Settings() {
         ))}
       </select>
 
+      <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="detection-mode">
+        {t("settings.detection")}
+      </label>
+      <select
+        id="detection-mode"
+        data-testid="detection-mode"
+        value={config.detection?.mode ?? "shadow"}
+        onChange={(event) => save.mutate({ "detection.mode": event.target.value })}
+        className="rounded border border-neutral-300 px-2 py-1"
+      >
+        {DETECTION_MODES.map((option) => (
+          <option key={option.value} value={option.value}>
+            {t(option.label)}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 max-w-3xl text-xs text-neutral-600" data-testid="detection-hint">
+        {t("settings.detectionHint")}
+      </p>
+
       <ProviderSettings />
       <PromptSettings />
 
       <div className="mt-4">
-        <button
-          type="button"
+        <BusyButton
           data-testid="settings-save"
+          busy={save.isPending}
           onClick={() => save.mutate({ data_root: dataRoot })}
           className="rounded bg-neutral-900 px-3 py-1.5 text-white"
         >
           {t("settings.save")}
-        </button>
+        </BusyButton>
         {save.isSuccess && (
           <span data-testid="settings-saved" className="ms-2 text-sm text-green-700">
             {t("settings.saved")}

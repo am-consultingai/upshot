@@ -32,3 +32,23 @@ export function formatElapsed(startedAt: string, now: number): string {
   const ss = String(seconds % 60).padStart(2, "0");
   return `${mm}:${ss}`;
 }
+
+/** A detector event's time, as someone would say it: "17:00:31", or "18 Sep, 17:00"
+ * once it is no longer today. Month and order come from the locale, not a template. */
+export function formatEventTime(iso: string, locale: string): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return iso;
+  const today = new Date();
+  const sameDay =
+    when.getFullYear() === today.getFullYear() &&
+    when.getMonth() === today.getMonth() &&
+    when.getDate() === today.getDate();
+  return new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    // 24-hour, to match every other time in the app (`formatClock`, the elapsed timer)
+    // and the convention where it is used. Plain "en" would render "09:32:15 PM".
+    hourCycle: "h23",
+    ...(sameDay ? { second: "2-digit" } : { day: "numeric", month: "short" }),
+  }).format(when);
+}

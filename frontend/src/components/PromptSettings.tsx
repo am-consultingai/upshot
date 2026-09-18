@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import BusyButton from "./BusyButton";
 
 /** The instructions sent with every summary, shown in full and editable.
  *
@@ -26,6 +28,15 @@ export default function PromptSettings() {
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
+  // Arrived from a meeting's "View prompt": bring the box into view once it exists. The
+  // router does not scroll to a hash, and this section renders nothing until the text loads.
+  const { hash } = useLocation();
+  const section = useRef<HTMLElement | null>(null);
+  const loaded = Boolean(prompt.data);
+  useEffect(() => {
+    if (hash === "#prompt" && loaded) section.current?.scrollIntoView({ block: "start" });
+  }, [hash, loaded]);
+
   // Never render nothing: an endpoint that 404s used to make this whole section vanish,
   // which looks exactly like a feature that was never built.
   if (prompt.isError) {
@@ -43,7 +54,7 @@ export default function PromptSettings() {
   const dirty = text.trim() !== prompt.data.text.trim();
 
   return (
-    <section data-testid="prompt-settings" className="mt-6">
+    <section id="prompt" ref={section} data-testid="prompt-settings" className="mt-6 scroll-mt-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-neutral-500">{t("settings.prompt")}</h2>
         <span
@@ -67,19 +78,19 @@ export default function PromptSettings() {
         className="w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
+        <BusyButton
           data-testid="prompt-save"
-          disabled={!dirty || save.isPending}
+          busy={save.isPending && save.variables !== null}
+          disabled={!dirty || (save.isPending && save.variables === null)}
           onClick={() => save.mutate(text.trim())}
           className="rounded bg-neutral-900 px-2 py-1 text-sm text-white disabled:opacity-40"
         >
           {t("settings.promptSave")}
-        </button>
-        <button
-          type="button"
+        </BusyButton>
+        <BusyButton
           data-testid="prompt-reset"
-          disabled={!prompt.data.custom || save.isPending}
+          busy={save.isPending && save.variables === null}
+          disabled={!prompt.data.custom || (save.isPending && save.variables !== null)}
           onClick={() => {
             setDraft(prompt.data.default);
             // null, not a copy of the default text: storing a copy would freeze this
@@ -89,7 +100,7 @@ export default function PromptSettings() {
           className="rounded border border-neutral-300 px-2 py-1 text-sm disabled:opacity-40"
         >
           {t("settings.promptReset")}
-        </button>
+        </BusyButton>
       </div>
     </section>
   );
