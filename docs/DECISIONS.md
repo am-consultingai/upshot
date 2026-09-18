@@ -717,3 +717,126 @@ Verified on Windows after the fix: the held-handle sweep reports
 `could not remove ...: 1 file(s) still held (them.wav)`, leaves `audio_deleted_at` unset,
 and the next sweep — once the handle is closed — removes the remainder, writes the mark,
 empties `audio_tracks` and turns the audio endpoint into a 404.
+
+---
+
+## D39 — A notification runs in its own process, or it can kill the recording
+
+WinRT objects belong to the COM apartment of the thread that created them, and FastAPI
+serves synchronous endpoints on short-lived, interchangeable threadpool threads. Every
+notification failure this project has had comes from that mismatch, escalating each time:
+`RPC_E_WRONG_THREAD` on 2026-09-01, "object is not connected to server" on 2026-09-02,
+and on **2026-09-18** an access violation inside `_winrt_windows_data_xml_dom` that killed
+the application the moment a recording was stopped.
+
+The last one is the reason for this entry. Stop had already done its work — the audio was
+flushed, the meeting was `RECORDED`, transcription was queued — and then the process
+vanished showing "Meeting ended". A native access violation cannot be caught, so no
+`except` ran, nothing reached `app.log`, and the only record was in the Windows Event Log.
+The browser, meanwhile, said "Something went wrong", which reads as a bug in the page.
+
+Toasts now run as a separate short-lived process (`app/notify_toast.py`), launched and
+never waited on. Nothing in the server process imports WinRT any more. The toast gets a
+clean main thread that nothing else shares, and if the notification stack faults it takes
+only that helper with it. Stop no longer waits on a notification either.
+
+Two smaller consequences, both about being told: the Windows launcher now watches the
+process instead of tailing a log file forever, and says so — with the exit code and where
+Windows recorded the fault — when it dies; and the page shows "the app stopped answering"
+rather than a generic error when `/api/status` stops being answered.
+
+---
+
+## D40 — The detector reasons about the best holder of the microphone, not the first
+
+The detector took `holders[0]` — whichever process the ConsentStore listed first — and
+that is only ever correct on a machine where one app at a time uses the microphone.
+
+On the author's machine, Voicemeeter routes all audio and **holds the microphone from boot
+to shutdown**. It was listed first, every time. So on 2026-09-18 a real Google Meet call
+produced exactly one detector event: `voicemeeter.exe`, peaked at 3, "90 s with no
+verdict" — while Windows was reporting `chrome.exe` as a holder too, and
+`Meet – rbn-nmqs-jbm - Google Chrome` among the window titles. The browser that joined the
+call was never looked at. Worse, the verdict on Voicemeeter set `suppressed_process`,
+which is only cleared when the microphone is released — and it never is — so the detector
+was silent for the rest of the session.
+
+The first fix was a list: ignore `voicemeeter*.exe` by default. That is the wrong shape
+for something meant to ship. Every machine has its own furniture — Krisp, NVIDIA
+Broadcast, SteelSeries Sonar, Elgato Wave Link, OBS, a voice assistant — and a list only
+ever covers the machines we happened to see. It was also unnecessary, because Windows
+already reports what tells them apart.
+
+**A meeting starts. Furniture is already there.** `LastUsedTimeStart` gives, per process,
+when it took the microphone; the reader had been parsing it into `MicHolder.since_ms` all
+along and nothing read it. Voicemeeter measured 234 minutes on the machine in question.
+Chrome joining the call measured one second.
+
+So the detector now wakes on the *taking* of the microphone, never on the holding:
+
+- **`_note_acquisitions` tracks who began holding since the previous look**, and only
+  those are candidates. Scenery never generates an acquisition, whatever it is called.
+- **The first look has no previous one**, so it falls back to the timestamp:
+  `detection.fresh_hold_s` (120 s). Older than that was already there when the app
+  started. An unreadable timestamp counts as recent — this is an undocumented registry
+  artifact, and failing closed would mean a machine that does not report it detects
+  nothing at all and says nothing about it.
+- **A verdict is about one acquisition.** Judged, the process leaves the fresh set;
+  letting go and taking the microphone again is news, and is looked at afresh. This
+  replaces the suppression flag, which one permanent holder used to occupy for ever.
+- **`candidate()` still chooses among those**, preferring a known conferencing app, so
+  the order Windows happens to enumerate in stops mattering.
+- **A wake, and a recording, follow their own process.** `_tick_awake` and
+  `_tick_recording` are given the process that woke the detector, not any holder. With a
+  permanent holder, "the microphone was released" was otherwise never true, so a detected
+  meeting would never have ended on the release path at all.
+- **`end()` puts the process back**, because the duration cap ends a meeting while the app
+  keeps the microphone, and §7.4 wants the next one to start.
+
+What this also closes: speech is a property of the room, not of a process, so an unknown
+holder used to be able to cross the threshold on speech alone — unknown app 1 + both
+tracks 2 + 2 = 5, exactly the default threshold. Had anyone been speaking on both sides,
+Voicemeeter itself would have been recorded as a meeting. It can no longer wake at all.
+
+`detection.ignore` goes back to what it was, and stays short.
+
+---
+
+## D41 — The app configures the machine; the developer never does
+
+Two failures wear the same clothes, and both were live in this repository on 2026-09-18.
+
+**A value that is true here and nowhere else.** `detection.ignore` grew `voicemeeter.exe` and
+four of its siblings because Voicemeeter holds the microphone from boot to shutdown on the
+author's machine. It fixed the symptom and would have shipped a detector that is blind to
+exactly one vendor, on exactly the machines we happened to have seen — Krisp, NVIDIA
+Broadcast, SteelSeries Sonar, Elgato Wave Link and a voice assistant would each have needed
+their own entry, discovered the same way: by someone's meeting not being recorded. The rule
+replaced it with a question Windows can answer anywhere: **when did this process take the
+microphone?** Furniture was already holding it; a meeting takes it. No names (D40).
+
+**Machine state nothing in the code puts there.** Toasts with buttons work on this machine
+because the library falls back to Command Prompt's registered identity; plain toasts are
+silently swallowed, because `MeetingAgent.App` is not registered as an AppUserModelID and
+*nothing in the app registers it*. Had that been fixed by hand — one `reg add` on this
+machine — every test would have passed here and every fresh install would have shipped a
+notification that does nothing. The registration belongs in the app's first run.
+
+So, as a standing rule:
+
+- **Shipped code may not name a machine's furniture.** Vendor names in `app/` are allowed in
+  comments explaining why a rule exists, never as the rule.
+- **Anything the app needs from the machine, the app arranges** — at install or first run,
+  reporting what it did. A working machine is not evidence unless the code put it that way.
+- **Development tooling discovers, it does not assume.** `scripts/windows/e2e.py` asks
+  Windows for `%LOCALAPPDATA%`, `%TEMP%` and the browser, and `wslpath` for its own source
+  path, because the account name, the distribution name and the browser's drive differ on
+  every machine. It fails with a sentence naming what it could not find rather than reaching
+  for a path that exists only here.
+- **A test may not quietly change the machine it runs on.** The injected-audio suite uses
+  virtual endpoints and leaves the system defaults alone; with none available it says so and
+  stops, rather than borrowing the speakers and playing a chirp at whoever is sitting there.
+  `MA_TEST_ALLOW_AUDIBLE=1` is the way to say that is fine.
+
+The tell for both failures is the same: a change that makes the tests pass without making
+the product work anywhere else.
