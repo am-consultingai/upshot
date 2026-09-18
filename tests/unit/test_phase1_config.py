@@ -145,3 +145,46 @@ def test_an_env_key_absent_from_disk_is_dropped_not_frozen(tmp_path) -> None:  #
     config = Config.load(file=path, environ={"MA_LLM__PROVIDER": '"fake"'})
     config.save()
     assert "provider" not in json.loads(path.read_text()).get("llm", {})
+
+
+def test_an_old_default_saved_to_disk_does_not_pin_it(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """`save` writes the whole config, so every file saved before the default changed
+    holds 6000 as if it were chosen. Loaded, that is the old default and nothing more."""
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"llm": {"window_tokens": 6000}}), encoding="utf-8")
+    assert Config.load(file=path, environ={}).get("llm.window_tokens") is None
+
+    path.write_text(json.dumps({"llm": {"window_tokens": 8000}}), encoding="utf-8")
+    assert Config.load(file=path, environ={}).get("llm.window_tokens") == 8000
+
+
+def test_detection_ships_as_watch_and_log() -> None:
+    """A fresh install watches and writes down what it saw; it does not record by itself.
+
+    The user decides that, after reading a week of scores on the Detector page. Asserted
+    here so flipping it has to be a deliberate edit to a failing test, not a quiet default.
+    """
+    assert default_config().get("detection.mode") == "shadow"
+
+
+def test_a_faster_sustain_window_reaches_existing_installs(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Ten seconds was the old default and sits in every config file saved so far, so
+    lowering it in code alone would have changed nothing for anyone who has run the app."""
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"detection": {"sustain_s": 10}}), encoding="utf-8")
+    assert Config.load(file=path, environ={}).get("detection.sustain_s") == 5
+
+    path.write_text(json.dumps({"detection": {"sustain_s": 20}}), encoding="utf-8")
+    assert Config.load(file=path, environ={}).get("detection.sustain_s") == 20, "a choice stands"
+
+
+def test_the_launcher_does_not_force_a_detection_mode() -> None:
+    """The shipped default is watch-and-log, and the launcher must not override it.
+
+    It used to export `MA_DETECTION__MODE="off"` on every start. The environment layer
+    beats the config file, so the mode chosen in Settings was silently discarded at the
+    next launch while `app_config.json` went on claiming it — the setting appeared to
+    revert by itself, and the detector watched nothing for a day.
+    """
+    launcher = Path(__file__).resolve().parents[2] / "scripts" / "windows" / "run-app.ps1"
+    assert "MA_DETECTION__MODE" not in launcher.read_text(encoding="utf-8")

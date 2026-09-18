@@ -355,7 +355,11 @@ try {
     # itself - and any later save wrote the override permanently into app_config.json.
     if ($Provider -ne "") { $env:MA_LLM__PROVIDER = '"' + $Provider + '"' }
     $env:MA_DELIVERY__NOTIFIER   = '"windows"'
-    $env:MA_DETECTION__MODE      = '"off"'       # manual Start/Stop; no auto-recording
+    # Detection is deliberately NOT set here. Forcing it off overrode the mode chosen on
+    # the Settings screen at every start, exactly as the provider override above used to:
+    # the file kept saying "shadow" while the running app watched nothing, and the setting
+    # looked like it reverted by itself. The shipped default is watch-and-log (DECISIONS
+    # D41), and anything else is the user's choice to make and keep.
     $env:MA_AUDIO__MIN_MEETING_S = "5"           # keep short test recordings
     $env:MA_JOB_POLICY           = '"asap"'      # transcribe as soon as you press Stop
     if ($modelOk) {
@@ -461,7 +465,33 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
     Write-Host "  Ctrl+C stops the app." -ForegroundColor White
     Write-Host ""
 
-    Get-Content $errLog -Wait
+    # Tail the log while watching the process. `Get-Content -Wait` on its own waits
+    # forever on a file nobody is writing to any more, which is exactly what a crash
+    # looks like: on 2026-09-18 the app died inside a Windows notification call and this
+    # window went on showing the last line as if all were well.
+    $shown = 0
+    while (-not $appProcess.HasExited) {
+        $lines = @(Get-Content $errLog -ErrorAction SilentlyContinue)
+        if ($lines.Count -gt $shown) {
+            $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+            $shown = $lines.Count
+        }
+        Start-Sleep -Milliseconds 300
+    }
+    $lines = @(Get-Content $errLog -ErrorAction SilentlyContinue)
+    if ($lines.Count -gt $shown) {
+        $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+    }
+
+    Write-Host ""
+    Write-Bad "the application stopped on its own (exit code $($appProcess.ExitCode))"
+    Write-Host "  A fault inside a Windows component ends the process before Python can log"
+    Write-Host "  anything, so the log above may simply stop. Windows records it anyway:"
+    Write-Host "    Event Viewer > Windows Logs > Application, source 'Application Error'"
+    Write-Host "  Meetings already recorded are safe on disk; start this script again to"
+    Write-Host "  carry on with them."
+    # Hold the window open: this is the one case where there is something to read.
+    $script:started = $false
 }
 finally {
     if ($appProcess -and -not $appProcess.HasExited) {
