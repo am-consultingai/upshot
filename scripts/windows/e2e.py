@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import socket
 import subprocess
 import time
@@ -80,9 +79,25 @@ def to_windows(path: Path) -> str:
 
 
 def free_port(start: int) -> int:
+    """The first port in range with nothing listening on it.
+
+    The timeout is the whole point. A closed loopback port normally refuses at
+    once, but under WSL's mirrored networking a connection to the Windows side can
+    be dropped instead of refused — and a blocking `connect_ex` then waits out the
+    kernel's SYN retries, about two minutes. Called twice, that added roughly four
+    and a half minutes to a run whose tests take one, and it looked for all the
+    world like the suite hanging.
+
+    A probe that times out means nothing answered, which is exactly the port we
+    want, so the timeout is not an error here.
+    """
     for candidate in range(start, start + 40):
         with socket.socket() as probe:
-            if probe.connect_ex(("127.0.0.1", candidate)) != 0:
+            probe.settimeout(0.25)
+            try:
+                if probe.connect_ex(("127.0.0.1", candidate)) != 0:
+                    return candidate
+            except OSError:
                 return candidate
     raise RuntimeError("no free port in range")
 
@@ -121,6 +136,26 @@ def kill_windows(match: str) -> int:
         return 0
 
 
+def remove_on_windows(paths: list[str]) -> None:
+    """Delete run directories from the Windows side, in one call.
+
+    `shutil.rmtree` on these is correct and unusably slow: both live on the Windows
+    filesystem, and every unlink crosses the 9p boundary. A Chrome profile is tens
+    of thousands of small files, so teardown took around four minutes against
+    roughly one minute of actual tests — which read, from outside, exactly like the
+    suite hanging. It was what sent me looking for a deadlock that did not exist.
+
+    Windows deletes its own files at native speed, so it is asked to.
+    """
+    quoted = ",".join(f"'{path}'" for path in paths)
+    powershell(
+        f"foreach ($p in @({quoted})) {{ "
+        "if (Test-Path -LiteralPath $p) { "
+        "Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue } }",
+        timeout=180,
+    )
+
+
 def windows_events(since: float) -> list[str]:
     """Faults Windows recorded while the run was going on.
 
@@ -147,6 +182,27 @@ def windows_events(since: float) -> list[str]:
     return [line.strip() for line in found.stdout.splitlines() if line.strip()]
 
 
+class Phases:
+    """Wall-clock per phase, printed at the end.
+
+    A run that spends one minute on tests and five somewhere else is not a slow
+    suite, it is a suite with a problem elsewhere — and from outside the two are
+    indistinguishable. Teardown was four of those minutes before it was measured.
+    """
+
+    def __init__(self) -> None:
+        self.marks: list[tuple[str, float]] = []
+        self.last = time.monotonic()
+
+    def mark(self, name: str) -> None:
+        now = time.monotonic()
+        self.marks.append((name, now - self.last))
+        self.last = now
+
+    def report(self) -> str:
+        return "  ".join(f"{name} {seconds:.0f}s" for name, seconds in self.marks)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8130)
@@ -165,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no Windows venv at {venv_python} — run scripts/windows/run-app.cmd once")
         return 2
 
+    phases = Phases()
     port = free_port(args.port)
     cdp = free_port(args.cdp_port)
     home = to_wsl(where["local"]) / f"ma-e2e-{port}"
@@ -184,9 +241,14 @@ def main(argv: list[str] | None = None) -> int:
         WSLENV="MA_E2E_PORT:MA_E2E_SESSION:MA_E2E_CSRF:MA_TEST_MODE:MA_HOME",
     )
 
+    phases.mark("discover")
     app_log = (artifacts / "windows-app.log").open("w")
+    # The port is passed on argv as well as in the environment. It is redundant for
+    # configuration and essential for teardown: a Windows process started through
+    # WSL interop can only be found again by its command line, and an environment
+    # variable is not part of that.
     app = subprocess.Popen(
-        [str(venv_python), "-u", to_windows(ROOT / "scripts" / "e2e_server.py")],
+        [str(venv_python), "-u", to_windows(ROOT / "scripts" / "e2e_server.py"), str(port)],
         stdout=app_log, stderr=subprocess.STDOUT, env=environment,
     )
     browser = subprocess.Popen(
@@ -203,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         if not wait_for(f"http://127.0.0.1:{cdp}/json/version", 60):
             print(f"no CDP endpoint on {cdp}")
             return 1
+        phases.mark("startup")
         print(f"app on 127.0.0.1:{port}, browser on 127.0.0.1:{cdp}")
 
         command = ["npx", "playwright", "test", "--config", "playwright.windows.config.ts"]
@@ -215,23 +278,35 @@ def main(argv: list[str] | None = None) -> int:
             check=False,
         )
         code = run.returncode
+        phases.mark("tests")
     finally:
         if not args.keep:
             # By the profile directory and the port: both are unique to this run, so a
             # browser or app instance the user started is never touched.
-            kill_windows(f"ma-e2e-chrome-{port}")
-            kill_windows(f"MA_E2E_PORT|e2e_server.*{port}")
+            # Both matches must appear on a *command line*, which is the only thing
+            # visible to Win32_Process from here. The previous app matcher looked for
+            # `MA_E2E_PORT`, an environment variable that appears on no command line,
+            # so the app was never killed at all: three consecutive runs left three
+            # live instances and a hundred browser processes behind, and the third run
+            # slowed to a crawl against its own litter. Hence the port on argv.
+            killed_browsers = kill_windows(f"ma-e2e-chrome-{port}")
+            killed_apps = kill_windows(f"e2e_server\\.py.*{port}(\\s|$)")
             for process in (app, browser):
                 process.terminate()
                 try:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     process.kill()
+            # Teardown that silently does nothing is how the litter accumulated
+            # unnoticed, so it says what it stopped.
+            print(f"stopped {killed_apps} app and {killed_browsers} browser processes")
+            phases.mark("kill")
             app_log.close()
-            shutil.rmtree(home, ignore_errors=True)
-            shutil.rmtree(to_wsl(profile), ignore_errors=True)
+            remove_on_windows([to_windows(home), profile])
+            phases.mark("clean")
 
     faults = windows_events(started)
+    phases.mark("events")
     if faults:
         # A fault during the run is a failure even if every spec passed: something died.
         print("\nWindows recorded a fault during this run:")
@@ -244,6 +319,8 @@ def main(argv: list[str] | None = None) -> int:
         "faults": faults,
         "seconds": round(time.time() - started),
     }
+    print("phases: " + phases.report())
+    summary["phases"] = {name: round(seconds) for name, seconds in phases.marks}
     (ROOT / "artifacts" / "e2e-windows-summary.json").write_text(json.dumps(summary, indent=2))
     return code
 

@@ -26,7 +26,11 @@ def main() -> int:
     os.environ["MA_HOME"] = str(home)
     setup(to_file=False)
 
-    port = int(os.environ.get("MA_E2E_PORT", "8123"))
+    # argv wins over the environment, and the harness always passes it. Not for
+    # configuration — the env var did that fine — but so the port appears on the
+    # *command line*, which is the only handle WSL has for killing this process on
+    # the Windows side. See scripts/windows/e2e.py.
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("MA_E2E_PORT", "8123"))
     config = default_config(
         asr__backend="fake",
         llm__provider="fake",
