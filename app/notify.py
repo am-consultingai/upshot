@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -13,6 +16,8 @@ from app.log import get
 log = get(__name__)
 
 DEBOUNCE_S = 5.0
+#: A toast that has not appeared in this long is never going to.
+TOAST_TIMEOUT_S = 30.0
 
 
 @dataclass(frozen=True)
@@ -162,7 +167,12 @@ class FakeNotifier(BaseNotifier):
 
 
 class WindowsToastNotifier(BaseNotifier):
-    """windows-toasts. Buttons post to the local API — the same path the UI uses."""
+    """windows-toasts, in a process of its own — see ``app/notify_toast.py`` for why.
+
+    Nothing here imports WinRT. The notification is handed to a child process and this
+    one goes straight back to what it was doing, so a toast can neither block the caller
+    nor, as it did on 2026-09-18, take the application down with it when it faults.
+    """
 
     name = "windows"
 
@@ -170,75 +180,83 @@ class WindowsToastNotifier(BaseNotifier):
         self,
         *,
         app_id: str = "MeetingAgent.App",
-        on_action: Callable[[Button], None] | None = None,
         debounce_s: float = DEBOUNCE_S,
         clock: Any = None,
+        spawn: Callable[[list[str]], Any] | None = None,
     ) -> None:
         super().__init__(debounce_s=debounce_s, clock=clock)
         self.app_id = app_id
-        self.on_action = on_action
-        # WinRT objects belong to the COM apartment of the thread that made them. A
-        # toaster built on the main thread and used from the recorder or worker thread
-        # raises RPC_E_WRONG_THREAD ("marshalled for a different thread"), which is how
-        # the first real Windows run lost its "recording started" notification. One
-        # toaster per thread keeps every call inside the apartment that owns it.
-        self._toasters = threading.local()
+        self.spawn = spawn or self._popen
 
-    def toaster(self, interactable: bool) -> Any:
-        """``WindowsToaster`` silently drops buttons — it warns and shows a plain toast.
+    def command(self, toast: Toast) -> list[str]:
+        payload = json.dumps(
+            {
+                "app_id": self.app_id,
+                "title": toast.title,
+                "body": toast.body,
+                "buttons": [
+                    {"label": button.label, "action": button.action} for button in toast.buttons
+                ],
+            }
+        )
+        if getattr(sys, "frozen", False):
+            # In a freeze there is no interpreter to hand a module to: the executable
+            # itself grows a flag, the way --selftest already works.
+            return [sys.executable, "--toast", payload]
+        return [sys.executable, "-m", "app.notify_toast", payload]
 
-        Since the buttons *are* the learning mechanism (DETECTION.md §6), anything with
-        actions has to go through ``InteractableWindowsToaster``. Both are cached per
-        thread, because a WinRT object belongs to its creating thread's apartment.
-        """
-        cache = getattr(self._toasters, "cache", None)
-        if cache is None:
-            cache = {}
-            self._toasters.cache = cache
-        if interactable not in cache:
-            from windows_toasts import InteractableWindowsToaster, WindowsToaster
+    def _popen(self, command: list[str]) -> Any:
+        # PYTHONPATH rather than cwd: `-m app.notify_toast` has to resolve wherever the
+        # launcher happened to leave the working directory, and on Windows the source
+        # tree is reached over a UNC path that cannot be one.
+        import os
+        from pathlib import Path
 
-            builder = InteractableWindowsToaster if interactable else WindowsToaster
-            cache[interactable] = builder(self.app_id)
-        return cache[interactable]
+        root = Path(__file__).resolve().parent.parent
+        environment = dict(os.environ)
+        existing = environment.get("PYTHONPATH")
+        environment["PYTHONPATH"] = f"{root}{os.pathsep}{existing}" if existing else str(root)
+        return subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=environment,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
 
     def show(self, toast: Toast) -> None:
         if not self._should_emit(toast.key):
             return
         try:
-            from windows_toasts import Toast as WinToast
-            from windows_toasts import ToastButton
+            process = self.spawn(self.command(toast))
+        except Exception as exc:  # a missing interpreter must not fail the recording
+            log.warning("could not start the toast process: %s", exc)
+            return
+        if process is None:
+            return
+        # Reaped on a thread of its own: the caller has a meeting to file, and a toast
+        # nobody waits for is still worth reporting when it fails.
+        threading.Thread(
+            target=self._reap, args=(process, toast), name="toast", daemon=True
+        ).start()
 
-            payload = WinToast()
-            payload.text_fields = [toast.title, toast.body]
-            for button in toast.buttons:
-                payload.AddAction(ToastButton(button.label, arguments=button.action))
-            if self.on_action is not None:
-                payload.on_activated = lambda event: self._activated(toast, event)
-            self.toaster(bool(toast.buttons)).show_toast(payload)
-        except Exception as exc:
-            log.warning("toast failed: %s", exc)
-            if toast.buttons:
-                # An interactable toaster needs a registered AUMID and is not available
-                # everywhere. A notification without its buttons still beats none.
-                self._show_plain(toast)
-
-    def _show_plain(self, toast: Toast) -> None:
+    def _reap(self, process: Any, toast: Toast) -> None:
         try:
-            from windows_toasts import Toast as WinToast
-
-            payload = WinToast()
-            payload.text_fields = [toast.title, toast.body]
-            self.toaster(False).show_toast(payload)
-            log.warning("showed %r without its buttons", toast.key)
+            _, errors = process.communicate(timeout=TOAST_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            log.warning("toast %r timed out", toast.key)
+            return
         except Exception as exc:
-            log.warning("plain toast failed too: %s", exc)
-
-    def _activated(self, toast: Toast, event: Any) -> None:  # pragma: no cover - Windows only
-        argument = str(getattr(event, "arguments", ""))
-        for button in toast.buttons:
-            if button.action == argument and self.on_action is not None:
-                self.on_action(button)
+            log.warning("toast %r could not be reaped: %s", toast.key, exc)
+            return
+        code = process.returncode
+        if code != 0:
+            log.warning("toast %r failed (exit %s): %s", toast.key, code, (errors or "").strip())
+        elif errors:
+            # The child fell back to a toast without buttons and said so.
+            log.warning("toast %r: %s", toast.key, errors.strip())
 
 
 def make_notifier(config: Config, *, events: Any = None, clock: Any = None) -> BaseNotifier:
