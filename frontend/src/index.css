@@ -11,10 +11,36 @@ body {
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-base);
-  letter-spacing: var(--tracking-normal);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/*
+ * Negative tracking is a Latin device and it is scoped to Latin on purpose.
+ *
+ * Hebrew letterforms are unconnected but not interchangeable with Latin here:
+ * tightening the space between them damages word shape rather than tidying it,
+ * and no Hebrew typographer sets tracking on running text. The tracking scale in
+ * tokens.css runs from -0.006em to -0.022em, so applying it to the whole document
+ * — which is what `body { letter-spacing }` did — quietly degraded every Hebrew
+ * screen while looking correct in English.
+ *
+ * Hebrew gets what it actually wants instead: more leading, and a little more
+ * space between words rather than less between letters.
+ *
+ * `:dir()` rather than `[dir="rtl"]` so this follows the real resolved direction,
+ * including for a Hebrew summary inside an otherwise English interface.
+ */
+:root:dir(ltr) body,
+body :dir(ltr) {
+  letter-spacing: var(--tracking-normal);
+}
+
+body :dir(rtl) {
+  letter-spacing: normal;
+  line-height: 1.7;
+  word-spacing: 0.05em;
 }
 
 /*
