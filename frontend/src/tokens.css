@@ -1,0 +1,217 @@
+/*
+ * The design tokens. Everything visual in this application should resolve to
+ * something in this file.
+ *
+ * The organising idea, taken from Linear's account of its own redesign: do not
+ * hand-maintain a palette. They collapsed 98 colour variables into three inputs
+ * and derived the rest. Here the three inputs are --base (the canvas), --ink (the
+ * one dark colour) and --accent, and every surface, border and text colour is
+ * mixed from them. Two consequences worth understanding before editing:
+ *
+ *   1. Dark mode is not a second palette. It redefines the three inputs and one
+ *      mix direction, and the derived values follow. That is what stops the two
+ *      themes drifting apart — the failure that has had competitors adding,
+ *      removing and re-adding dark mode across successive releases.
+ *   2. There is no grey ramp. Greys are --ink composited onto the current
+ *      surface, so the same token is correct on every background.
+ *
+ * Light-first: this app is read in daylight, and four of the five meeting-notes
+ * products surveyed ship light only. Dark is real but secondary — it is the
+ * override, not the default.
+ *
+ * Mixing happens in oklab, which keeps a mid-tone from going muddy the way sRGB
+ * interpolation does.
+ */
+
+@theme {
+  /* --- Type ------------------------------------------------------------- */
+
+  /*
+   * Both families carry Hebrew and Latin in one family, so there is no
+   * :lang() switching and no mismatch of vertical metrics between scripts.
+   *
+   * Frank Ruhl Libre is the open-source Frank Rühl (Rafael Frank, 1908-1910),
+   * the most ubiquitous Hebrew typeface in print. It is a *text* face, so it is
+   * used at the display tier only — 20px and up, 600 and heavier — where its
+   * stroke contrast reads as deliberate. Body copy in it would be a mistake.
+   *
+   * Heebo extends Roboto's Latin to Hebrew with the Hebrew as the primary
+   * design. Caveat recorded in the ticket and worth keeping in mind: it is
+   * auto-hinted where Roboto is hand-hinted, so small sizes want checking on a
+   * low-DPI Windows display. The system stack stays as the fallback.
+   */
+  --font-display: "Frank Ruhl Libre", "Times New Roman", serif;
+  --font-ui: "Heebo", "Segoe UI", "Arial Hebrew", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  /* 14px body, as Linear, Raycast and Notion Calendar all independently land on. */
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* Tightening as size grows, which is the whole of the trick. */
+  --tracking-tight: -0.022em;
+  --tracking-snug: -0.014em;
+  --tracking-normal: -0.006em;
+  --tracking-wide: 0.04em;
+
+  /* --- Shape ------------------------------------------------------------ */
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* Strict 8px steps, so controls line up with each other by construction. */
+  --height-control-sm: 24px;
+  --height-control: 32px;
+  --height-control-lg: 40px;
+
+  /* --- Motion ----------------------------------------------------------- */
+
+  --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --duration-fast: 0.1s;
+  --duration-base: 0.16s;
+  --duration-slow: 0.25s;
+}
+
+/*
+ * The three inputs, and everything mixed from them.
+ *
+ * Kept out of @theme deliberately: these are redefined per theme, and Tailwind
+ * resolves @theme values once at build time.
+ */
+:root {
+  color-scheme: light;
+
+  --base: #fcfcf8; /* warm off-white; Granola and Craft arrive at the same place */
+  --ink: #15161a;
+  --accent: #0f6f68; /* deep teal: calm, and does not collide with the recording red */
+  --accent-ink: #ffffff;
+
+  /* Which way a surface moves to sit above the canvas. Down in light, up in dark. */
+  --lift: var(--ink);
+
+  --surface-0: var(--base);
+  --surface-1: color-mix(in oklab, var(--base), var(--lift) 2.5%);
+  --surface-2: color-mix(in oklab, var(--base), var(--lift) 5%);
+  --surface-3: color-mix(in oklab, var(--base), var(--lift) 8%);
+  --surface-raised: #ffffff;
+
+  --text-primary: color-mix(in oklab, var(--base), var(--ink) 94%);
+  --text-secondary: color-mix(in oklab, var(--base), var(--ink) 68%);
+  --text-tertiary: color-mix(in oklab, var(--base), var(--ink) 48%);
+  --text-on-accent: var(--accent-ink);
+
+  --border-subtle: color-mix(in oklab, var(--base), var(--ink) 10%);
+  --border: color-mix(in oklab, var(--base), var(--ink) 16%);
+  --border-strong: color-mix(in oklab, var(--base), var(--ink) 28%);
+
+  --accent-quiet: color-mix(in oklab, var(--base), var(--accent) 10%);
+  --accent-hover: color-mix(in oklab, var(--accent), var(--ink) 14%);
+
+  /*
+   * Status colours stay hand-picked rather than derived: recording red and the
+   * detector's amber have to mean exactly one thing each, and a mix that drifts
+   * with the canvas would undermine that.
+   */
+  --danger: #b3251e;
+  --danger-quiet: color-mix(in oklab, var(--base), var(--danger) 8%);
+  --warning: #9a5b06;
+  --warning-quiet: color-mix(in oklab, var(--base), var(--warning) 10%);
+  --success: #17683f;
+  --success-quiet: color-mix(in oklab, var(--base), var(--success) 8%);
+
+  /*
+   * Elevation, light mode: layered and low-opacity, each layer roughly doubling
+   * offset and blur. One shadow at 15% is the thing that looks cheap.
+   */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 4%), 0 2px 4px rgb(0 0 0 / 3%);
+  --shadow-md: 0 2px 4px rgb(0 0 0 / 4%), 0 6px 10px rgb(0 0 0 / 5%);
+  --shadow-lg: 0 4px 8px rgb(0 0 0 / 4%), 0 12px 24px rgb(0 0 0 / 6%),
+    0 32px 48px rgb(0 0 0 / 5%);
+  /* In light mode a hairline is a real border; dark mode overrides this. */
+  --hairline: 0 0 0 1px var(--border-subtle);
+}
+
+/*
+ * Dark mode: defined, tested, and deliberately NOT yet bound to the system
+ * preference.
+ *
+ * The tokens below are correct. The components are not: most still name Tailwind
+ * palette colours directly — bg-white, text-neutral-700 — which do not move with
+ * the theme. Flipping the token layer alone gives a page whose background stays
+ * light while its text turns near-white, and the summary becomes invisible. That
+ * was verified in a screenshot, not guessed.
+ *
+ * So there is no `@media (prefers-color-scheme: dark)` rule here on purpose. If
+ * there were, every user whose Windows is set to dark would get that broken page
+ * without asking for it — and shipping a dark mode that has to be withdrawn is
+ * the exact churn that made a competitor add, remove and re-add theirs.
+ *
+ * It applies only when something explicitly sets data-theme="dark", which today
+ * is the test suite. The media query goes in with the component migration, in
+ * the shell ticket, once there is nothing left hardcoding a colour.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --base: #0e0f11;
+  --ink: #f2f3f5;
+  --accent: #3dbdb0;
+  --accent-ink: #06201e;
+
+  --lift: var(--ink);
+  --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
+
+  /*
+   * Elevation without shadows, which is what Linear and Raycast both do: a
+   * background ladder plus one hairline. Shadows on a dark canvas read as
+   * smudges, so they are turned off rather than tuned down. The hairline is an
+   * inset ring, not a border, so it never changes layout.
+   */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --hairline: inset 0 0 0 1px color-mix(in oklab, var(--base), var(--ink) 14%);
+}
+
+/*
+ * Expose the derived values to Tailwind as utilities, so a component can say
+ * `bg-surface-1` or `text-secondary` instead of reaching for an arbitrary
+ * neutral-200 that means nothing and is wrong in the other theme.
+ */
+@theme inline {
+  --color-canvas: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-raised: var(--surface-raised);
+
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary: var(--text-tertiary);
+
+  --color-line-subtle: var(--border-subtle);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-quiet: var(--accent-quiet);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--text-on-accent);
+
+  --color-danger: var(--danger);
+  --color-danger-quiet: var(--danger-quiet);
+  --color-warning: var(--warning);
+  --color-warning-quiet: var(--warning-quiet);
+  --color-success: var(--success);
+  --color-success-quiet: var(--success-quiet);
+}
