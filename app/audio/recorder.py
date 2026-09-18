@@ -127,7 +127,16 @@ class Recorder:
         log.info("recorder committed to %s", self.folder)
 
     def discard(self) -> None:
-        """Evidence decayed: drop the rings, close the streams, leave nothing behind."""
+        """Evidence decayed: drop the rings, close the streams, leave nothing behind.
+
+        Refused once committed. Discarding is for a wake that turned out to be nothing,
+        and a committed recorder is writing a meeting to disk: closing its streams would
+        end that recording silently, mid-sentence, with the meeting left saying it is
+        still recording.
+        """
+        if self.committed:
+            log.warning("refusing to discard: %s is being recorded", self.meeting_id)
+            return
         for runtime in self.runtime.values():
             runtime.ring.drop()
             runtime.capture.stop()

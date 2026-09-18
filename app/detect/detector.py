@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import threading
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
@@ -20,12 +21,15 @@ from app.config import Config
 from app.db.dao import Dao
 from app.detect import evidence as ev
 from app.detect.evidence import Evidence
-from app.detect.sources import Sources
+from app.detect.sources import MicHolder, Sources
 from app.log import get
 from app.meetings import MeetingService
 from app.pipeline.states import MeetingState
 
 log = get(__name__)
+
+#: ``LastUsedTimeStart`` counts from 1601, as every Windows FILETIME does.
+FILETIME_EPOCH = datetime(1601, 1, 1, tzinfo=UTC)
 
 
 class DetectorState(StrEnum):
@@ -82,9 +86,16 @@ class Detector:
         self.started_mono: float | None = None
         self.near_misses = 0
         self.commits = 0
-        #: A process whose verdict is already in. Cleared when the mic is released, so a
-        #: shadow verdict (or a give-up) does not re-open the streams every few seconds.
-        self.suppressed_process: str | None = None
+        #: Who held the microphone at the previous look. ``None`` before the first one.
+        self.holding: set[str] | None = None
+        #: Acquisitions this detector has seen begin and not yet judged. A meeting starts;
+        #: it is the *taking* of the microphone that says so, never the holding. A process
+        #: leaves this set when its verdict is in, or when it lets go — and only a fresh
+        #: acquisition can put it back.
+        self.fresh: set[str] = set()
+        #: The process whose recording is running, so that "the microphone was released"
+        #: means released by *that* app rather than by whoever happened to hold it.
+        self.recording_process: str | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -163,29 +174,99 @@ class Detector:
         """One second of the detector's life."""
         if self.mode == "off":
             return self.state
+        if self.recorder.committed and self.state in (DetectorState.IDLE, DetectorState.AWAKE):
+            # A recording this detector did not start: the user pressed Start, most
+            # likely on the very call that woke it. Waking arms the recorder and every
+            # way out of a wake discards it, so detecting through someone else's
+            # recording would close the streams that recording is using.
+            if self.state is DetectorState.AWAKE:
+                log.info("dropping the wake: a recording is already running")
+                self.wake = None
+                self.state = DetectorState.IDLE
+            return self.state
         holders = self.sources.mic.current_holders()
-        process = holders[0].process if holders else ""
+        names = {holder.process for holder in holders}
+        self._note_acquisitions(holders)
         if self.state is DetectorState.IDLE:
-            self._tick_idle(process)
+            self._tick_idle(self.candidate(holders))
         elif self.state is DetectorState.AWAKE:
-            self._tick_awake(process)
+            # Only the process that woke us counts now. Taking any holder would mean a
+            # permanent one keeps the wake alive for ever, long after the app it was
+            # about has gone.
+            wake = self.wake
+            self._tick_awake(wake.process if wake and wake.process in names else "")
         elif self.state in (DetectorState.RECORDING, DetectorState.GRACE):
-            self._tick_recording(process)
+            owner = self.recording_process
+            self._tick_recording(owner if owner and owner in names else "")
         return self.state
+
+    def _note_acquisitions(self, holders: list[MicHolder]) -> None:
+        """Track who *began* holding the microphone since the previous look.
+
+        The first look has no previous one to compare against, so it falls back to what
+        Windows itself recorded: ``LastUsedTimeStart``. That is how a machine's furniture
+        — a virtual audio device that holds the microphone from boot to shutdown, a noise
+        suppressor, a voice assistant — is told apart from an app that just joined a call,
+        without naming a single one of them. Nothing hardcoded, nothing per-vendor.
+        """
+        names = {holder.process for holder in holders}
+        if self.holding is None:
+            self.fresh = {holder.process for holder in holders if self._is_recent(holder)}
+        else:
+            self.fresh |= names - self.holding
+        self.fresh &= names  # letting go clears the slate; taking it again is news
+        self.holding = names
+
+    def _is_recent(self, holder: MicHolder) -> bool:
+        """Only for the first look. An unreadable timestamp counts as recent: this is an
+        undocumented registry artifact, and failing closed would mean a machine that does
+        not report it detects nothing at all, silently."""
+        since_ms = int(holder.since_ms or 0)
+        if since_ms <= 0:
+            return True
+        age = self.clock.now() - (FILETIME_EPOCH + timedelta(milliseconds=since_ms))
+        return age.total_seconds() <= float(self.config.get("detection.fresh_hold_s", 120))
+
+    def candidate(self, holders: list[MicHolder]) -> str:
+        """Which new acquisition to reason about: a known conferencing app first.
+
+        Not simply the first holder. On a machine with a virtual audio device — Voicemeeter,
+        in the case this was written for — that device is listed first every time, so the
+        browser that actually joined the call was never looked at.
+        """
+        ignore = list(self.config.get("detection.ignore", []))
+        waiting = [holder.process for holder in holders if holder.process in self.fresh]
+        for process in waiting:
+            if ev.matches_process(process, ignore):
+                continue
+            if ev.matches_process(process, list(self.config.get("detection.known_apps", []))):
+                return process
+        # Whatever is left, including something ignored: `_tick_idle` records that it was
+        # ignored, once, and then holds its peace.
+        return waiting[0] if waiting else ""
 
     # -- tier 0 → 1
 
     def _tick_idle(self, process: str) -> None:
-        if not process:
-            self.suppressed_process = None
-            return
-        if self.muted or process == self.suppressed_process:
+        if not process or self.muted:
             return
         ignore = list(self.config.get("detection.ignore", []))
         if ev.matches_process(process, ignore):
             self._log_event(Outcome.IGNORED, 0, [Evidence(-5, ev.IGNORED, process)], process)
+            # Said once. An ignored app that holds the microphone all day would otherwise
+            # write a row a second for as long as it ran.
+            self.fresh.discard(process)
             return
         # Tier 1: open both streams and start the pre-roll. Nothing is written to disk.
+        # The Settings meters may be holding those endpoints, and WASAPI gives one capture
+        # stream per endpoint: without this the arm raises, the tick is logged as failed
+        # and the wake is lost, once a second, for as long as the microphone is held.
+        # Pressing Start does the same thing for the same reason.
+        from app.audio import monitor as meter
+
+        if any(meter.active(track) is not None for track in ("me", "them")):
+            log.info("taking the endpoints back from the settings meters")
+            meter.release()
         self.recorder.arm()
         self.wake = Wake(process=process, started_mono=self.clock.monotonic())
         self.state = DetectorState.AWAKE
@@ -232,7 +313,7 @@ class Detector:
             self.recorder.discard()
             self.state = DetectorState.IDLE
             self.wake = None
-            self.suppressed_process = wake.process
+            self.fresh.discard(wake.process)
             self._publish("shadow", process=wake.process, score=wake.peak_score)
             return
         meeting = self.meetings.create(
@@ -244,6 +325,8 @@ class Detector:
         self.recorder.commit(meeting.path, meeting.id)
         self.meetings.committed(meeting, meeting.path)
         self.meeting_id = meeting.id
+        self.recording_process = wake.process
+        self.fresh.discard(wake.process)
         self.state = DetectorState.RECORDING
         self.started_mono = self.clock.monotonic()
         self.released_at = None
@@ -267,7 +350,7 @@ class Detector:
         self.recorder.discard()
         self.state = DetectorState.IDLE
         self.wake = None
-        self.suppressed_process = wake.process
+        self.fresh.discard(wake.process)
         if wake.peak_score >= self.watermark:
             self.near_misses += 1
             self._log_event(
@@ -312,7 +395,14 @@ class Detector:
             log.info("meeting %s ended (%s), state %s", meeting_id, why, meeting.state)
             if self.notifier is not None and meeting.state == MeetingState.RECORDED:
                 self.notifier.recording_ended(meeting_id, duration_s // 60)
+        if self.recording_process:
+            # The meeting ended but the app still holds the microphone — the duration cap
+            # fired, or both sides went quiet. If it looks like a meeting again it is a
+            # new one (DETECTION.md §7.4), so this counts as a fresh acquisition. A
+            # process that has genuinely let go is pruned on the next look anyway.
+            self.fresh.add(self.recording_process)
         self.meeting_id = None
+        self.recording_process = None
         self.state = DetectorState.IDLE
         self.released_at = None
         self.silent_since = None
@@ -360,6 +450,7 @@ class Detector:
             self.clock.sleep(interval_s)
 
     def start(self) -> threading.Thread:
+        self._stop.clear()  # so a detector that was stopped can be started again
         thread = threading.Thread(target=self.run_forever, name="detector", daemon=True)
         self._thread = thread
         thread.start()
