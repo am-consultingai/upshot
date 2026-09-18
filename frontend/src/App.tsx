@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "./api";
 import { I18nContext, applyLocale, catalogues, type Locale, type MessageKey } from "./i18n";
+import { applyTheme, isTheme, type Theme } from "./theme";
 import Timeline from "./routes/Timeline";
 import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
@@ -20,6 +22,7 @@ const NAV: { to: string; key: MessageKey; testid: string }[] = [
 
 export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
+  const [theme, setTheme] = useState<Theme>("light");
   const [detected, setDetected] = useState<Detection | null>(null);
   const queryClient = useQueryClient();
 
@@ -28,7 +31,49 @@ export default function App() {
   }, [locale]);
 
   useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
+
+  /*
+   * Adopt what was saved. Both of these are stored server-side like every other
+   * preference, so a reload used to drop straight back to English and light —
+   * which for appearance is the more obvious wrong: choosing dark and having the
+   * next launch flash white is worse than not offering the choice.
+   */
+  const saved = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const savedConfig = saved.data?.config as
+    | { ui?: { language?: string; theme?: string } }
+    | undefined;
+  useEffect(() => {
+    const language = savedConfig?.ui?.language;
+    if (language === "en" || language === "he") setLocale(language);
+  }, [savedConfig?.ui?.language]);
+  useEffect(() => {
+    const next = savedConfig?.ui?.theme;
+    if (isTheme(next)) setTheme(next);
+  }, [savedConfig?.ui?.theme]);
+
+  useEffect(() => {
     const source = new EventSource("/api/events");
+    /*
+     * Whether the event stream is actually open, published on the document.
+     *
+     * Server-sent events have no replay: anything published between the page
+     * loading and this connection opening is simply gone. For most events that
+     * only costs a refresh, but the detection nudge exists *because* of one event,
+     * so missing it means the nudge never appears for that meeting.
+     *
+     * Making the state observable is the honest fix. The browser specs wait on it
+     * instead of racing it — a nudge test failed roughly one run in two — and it
+     * gives the connection banner something better to read than a polled endpoint
+     * that says nothing about the stream.
+     */
+    source.addEventListener("open", () => {
+      document.documentElement.dataset.stream = "open";
+    });
+    source.addEventListener("error", () => {
+      document.documentElement.dataset.stream = "closed";
+    });
     const invalidate = () => {
       void queryClient.invalidateQueries();
     };
@@ -46,11 +91,14 @@ export default function App() {
       // recording. In automatic mode the recording has already started and the bar says so.
       if (payload.state === "shadow") setDetected(payload);
     });
-    return () => source.close();
+    return () => {
+      source.close();
+      delete document.documentElement.dataset.stream;
+    };
   }, [queryClient]);
 
   const t = useCallback((key: MessageKey) => catalogues[locale][key], [locale]);
-  const value = useMemo(() => ({ locale, t, setLocale }), [locale, t]);
+  const value = useMemo(() => ({ locale, t, setLocale, theme, setTheme }), [locale, t, theme]);
 
   return (
     <I18nContext.Provider value={value}>

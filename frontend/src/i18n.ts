@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import { en, type MessageKey } from "./locales/en";
 import { he } from "./locales/he";
+import type { Theme } from "./theme";
 
 export type Locale = "en" | "he";
 
@@ -16,12 +17,17 @@ export interface I18n {
   locale: Locale;
   t: (key: MessageKey) => string;
   setLocale: (locale: Locale) => void;
+  /** Appearance lives here too: one context for what the shell looks like. */
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
 }
 
 export const I18nContext = createContext<I18n>({
   locale: "en",
   t: (key) => catalogues.en[key],
   setLocale: () => undefined,
+  theme: "light",
+  setTheme: () => undefined,
 });
 
 export function useI18n(): I18n {

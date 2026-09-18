@@ -62,6 +62,10 @@ export const en = {
     "This page is served by a Linux instance, which has no Windows audio. Start the app with run-app.cmd on Windows.",
   "settings.micStreamEnded":
     "The level stream stopped. Reload the page to restart it.",
+  "settings.theme": "Appearance",
+  "settings.themeLight": "Light",
+  "settings.themeDark": "Dark",
+  "settings.themeSystem": "Match Windows",
   "settings.language": "Interface language",
   "settings.summaryLanguage": "Summary language",
   "settings.save": "Save",

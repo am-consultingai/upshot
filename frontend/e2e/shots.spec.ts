@@ -54,6 +54,8 @@ for (const theme of ["light", "dark"] as const) {
       ["timeline", "/"],
       ["meeting", "/m/shot-1"],
       ["settings", "/settings"],
+      ["detector", "/detector"],
+      ["search", "/search"],
     ] as const) {
       await gotoApp(page, path);
       await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);

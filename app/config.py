@@ -49,6 +49,10 @@ DEFAULTS: dict[str, Any] = {
         "language": "en",
         "view": "list",  # list|calendar — the main screen's layout
         "calendar_span": "week",  # day|week|month
+        # light|dark|system. Defaults to light rather than system on purpose: this is
+        # read in daylight, and every comparable product ships light only. "system"
+        # is offered, not assumed.
+        "theme": "light",
     },
     # Follow the meeting. This app transcribes Hebrew by default (asr.default_language),
     # so defaulting summaries to English meant an English write-up of a Hebrew meeting
