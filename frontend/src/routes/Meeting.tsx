@@ -163,7 +163,7 @@ export default function MeetingPage() {
         <BusyButton
           data-testid="rename"
           busy={rename.isPending}
-          className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          className="rounded border border-line px-2 py-1 text-sm"
           onClick={() =>
             rename.mutate(`${meeting.data?.title ?? id} (renamed)`)
           }
@@ -174,7 +174,7 @@ export default function MeetingPage() {
 
       {meeting.data.evidence.length > 0 && (
         <p
-          className="mb-4 text-sm text-neutral-600"
+          className="mb-4 text-sm text-secondary"
           data-testid="recorded-because"
         >
           {t("meeting.recordedBecause")}:{" "}
@@ -196,25 +196,25 @@ export default function MeetingPage() {
         // read as a failed recording.
         <p
           data-testid="audio-deleted"
-          className="mb-3 text-sm text-neutral-600"
+          className="mb-3 text-sm text-secondary"
         >
           {t("meeting.audioDeleted")}
         </p>
       ) : (
-        <p data-testid="no-audio" className="mb-3 text-sm text-neutral-600">
+        <p data-testid="no-audio" className="mb-3 text-sm text-secondary">
           {t("meeting.noAudio")}
         </p>
       )}
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-neutral-500">
+        <h2 className="text-sm font-semibold text-tertiary">
           {t("meeting.summary")}
         </h2>
         <BusyButton
           data-testid="summarize"
           busy={working}
           onClick={() => summarize.mutate()}
-          className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
+          className="rounded border border-line px-2 py-0.5 text-xs"
         >
           {summary.data ? t("meeting.resummarize") : t("meeting.summarize")}
         </BusyButton>
@@ -223,7 +223,7 @@ export default function MeetingPage() {
         <Link
           to="/settings#prompt"
           data-testid="view-prompt"
-          className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
+          className="rounded border border-line px-2 py-0.5 text-xs"
         >
           {t("meeting.viewPrompt")}
         </Link>
@@ -232,27 +232,27 @@ export default function MeetingPage() {
             type="button"
             data-testid="copy-summary"
             onClick={() => copySummary(summary.data as string)}
-            className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
+            className="rounded border border-line px-2 py-0.5 text-xs"
           >
             {copied ? t("meeting.copied") : t("meeting.copy")}
           </button>
         )}
         {working && (
           <span
-            className="inline-flex items-center gap-1.5 text-xs text-neutral-700"
+            className="inline-flex items-center gap-1.5 text-xs text-secondary"
             data-testid="stage-running"
             data-stage={current?.stage ?? ""}
             data-state={current?.state ?? ""}
             role="status"
           >
-            <Spinner className="text-blue-600" />
+            <Spinner className="text-accent" />
             {current?.state === "running"
               ? `${t(STAGE_LABEL[current.stage] ?? "meeting.stageWorking")}…`
               : `${t("meeting.stageWaiting")}: ${t(
                   STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
                 )}`}
             {current?.state === "running" && current.started_at && (
-              <span className="tabular-nums text-neutral-500" data-testid="stage-elapsed">
+              <span className="tabular-nums text-tertiary" data-testid="stage-elapsed">
                 {formatElapsed(current.started_at, now)}
               </span>
             )}
@@ -263,7 +263,7 @@ export default function MeetingPage() {
       {failed.length > 0 && (
         <div
           data-testid="stage-failed"
-          className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+          className="mb-4 rounded border border-danger bg-danger-quiet p-3 text-sm text-danger"
         >
           {failed.map((job) => (
             <p key={job.stage}>
@@ -277,16 +277,16 @@ export default function MeetingPage() {
         <div
           data-testid="summary-html"
           dir={dir}
-          className="summary-prose mb-6 rounded border border-neutral-200 bg-white p-4"
+          className="summary-prose mb-6 rounded border border-line-subtle bg-raised p-4"
           dangerouslySetInnerHTML={{ __html: summary.data }}
         />
       ) : (
-        <p data-testid="no-summary" className="mb-6 text-sm text-neutral-600">
+        <p data-testid="no-summary" className="mb-6 text-sm text-secondary">
           {t("meeting.notRendered")}
         </p>
       )}
 
-      <h2 className="mb-2 text-sm font-semibold text-neutral-500">
+      <h2 className="mb-2 text-sm font-semibold text-tertiary">
         {t("meeting.transcript")}
       </h2>
       <ol
@@ -303,7 +303,7 @@ export default function MeetingPage() {
               className="block w-full text-start"
             >
               <span
-                className="text-xs text-neutral-500"
+                className="text-xs text-tertiary"
                 data-testid="turn-speaker"
               >
                 {segment.speaker}

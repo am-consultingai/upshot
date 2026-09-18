@@ -20,23 +20,23 @@ export default function Detector() {
   return (
     <section data-testid="detector-page">
       {/* A table of scores with no word about what is being scored explained nothing. */}
-      <p className="mb-2 max-w-3xl text-sm text-neutral-700" data-testid="detector-about">
+      <p className="mb-2 max-w-3xl text-sm text-secondary" data-testid="detector-about">
         {t("detector.about")}
       </p>
       {mode && MODE_NOTE[mode] && (
-        <p className="mb-4 text-sm font-medium text-neutral-800" data-testid="detector-mode" data-mode={mode}>
+        <p className="mb-4 text-sm font-medium text-primary" data-testid="detector-mode" data-mode={mode}>
           {t(MODE_NOTE[mode])}
         </p>
       )}
 
-      <h2 className="mb-2 text-sm font-semibold text-neutral-500">{t("detector.events")}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-tertiary">{t("detector.events")}</h2>
       {events.isSuccess && rows.length === 0 ? (
-        <p className="text-sm text-neutral-600" data-testid="detector-empty">
+        <p className="text-sm text-secondary" data-testid="detector-empty">
           {t("detector.empty")}
         </p>
       ) : (
         <table className="w-full text-start text-sm">
-          <thead className="text-xs text-neutral-500">
+          <thead className="text-xs text-tertiary">
             <tr>
               <th className="text-start font-medium">{t("detector.when")}</th>
               <th className="text-start font-medium">{t("detector.app")}</th>

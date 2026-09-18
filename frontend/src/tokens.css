@@ -208,6 +208,14 @@
   --color-accent-hover: var(--accent-hover);
   --color-on-accent: var(--text-on-accent);
 
+  /*
+   * Foreground for text sitting on a solid status fill. White in both themes:
+   * the status colours keep their hue when the theme flips (a recording dot that
+   * changed colour with the theme would stop meaning one thing), so their
+   * contrast partner does not need to move either.
+   */
+  --color-on-solid: #ffffff;
+
   --color-danger: var(--danger);
   --color-danger-quiet: var(--danger-quiet);
   --color-warning: var(--warning);

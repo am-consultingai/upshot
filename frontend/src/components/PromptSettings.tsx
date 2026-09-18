@@ -42,8 +42,8 @@ export default function PromptSettings() {
   if (prompt.isError) {
     return (
       <section data-testid="prompt-settings" className="mt-6">
-        <h2 className="mb-2 text-sm font-semibold text-neutral-500">{t("settings.prompt")}</h2>
-        <p className="text-xs text-red-700" data-testid="prompt-error">
+        <h2 className="mb-2 text-sm font-semibold text-tertiary">{t("settings.prompt")}</h2>
+        <p className="text-xs text-danger" data-testid="prompt-error">
           {prompt.error instanceof Error ? prompt.error.message : String(prompt.error)}
         </p>
       </section>
@@ -56,26 +56,26 @@ export default function PromptSettings() {
   return (
     <section id="prompt" ref={section} data-testid="prompt-settings" className="mt-6 scroll-mt-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-neutral-500">{t("settings.prompt")}</h2>
+        <h2 className="text-sm font-semibold text-tertiary">{t("settings.prompt")}</h2>
         <span
           data-testid="prompt-state"
           className={`rounded px-2 py-0.5 text-xs ${
             prompt.data.custom
-              ? "bg-amber-100 text-amber-800"
-              : "bg-neutral-200 text-neutral-700"
+              ? "bg-warning-quiet text-warning"
+              : "bg-surface-3 text-secondary"
           }`}
         >
           {prompt.data.custom ? t("settings.promptCustom") : t("settings.promptDefault")}
         </span>
       </div>
-      <p className="mb-2 text-xs text-neutral-600">{t("settings.promptHint")}</p>
+      <p className="mb-2 text-xs text-secondary">{t("settings.promptHint")}</p>
       <textarea
         data-testid="prompt-text"
         value={text}
         rows={14}
         spellCheck={false}
         onChange={(event) => setDraft(event.target.value)}
-        className="w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs"
+        className="w-full rounded border border-line bg-raised p-2 font-mono text-xs"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <BusyButton
@@ -83,7 +83,7 @@ export default function PromptSettings() {
           busy={save.isPending && save.variables !== null}
           disabled={!dirty || (save.isPending && save.variables === null)}
           onClick={() => save.mutate(text.trim())}
-          className="rounded bg-neutral-900 px-2 py-1 text-sm text-white disabled:opacity-40"
+          className="rounded bg-accent px-2 py-1 text-sm text-on-accent disabled:opacity-40"
         >
           {t("settings.promptSave")}
         </BusyButton>
@@ -97,7 +97,7 @@ export default function PromptSettings() {
             // prompt at today's wording and miss every later improvement to the shipped one.
             save.mutate(null);
           }}
-          className="rounded border border-neutral-300 px-2 py-1 text-sm disabled:opacity-40"
+          className="rounded border border-line px-2 py-1 text-sm disabled:opacity-40"
         >
           {t("settings.promptReset")}
         </BusyButton>
