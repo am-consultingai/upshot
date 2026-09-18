@@ -409,3 +409,25 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
     ]
     missing = sorted(path for path in called if not any(p.match(path) for p in patterns))
     assert not missing, f"the UI calls endpoints the server does not serve: {missing}"
+
+
+def test_resummarize_does_not_re_transcribe(api) -> None:  # type: ignore[no-untyped-def]
+    """The complaint that started this: pressing Re-summarize looked like it might be
+    redoing the transcription, because it took minutes. It must not — transcription is
+    the expensive half and its output has not changed."""
+    ids = seed(api, 1)
+    queue = api.services.queue
+    for stage in ("transcribe", "assemble", "summarize", "render", "deliver"):
+        queue.complete(queue.enqueue(ids[0], stage))
+
+    body = api.client().post(f"/api/meetings/{ids[0]}/jobs/summarize/retry?force=true").json()
+    assert body == {"stage": "summarize", "state": "pending", "attempts": 0}
+
+    states = {job.stage: job.state for job in queue.for_meeting(ids[0])}
+    assert states["transcribe"] == "done", "transcription was re-queued"
+    assert states["assemble"] == "done", "assembly was re-queued"
+    assert states["summarize"] == "pending"
+    # `force` means "redo it", and that request must not reach the transcribe stage
+    # either: a rerun there would discard the transcript and start the model again.
+    assert queue.take_rerun(ids[0], "transcribe") is False
+    assert queue.take_rerun(ids[0], "summarize") is True
