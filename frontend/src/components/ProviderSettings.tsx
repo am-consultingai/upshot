@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LlmProvider } from "../api";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
+import BusyButton from "./BusyButton";
 
 /** Which secret name each provider reads. `undefined` means it needs no key. */
 const SECRET_FOR: Record<string, string | undefined> = {
@@ -161,14 +162,14 @@ export default function ProviderSettings() {
                     }
                     className="w-72 rounded border border-neutral-300 px-2 py-1"
                   />
-                  <button
-                    type="button"
+                  <BusyButton
                     data-testid="provider-save-key"
+                    busy={saveKey.isPending && saveKey.variables?.name === secret}
                     onClick={() => saveKey.mutate({ name: secret, value: keys[provider.id] ?? "" })}
                     className="rounded bg-neutral-900 px-2 py-1 text-sm text-white"
                   >
                     {t("settings.saveKey")}
-                  </button>
+                  </BusyButton>
                   {provider.console && (
                     <a
                       data-testid="provider-console"
@@ -187,26 +188,25 @@ export default function ProviderSettings() {
                 <div className="mt-2 grid gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     {!provider.ready && (
-                      <button
-                        type="button"
+                      <BusyButton
                         data-testid="provider-install"
-                        disabled={install.isPending}
+                        busy={install.isPending || watching}
                         onClick={() => install.mutate()}
-                        className="rounded border border-neutral-300 px-2 py-1 text-sm disabled:opacity-40"
+                        className="rounded border border-neutral-300 px-2 py-1 text-sm"
                       >
                         {t("settings.install")}
-                      </button>
+                      </BusyButton>
                     )}
                     {provider.signed_in !== true && (
-                      <button
-                        type="button"
+                      <BusyButton
                         data-testid="provider-signin"
+                        busy={signin.isPending || (watching && provider.ready)}
                         disabled={!provider.ready}
                         onClick={() => signin.mutate()}
                         className="rounded border border-neutral-300 px-2 py-1 text-sm disabled:opacity-40"
                       >
                         {t("settings.signIn")}
-                      </button>
+                      </BusyButton>
                     )}
                     <span className="text-xs text-neutral-600" data-testid="provider-hint">
                       {!provider.ready
@@ -259,14 +259,14 @@ export default function ProviderSettings() {
                       data-testid="provider-too-old"
                     >
                       {t("settings.cliUnknownSignin")}
-                      <button
-                        type="button"
+                      <BusyButton
                         data-testid="provider-update"
+                        busy={update.isPending}
                         onClick={() => update.mutate()}
                         className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
                       >
                         {t("settings.update")}
-                      </button>
+                      </BusyButton>
                       <code>{provider.update_hint}</code>
                     </span>
                   )}
@@ -279,14 +279,14 @@ export default function ProviderSettings() {
               )}
 
               <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
+                <BusyButton
                   data-testid="provider-test"
+                  busy={test.isPending && test.variables === provider.id}
                   onClick={() => test.mutate(provider.id)}
                   className="rounded border border-neutral-300 px-2 py-1 text-sm"
                 >
                   {t("settings.test")}
-                </button>
+                </BusyButton>
                 {result && (
                   <span
                     data-testid="provider-test-result"
