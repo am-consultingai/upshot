@@ -4,6 +4,7 @@ import type { Meeting } from "../api";
 import { formatDuration, formatClock, formatElapsed } from "../lib/format";
 import { useI18n } from "../i18n";
 import StateBadge from "./StateBadge";
+import BusyButton from "./BusyButton";
 
 const ETA_PER_STATE: Record<string, number> = {
   TRANSCRIBING: 8 * 60,
@@ -22,11 +23,16 @@ export function etaSeconds(meeting: Meeting): number | null {
 export default function MeetingCard({
   meeting,
   onStop,
+  stopping = false,
   onDelete,
+  deleting = false,
 }: {
   meeting: Meeting;
   onStop?: () => void;
+  /** Stopping flushes the last segment and files the meeting, which is not instant. */
+  stopping?: boolean;
   onDelete?: () => void;
+  deleting?: boolean;
 }) {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
@@ -65,14 +71,14 @@ export default function MeetingCard({
           <span data-testid="elapsed">
             {t("timeline.elapsed")} {formatElapsed(meeting.started_at, now)}
           </span>
-          <button
-            type="button"
+          <BusyButton
             data-testid="stop-recording"
+            busy={stopping}
             onClick={onStop}
             className="rounded bg-red-600 px-2 py-1 text-white"
           >
             {t("timeline.stop")}
-          </button>
+          </BusyButton>
         </p>
       )}
       {eta !== null && (
@@ -81,9 +87,9 @@ export default function MeetingCard({
         </p>
       )}
       {onDelete && !recording && (
-        <button
-          type="button"
+        <BusyButton
           data-testid="delete-meeting"
+          busy={deleting}
           // Confirmed here rather than in a dialog component: it removes audio from disk
           // and there is no undo.
           onClick={() => {
@@ -92,7 +98,7 @@ export default function MeetingCard({
           className="mt-2 text-sm text-red-700 underline"
         >
           {t("meeting.delete")}
-        </button>
+        </BusyButton>
       )}
     </article>
   );

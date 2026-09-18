@@ -22,6 +22,8 @@ export interface Job {
   state: string;
   attempts: number;
   last_error: string | null;
+  /** When the current attempt began. Null while pending. */
+  started_at?: string | null;
 }
 
 export interface AudioTrack {
@@ -181,18 +183,6 @@ export const api = {
     }),
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
-  glossary: () =>
-    request<{ terms: { term: string; aliases: string | null }[] }>(
-      "/api/glossary",
-    ),
-  putGlossary: (terms: { term: string; aliases?: string | null }[]) =>
-    request<{ terms: { term: string; aliases: string | null }[] }>(
-      "/api/glossary",
-      {
-        method: "PUT",
-        body: JSON.stringify({ terms }),
-      },
-    ),
   settings: () =>
     request<{ config: Record<string, unknown>; warnings: string[] }>(
       "/api/settings",

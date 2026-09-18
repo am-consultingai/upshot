@@ -7,6 +7,7 @@ import { daysFor, periodLabel, rangeFor, shift, startOfDay, type CalendarSpan } 
 import MeetingCard from "../components/MeetingCard";
 import MonthGrid from "../components/MonthGrid";
 import TimeGrid from "../components/TimeGrid";
+import BusyButton from "../components/BusyButton";
 
 type View = "list" | "calendar";
 
@@ -81,15 +82,15 @@ export default function Timeline() {
   return (
     <section data-testid="timeline">
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
+        <BusyButton
           data-testid="start-recording"
+          busy={start.isPending}
           disabled={status.data?.recorder.active}
           onClick={() => start.mutate()}
           className="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-40"
         >
           {t("timeline.start")}
-        </button>
+        </BusyButton>
         <span className="text-sm text-neutral-600" data-testid="queue-depth">
           {t("timeline.queued")}: {status.data?.queue_depth ?? 0}
         </span>
@@ -187,7 +188,9 @@ export default function Timeline() {
                     key={meeting.id}
                     meeting={meeting}
                     onStop={() => stop.mutate()}
+                    stopping={stop.isPending}
                     onDelete={() => remove.mutate(meeting.id)}
+                    deleting={remove.isPending && remove.variables === meeting.id}
                   />
                 ))}
               </div>
