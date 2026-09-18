@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type Locale } from "../i18n";
+import { THEMES, type Theme } from "../theme";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import MicMeter from "../components/MicMeter";
@@ -26,7 +27,7 @@ const DETECTION_MODES = [
 ] as const;
 
 export default function Settings() {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, setLocale, theme, setTheme } = useI18n();
   const queryClient = useQueryClient();
   const [dataRoot, setDataRoot] = useState("");
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
@@ -143,6 +144,35 @@ export default function Settings() {
           {t("settings.syncWarning")}
         </p>
       )}
+
+      <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="ui-theme">
+        {t("settings.theme")}
+      </label>
+      <select
+        id="ui-theme"
+        data-testid="ui-theme"
+        value={theme}
+        onChange={(event) => {
+          const next = event.target.value as Theme;
+          // Applied before it is saved: appearance should answer the click, not
+          // the round trip.
+          setTheme(next);
+          save.mutate({ "ui.theme": next });
+        }}
+        className="rounded border border-line bg-raised px-2 py-1"
+      >
+        {THEMES.map((option) => (
+          <option key={option} value={option}>
+            {t(
+              option === "light"
+                ? "settings.themeLight"
+                : option === "dark"
+                  ? "settings.themeDark"
+                  : "settings.themeSystem",
+            )}
+          </option>
+        ))}
+      </select>
 
       <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="ui-language">
         {t("settings.language")}
