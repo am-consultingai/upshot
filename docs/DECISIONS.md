@@ -840,3 +840,63 @@ So, as a standing rule:
 
 The tell for both failures is the same: a change that makes the tests pass without making
 the product work anywhere else.
+
+## D42 — Three colour inputs, and a typeface chosen from the Hebrew side
+
+The interface was to be rebuilt, and the first question was what it would be rebuilt *on*.
+`frontend/src/index.css` was nine lines: one system font, no tokens, and 170 palette colours
+named directly in components. There was no design system to extend, so the choice was what
+kind of one to write.
+
+**Derive the palette; do not maintain one.** Linear's published account of their own
+redesign is the model: 98 colour variables collapsed into three inputs — a base, an ink and
+an accent — with everything else derived. That is now `tokens.css`. Surfaces, borders and
+text are the ink composited onto the canvas in oklab, so there is no grey ramp to keep in
+step, and one token is correct on any background.
+
+The reason to care is not elegance, it is churn. A second theme maintained by hand drifts
+from the first, and the drift is only visible to whoever is looking at that screen in that
+mode. Jamie — a direct competitor — shipped dark mode, withdrew it, and reinstated it "by
+popular demand" across three years of redesigns, with reviewers still complaining about its
+contrast. Here dark mode redefines the three inputs and one mix direction; everything else
+follows. It cannot drift, because there is nothing to keep in step.
+
+**Elevation without shadows, in dark.** Shadows on a dark canvas read as smudges, so the
+shadow tokens resolve to `none` under dark and depth is carried by the background ladder plus
+a hairline `inset 0 0 0 1px` ring — which, being inset, never affects layout. Linear and
+Raycast both do this; it was read out of their stylesheets rather than taken on trust.
+
+**Type had to be solved from the Hebrew side, and that changed the answer.** The obvious move
+— a slab serif for display over a neutral sans for UI, which is most of why Granola reads as
+a considered product — is not available here. This application ships 147 Hebrew strings, and
+Inter has no Hebrew: it covers Latin, Cyrillic and Greek. Nor does any display face used by
+the products worth learning from: Granola's *quadrant*, Jamie's PP Neue Montreal, Craft's
+Untitled, Superhuman's Super Sans VF, Inter Display, NotionInter, Berkeley Mono. A Latin-first
+choice would have forced a second family for Hebrew, with mismatched vertical metrics and
+`:lang()` switching to hide the seam.
+
+So the faces were chosen for Hebrew and checked for Latin, not the reverse. Heebo for UI:
+Roboto's Latin extended to Hebrew, with the Hebrew as the primary design. Frank Ruhl Libre
+for display: the open cut of Frank Rühl, Rafael Frank 1908–1910, the most ubiquitous Hebrew
+typeface in print. One family per tier, both scripts, no switching.
+
+Both are **bundled, not linked**. A stylesheet request to `fonts.googleapis.com` on every
+launch would break an application designed to work offline and leak a request from one that
+keeps recordings on the machine on purpose. 138 KB for both families across both scripts.
+
+**Typography is scoped to script.** The tracking scale is a Latin device, and applying it from
+`body` — which is what the first version did — quietly degraded every Hebrew screen while
+English looked exactly as intended. Negative tracking is now `:dir(ltr)` only; Hebrew gets
+more leading and a little word-spacing instead. The same rule governs components: chevrons
+mirror, instruments do not. The level meter colours its segments by index, so in Hebrew it
+filled from the right with red on the left until it was pinned to LTR.
+
+Two consequences are enforced by tests rather than by review, because both failures are
+invisible in an English light-mode screenshot: no component may name a palette colour, and
+no component may use a physical direction utility.
+
+**A feature is not shipped because its stylesheet is written.** Dark mode was finished, and
+correct, and deliberately withheld from `prefers-color-scheme` until no component hardcoded a
+colour — because with the components unmigrated, flipping the tokens left a light background
+under near-white text and made the summary invisible. That was found by looking at a
+screenshot, which is also the general lesson: the CSS read correctly the whole time.
