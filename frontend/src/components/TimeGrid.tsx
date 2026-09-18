@@ -10,9 +10,9 @@ const PX_PER_MINUTE = 0.9;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
 function tone(state: string): string {
-  if (state === "RECORDING") return "bg-amber-100 border-amber-400";
-  if (state === "FAILED") return "bg-red-100 border-red-400";
-  return "bg-emerald-50 border-emerald-400";
+  if (state === "RECORDING") return "bg-warning-quiet border-warning";
+  if (state === "FAILED") return "bg-danger-quiet border-danger";
+  return "bg-success-quiet border-success";
 }
 
 /**
@@ -37,8 +37,8 @@ export default function TimeGrid({ days, meetings }: { days: Date[]; meetings: M
             key={dayKey(day)}
             data-testid="calendar-daycolumn"
             data-day={dayKey(day)}
-            className={`border-b border-neutral-200 pb-1 text-center text-sm ${
-              isToday(day) ? "font-semibold text-emerald-700" : "text-neutral-600"
+            className={`border-b border-line-subtle pb-1 text-center text-sm ${
+              isToday(day) ? "font-semibold text-accent" : "text-secondary"
             }`}
           >
             {dayFormat.format(day)}
@@ -49,7 +49,7 @@ export default function TimeGrid({ days, meetings }: { days: Date[]; meetings: M
           {HOURS.map((hour) => (
             <div
               key={hour}
-              className="absolute text-xs text-neutral-400"
+              className="absolute text-xs text-tertiary"
               style={{ top: hour * 60 * PX_PER_MINUTE, insetInlineEnd: "0.5rem" }}
             >
               {String(hour).padStart(2, "0")}:00
@@ -63,13 +63,13 @@ export default function TimeGrid({ days, meetings }: { days: Date[]; meetings: M
           return (
             <div
               key={dayKey(day)}
-              className="relative border-s border-neutral-200"
+              className="relative border-s border-line-subtle"
               style={{ height: 24 * 60 * PX_PER_MINUTE }}
             >
               {HOURS.map((hour) => (
                 <div
                   key={hour}
-                  className="absolute w-full border-t border-neutral-100"
+                  className="absolute w-full border-t border-line-subtle"
                   style={{ top: hour * 60 * PX_PER_MINUTE }}
                 />
               ))}

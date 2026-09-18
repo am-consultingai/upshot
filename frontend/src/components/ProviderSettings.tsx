@@ -28,7 +28,7 @@ function readyLabel(provider: LlmProvider): MessageKey {
 /** Green only when the provider would actually work right now. */
 function readyTone(provider: LlmProvider): string {
   const good = provider.needs === "cli" ? provider.ready && provider.signed_in !== false : provider.ready;
-  return good ? "bg-green-100 text-green-800" : "bg-neutral-200 text-neutral-700";
+  return good ? "bg-success-quiet text-success" : "bg-surface-3 text-secondary";
 }
 
 export default function ProviderSettings() {
@@ -113,7 +113,7 @@ export default function ProviderSettings() {
 
   return (
     <section data-testid="provider-settings" className="mt-6">
-      <h2 className="mb-2 text-sm font-semibold text-neutral-500">{t("settings.summaries")}</h2>
+      <h2 className="mb-2 text-sm font-semibold text-tertiary">{t("settings.summaries")}</h2>
       <div className="grid gap-2">
         {(status.data?.providers ?? []).map((provider: LlmProvider) => {
           const secret = SECRET_FOR[provider.id];
@@ -127,8 +127,8 @@ export default function ProviderSettings() {
               data-signed-in={String(provider.signed_in)}
               data-active={provider.id === active}
               className={`rounded border p-3 ${
-                provider.id === active ? "border-neutral-900" : "border-neutral-200"
-              } bg-white`}
+                provider.id === active ? "border-accent" : "border-line-subtle"
+              } bg-raised`}
             >
               <label className="flex items-center gap-2">
                 <input
@@ -160,13 +160,13 @@ export default function ProviderSettings() {
                     onChange={(event) =>
                       setKeys((previous) => ({ ...previous, [provider.id]: event.target.value }))
                     }
-                    className="w-72 rounded border border-neutral-300 px-2 py-1"
+                    className="w-72 rounded border border-line px-2 py-1"
                   />
                   <BusyButton
                     data-testid="provider-save-key"
                     busy={saveKey.isPending && saveKey.variables?.name === secret}
                     onClick={() => saveKey.mutate({ name: secret, value: keys[provider.id] ?? "" })}
-                    className="rounded bg-neutral-900 px-2 py-1 text-sm text-white"
+                    className="rounded bg-accent px-2 py-1 text-sm text-on-accent"
                   >
                     {t("settings.saveKey")}
                   </BusyButton>
@@ -192,7 +192,7 @@ export default function ProviderSettings() {
                         data-testid="provider-install"
                         busy={install.isPending || watching}
                         onClick={() => install.mutate()}
-                        className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                        className="rounded border border-line px-2 py-1 text-sm"
                       >
                         {t("settings.install")}
                       </BusyButton>
@@ -203,12 +203,12 @@ export default function ProviderSettings() {
                         busy={signin.isPending || (watching && provider.ready)}
                         disabled={!provider.ready}
                         onClick={() => signin.mutate()}
-                        className="rounded border border-neutral-300 px-2 py-1 text-sm disabled:opacity-40"
+                        className="rounded border border-line px-2 py-1 text-sm disabled:opacity-40"
                       >
                         {t("settings.signIn")}
                       </BusyButton>
                     )}
-                    <span className="text-xs text-neutral-600" data-testid="provider-hint">
+                    <span className="text-xs text-secondary" data-testid="provider-hint">
                       {!provider.ready
                         ? t("settings.cliMissing")
                         : provider.signed_in === true
@@ -220,7 +220,7 @@ export default function ProviderSettings() {
                   {/* The exact command, stated before the button is clicked - which is
                       what makes running it on click disclosure rather than a surprise. */}
                   {!provider.ready && (
-                    <span className="text-xs text-neutral-500" data-testid="provider-install-hint">
+                    <span className="text-xs text-tertiary" data-testid="provider-install-hint">
                       {provider.can_install
                         ? t("settings.installHint")
                         : t("settings.installDocsHint")}{" "}
@@ -228,26 +228,26 @@ export default function ProviderSettings() {
                     </span>
                   )}
                   {install.isPending && (
-                    <span className="text-xs text-neutral-600" data-testid="provider-starting">
+                    <span className="text-xs text-secondary" data-testid="provider-starting">
                       {t("settings.starting")}
                     </span>
                   )}
                   {watching && !install.isPending && (
-                    <span className="text-xs text-neutral-600" data-testid="provider-watching">
+                    <span className="text-xs text-secondary" data-testid="provider-watching">
                       {t("settings.watching")}
                     </span>
                   )}
                   {cliFailure && (
-                    <span className="text-xs text-red-700" data-testid="provider-error">
+                    <span className="text-xs text-danger" data-testid="provider-error">
                       {cliFailure instanceof Error ? cliFailure.message : String(cliFailure)}
                     </span>
                   )}
-                  <span className="text-xs text-neutral-500">{t("settings.cliPlanNote")}</span>
+                  <span className="text-xs text-tertiary">{t("settings.cliPlanNote")}</span>
 
                   {/* Pinned to the resolved binary: a bare `claude update` would upgrade
                       whichever install the user's PATH happens to favour. */}
                   {provider.ready && provider.path && (
-                    <span className="text-xs text-neutral-500" data-testid="provider-path">
+                    <span className="text-xs text-tertiary" data-testid="provider-path">
                       {provider.path}
                     </span>
                   )}
@@ -255,7 +255,7 @@ export default function ProviderSettings() {
                       wrong, and an install that updates itself never lands here. */}
                   {provider.signed_in === null && provider.ready && provider.update_hint && (
                     <span
-                      className="flex flex-wrap items-center gap-2 text-xs text-neutral-600"
+                      className="flex flex-wrap items-center gap-2 text-xs text-secondary"
                       data-testid="provider-too-old"
                     >
                       {t("settings.cliUnknownSignin")}
@@ -263,7 +263,7 @@ export default function ProviderSettings() {
                         data-testid="provider-update"
                         busy={update.isPending}
                         onClick={() => update.mutate()}
-                        className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
+                        className="rounded border border-line px-2 py-0.5 text-xs"
                       >
                         {t("settings.update")}
                       </BusyButton>
@@ -271,7 +271,7 @@ export default function ProviderSettings() {
                     </span>
                   )}
                   {provider.account && (
-                    <span className="text-xs text-neutral-600" data-testid="provider-account">
+                    <span className="text-xs text-secondary" data-testid="provider-account">
                       {provider.account}
                     </span>
                   )}
@@ -283,7 +283,7 @@ export default function ProviderSettings() {
                   data-testid="provider-test"
                   busy={test.isPending && test.variables === provider.id}
                   onClick={() => test.mutate(provider.id)}
-                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                  className="rounded border border-line px-2 py-1 text-sm"
                 >
                   {t("settings.test")}
                 </BusyButton>
@@ -291,13 +291,13 @@ export default function ProviderSettings() {
                   <span
                     data-testid="provider-test-result"
                     data-ok={result.ok}
-                    className={`text-sm ${result.ok ? "text-green-700" : "text-red-700"}`}
+                    className={`text-sm ${result.ok ? "text-success" : "text-danger"}`}
                   >
                     {result.ok ? t("settings.testOk") : t("settings.testFailed")}
                   </span>
                 )}
                 {provider.detail && (
-                  <span className="text-xs text-neutral-500" data-testid="provider-detail">
+                  <span className="text-xs text-tertiary" data-testid="provider-detail">
                     {provider.detail}
                   </span>
                 )}

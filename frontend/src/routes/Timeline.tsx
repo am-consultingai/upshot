@@ -76,7 +76,7 @@ export default function Timeline() {
 
   const toggle = (active: boolean) =>
     `rounded border px-2 py-1 text-sm ${
-      active ? "border-neutral-800 bg-neutral-800 text-white" : "border-neutral-300"
+      active ? "border-accent bg-accent text-on-accent" : "border-line"
     }`;
 
   return (
@@ -87,11 +87,11 @@ export default function Timeline() {
           busy={start.isPending}
           disabled={status.data?.recorder.active}
           onClick={() => start.mutate()}
-          className="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-40"
+          className="rounded bg-accent px-3 py-1.5 text-on-accent disabled:opacity-40"
         >
           {t("timeline.start")}
         </BusyButton>
-        <span className="text-sm text-neutral-600" data-testid="queue-depth">
+        <span className="text-sm text-secondary" data-testid="queue-depth">
           {t("timeline.queued")}: {status.data?.queue_depth ?? 0}
         </span>
 
@@ -124,7 +124,7 @@ export default function Timeline() {
             data-testid="calendar-prev"
             aria-label={t("timeline.previous")}
             onClick={() => setAnchor(shift(span, anchor, -1))}
-            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+            className="rounded border border-line px-2 py-1 text-sm"
           >
             ‹
           </button>
@@ -132,7 +132,7 @@ export default function Timeline() {
             type="button"
             data-testid="calendar-today"
             onClick={() => setAnchor(startOfDay(new Date()))}
-            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+            className="rounded border border-line px-2 py-1 text-sm"
           >
             {t("timeline.today")}
           </button>
@@ -141,7 +141,7 @@ export default function Timeline() {
             data-testid="calendar-next"
             aria-label={t("timeline.next")}
             onClick={() => setAnchor(shift(span, anchor, 1))}
-            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+            className="rounded border border-line px-2 py-1 text-sm"
           >
             ›
           </button>
@@ -181,7 +181,7 @@ export default function Timeline() {
           {days_.length === 0 && <p data-testid="timeline-empty">{t("timeline.empty")}</p>}
           {days_.map(([day, dayItems]) => (
             <div key={day} data-testid="timeline-day" data-day={day} className="mb-6">
-              <h2 className="mb-2 text-sm font-semibold text-neutral-500">{day}</h2>
+              <h2 className="mb-2 text-sm font-semibold text-tertiary">{day}</h2>
               <div className="grid gap-2">
                 {dayItems.map((meeting) => (
                   <MeetingCard

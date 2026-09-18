@@ -26,9 +26,9 @@ export default function MonthGrid({
 
   return (
     <div data-testid="calendar-monthgrid">
-      <div className="grid grid-cols-7 border-b border-neutral-200 pb-1">
+      <div className="grid grid-cols-7 border-b border-line-subtle pb-1">
         {weekdayLabels(locale).map((label) => (
-          <div key={label} className="text-center text-sm text-neutral-500">
+          <div key={label} className="text-center text-sm text-tertiary">
             {label}
           </div>
         ))}
@@ -43,15 +43,15 @@ export default function MonthGrid({
               data-testid="calendar-daycell"
               data-day={dayKey(day)}
               data-count={items.length}
-              className={`min-h-24 border-b border-s border-neutral-200 p-1 ${
-                outside ? "bg-neutral-50 text-neutral-400" : ""
+              className={`min-h-24 border-b border-s border-line-subtle p-1 ${
+                outside ? "bg-surface-1 text-tertiary" : ""
               }`}
             >
               <div
                 className={`mb-1 text-xs ${
                   isToday(day)
-                    ? "inline-block rounded-full bg-emerald-600 px-1.5 text-white"
-                    : "text-neutral-500"
+                    ? "inline-block rounded-full bg-accent px-1.5 text-on-accent"
+                    : "text-tertiary"
                 }`}
               >
                 {day.getDate()}
@@ -65,17 +65,17 @@ export default function MonthGrid({
                   title={meeting.title ?? meeting.id}
                   className={`mb-0.5 block truncate rounded border-s-4 px-1 text-xs ${
                     meeting.state === "RECORDING"
-                      ? "border-amber-400 bg-amber-100"
+                      ? "border-warning bg-warning-quiet"
                       : meeting.state === "FAILED"
-                        ? "border-red-400 bg-red-100"
-                        : "border-emerald-400 bg-emerald-50"
+                        ? "border-danger bg-danger-quiet"
+                        : "border-success bg-success-quiet"
                   }`}
                 >
                   {formatClock(meeting.started_at)} {meeting.title ?? t("timeline.recording")}
                 </Link>
               ))}
               {items.length > MAX_CHIPS && (
-                <span data-testid="calendar-more" className="text-xs text-neutral-500">
+                <span data-testid="calendar-more" className="text-xs text-tertiary">
                   +{items.length - MAX_CHIPS}
                 </span>
               )}

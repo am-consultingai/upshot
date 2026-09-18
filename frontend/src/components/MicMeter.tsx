@@ -123,15 +123,15 @@ export default function MicMeter({
           const warm = index >= SEGMENTS - 7;
           const colour = on || isPeak
             ? hot
-              ? "bg-red-500"
+              ? "bg-danger"
               : warm
-                ? "bg-amber-400"
-                : "bg-emerald-500"
-            : "bg-neutral-200";
+                ? "bg-warning"
+                : "bg-success"
+            : "bg-surface-3";
           return <div key={index} className={`flex-1 rounded-[1px] ${colour}`} />;
         })}
       </div>
-      <p className="mt-1 text-sm text-neutral-600" data-testid={`mic-meter-hint-${track}`}>
+      <p className="mt-1 text-sm text-secondary" data-testid={`mic-meter-hint-${track}`}>
         {error
           ? error === STREAM_ENDED
             ? t("settings.micStreamEnded")
