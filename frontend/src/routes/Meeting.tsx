@@ -7,6 +7,7 @@ import type { MessageKey } from "../locales/en";
 import { formatElapsed } from "../lib/format";
 import StateBadge from "../components/StateBadge";
 import BusyButton, { Spinner } from "../components/BusyButton";
+import AudioPlayer, { type AudioPlayerHandle } from "../components/AudioPlayer";
 
 function contentDirection(language: string | null): "rtl" | "ltr" {
   return language === "he" ? "rtl" : "ltr";
@@ -30,8 +31,9 @@ export default function MeetingPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [seeked, setSeeked] = useState<number | null>(null);
+  const playerRef = useRef<AudioPlayerHandle | null>(null);
+  // Where playback is now, so the transcript can show which line is being spoken.
+  const [playhead, setPlayhead] = useState(0);
   // Polled while the pipeline is working, so a queued stage visibly finishes — or
   // visibly fails — instead of leaving the page on a hopeful message forever.
   const [pipelineBusy, setPipelineBusy] = useState(false);
@@ -111,11 +113,6 @@ export default function MeetingPage() {
       queryClient.invalidateQueries({ queryKey: ["meeting", id] }),
   });
 
-  useEffect(() => {
-    if (seeked !== null && audioRef.current)
-      audioRef.current.currentTime = seeked;
-  }, [seeked]);
-
   const [copied, setCopied] = useState(false);
   const copySummary = async (html: string) => {
     // HTML first: this summary is written to be pasted into mail, and plain text would
@@ -143,6 +140,28 @@ export default function MeetingPage() {
       ),
     [meeting.data],
   );
+
+  /*
+   * The line being spoken: the last one that has started. Segments carry a start
+   * and no end, so "current" is a boundary search rather than a range test, and a
+   * gap between turns belongs to the turn before it rather than to nothing.
+   *
+   * This completes the loop the summary begins. A generated claim leads to the
+   * transcript passage behind it, that passage leads to the audio, and the audio
+   * leads back to the line being spoken — so a summary anyone doubts can be
+   * checked all the way down, which is the thing this app can do and the products
+   * it is measured against cannot, because they keep no recording.
+   */
+  const spokenIndex = useMemo(() => {
+    const segments = transcript.data?.segments ?? [];
+    if (segments.length === 0 || playhead <= 0) return -1;
+    let found = -1;
+    for (let index = 0; index < segments.length; index += 1) {
+      if (segments[index].start <= playhead) found = index;
+      else break;
+    }
+    return found;
+  }, [transcript.data, playhead]);
 
   if (meeting.isLoading)
     return <p data-testid="loading">{t("common.loading")}</p>;
@@ -183,14 +202,7 @@ export default function MeetingPage() {
       )}
 
       {hasAudio ? (
-        <audio
-          ref={audioRef}
-          data-testid="audio"
-          src={api.audioUrl(id, "mix")}
-          controls
-          preload="none"
-          className="mb-3 w-full"
-        />
+        <AudioPlayer ref={playerRef} src={api.audioUrl(id, "mix")} onTime={setPlayhead} />
       ) : meeting.data.audio_deleted_at ? (
         // Deleted on purpose, after the retention period. Saying "no audio" here would
         // read as a failed recording.
@@ -293,25 +305,31 @@ export default function MeetingPage() {
         data-testid="transcript"
         dir={contentDirection(meeting.data.language)}
       >
-        {(transcript.data?.segments ?? []).map((segment, index) => (
-          <li key={index}>
-            <button
-              type="button"
-              data-testid="transcript-turn"
-              data-at-ms={Math.round(segment.start * 1000)}
-              onClick={() => setSeeked(segment.start)}
-              className="block w-full text-start"
-            >
-              <span
-                className="text-xs text-tertiary"
-                data-testid="turn-speaker"
+        {(transcript.data?.segments ?? []).map((segment, index) => {
+          const speaking = index === spokenIndex;
+          return (
+            <li key={index}>
+              <button
+                type="button"
+                data-testid="transcript-turn"
+                data-at-ms={Math.round(segment.start * 1000)}
+                data-speaking={speaking ? "true" : undefined}
+                onClick={() => playerRef.current?.seek(segment.start)}
+                className={`block w-full rounded px-2 py-1 text-start ${
+                  speaking ? "bg-accent-quiet" : ""
+                }`}
               >
-                {segment.speaker}
-              </span>{" "}
-              <span>{segment.text}</span>
-            </button>
-          </li>
-        ))}
+                <span
+                  className="text-xs text-tertiary"
+                  data-testid="turn-speaker"
+                >
+                  {segment.speaker}
+                </span>{" "}
+                <span>{segment.text}</span>
+              </button>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
