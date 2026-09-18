@@ -28,3 +28,5 @@ reports/
 # Real meeting recordings used for manual checks. Never committed: they are
 # third-party audio and transcripts, and 13 MB of mp3 has no place in git.
 tests/transcripts/
+artifacts/
+frontend/tsconfig.tsbuildinfo
