@@ -200,6 +200,8 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
             "state": job.state,
             "attempts": job.attempts,
             "last_error": job.last_error,
+            # So the page can say how long a stage has been at it, not merely that it is.
+            "started_at": job.started_at,
         }
         for job in svc.queue.for_meeting(meeting_id)
     ]
@@ -628,6 +630,36 @@ async def audio_level(
     )
 
 
+@router.get("/recording/levels")
+async def recording_levels(request: Request) -> StreamingResponse:
+    """Both tracks' levels while a meeting records, for the live waveform.
+
+    Deliberately not ``/audio/level``: that one falls back to opening a preview stream the
+    moment the recording ends, so a waveform left on screen would take the microphone.
+    This one only ever reads the recorder, and says it is done when the recording is.
+    """
+    recorder = services_of(request).recorder
+
+    async def stream() -> Any:
+        while recorder is not None and recorder.committed:
+            levels = recorder.levels()
+            yield _sse(
+                {
+                    "me": round(float(levels.get("me", 0.0)), 4),
+                    "them": round(float(levels.get("them", 0.0)), 4),
+                    "paused": bool(recorder.paused),
+                }
+            )
+            await asyncio.sleep(LEVEL_INTERVAL_S)
+        yield _sse({"done": True})
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
 # --------------------------------------------------------------------------- settings
 
 
@@ -1033,12 +1065,22 @@ def test_router() -> APIRouter:
             svc.conn.execute("DELETE FROM meetings")
             svc.conn.execute("DELETE FROM detector_events")
         for event in body.get("detector_events", []):
+            outcome = event.get("outcome", "shadow")
             svc.dao.add_detector_event(
                 peak_score=int(event.get("peak_score", 7)),
                 evidence=event.get("evidence", []),
-                outcome=event.get("outcome", "shadow"),
+                outcome=outcome,
                 process=event.get("process"),
                 window_title=event.get("window_title"),
+            )
+            # Announced as the detector announces it, so the pages that react to a
+            # detection — the events table, and the nudge offering to record — can be
+            # tested without a microphone and a real meeting.
+            svc.events.publish(
+                "detector",
+                state=outcome,
+                process=event.get("process"),
+                score=int(event.get("peak_score", 7)),
             )
         for item in body.get("meetings", []):
             meeting = svc.dao.insert_meeting(
