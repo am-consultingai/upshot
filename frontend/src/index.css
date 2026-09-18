@@ -7,3 +7,166 @@
 body {
   font-family: "Segoe UI", "Arial Hebrew", Arial, sans-serif;
 }
+
+/*
+ * Summaries are HTML the model wrote, injected into the page by Meeting.tsx,
+ * which owns the `.summary-prose` class these rules hang off.
+ *
+ * The class is applied by the component, not taken from the payload: the
+ * renderer wraps real summaries in its own `.ma-free` div
+ * (app/pipeline/stages/render.py), but seeded and imported HTML has no wrapper,
+ * and styling would then apply to some summaries and not others.
+ *
+ * Tailwind's preflight resets headings to inherit their size and weight, strips
+ * list markers, and zeroes every margin — so a summary with real structure came
+ * out as one undifferentiated wall of text, and the model's headings and bullets
+ * were doing nothing at all. Nothing was wrong with the generated HTML; there
+ * was simply no stylesheet for it.
+ *
+ * This is deliberately its own subtree rather than a global preflight change:
+ * these rules must not reach the application's own chrome.
+ *
+ * Logical properties only. The wrapper carries dir="rtl" for a Hebrew summary,
+ * so list indents and rules have to follow the writing direction rather than sit
+ * on the left by definition.
+ */
+.summary-prose {
+  line-height: 1.6;
+  color: #1f2937;
+}
+
+.summary-prose > :first-child {
+  margin-block-start: 0;
+}
+
+.summary-prose > :last-child {
+  margin-block-end: 0;
+}
+
+.summary-prose h1,
+.summary-prose h2,
+.summary-prose h3,
+.summary-prose h4,
+.summary-prose h5,
+.summary-prose h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  color: #111827;
+  margin-block: 1.5em 0.5em;
+}
+
+.summary-prose h1 {
+  font-size: 1.5rem;
+}
+
+.summary-prose h2 {
+  font-size: 1.25rem;
+}
+
+.summary-prose h3 {
+  font-size: 1.0625rem;
+}
+
+.summary-prose h4,
+.summary-prose h5,
+.summary-prose h6 {
+  font-size: 1rem;
+}
+
+.summary-prose p {
+  margin-block: 0.75em;
+}
+
+.summary-prose ul,
+.summary-prose ol {
+  margin-block: 0.75em;
+  padding-inline-start: 1.5em;
+}
+
+.summary-prose ul {
+  list-style: disc;
+}
+
+.summary-prose ol {
+  list-style: decimal;
+}
+
+.summary-prose li {
+  margin-block: 0.25em;
+}
+
+/* A nested list is a sub-point, not a new block: no extra space around it. */
+.summary-prose li > ul,
+.summary-prose li > ol {
+  margin-block: 0.25em;
+}
+
+.summary-prose strong,
+.summary-prose b {
+  font-weight: 600;
+  color: #111827;
+}
+
+.summary-prose em,
+.summary-prose i {
+  font-style: italic;
+}
+
+.summary-prose a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.summary-prose blockquote {
+  margin-block: 1em;
+  padding-inline-start: 1em;
+  border-inline-start: 3px solid #d1d5db;
+  color: #4b5563;
+}
+
+.summary-prose code {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 0.9em;
+  background: #f3f4f6;
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+
+.summary-prose pre {
+  margin-block: 1em;
+  padding: 0.75em 1em;
+  background: #f3f4f6;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+/* A <code> inside a <pre> is the block, not an inline span: undo the chip. */
+.summary-prose pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.summary-prose hr {
+  margin-block: 1.5em;
+  border: 0;
+  border-block-start: 1px solid #e5e7eb;
+}
+
+.summary-prose table {
+  margin-block: 1em;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.summary-prose th,
+.summary-prose td {
+  border: 1px solid #e5e7eb;
+  padding: 0.375em 0.625em;
+  text-align: start;
+}
+
+.summary-prose th {
+  background: #f9fafb;
+  font-weight: 600;
+}
