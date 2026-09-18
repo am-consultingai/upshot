@@ -105,7 +105,15 @@ export default function MicMeter({
   return (
     <div data-testid={`mic-meter-${track}`}>
       <div className="mb-1 text-sm font-medium">{hint ?? t("settings.micLevel")}</div>
+      {/*
+        Fixed to LTR. The segments are coloured by their index — the hot ones are
+        at the end of the array — so in a Hebrew interface the row reverses and
+        the meter fills from the right with red on the left, reading backwards.
+        A level meter is an instrument, not prose; RecordingWaveform pins its
+        direction for the same reason.
+      */}
       <div
+        dir="ltr"
         className="flex h-6 gap-[2px]"
         role="meter"
         aria-valuemin={0}
