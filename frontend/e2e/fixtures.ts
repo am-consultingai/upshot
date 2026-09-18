@@ -35,13 +35,30 @@ export interface SeedBody {
 export const test = base.extend<{
   seed: (meetings: SeedMeeting[]) => Promise<void>;
   seedBody: (body: SeedBody) => Promise<void>;
+  /** Seed *without* clearing first: for asserting what a live event does to an open page. */
+  seedMore: (body: SeedBody) => Promise<void>;
 }>({
-  context: async ({ context }, use) => {
+  // With MA_E2E_CDP set, the specs run against a browser on another machine — in
+  // practice a Chrome on Windows, driven from WSL, because Chromium inside WSL produces
+  // no animation frames at all and every click times out waiting for the page to settle.
+  // The page then resolves 127.0.0.1 on the browser's machine, which is exactly where the
+  // app under test is listening.
+  context: async ({ playwright, contextOptions, context: local }, use) => {
+    const endpoint = process.env.MA_E2E_CDP;
+    const remote = endpoint ? await playwright.chromium.connectOverCDP(endpoint) : null;
+    // A fresh context, not `contexts()[0]`: the browser's default context carries none of
+    // the test options, so `baseURL` is unset and every relative `goto("/")` has nothing
+    // to resolve against.
+    const context = remote ? await remote.newContext(contextOptions) : local;
     await context.addCookies([
       { name: "ma_session", value: SESSION, url: BASE_URL },
       { name: "ma_csrf", value: CSRF, url: BASE_URL },
     ]);
     await use(context);
+    if (remote) {
+      for (const page of context.pages()) await page.close();
+      await remote.close();
+    }
   },
   seed: async ({ request }, use) => {
     await use(async (meetings: SeedMeeting[]) => {
@@ -51,6 +68,18 @@ export const test = base.extend<{
           Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
         },
         data: { meetings, reset: true },
+      });
+      expect(response.ok()).toBeTruthy();
+    });
+  },
+  seedMore: async ({ request }, use) => {
+    await use(async (body: SeedBody) => {
+      const response = await request.post("/api/test/seed", {
+        headers: {
+          "X-CSRF-Token": CSRF,
+          Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+        },
+        data: { ...body },
       });
       expect(response.ok()).toBeTruthy();
     });

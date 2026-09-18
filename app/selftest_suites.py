@@ -7,6 +7,10 @@ free and safe in every environment.
 from __future__ import annotations
 
 import argparse
+import os
+import time
+import wave
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -1110,6 +1114,409 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
             )
         )
     return checks
+
+
+@suite("capture-injected", in_all=False)
+def _capture_injected(args: argparse.Namespace) -> list[Check]:
+    """T2 — both tracks proved against known audio, on real Windows endpoints.
+
+    ``capture-e2e`` plays a fixture out the *default* render endpoint and records the
+    *default* microphone, so it needs a quiet room and a human to judge it, and it falls
+    back to synthetic capture everywhere else. This suite instead injects a different
+    signal into each track through idle virtual endpoints: nothing is audible, the
+    machine's own audio settings are untouched, and both tracks have a known answer.
+
+    What it proves that nothing else does: that audio put into the microphone endpoint
+    comes out of ``me.wav``, that the two tracks are actually independent, and that the
+    configured device indices are the ones used.
+    """
+    import tempfile
+    import threading
+
+    from app.audio.analysis import cross_correlation
+    from app.audio.devices import play_wav
+    from app.audio.factory import make_capture
+    from app.audio.recorder import Recorder
+    from app.audio.writer import track_files
+    from app.clock import SystemClock
+    from app.config import Config
+
+    seconds = float(getattr(args, "seconds", 0) or 8)
+    seconds = min(max(seconds, 4.0), 30.0)
+
+    try:
+        channels = _idle_injection_endpoints(seconds)
+    except Exception as exc:
+        detail = (
+            f"no pair of usable virtual endpoints here ({exc}). "
+            "Install a virtual audio device, name two endpoints in MA_TEST_ME_RENDER and "
+            "MA_TEST_THEM_RENDER, or set MA_TEST_ALLOW_AUDIBLE=1 to borrow real ones."
+        )
+        if os.environ.get("MA_REQUIRE_HARDWARE"):
+            # The Windows harness sets this: there, "nothing to test" is a failure, not a
+            # pass. `skipped` reports ok=True, which is how a suite testing nothing at all
+            # reads as green.
+            return [Check("capture_injected", False, detail)]
+        return [skipped("capture_injected", detail)]
+
+    me_channel, them_channel = channels
+    checks: list[Check] = [
+        Check(
+            "capture_endpoints",
+            True,
+            f"me <- {me_channel.name} [{me_channel.loopback}] "
+            f"{me_channel.rate} Hz {me_channel.channels}ch, "
+            f"them <- {them_channel.name} [{them_channel.render}] "
+            f"{them_channel.rate} Hz {them_channel.channels}ch",
+            {
+                "me_render": me_channel.render,
+                "me_rate": me_channel.rate,
+                "them_render": them_channel.render,
+                "them_rate": them_channel.rate,
+                "candidates": list(REJECTED),
+            },
+        )
+    ]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        # Two chirps sweeping opposite ways: broadband, so correlation locks on hard, and
+        # unlike each other, so a track carrying the wrong one cannot pass. Each is
+        # written at its endpoint's own rate, and compared against the same sweep sampled
+        # at the rate the recorder writes.
+        rate = (cfg_rate := 16000)
+        sweeps = {"me": (200.0, 3000.0), "them": (3500.0, 600.0)}
+        near = _chirp(root / "near.wav", me_channel, seconds, *sweeps["me"])
+        far = _chirp(root / "far.wav", them_channel, seconds, *sweeps["them"])
+
+        cfg = Config.load()
+        cfg.set("data_root", str(root / "meetings"))
+        cfg.set("audio.capture", "wasapi")
+        cfg.set("audio.vad", "energy")
+        cfg.set("audio.min_meeting_s", 1)
+        cfg.set("audio.echo_cancel", "off")  # A4 tests the canceller; this one must not
+        # The point of the exercise: the recorder must honour these, not the defaults.
+        cfg.set("audio.input_device", me_channel.loopback)
+        cfg.set("audio.output_device", them_channel.render)
+
+        recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=SystemClock())
+        folder = root / "meetings" / "injected"
+        recorder.start(folder, "injected")
+        recorder.start_thread()
+        try:
+            time.sleep(0.6)  # let both streams settle before the signal starts
+            players = [
+                threading.Thread(
+                    target=play_wav, args=(near,), kwargs={"device_index": me_channel.render}
+                ),
+                threading.Thread(
+                    target=play_wav, args=(far,), kwargs={"device_index": them_channel.render}
+                ),
+            ]
+            for player in players:
+                player.start()
+            for player in players:
+                player.join(timeout=seconds + 20)
+            time.sleep(1.0)  # let the tail reach the writer
+        finally:
+            result = recorder.stop()
+
+        files = track_files(folder)
+        for track in ("me", "them"):
+            if track not in files:
+                checks.append(Check(f"capture_{track}_written", False, "no track file at all"))
+        if {"me", "them"} - set(files):
+            return checks
+
+        heard = {track: _wav_samples(path) for track, path in files.items()}
+        expected = {
+            track: _chirp_samples(cfg_rate, seconds, *sweeps[track]) for track in sweeps
+        }
+        for track in ("me", "them"):
+            import numpy as np
+
+            aligned, score, offset_ms = _aligned_correlation(expected[track], heard[track], rate)
+            peak = float(np.abs(heard[track]).max())
+            checks.append(
+                Check(
+                    f"capture_{track}_carries_the_fixture",
+                    aligned >= 0.8 and offset_ms < 2000,
+                    f"correlation {aligned:.3f} windowed ({score:.3f} whole-track), "
+                    f"offset {offset_ms:.0f} ms, peak {peak:.3f}, "
+                    f"{len(heard[track]) / rate:.1f}s recorded",
+                    {
+                        "correlation": round(aligned, 4),
+                        "offset_ms": round(offset_ms),
+                        "mode": "wasapi",
+                    },
+                )
+            )
+
+        # Independence: the same signal on both tracks is the crosstalk fault (D36), and
+        # it is indistinguishable from two people saying the same thing.
+        bleed, _ = cross_correlation(heard["me"], heard["them"])
+        checks.append(
+            Check(
+                "capture_tracks_are_independent",
+                abs(bleed) < 0.3,
+                f"cross-correlation between the tracks {bleed:.3f}",
+                {"crosstalk": round(bleed, 4)},
+            )
+        )
+        checks.append(
+            Check(
+                "capture_no_xruns",
+                sum(result.xruns.values()) == 0,
+                f"xruns {result.xruns}, dropped {result.dropped}, gaps {result.gaps_ms}",
+                {"gaps_ms": {k: round(v) for k, v in result.gaps_ms.items()}},
+            )
+        )
+    return checks
+
+
+@dataclass(frozen=True)
+class _Channel:
+    """A render endpoint and the loopback that hears it."""
+
+    render: int
+    loopback: int
+    name: str
+    rate: int
+    channels: int
+
+
+#: The vocabulary virtual-audio drivers use in their endpoint names. A hint for *choosing
+#: where to inject a test signal* — never product behaviour, and never a gate: an endpoint
+#: is accepted because it round-trips a chirp, not because of its name.
+#:
+#: A physical endpoint carries the fixture just as well, but playing it there makes the
+#: machine emit noise at whoever is sitting in front of it, so one is only borrowed when
+#: the caller says that is acceptable.
+VIRTUAL_MARKERS = ("cable", "voicemeeter", "vb-audio", "virtual", "vaio", "loopback")
+
+
+def _idle_injection_endpoints(seconds: float) -> tuple[_Channel, _Channel]:
+    """Two endpoints that are idle **and carry the signal for as long as the test runs**.
+
+    Idle matters twice over: audio already flowing would drown the fixture, and a busy
+    endpoint is usually someone's real output, which a test has no business borrowing.
+
+    Idle is not enough, though, and neither is a quick check. A 1.2 s probe passed a
+    Voicemeeter strip whose loopback clock drifts against its render clock; over six
+    seconds the chirp slid out of phase and scored anywhere between 0.33 and 0.93, which
+    read as a flaky recorder rather than an unsuitable endpoint. So each candidate must
+    carry a chirp of the full test length before it is trusted — the harness proves its
+    own plumbing before blaming the recorder.
+    """
+
+    from app.audio.devices import DeviceInfo, _wasapi_info, audio_host, loopback_for
+
+    found: list[_Channel] = []
+    # Explicit beats discovered: a provisioned machine names its injection endpoints and
+    # the suite stops guessing. Discovery is the fallback, not the contract.
+    forced = [os.environ.get("MA_TEST_ME_RENDER"), os.environ.get("MA_TEST_THEM_RENDER")]
+    with audio_host() as host:
+        wasapi = int(_wasapi_info(host)["index"])
+        renders = []
+        for index in range(host.get_device_count()):
+            raw = dict(host.get_device_info_by_index(index))
+            if not raw.get("maxOutputChannels") or int(raw.get("hostApi", -1)) != wasapi:
+                continue
+            try:
+                companion = loopback_for(DeviceInfo.from_raw(raw), host)
+            except Exception:
+                continue
+            renders.append((index, str(raw["name"]), companion, raw))
+
+    def is_virtual(name: str) -> bool:
+        return any(marker in name.lower() for marker in VIRTUAL_MARKERS)
+
+    renders.sort(key=lambda item: not is_virtual(item[1]))
+    if all(forced):
+        # Named outright: a provisioned machine says which endpoints are the test's, and
+        # discovery stops guessing entirely.
+        renders = [item for item in renders if str(item[0]) in forced]
+    elif not os.environ.get("MA_TEST_ALLOW_AUDIBLE"):
+        # On a machine with no virtual audio device this leaves nothing, and the suite
+        # says so rather than playing a chirp through someone's speakers.
+        renders = [item for item in renders if is_virtual(item[1])]
+
+    for index, name, companion, raw in renders:
+        candidate = _Channel(
+            render=index,
+            loopback=companion.index,
+            name=name,
+            # Shared-mode WASAPI only accepts the endpoint's own mix format: a 16 kHz
+            # fixture is refused outright with "Invalid sample rate".
+            rate=int(raw["defaultSampleRate"]),
+            channels=min(2, int(raw["maxOutputChannels"])),
+        )
+        score, note = _channel_score(candidate, companion, seconds)
+        REJECTED.append(f"{name.split(' (')[0]}={score:.2f} [{note}]")
+        if score >= 0.9:
+            found.append(candidate)
+        if len(found) == 2:
+            return found[0], found[1]
+    raise RuntimeError(f"found {len(found)} usable endpoint(s), need 2; tried {REJECTED}")
+
+
+def _drain(capture: Any, seconds: float) -> Any:
+    """What the capture has buffered, read for a bounded stretch.
+
+    Bounded by the clock on purpose. A virtual endpoint keeps delivering frames whether
+    anything is playing or not, so "read until it goes quiet" never returns — and reading
+    far past the fixture is not free either: trailing silence dilutes the alignment
+    search, which is how every Voicemeeter endpoint came to score 0.02 while carrying the
+    signal perfectly well.
+    """
+    import numpy as np
+
+    chunks = []
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        payload = capture.read(0.15)
+        if payload:
+            chunks.append(payload)
+    if not chunks:
+        return np.zeros(0, dtype=np.float32)
+    # float32 interleaved, not int16 — reading it as int16 yields convincing noise.
+    raw = np.frombuffer(b"".join(chunks), dtype=np.float32)
+    channels = capture.format.channels
+    return raw.reshape(-1, channels)[:, 0] if channels > 1 else raw
+
+
+#: What each candidate endpoint scored, in the order tried. Reported by the suite so a
+#: rejection is visible rather than inferred.
+REJECTED: list[str] = []
+
+
+def _channel_score(channel: _Channel, companion: Any, seconds: float) -> tuple[float, str]:
+    """Idle, and demonstrably able to carry a signal — decided in one capture session.
+
+    Both questions are answered without closing the stream in between: reopening an
+    endpoint immediately after closing it lands in WASAPI's -9999 teardown window, which
+    rejected every candidate and left the suite skipping itself into a green result.
+    """
+    import tempfile
+    import threading
+
+    import numpy as np
+
+    from app.audio.devices import play_wav
+    from app.audio.wasapi import WasapiCapture
+
+    try:
+        capture = WasapiCapture(track="me", queue_seconds=seconds + 20.0, device=companion)
+        capture.start()
+    except Exception as exc:
+        return -1.0, f"will not open ({type(exc).__name__})"
+    try:
+        time.sleep(0.3)
+        idle = _drain(capture, 0.4)
+        if float(np.abs(idle).max(initial=0.0)) > 1e-4:
+            return -2.0, "busy"
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = _chirp(Path(tmp) / "probe.wav", channel, seconds, 300.0, 2500.0)
+            player = threading.Thread(
+                target=play_wav, args=(fixture,), kwargs={"device_index": channel.render}
+            )
+            player.start()
+            player.join(timeout=seconds + 20)
+            heard = _drain(capture, 1.5)
+        expected = _chirp_samples(capture.format.rate, seconds, 300.0, 2500.0)
+        aligned, whole, offset = _aligned_correlation(expected, heard, capture.format.rate)
+        note = (
+            f"{len(heard) / max(1, capture.format.rate):.1f}s heard, "
+            f"peak {float(np.abs(heard).max(initial=0.0)):.2f}, "
+            f"whole {whole:.2f}, offset {offset:.0f}ms"
+        )
+        return float(aligned), note
+    except Exception as exc:
+        return -3.0, f"failed ({type(exc).__name__}: {exc})"
+    finally:
+        capture.stop()
+
+
+def _aligned_correlation(
+    expected: Any, heard: Any, rate: int, window_s: float = 0.5
+) -> tuple[float, float, float]:
+    """How well the recording carries the fixture, measured window by window.
+
+    Two corrections to the obvious approach, both learned the hard way on real hardware.
+
+    Recording starts before the signal does, so a whole-array correlation is scaled down
+    by however much silence sits on either side of it — a fine channel reads as a weak
+    one. So: find the lag first, then score from there.
+
+    And a virtual audio device is not a wire. A Voicemeeter strip converts sample rates
+    asynchronously, so a six-second chirp slides out of phase by a random amount each
+    session: the same endpoint scored 0.33 to 0.93 across runs while the audio was
+    perfectly audible and gap-free, and one *physical* endpoint scored 0.971 at 1 ms
+    offset. Comparing whole waveforms therefore measures the mixer's clock, not the
+    recorder. Half-second windows, each aligned locally, ask the question that matters —
+    did this half second of the meeting arrive — and the median is the verdict.
+    """
+    import numpy as np
+
+    from app.audio.analysis import cross_correlation
+
+    raw_score, lag = cross_correlation(expected, heard, max_lag=int(rate * 3))
+    offset_ms = abs(lag) / rate * 1000
+    span = int(rate * window_s)
+    slack = int(rate * 0.05)  # drift within half a second is tens of samples, not more
+
+    def median_from(start: int) -> float:
+        window = heard[start : start + len(expected)]
+        if len(window) < span * 2:
+            return 0.0
+        scores = [
+            cross_correlation(expected[at : at + span], window[at : at + span], max_lag=slack)[0]
+            for at in range(0, len(window) - span, span)
+        ]
+        return float(np.median(scores)) if scores else 0.0
+
+    # Both signs. The recording is normally the delayed one, so the lag comes back
+    # negative and slicing at `max(0, lag)` silently compares the fixture against the
+    # silence before it starts — which scored 0.02 on channels whose whole-track
+    # correlation was 0.99. Taking the better of the two readings is sign-agnostic.
+    best = max(median_from(max(0, -int(lag))), median_from(max(0, int(lag))))
+    if best == 0.0:
+        aligned, _ = cross_correlation(expected[: len(heard)], heard)
+        return aligned, raw_score, offset_ms
+    return best, raw_score, offset_ms
+
+
+def _chirp_samples(rate: int, seconds: float, start_hz: float, end_hz: float) -> Any:
+    """A linear sweep. Analytic, so the same signal can be sampled at two rates and still
+    be the same signal — which is what lets the fixture play at 48 kHz and be compared
+    against what the recorder wrote at 16 kHz."""
+    import numpy as np
+
+    t = np.linspace(0, seconds, int(rate * seconds), endpoint=False)
+    return np.sin(2 * np.pi * (start_hz * t + (end_hz - start_hz) * t * t / (2 * seconds)))
+
+
+def _chirp(path: Path, channel: _Channel, seconds: float, start_hz: float, end_hz: float) -> Path:
+    import numpy as np
+
+    mono = (_chirp_samples(channel.rate, seconds, start_hz, end_hz) * 0.45 * 32767).astype(np.int16)
+    frames = np.repeat(mono[:, None], channel.channels, axis=1) if channel.channels > 1 else mono
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(channel.channels)
+        handle.setsampwidth(2)
+        handle.setframerate(channel.rate)
+        handle.writeframes(frames.tobytes())
+    return path
+
+
+def _wav_samples(path: Path) -> Any:
+    import numpy as np
+
+    with wave.open(str(path), "rb") as handle:
+        raw = handle.readframes(handle.getnframes())
+        channels = handle.getnchannels()
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float64) / 32768.0
+    return samples.reshape(-1, channels)[:, 0] if channels > 1 else samples
 
 
 def _free_port() -> int:
