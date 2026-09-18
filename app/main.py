@@ -110,9 +110,11 @@ def start_background(services: Services) -> None:
         services.worker.start()
         log.info("worker started (policy %s)", services.worker.policy)
     detector = services.detector
-    if detector is not None and str(services.config.get("detection.mode", "shadow")) != "off":
+    if detector is not None:
+        # Started even when detection is off: the loop reads the mode every second, so
+        # the setting can be changed from Settings while the app runs.
         detector.start()
-        log.info("detector started in %s mode", services.config.get("detection.mode"))
+        log.info("detector watching in %s mode", services.config.get("detection.mode"))
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
