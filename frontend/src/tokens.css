@@ -142,24 +142,38 @@
 }
 
 /*
- * Dark mode: defined, tested, and deliberately NOT yet bound to the system
- * preference.
+ * Dark mode.
  *
- * The tokens below are correct. The components are not: most still name Tailwind
- * palette colours directly — bg-white, text-neutral-700 — which do not move with
- * the theme. Flipping the token layer alone gives a page whose background stays
- * light while its text turns near-white, and the summary becomes invisible. That
- * was verified in a screenshot, not guessed.
+ * This was deliberately withheld until no component named a palette colour
+ * directly: with the components still hardcoding bg-white and text-neutral-700,
+ * flipping the tokens alone left the background light while the text turned
+ * near-white, and the summary became invisible. That was found in a screenshot.
+ * Every screen has since been checked in both themes.
  *
- * So there is no `@media (prefers-color-scheme: dark)` rule here on purpose. If
- * there were, every user whose Windows is set to dark would get that broken page
- * without asking for it — and shipping a dark mode that has to be withdrawn is
- * the exact churn that made a competitor add, remove and re-add theirs.
- *
- * It applies only when something explicitly sets data-theme="dark", which today
- * is the test suite. The media query goes in with the component migration, in
- * the shell ticket, once there is nothing left hardcoding a colour.
+ * The media rule is guarded with :not([data-theme="light"]) so an explicit light
+ * choice still wins on a machine set to dark, and the explicit dark rule is
+ * duplicated below rather than sharing a selector list, because one invalid
+ * selector would otherwise drop both.
  */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --base: #0e0f11;
+    --ink: #f2f3f5;
+    --accent: #3dbdb0;
+    --accent-ink: #06201e;
+
+    --lift: var(--ink);
+    --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
+
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+    --hairline: inset 0 0 0 1px color-mix(in oklab, var(--base), var(--ink) 14%);
+  }
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
 
