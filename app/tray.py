@@ -191,6 +191,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
 
         index = arguments.index("--selftest")
         return selftest_main(arguments[index + 1 :] or ["all"])
+    if "--toast" in arguments:
+        # How a frozen build shows a notification: the toast runs as its own process
+        # (app/notify_toast.py), and in a freeze this executable is the only interpreter.
+        from app.notify_toast import main as toast_main
+
+        index = arguments.index("--toast")
+        return toast_main(arguments[index + 1 :])
     if "--bootstrap" in arguments:
         from app.bootstrap import run as bootstrap_run
 
@@ -203,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     if not guard.acquire():
         log.error("Meeting Agent is already running")
         return ALREADY_RUNNING
-    from app.main import create_app
+    from app.main import create_app, start_background
     from app.server import LocalServer
     from app.services import build
 
@@ -211,8 +218,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     app = create_app(services)
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
     server.start()
-    if services.worker is not None:
-        services.worker.start()
+    # The same background work `python -m app.main` starts. Started the worker and
+    # nothing else before, so the tray build — the one the installer runs — had no
+    # detector at all, whatever the mode said.
+    start_background(services)
     token = services.auth.issue_token()
     url = f"http://127.0.0.1:{services.config.server_port}/?k={token}"
     log.info("open %s", url)
