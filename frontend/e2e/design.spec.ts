@@ -122,44 +122,60 @@ test("dark_theme_redefines_the_inputs_and_drops_shadows", async ({ page }) => {
 });
 
 /**
- * Dark mode is built but not yet bound to the system preference, because the
- * components still hardcode Tailwind palette colours that do not move with the
- * theme — a themed token layer over unthemed components renders near-white text
- * on a still-light background, which is how the summary became invisible in the
- * screenshot that prompted this guard.
+ * The three-way appearance contract, which is easy to get subtly wrong.
  *
- * This test holds that line. It must be changed, not deleted, by whoever
- * finishes the component migration and turns the media query on.
+ * The default is light, not system: this is read in daylight and every comparable
+ * product ships light only, so matching Windows is offered rather than assumed.
+ * That means `data-theme="light"` is normally present and the media rule is
+ * guarded out — a dark machine does *not* darken the app unless asked.
+ *
+ * "Match Windows" removes the attribute rather than resolving the preference in
+ * JavaScript, so the media rule decides and keeps deciding when the machine
+ * switches at sunset, with no listener to maintain.
  */
-test("a_dark_system_does_not_yet_flip_the_app", async ({ page }) => {
+test("appearance_is_light_by_default_and_follows_windows_only_when_asked", async ({ page }) => {
   // Emulated on the page rather than by opening a context with `colorScheme`:
   // these specs attach to a browser over CDP, where the default context carries
   // none of the config's options, so a context made here would have no baseURL.
-  await page.emulateMedia({ colorScheme: "dark" });
-  await gotoApp(page);
-
-  const onDarkSystem = await page.evaluate(() => ({
-    canvas: getComputedStyle(document.body).backgroundColor,
-    text: getComputedStyle(document.body).color,
-  }));
-
-  await page.emulateMedia({ colorScheme: "light" });
-  const onLightSystem = await page.evaluate(() => ({
-    canvas: getComputedStyle(document.body).backgroundColor,
-    text: getComputedStyle(document.body).color,
-  }));
-
-  expect(
-    onDarkSystem,
-    "the system preference must not select the theme until components are migrated",
-  ).toEqual(onLightSystem);
-
-  // And the text stays dark-on-light, which is the property that actually broke.
+  const canvas = () =>
+    page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const luminance = (rgb: string) => {
     const [r, g, b] = rgb.match(/\d+(\.\d+)?/g)!.map(Number);
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
-  expect(luminance(onDarkSystem.text)).toBeLessThan(luminance(onDarkSystem.canvas));
+  const setTheme = (value: string | null) =>
+    page.evaluate((theme) => {
+      if (theme === null) document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", theme);
+    }, value);
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  await gotoApp(page);
+
+  // Default: light, and a dark machine does not change that.
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  const byDefault = luminance(await canvas());
+
+  await page.emulateMedia({ colorScheme: "light" });
+  expect(luminance(await canvas()), "the default must not track the system").toBe(byDefault);
+
+  // "Match Windows": now it tracks, in both directions.
+  await setTheme(null);
+  const systemLight = luminance(await canvas());
+  await page.emulateMedia({ colorScheme: "dark" });
+  const systemDark = luminance(await canvas());
+  expect(systemDark, "matching Windows should darken on a dark machine").toBeLessThan(
+    systemLight,
+  );
+
+  // An explicit light choice still wins on a dark machine.
+  await setTheme("light");
+  expect(luminance(await canvas())).toBeGreaterThan(systemDark);
+
+  // And an explicit dark choice wins on a light machine.
+  await page.emulateMedia({ colorScheme: "light" });
+  await setTheme("dark");
+  expect(luminance(await canvas())).toBeLessThan(systemLight);
 });
 
 /**
@@ -213,4 +229,22 @@ test("level_meters_do_not_mirror_in_hebrew", async ({ page }) => {
 
   // The resolved direction, not just the attribute: a parent could still flip it.
   expect(await meter.evaluate((el) => getComputedStyle(el).direction)).toBe("ltr");
+});
+
+/**
+ * The appearance choice is stored like every other preference, so a reload does
+ * not flash back to light. Choosing dark and having the next launch come up white
+ * is worse than not offering the choice at all.
+ */
+test("the_appearance_choice_survives_a_reload", async ({ page }) => {
+  await gotoApp(page, "/settings");
+  await page.getByTestId("ui-theme").selectOption("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.reload();
+  await expect(page.getByTestId("ui-theme")).toHaveValue("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.getByTestId("ui-theme").selectOption("light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
