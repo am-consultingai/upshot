@@ -1,4 +1,4 @@
-import { expect, gotoApp, test } from "./fixtures";
+import { expect, gotoApp, isoAt, test } from "./fixtures";
 
 /**
  * The design foundation: bundled fonts, derived colour tokens, and a dark theme
@@ -160,4 +160,57 @@ test("a_dark_system_does_not_yet_flip_the_app", async ({ page }) => {
     return 0.2126 * r + 0.7152 * g + 0.0722 * b;
   };
   expect(luminance(onDarkSystem.text)).toBeLessThan(luminance(onDarkSystem.canvas));
+});
+
+/**
+ * Typography is scoped to script. The tracking scale in tokens.css is a Latin
+ * device: Hebrew running text is never letter-spaced, and tightening it damages
+ * word shape rather than tidying it. Applying it on `body`, as this first did,
+ * degraded every Hebrew screen while looking perfectly correct in English —
+ * which is precisely the class of bug an English-language review cannot catch.
+ */
+test("hebrew_is_not_letter_spaced_and_latin_is", async ({ page, seed }) => {
+  await seed([{ id: "e2e-type", title: "פגישה עם Kubernetes", started_at: isoAt(0, 9) }]);
+
+  await gotoApp(page);
+  const latin = await page.evaluate(() => {
+    const el = document.querySelector("[data-testid=app]")!;
+    return getComputedStyle(el).letterSpacing;
+  });
+  // A Latin interface keeps the negative tracking.
+  expect(latin).not.toBe("normal");
+  expect(parseFloat(latin)).toBeLessThan(0);
+
+  await gotoApp(page, "/settings");
+  await page.getByTestId("ui-language").selectOption("he");
+  await page.getByTestId("nav-timeline").click();
+
+  const hebrew = await page.evaluate(() => {
+    const el = document.querySelector("[data-testid=app]")!;
+    const style = getComputedStyle(el);
+    return {
+      dir: document.documentElement.dir,
+      letterSpacing: style.letterSpacing,
+      lineHeight: parseFloat(style.lineHeight) / parseFloat(style.fontSize),
+    };
+  });
+  expect(hebrew.dir).toBe("rtl");
+  expect(hebrew.letterSpacing, "Hebrew must not be tracked").toBe("normal");
+  expect(hebrew.lineHeight, "Hebrew wants more leading").toBeGreaterThan(1.6);
+});
+
+/**
+ * Instruments keep their direction. The level meter colours its segments by
+ * index — the hot ones are last — so in a Hebrew interface the flex row reverses
+ * and the meter fills from the right with red on the left, reading backwards.
+ */
+test("level_meters_do_not_mirror_in_hebrew", async ({ page }) => {
+  await gotoApp(page, "/settings");
+  await page.getByTestId("ui-language").selectOption("he");
+
+  const meter = page.getByTestId("mic-meter-me").locator("[role=meter]");
+  await expect(meter).toHaveAttribute("dir", "ltr");
+
+  // The resolved direction, not just the attribute: a parent could still flip it.
+  expect(await meter.evaluate((el) => getComputedStyle(el).direction)).toBe("ltr");
 });
