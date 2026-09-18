@@ -114,9 +114,17 @@ DEFAULTS: dict[str, Any] = {
         "mode": "shadow",  # shadow|on|off
         "sources": "windows",  # windows|fake
         "threshold": 5,
-        "sustain_s": 10,
+        # How long the score must hold before a wake counts. It guards against a
+        # transient grab — an app testing the microphone, a notification sound — and a
+        # conferencing app holds the microphone for the whole call, so five seconds
+        # discriminates as well as ten. Ten made a detection take eleven seconds to
+        # appear, which reads as broken when you are watching for it.
+        "sustain_s": 5,
         "near_miss_watermark": 3,
         "give_up_s": 90,
+        # First look only: a microphone taken longer ago than this was already part of
+        # the scenery when the app started, not a meeting beginning (D40).
+        "fresh_hold_s": 120,
         "release_grace_s": 60,
         "dual_silence_s": 300,
         "weights": {
@@ -140,6 +148,10 @@ DEFAULTS: dict[str, Any] = {
             "Discord.exe",
             "Webex.exe",
         ],
+        # Deliberately short. A machine's furniture — virtual audio devices, noise
+        # suppressors, voice assistants — is told apart from a meeting by *when* it took
+        # the microphone, not by name (D40). Naming vendors here would only ever cover
+        # the machines we happen to have seen.
         "ignore": ["VoiceAccess.exe", "NVIDIA Broadcast.exe"],
         "title_patterns": ["zoom meeting", "microsoft teams", "meet -", "meet –", "webex"],
     },
@@ -154,7 +166,7 @@ DEFAULTS: dict[str, Any] = {
         "local_model": "dictalm3-nemotron-12b",
         "ollama_url": "http://127.0.0.1:11434",
         "max_tokens": 16000,
-        "window_tokens": 6000,
+        "window_tokens": None,  # null → sized to the provider (summarize.WINDOW_TOKENS_BY_PROVIDER)
         "window_overlap_tokens": 300,
         "openai_model": "gpt-5",
         "openai_base_url": None,  # any OpenAI-compatible endpoint
@@ -287,6 +299,26 @@ def _set(node: dict[str, Any], dotted: str, value: Any) -> None:
             cur[part] = nxt
         cur = nxt
     cur[parts[-1]] = value
+
+
+#: Defaults that have since changed, as they were. ``save`` writes the whole merged
+#: config, so a file saved under an old default holds that default as if it were chosen —
+#: and would pin it forever. None of these keys is exposed in Settings, so a file value
+#: equal to the old default is taken to be the old default, and dropped on load.
+_OLD_DEFAULTS: dict[str, Any] = {
+    "llm.window_tokens": 6000,
+    "detection.sustain_s": 10,
+}
+
+
+def _forget_old_defaults(file_layer: dict[str, Any]) -> None:
+    for dotted, old in _OLD_DEFAULTS.items():
+        try:
+            value = _get(file_layer, dotted)
+        except KeyError:
+            continue
+        if value == old and not isinstance(value, bool):
+            _unset(file_layer, dotted)
 
 
 def _merge(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
@@ -440,6 +472,7 @@ class Config:
                 raise ConfigError(f"{path} is not valid JSON: {exc}") from exc
             if not isinstance(file_layer, dict):
                 raise ConfigError(f"{path} must contain a JSON object")
+            _forget_old_defaults(file_layer)
             data = _merge(data, file_layer)
         env = env_layer(environ)
         data = _merge(data, env)
