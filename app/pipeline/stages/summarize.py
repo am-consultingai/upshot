@@ -25,6 +25,20 @@ log = get(__name__)
 NOTES_NAME = "notes.json"
 LONG_MEETING_S = 20 * 60
 
+#: How much transcript one call carries when ``llm.window_tokens`` is left null. 6000 was
+#: once the only value, and for a hosted model it is a poor one: a 25 kB Hebrew transcript
+#: became two windows plus a merge — three calls of 1.5 to 2 minutes each through Claude
+#: Code, where one call of the same length would have done. The merge also costs quality
+#: under the free-form prompt, which is asked to fuse two finished HTML documents.
+WINDOW_TOKENS_BY_PROVIDER: dict[str, int] = {
+    "anthropic": 150_000,
+    "claude-subscription": 150_000,
+    "gemini": 150_000,
+    "openai": 100_000,
+}
+#: Local models and anything unrecognised: a small context is the safe assumption.
+DEFAULT_WINDOW_TOKENS = 6000
+
 
 def notes_path(folder: Path) -> Path:
     return Path(folder) / NOTES_NAME
@@ -89,6 +103,14 @@ def _overlap_chars(text: str, end: int, counter: TokenCounter, overlap_tokens: i
         else:
             high = mid - 1
     return best
+
+
+def window_tokens(ctx: StageContext, client: LlmClient) -> int:
+    """An explicit ``llm.window_tokens`` wins; null sizes the window to the provider."""
+    configured = ctx.config.get("llm.window_tokens")
+    if configured is not None:
+        return int(configured)
+    return WINDOW_TOKENS_BY_PROVIDER.get(client.name, DEFAULT_WINDOW_TOKENS)
 
 
 def glossary_block(ctx: StageContext) -> str | None:
@@ -163,7 +185,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
     windows = split_windows(
         transcript,
         counter,
-        target_tokens=int(ctx.config.get("llm.window_tokens", 6000)),
+        target_tokens=window_tokens(ctx, client),
         overlap_tokens=int(ctx.config.get("llm.window_overlap_tokens", 300)),
     )
     log.info("summarizing %d window(s) in %s (free-form)", len(windows), language)

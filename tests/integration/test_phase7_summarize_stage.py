@@ -172,3 +172,48 @@ def test_free_form_lets_the_prompt_decide_everything(tmp_path: Path) -> None:
     html = (meeting.path / "summary.html").read_text(encoding="utf-8")
     assert "<h9>Anything</h9>" in html, "passed through, not relaid out by the template"
     assert "labels" not in html
+
+
+def test_a_hosted_model_is_not_split_into_windows(tmp_path: Path) -> None:
+    """A 25 kB transcript went out as two windows and a merge: three calls where one
+    would do, each 1.5 to 2 minutes through Claude Code. Null sizes it to the provider."""
+
+    class ClaudeCode(FakeLlm):
+        name = "claude-subscription"
+
+    h, meeting = prepared(tmp_path / "auto")
+    ctx = h.context(meeting, JobStage.SUMMARIZE, services=Services())
+    assert summarize.window_tokens(ctx, ClaudeCode()) == 150_000
+    assert summarize.window_tokens(ctx, FakeLlm()) == summarize.DEFAULT_WINDOW_TOKENS
+
+    llm = ClaudeCode(chars_per_token=2.0)
+    ctx = h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=llm))
+    ctx.meeting.path.joinpath("transcript.md").write_text("שלום עולם " * 2500, encoding="utf-8")
+    summarize.run(ctx)
+    assert len(llm.calls) == 1, "one call, no merge"
+
+    h, meeting = prepared(tmp_path / "explicit", llm__window_tokens=8000)
+    ctx = h.context(meeting, JobStage.SUMMARIZE, services=Services())
+    assert summarize.window_tokens(ctx, ClaudeCode()) == 8000, "an explicit value wins"
+
+
+def test_a_forced_summary_leaves_the_transcript_alone(tmp_path: Path) -> None:
+    """Re-summarizing rewrites the notes and touches nothing upstream of them."""
+    h, meeting = prepared(tmp_path)
+    transcript = meeting.path / "transcript.md"
+    before = (transcript.read_bytes(), transcript.stat().st_mtime_ns)
+
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services()))
+    first = summarize.load_notes(meeting.path)
+
+    llm = FakeLlm()
+    ctx = h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=llm))
+    ctx.force = True
+    summarize.run(ctx)
+
+    assert llm.calls, "the forced run never called the model"
+    assert summarize.load_notes(meeting.path)["summary_html"]
+    assert (transcript.read_bytes(), transcript.stat().st_mtime_ns) == before, (
+        "the transcript was rewritten by a summary run"
+    )
+    assert first["summary_html"], "the first summary should still have been written"
