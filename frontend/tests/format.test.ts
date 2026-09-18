@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatElapsed, formatClock } from "../src/lib/format";
+import { formatDuration, formatElapsed, formatClock, formatEventTime } from "../src/lib/format";
 import { en } from "../src/locales/en";
 import type { MessageKey } from "../src/locales/en";
 
@@ -41,5 +41,26 @@ describe("formatElapsed", () => {
 describe("formatClock", () => {
   it("is zero padded", () => {
     expect(formatClock("2026-08-28T09:05:00Z")).toMatch(/^\d{2}:\d{2}$/);
+  });
+});
+
+describe("detector event times", () => {
+  it("reads as a time today, and carries the date once it is not", () => {
+    const now = new Date();
+    const earlier = new Date(now.getTime() - 60_000);
+    const today = formatEventTime(earlier.toISOString(), "en");
+    expect(today).toMatch(/\d{2}:\d{2}:\d{2}/);
+    expect(today).not.toContain("T");
+    // 24-hour, like every other time the app shows
+    expect(today).not.toMatch(/AM|PM/);
+
+    const lastWeek = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+    const older = formatEventTime(lastWeek.toISOString(), "en");
+    expect(older).toMatch(/[A-Za-z]{3}/); // a month name, not an ISO string
+    expect(older).not.toContain("T");
+  });
+
+  it("gives back anything it cannot parse, rather than NaN", () => {
+    expect(formatEventTime("not a date", "en")).toBe("not a date");
   });
 });
