@@ -1064,6 +1064,17 @@ def test_router() -> APIRouter:
             svc.conn.execute("DELETE FROM jobs")
             svc.conn.execute("DELETE FROM meetings")
             svc.conn.execute("DELETE FROM detector_events")
+            # And from the default appearance. These are saved settings, so a spec
+            # that switches the interface to Hebrew, or to dark, used to leave the
+            # next one running in it — the failure surfaced the moment the shell
+            # started adopting what was saved instead of always booting English.
+            # Read from DEFAULTS rather than restated here, so changing a default
+            # cannot silently make the reset wrong.
+            from app.config import DEFAULTS
+
+            for key in ("language", "theme"):
+                svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
+            svc.config.save()
         for event in body.get("detector_events", []):
             outcome = event.get("outcome", "shadow")
             svc.dao.add_detector_event(

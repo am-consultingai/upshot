@@ -115,6 +115,17 @@ export async function reset(request: APIRequestContext): Promise<void> {
 export async function gotoApp(page: Page, path = "/"): Promise<void> {
   await page.goto(path);
   await expect(page.getByTestId("app")).toBeVisible();
+  /*
+   * Wait for the event stream, not just for the page.
+   *
+   * Server-sent events have no replay, so anything published between the page
+   * rendering and its EventSource connecting is lost. A spec that seeds straight
+   * after gotoApp was racing that window: the detection-nudge test failed about
+   * one run in two, always by the nudge simply never arriving.
+   */
+  await expect(page.locator("html")).toHaveAttribute("data-stream", "open", {
+    timeout: 10_000,
+  });
 }
 
 /** A timestamp `minutes` in the past — a "recording now" card needs one. */
