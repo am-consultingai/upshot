@@ -71,29 +71,6 @@ test("content_dir_independent_of_chrome", async ({ page, seed }) => {
   expect(["ltr", "rtl"]).toContain(transcriptDir);
 });
 
-test("attention_lists_failures", async ({ page, seed }) => {
-  await seed([
-    {
-      id: "e2e-failed",
-      title: "Broken meeting",
-      state: "FAILED",
-      started_at: isoAt(0, 9),
-      jobs: { transcribe: "failed" },
-    },
-  ]);
-  const retried: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("/retry")) retried.push(request.url());
-  });
-  await gotoApp(page, "/attention");
-  const item = page
-    .getByTestId("attention-item")
-    .filter({ hasText: "Broken meeting" });
-  await expect(item).toBeVisible();
-  await item.getByTestId("retry").click();
-  await expect.poll(() => retried.length).toBeGreaterThan(0);
-});
-
 test("settings_roundtrip", async ({ page }) => {
   await gotoApp(page, "/settings");
   await page.getByTestId("summary-language").selectOption("he");
@@ -225,4 +202,117 @@ test("swept_audio_reads_as_deleted_not_missing", async ({ page, seed }) => {
   );
   await expect(page.getByTestId("no-audio")).toHaveCount(0);
   await expect(page.getByTestId("audio")).toHaveCount(0);
+});
+
+test("a_running_stage_shows_a_spinner_and_says_what_it_is_doing", async ({ page, seed }) => {
+  // "summarize: running" in grey text was the only sign of a five-minute job.
+  await seed([
+    {
+      id: "e2e-busy",
+      title: "Being summarized",
+      state: "SUMMARIZING",
+      started_at: isoAt(0, 10),
+      jobs: { summarize: "running" },
+      turns: [{ speaker: "ME", at_ms: 0, text: "first turn" }],
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-busy");
+  const status = page.getByTestId("stage-running");
+  await expect(status).toHaveText(/Summarizing/);
+  await expect(status.getByTestId("spinner")).toBeVisible();
+  await expect(page.getByTestId("summarize")).toHaveAttribute("data-busy", "true");
+  await expect(page.getByTestId("summarize").getByTestId("spinner")).toBeVisible();
+});
+
+test("view_prompt_opens_the_prompt_in_settings", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-prompt",
+      title: "Has a summary",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      summary_html: SUMMARY_HE,
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-prompt");
+  await page.getByTestId("view-prompt").click();
+  await expect(page).toHaveURL(/\/settings#prompt$/);
+  await expect(page.getByTestId("prompt-text")).toBeInViewport();
+});
+
+test("needs_attention_and_glossary_are_gone", async ({ page }) => {
+  await gotoApp(page);
+  await expect(page.getByTestId("nav-timeline")).toBeVisible();
+  await expect(page.getByTestId("nav-attention")).toHaveCount(0);
+  await expect(page.getByTestId("nav-glossary")).toHaveCount(0);
+});
+
+test("detector_page_explains_itself", async ({ page, seedBody }) => {
+  await seedBody({});
+  await gotoApp(page, "/detector");
+  await expect(page.getByTestId("detector-about")).toContainText("microphone");
+  await expect(page.getByTestId("detector-mode")).toBeVisible();
+  await expect(page.getByTestId("detector-empty")).toBeVisible();
+});
+
+test("a_detection_reaches_the_screen_without_a_reload", async ({ page, seedBody, seedMore }) => {
+  // The Detector page used to refresh only when something else happened, so a real call
+  // took about a minute to appear while the detector had decided in ten seconds.
+  await seedBody({});
+  await gotoApp(page, "/detector");
+  await expect(page.getByTestId("detector-empty")).toBeVisible();
+
+  await seedMore({
+    detector_events: [
+      { process: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", peak_score: 6, outcome: "shadow" },
+    ],
+  });
+
+  const row = page.getByTestId("detector-event");
+  await expect(row).toHaveCount(1, { timeout: 10_000 });
+  await expect(row.getByTestId("detector-score")).toHaveText("6");
+});
+
+test("detector_times_read_like_times", async ({ page, seedBody }) => {
+  await seedBody({
+    detector_events: [{ process: "Zoom.exe", peak_score: 7, outcome: "shadow" }],
+  });
+  await gotoApp(page, "/detector");
+  const when = page.getByTestId("detector-when");
+  await expect(when).toBeVisible();
+  const text = (await when.textContent()) ?? "";
+  expect(text).not.toContain("T");        // not the stored ISO string
+  expect(text).toMatch(/\d{1,2}:\d{2}/);  // a time someone would say
+});
+
+test("a_detected_meeting_nudges_on_any_screen", async ({ page, seedBody, seedMore }) => {
+  await seedBody({});
+  await gotoApp(page, "/settings"); // deliberately not the Detector page
+  await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
+
+  await seedMore({
+    detector_events: [
+      { process: "C:\\Program Files\\Zoom\\bin\\Zoom.exe", peak_score: 8, outcome: "shadow" },
+    ],
+  });
+
+  const nudge = page.getByTestId("detection-nudge");
+  await expect(nudge).toBeVisible({ timeout: 10_000 });
+  await expect(nudge).toContainText("Zoom");
+  await expect(nudge).toContainText("8");
+
+  await nudge.getByTestId("detection-nudge-dismiss").click();
+  await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
+});
+
+test("the_nudge_starts_the_recording_it_offers", async ({ page, seedBody, seedMore }) => {
+  await seedBody({});
+  await gotoApp(page, "/search");
+  await seedMore({ detector_events: [{ process: "Teams.exe", peak_score: 9, outcome: "shadow" }] });
+
+  await page.getByTestId("detection-nudge").waitFor({ timeout: 10_000 });
+  await page.getByTestId("detection-nudge-start").click();
+  await expect(page.getByTestId("recording-bar")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
+  await page.getByTestId("recording-bar-stop").click();
 });
