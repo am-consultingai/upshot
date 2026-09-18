@@ -1122,6 +1122,23 @@
         "summary": "Get Transcript"
       }
     },
+    "/api/recording/levels": {
+      "get": {
+        "description": "Both tracks' levels while a meeting records, for the live waveform.\n\nDeliberately not ``/audio/level``: that one falls back to opening a preview stream the\nmoment the recording ends, so a waveform left on screen would take the microphone.\nThis one only ever reads the recorder, and says it is done when the recording is.",
+        "operationId": "recording_levels_api_recording_levels_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recording Levels"
+      }
+    },
     "/api/recording/pause": {
       "post": {
         "operationId": "recording_pause_api_recording_pause_post",

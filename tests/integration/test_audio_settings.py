@@ -324,3 +324,49 @@ def test_devices_lists_playback_endpoints_too(api) -> None:  # type: ignore[no-u
     assert body["selected_output"] is None
     api.client().put("/api/settings", json={"values": {"audio.output_device": 7}})
     assert api.client().get("/api/audio/devices").json()["selected_output"] == 7
+
+
+# ------------------------------------------------------- the recording waveform
+
+
+def test_the_waveform_stream_follows_the_recording_and_never_opens_a_device(
+    tmp_path: Path, app_home: Path
+) -> None:
+    """The waveform reads the recorder's levels for both tracks, and ends with the
+    recording. Falling back to a preview stream, as the Settings meter does, would take
+    the microphone the moment Stop was pressed."""
+    from app.audio import monitor as meter
+
+    harness = build_harness(
+        tmp_path, audio__synthetic_pattern="tone", audio__synthetic_realtime=False
+    )
+    with serve(harness) as client:
+        idle: list[dict] = []
+        with client.stream("GET", "/api/recording/levels") as response:
+            for line in response.iter_lines():
+                if line.startswith("data: "):
+                    idle.append(json.loads(line[len("data: ") :]))
+                    break
+        assert idle == [{"done": True}], "nothing is recording, so nothing to stream"
+
+        assert client.post("/api/recording/start", json={}).status_code == 200
+        events: list[dict] = []
+        try:
+            with client.stream("GET", "/api/recording/levels") as response:
+                for line in response.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    events.append(json.loads(line[len("data: ") :]))
+                    if len(events) == 3:
+                        client.post("/api/recording/stop")
+                    if events[-1].get("done"):
+                        break
+        finally:
+            if harness.services.recorder.committed:
+                client.post("/api/recording/stop")
+
+    assert events[-1] == {"done": True}, events[-3:]
+    readings = events[:-1]
+    assert len(readings) >= 3
+    assert all({"me", "them", "paused"} <= set(event) for event in readings), readings
+    assert meter.active("me") is None and meter.active("them") is None
