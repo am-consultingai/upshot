@@ -20,9 +20,9 @@ export default function SearchPage() {
         value={term}
         placeholder={t("search.placeholder")}
         onChange={(event) => setTerm(event.target.value)}
-        className="w-full rounded border border-neutral-300 px-3 py-2"
+        className="w-full rounded border border-line px-3 py-2"
       />
-      <h2 className="mt-4 text-sm font-semibold text-neutral-500">{t("search.results")}</h2>
+      <h2 className="mt-4 text-sm font-semibold text-tertiary">{t("search.results")}</h2>
       <ul data-testid="search-results">
         {(results.data?.meetings ?? []).map((meeting) => (
           <li key={meeting.id} data-testid="search-result">

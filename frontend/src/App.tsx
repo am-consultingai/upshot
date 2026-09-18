@@ -54,8 +54,8 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={value}>
-      <div className="min-h-screen bg-neutral-50 text-neutral-900" data-testid="app">
-        <header className="border-b border-neutral-200 bg-white">
+      <div className="min-h-screen bg-surface-1 text-primary" data-testid="app">
+        <header className="border-b border-line-subtle bg-raised">
           <nav className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
             <span className="font-semibold" data-testid="app-title">
               {t("app.title")}
@@ -66,7 +66,7 @@ export default function App() {
                 to={item.to}
                 data-testid={item.testid}
                 className={({ isActive }) =>
-                  isActive ? "text-sm font-semibold underline" : "text-sm text-neutral-600"
+                  isActive ? "text-sm font-semibold underline" : "text-sm text-secondary"
                 }
               >
                 {t(item.key)}

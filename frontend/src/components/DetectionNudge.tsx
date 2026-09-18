@@ -46,9 +46,9 @@ export default function DetectionNudge({
   const who = appName(detection.process);
 
   return (
-    <div data-testid="detection-nudge" role="status" className="border-b border-amber-300 bg-amber-50">
+    <div data-testid="detection-nudge" role="status" className="border-b border-warning bg-warning-quiet">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2 text-sm">
-        <span className="font-medium text-amber-900">
+        <span className="font-medium text-warning">
           {t("detector.nudge")}
           {who ? ` — ${who}` : ""}
           {typeof detection.score === "number" ? ` (${detection.score})` : ""}
@@ -57,7 +57,7 @@ export default function DetectionNudge({
           data-testid="detection-nudge-start"
           busy={start.isPending}
           onClick={() => start.mutate()}
-          className="rounded bg-red-600 px-3 py-1 text-white"
+          className="rounded bg-danger px-3 py-1 text-on-solid"
         >
           {t("timeline.start")}
         </BusyButton>
@@ -65,7 +65,7 @@ export default function DetectionNudge({
           type="button"
           data-testid="detection-nudge-dismiss"
           onClick={onDismiss}
-          className="text-amber-900 underline"
+          className="text-warning underline"
         >
           {t("detector.nudgeDismiss")}
         </button>

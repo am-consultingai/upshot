@@ -93,7 +93,7 @@ export default function RecordingWaveform() {
 
   return (
     // Time runs left to right whatever the interface language, as it does on any timeline.
-    <div dir="ltr" className="relative h-20 w-full rounded border border-red-200 bg-white" data-testid="recording-waveform">
+    <div dir="ltr" className="relative h-20 w-full rounded border border-danger bg-raised" data-testid="recording-waveform">
       <canvas ref={canvas} className="block size-full" />
       <span className="pointer-events-none absolute start-1.5 top-0.5 text-[10px] font-medium" style={{ color: COLOUR.me }}>
         {t("recording.me")}

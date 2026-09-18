@@ -52,7 +52,7 @@ export default function MeetingCard({
       data-meeting-id={meeting.id}
       data-state={meeting.state}
       className={`rounded-lg border p-3 ${
-        recording ? "border-red-400 bg-red-50" : "border-neutral-200 bg-white"
+        recording ? "border-danger bg-danger-quiet" : "border-line-subtle bg-raised"
       }`}
     >
       <div className="flex items-center justify-between gap-3">
@@ -61,7 +61,7 @@ export default function MeetingCard({
         </Link>
         <StateBadge state={meeting.state} />
       </div>
-      <p className="mt-1 text-sm text-neutral-600">
+      <p className="mt-1 text-sm text-secondary">
         <span data-testid="meeting-clock">{formatClock(meeting.started_at)}</span>
         {" · "}
         <span data-testid="meeting-duration">{formatDuration(meeting.duration_s, t)}</span>
@@ -75,14 +75,14 @@ export default function MeetingCard({
             data-testid="stop-recording"
             busy={stopping}
             onClick={onStop}
-            className="rounded bg-red-600 px-2 py-1 text-white"
+            className="rounded bg-danger px-2 py-1 text-on-solid"
           >
             {t("timeline.stop")}
           </BusyButton>
         </p>
       )}
       {eta !== null && (
-        <p className="mt-2 text-sm text-neutral-600" data-testid="eta">
+        <p className="mt-2 text-sm text-secondary" data-testid="eta">
           {t("timeline.eta")}: {formatDuration(eta, t)}
         </p>
       )}
@@ -95,7 +95,7 @@ export default function MeetingCard({
           onClick={() => {
             if (window.confirm(t("meeting.deleteConfirm"))) onDelete();
           }}
-          className="mt-2 text-sm text-red-700 underline"
+          className="mt-2 text-sm text-danger underline"
         >
           {t("meeting.delete")}
         </BusyButton>
