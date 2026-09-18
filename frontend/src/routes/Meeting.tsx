@@ -277,7 +277,7 @@ export default function MeetingPage() {
         <div
           data-testid="summary-html"
           dir={dir}
-          className="mb-6 rounded border border-neutral-200 bg-white p-3"
+          className="summary-prose mb-6 rounded border border-neutral-200 bg-white p-4"
           dangerouslySetInnerHTML={{ __html: summary.data }}
         />
       ) : (
