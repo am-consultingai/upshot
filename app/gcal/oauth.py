@@ -63,6 +63,7 @@ EXPIRY_MARGIN_S = 60.0
 HTTP_TIMEOUT_S = 10.0
 
 REVOKE_BY_HAND = "https://myaccount.google.com/connections"
+CONNECTED_TTL_S = 5.0
 
 
 class CalendarAuthError(Exception):
@@ -136,6 +137,7 @@ class CalendarAuth:
         #: Set when Google rejects the client itself. Every refresh would fail the same
         #: way, so nothing is sent until the user connects again.
         self._client_rejected = False
+        self._connected_cache: tuple[bool, float] | None = None
 
     # ------------------------------------------------------------------ status
 
@@ -145,6 +147,17 @@ class CalendarAuth:
         except (OSError, ValueError) as exc:
             log.warning("google client unusable: %s", exc)
             return None
+
+    def connected(self) -> bool:
+        """Cheap: no client file, no network, and the credential store read at most every
+        few seconds. The detector asks this once a second."""
+        now = self._now()
+        cached = self._connected_cache
+        if cached is not None and now - cached[1] < CONNECTED_TTL_S:
+            return cached[0] and not self._client_rejected
+        value = bool(self._secrets.get(REFRESH_SECRET))
+        self._connected_cache = (value, now)
+        return value and not self._client_rejected
 
     def status(self) -> dict[str, Any]:
         self._expire_pending()
@@ -429,6 +442,7 @@ class CalendarAuth:
         self._http.close()
 
     def _announce(self) -> None:
+        self._connected_cache = None  # every state change passes through here
         if self._publish is None:
             return
         try:

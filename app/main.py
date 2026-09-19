@@ -147,6 +147,9 @@ def start_background(services: Services) -> None:
         # the setting can be changed from Settings while the app runs.
         detector.start()
         log.info("detector watching in %s mode", services.config.get("detection.mode"))
+    # Idle until a Google account is connected; see app/gcal/sync.py.
+    if services.calendar_sync is not None:
+        services.calendar_sync.start()
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point

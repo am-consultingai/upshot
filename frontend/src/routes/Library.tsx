@@ -9,6 +9,8 @@ import { daysFor, periodLabel, rangeFor, shift, startOfDay, type CalendarSpan } 
 import MeetingCard from "../components/MeetingCard";
 import MonthGrid from "../components/MonthGrid";
 import TimeGrid from "../components/TimeGrid";
+import EventDetails from "../components/EventDetails";
+import type { CalendarEvent } from "../api";
 
 type View = "list" | "calendar";
 
@@ -83,6 +85,14 @@ export default function Library() {
         : api.meetings(),
   });
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
+  // Google Calendar events, from the local cache. Empty until an account is connected.
+  const calendarEvents = useQuery({
+    queryKey: ["calendar-events", range.from, range.to],
+    queryFn: () => api.calendarEvents(range.from, range.to),
+    enabled: view === "calendar",
+  });
+  const [openEvent, setOpenEvent] = useState<CalendarEvent | null>(null);
+  const events = calendarEvents.data?.events ?? [];
 
   const stop = useMutation({
     mutationFn: api.stopRecording,
@@ -310,10 +320,11 @@ export default function Library() {
               </div>
             </div>
             {span === "month" ? (
-              <MonthGrid days={days} anchor={anchor} meetings={items} />
+              <MonthGrid days={days} anchor={anchor} meetings={items} events={events} />
             ) : (
-              <TimeGrid days={days} meetings={items} />
+              <TimeGrid days={days} meetings={items} events={events} onEvent={setOpenEvent} />
             )}
+            {openEvent && <EventDetails event={openEvent} onClose={() => setOpenEvent(null)} />}
           </div>
         ) : (
           <Outlet />

@@ -8,6 +8,8 @@ export interface Detection {
   process?: string;
   score?: number;
   state?: string;
+  /** The calendar meeting on now, when there is one: its name beats the app's. */
+  event?: string | null;
 }
 
 /** The app's own name for a process, which is all anyone wants to read. */
@@ -48,10 +50,14 @@ export default function DetectionNudge({
   return (
     <div data-testid="detection-nudge" role="status" className="border-b border-warning bg-warning-quiet">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2 text-sm">
-        <span className="font-medium text-warning">
-          {t("detector.nudge")}
-          {who ? ` — ${who}` : ""}
-          {typeof detection.score === "number" ? ` (${detection.score})` : ""}
+        <span className="font-medium text-warning" data-testid="detection-nudge-text">
+          {detection.state === "upcoming"
+            ? t("detector.nudgeStarting").replace("{title}", detection.event || t("calendar.untitled"))
+            : detection.event
+              ? t("detector.nudgeNamed").replace("{title}", detection.event)
+              : `${t("detector.nudge")}${who ? ` — ${who}` : ""}${
+                  typeof detection.score === "number" ? ` (${detection.score})` : ""
+                }`}
         </span>
         <BusyButton
           data-testid="detection-nudge-start"
