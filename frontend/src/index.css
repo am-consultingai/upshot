@@ -100,6 +100,23 @@ body :dir(rtl) {
 }
 
 /*
+ * Selection and focus are two different things and must look it.
+ *
+ * The selected row stays filled whether or not the list has focus — it is what
+ * the detail pane is showing, and that remains true while you read. The ring is
+ * drawn only while the list itself has focus, so moving into the transcript
+ * leaves the row filled but un-ringed rather than implying the arrow keys will
+ * still move it.
+ *
+ * WAI-ARIA is explicit that the focus indicator "must always be visible and
+ * distinctly differ from the selected state", which a single highlight cannot do.
+ */
+.ma-list:focus-visible [aria-selected="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/*
  * Summaries are HTML the model wrote, injected into the page by Meeting.tsx,
  * which owns the `.summary-prose` class these rules hang off.
  *
