@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Upshot">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset=".55" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="116" height="116" rx="30" fill="#0d1321" stroke="url(#g)" stroke-width="3"/>
+  <!-- the app/brand.py mark on its 32-unit grid, scaled 3x and centred -->
+  <g transform="translate(12 12) scale(3)" fill="url(#g)">
+    <path d="M2.500 10.200C3.625 10.200 4.750 11.582 5.875 13.100C7.000 14.618 8.125 16.000 9.250 16.000C10.375 16.000 11.500 14.618 12.625 13.100C13.750 11.582 14.875 10.200 16.000 10.200C17.125 10.200 18.250 11.582 19.375 13.100C20.500 14.618 21.625 16.000 22.750 16.000C23.875 16.000 25.000 14.618 26.125 13.100C27.250 11.582 28.375 10.200 29.500 10.200" fill="none" stroke="url(#g)" stroke-width="3" stroke-linecap="butt"/>
+    <rect x="2.5" y="20.3" width="27" height="3"/>
+  </g>
+</svg>
