@@ -19,10 +19,27 @@ export interface SeedMeeting {
   audio_seconds?: number;
   /** Pretend the retention sweep already removed this meeting's audio. */
   audio_deleted_at?: string;
+  /** Matched to this seeded calendar event. */
+  calendar?: { calendar_id: string; event_id: string; participants?: string[] };
+}
+
+/** A Google Calendar event, as a sync would have left it in the cache. */
+export interface SeedEvent {
+  id: string;
+  start: string;
+  end: string;
+  title?: string;
+  all_day?: boolean;
+  attendees?: string[];
+  response?: string;
+  conference_url?: string | null;
 }
 
 export interface SeedBody {
+  /** Clear the library, the events and the saved appearance first. */
+  reset?: boolean;
   meetings?: SeedMeeting[];
+  calendar_events?: SeedEvent[];
   detector_events?: {
     process?: string;
     window_title?: string;
