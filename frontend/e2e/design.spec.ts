@@ -248,3 +248,53 @@ test("the_appearance_choice_survives_a_reload", async ({ page }) => {
   await page.getByTestId("ui-theme").selectOption("light");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
+
+/**
+ * Two elements of the same screen that must behave in opposite ways under RTL.
+ *
+ * Speaker-side bubbles encode "me versus them" through reading order, exactly as
+ * WhatsApp and Telegram do, so they have to mirror in Hebrew — your own words
+ * belong on the side a Hebrew reader starts from. The transport does not: play
+ * has never mirrored in any player, and neither has a waveform, because time
+ * runs left to right regardless of the language wrapped around it.
+ *
+ * Getting these the same way round is the actual failure mode — a pinned-LTR
+ * container with mirrored bubbles inside, or mirrored transport controls.
+ */
+test("transcript_sides_mirror_in_hebrew_but_the_transport_does_not", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-rtl-sides",
+      title: "פגישה",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      audio_seconds: 4,
+      turns: [
+        { speaker: "THEM", at_ms: 0, text: "שאלה" },
+        { speaker: "ME", at_ms: 1500, text: "תשובה" },
+      ],
+    },
+  ]);
+
+  await gotoApp(page, "/settings");
+  await page.getByTestId("ui-language").selectOption("he");
+  await gotoApp(page, "/m/e2e-rtl-sides");
+
+  const mine = page.locator('[data-testid="transcript-turn"][data-track="me"]').first();
+  const theirs = page.locator('[data-testid="transcript-turn"][data-track="them"]').first();
+  const mineBox = await mine.boundingBox();
+  const theirsBox = await theirs.boundingBox();
+  expect(mineBox).not.toBeNull();
+  expect(theirsBox).not.toBeNull();
+
+  // In Hebrew, my own words sit on the side the reader starts from: the right.
+  expect(
+    mineBox!.x,
+    "the speaker's own bubbles must mirror with the language",
+  ).toBeGreaterThan(theirsBox!.x);
+
+  // The transport keeps its direction whatever the interface language is.
+  expect(
+    await page.getByTestId("audio-player").evaluate((el) => getComputedStyle(el).direction),
+  ).toBe("ltr");
+});
