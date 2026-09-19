@@ -36,6 +36,31 @@ def test_tray_reflects_the_recorder(tmp_path: Path, app_home: Path) -> None:
     assert meetings and meetings[0].state in (MeetingState.RECORDED, MeetingState.DISCARDED)
 
 
+def test_open_dashboard_hands_every_click_a_fresh_link(
+    tmp_path: Path, app_home: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """The startup link is spent by the first browser. Opening from the tray in another
+    browser profile must still work, so each click brings its own one-time link."""
+    import webbrowser
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    harness = build_harness(tmp_path)
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    tray = TrayApp(harness.services)
+    tray.dispatch(Action.OPEN)
+    tray.dispatch(Action.OPEN)
+    assert len(set(opened)) == 2 and all("/?k=" in url for url in opened)
+
+    app = create_app(harness.services)
+    for url in opened:
+        browser = TestClient(app, base_url=harness.base_url)
+        assert browser.get(url.removeprefix(harness.base_url)).status_code == 200
+
+
 def test_mute_toggle_is_reflected(tmp_path: Path, app_home: Path) -> None:
     harness = build_harness(tmp_path)
     tray = TrayApp(harness.services)

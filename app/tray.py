@@ -53,14 +53,15 @@ class TrayApp:
         services: Services,
         *,
         on_action: Callable[[Action], None] | None = None,
-        open_url: str | None = None,
     ) -> None:
         self.services = services
         self.on_action = on_action or self.dispatch
-        self.open_url = open_url or (f"http://127.0.0.1:{services.config.server_port}/")
         self.state = AppState(detector_mode=str(services.config.get("detection.mode", "shadow")))
         self.icon: Any = None
         self._stop = threading.Event()
+
+    def open_link(self) -> str:
+        return self.services.auth.link(self.services.config.server_port)
 
     # -- state -------------------------------------------------------------
 
@@ -132,7 +133,10 @@ class TrayApp:
             else:
                 services.recorder.pause()
         elif action is Action.OPEN:
-            webbrowser.open(self.open_url)
+            # A fresh one-time link on every click. The single link minted at startup
+            # was spent by the first browser, so a second browser profile opened from
+            # here used to be refused with nowhere to get another.
+            webbrowser.open(self.open_link())
         elif action is Action.MUTE_HOUR:
             muted = not bool(services.extras.get("detector_muted", False))
             services.extras["detector_muted"] = muted
@@ -221,10 +225,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     # nothing else before, so the tray build — the one the installer runs — had no
     # detector at all, whatever the mode said.
     start_background(services)
-    token = services.auth.issue_token()
-    url = f"http://127.0.0.1:{services.config.server_port}/?k={token}"
-    log.info("open %s", url)
-    tray = TrayApp(services, open_url=url)
+    from app import paths
+    from app.api.security import write_launcher_key
+
+    write_launcher_key(services.auth, paths.app_home())
+    tray = TrayApp(services)
     try:
         tray.run()
     finally:

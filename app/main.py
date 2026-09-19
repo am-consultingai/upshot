@@ -130,7 +130,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     # Middleware runs in reverse registration order, so this registers
     # CSRF, then auth, then the host check — and the host check runs first.
     app.add_middleware(CsrfMiddleware, auth=svc.auth)
-    app.add_middleware(AuthMiddleware, auth=svc.auth)
+    app.add_middleware(AuthMiddleware, auth=svc.auth, port=svc.config.server_port)
     app.add_middleware(HostHeaderMiddleware, port=svc.config.server_port)
     # No CORS middleware at all: no Access-Control-Allow-Origin on any response.
     return app
@@ -164,8 +164,12 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
 
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
     start_background(services)
-    token = services.auth.issue_token()
-    url = f"http://127.0.0.1:{services.config.server_port}/?k={token}"
+    from app import paths
+    from app.api.security import write_launcher_key
+
+    # The launcher asks for fresh links with this; see AuthMiddleware and LINK_PATH.
+    write_launcher_key(services.auth, paths.app_home())
+    url = services.auth.link(services.config.server_port)
     log.info("open %s", url)
     print(f"\n  Upshot is running. Open this once to authorize the browser:\n\n  {url}\n")
     try:

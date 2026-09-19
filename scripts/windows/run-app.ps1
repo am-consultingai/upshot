@@ -437,8 +437,8 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
     Write-Good "opening your default browser - no need to click the link below"
     Write-Host "  $url"
     Write-Host "  (the ?k= part authorizes the browser once; afterwards just use"
-    Write-Host "   http://127.0.0.1:$Port/. A different browser needs a fresh link,"
-    Write-Host "   which means restarting this script.)"
+    Write-Host "   http://127.0.0.1:$Port/. Another browser, or another browser profile,"
+    Write-Host "   needs its own link: press N in this window for a fresh one.)"
     Start-Process $url
 
     Write-Host ""
@@ -462,7 +462,7 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
         Write-Host "    Summaries are placeholders for this run (-Provider was set to fake)."
     }
     Write-Host ""
-    Write-Host "  Ctrl+C stops the app." -ForegroundColor White
+    Write-Host "  N prints a fresh link for another browser. Ctrl+C stops the app." -ForegroundColor White
     Write-Host ""
 
     # Tail the log while watching the process. `Get-Content -Wait` on its own waits
@@ -470,7 +470,29 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
     # looks like: on 2026-09-18 the app died inside a Windows notification call and this
     # window went on showing the last line as if all were well.
     $shown = 0
+    $keyFile = Join-Path $HomeDir "launcher.key"
     while (-not $appProcess.HasExited) {
+        # N: a fresh one-time link, for a browser or profile that was never authorized.
+        # The app only hands one out to a caller holding the key it wrote to $HomeDir.
+        # KeyAvailable throws when there is no console to read, e.g. under a redirect.
+        $pressed = $null
+        try {
+            if ([Console]::KeyAvailable) { $pressed = [Console]::ReadKey($true) }
+        } catch { }
+        if ($pressed -and $pressed.Key -eq [ConsoleKey]::N) {
+            try {
+                $key = (Get-Content $keyFile -Raw).Trim()
+                $link = Invoke-RestMethod -Method Post -TimeoutSec 5 `
+                    -Uri "http://127.0.0.1:$Port/api/auth/link" `
+                    -Headers @{ "X-Upshot-Launcher" = $key }
+                Write-Host ""
+                Write-Good "a fresh link, good for one browser, once. Paste it into the one you want:"
+                Write-Host "  $($link.url)" -ForegroundColor White
+                Write-Host ""
+            } catch {
+                Write-Bad "could not get a fresh link: $($_.Exception.Message)"
+            }
+        }
         $lines = @(Get-Content $errLog -ErrorAction SilentlyContinue)
         if ($lines.Count -gt $shown) {
             $lines[$shown..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
