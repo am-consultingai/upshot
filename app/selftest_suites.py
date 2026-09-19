@@ -1229,9 +1229,7 @@ def _capture_injected(args: argparse.Namespace) -> list[Check]:
             return checks
 
         heard = {track: _wav_samples(path) for track, path in files.items()}
-        expected = {
-            track: _chirp_samples(cfg_rate, seconds, *sweeps[track]) for track in sweeps
-        }
+        expected = {track: _chirp_samples(cfg_rate, seconds, *sweeps[track]) for track in sweeps}
         for track in ("me", "them"):
             import numpy as np
 

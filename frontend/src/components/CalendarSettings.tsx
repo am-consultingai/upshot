@@ -61,6 +61,23 @@ export default function CalendarSettings() {
     },
   });
 
+  const syncNow = useMutation({ mutationFn: api.calendarSyncNow, onSuccess: settle });
+  const forget = useMutation({
+    mutationFn: api.calendarForget,
+    onSuccess: (next) => {
+      settle(next);
+      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
+  });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const prompt = ((settings.data?.config ?? {}) as {
+    calendar?: { prompt_title?: boolean; prompt_attendees?: boolean };
+  }).calendar;
+  const saveSetting = useMutation({
+    mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
   const data = status.data;
   const error = data?.error ?? (connect.error ? String(connect.error.message) : null);
 
@@ -152,6 +169,76 @@ export default function CalendarSettings() {
             {t(data.state === "reconnect" ? "calendar.reconnect" : "calendar.connect")}
           </BusyButton>
         )}
+      </SettingRow>
+
+      {data?.state === "connected" && (
+        <SettingRow
+          label={t("calendar.syncLabel")}
+          description={
+            <span data-testid="calendar-sync-status">
+              {data.last_synced_at
+                ? t("calendar.syncedAt")
+                    .replace("{time}", new Date(data.last_synced_at).toLocaleString())
+                    .replace("{count}", String(data.cached_events ?? 0))
+                : t("calendar.notSyncedYet")}
+              {data.sync_error && <span className="mt-1 block text-warning">{data.sync_error}</span>}
+              <span className="mt-1 block">{t("calendar.whatIsKept")}</span>
+            </span>
+          }
+        >
+          <BusyButton
+            data-testid="calendar-sync-now"
+            busy={syncNow.isPending}
+            onClick={() => syncNow.mutate()}
+            className={SECONDARY}
+          >
+            {t("calendar.syncNow")}
+          </BusyButton>
+          <BusyButton
+            data-testid="calendar-forget"
+            busy={forget.isPending}
+            onClick={() => forget.mutate()}
+            className={SECONDARY}
+          >
+            {t("calendar.deleteCache")}
+          </BusyButton>
+        </SettingRow>
+      )}
+
+      {/*
+       * What of the calendar may reach the summary model, which may be a hosted one.
+       * The title is on by default; attendee names are off until the user turns them on
+       * here, which is the asking. The description never goes, so it has no switch.
+       */}
+      <SettingRow
+        label={t("calendar.promptTitle")}
+        htmlFor="calendar-prompt-title"
+        description={t("calendar.promptTitleHint")}
+      >
+        <input
+          id="calendar-prompt-title"
+          data-testid="calendar-prompt-title"
+          type="checkbox"
+          checked={prompt?.prompt_title ?? true}
+          onChange={(change) => saveSetting.mutate({ "calendar.prompt_title": change.target.checked })}
+          className="size-4"
+        />
+      </SettingRow>
+      <SettingRow
+        label={t("calendar.promptAttendees")}
+        htmlFor="calendar-prompt-attendees"
+        description={t("calendar.promptAttendeesHint")}
+      >
+        <input
+          id="calendar-prompt-attendees"
+          data-testid="calendar-prompt-attendees"
+          type="checkbox"
+          checked={prompt?.prompt_attendees ?? false}
+          onChange={(change) =>
+            saveSetting.mutate({ "calendar.prompt_attendees": change.target.checked })
+          }
+          className="size-4"
+        />
       </SettingRow>
     </SettingGroup>
   );

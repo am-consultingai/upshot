@@ -208,7 +208,14 @@ DEFAULTS: dict[str, Any] = {
         "transcript_days": None,
         "sweep_hours": 6,  # how often the worker looks; 0 disables the sweep entirely
     },
-    "enrichment": {"source": "null", "timeout_s": 2.0},  # null|fake
+    "enrichment": {"source": "google", "timeout_s": 2.0},  # google|null|fake
+    "calendar": {
+        # What of a matched calendar event may go to the summary model (Calendar 7). The
+        # title is on by default; attendee names are asked for first, in Settings. An
+        # event's description never goes, whatever these say.
+        "prompt_title": True,
+        "prompt_attendees": False,
+    },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},
@@ -233,7 +240,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "llm.provider": ("anthropic", "openai", "gemini", "claude-subscription", "ollama", "fake"),
     "delivery.mode": ("draft", "auto_send"),
     "delivery.notifier": ("windows", "fake"),
-    "enrichment.source": ("null", "fake"),
+    "enrichment.source": ("google", "null", "fake"),
     "db.fts": ("auto", "off"),
     "secrets.backend": ("keyring", "memory"),
 }
@@ -312,6 +319,10 @@ def _set(node: dict[str, Any], dotted: str, value: Any) -> None:
 _OLD_DEFAULTS: dict[str, Any] = {
     "llm.window_tokens": 6000,
     "detection.sustain_s": 10,
+    # V1 shipped without a calendar, so every config saved before Calendar 2 holds
+    # "null" here. Left alone, an installation that has run once would never read a
+    # calendar however plainly the user connected one.
+    "enrichment.source": "null",
 }
 
 

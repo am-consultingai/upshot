@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +65,24 @@ def slugify(text: str, limit: int = 40) -> str:
     while "--" in slug:
         slug = slug.replace("--", "-")
     return slug[:limit]
+
+
+#: Titles something automatic may replace. A title the user typed never is.
+AUTOMATIC_TITLES = frozenset({"window", "llm", "calendar"})
+
+
+def title_is_open(meeting: Meeting) -> bool:
+    return not meeting.title or meeting.title_source in AUTOMATIC_TITLES
+
+
+def calendar_payload(meeting: Meeting) -> dict[str, Any]:
+    if not meeting.calendar_json:
+        return {}
+    try:
+        payload = json.loads(meeting.calendar_json)
+    except ValueError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 class MeetingService:
@@ -145,14 +163,81 @@ class MeetingService:
         return self.apply_enrichment(meeting, enrichment)
 
     def apply_enrichment(self, meeting: Meeting, enrichment: Enrichment) -> Meeting:
-        fields: dict[str, Any] = {}
-        if enrichment.title and not meeting.title:
+        """Store what the calendar says, and take its title where the title is open.
+
+        Title precedence (Calendar 4): the user's own name, then the calendar, then the
+        model, then the window title. ``title_source`` records which one won, and a title
+        given at creation with no source was typed by someone and is treated as theirs.
+        """
+        raw = enrichment.as_raw()
+        state = str((raw.get("match") or {}).get("state", "matched"))
+        previous = calendar_payload(meeting)
+        previous_match = previous.get("match") or {}
+        if previous_match.get("source") == "user":
+            return meeting  # the user chose the event; nothing automatic overrides that
+        if previous_match.get("state") == "matched" and state != "matched":
+            # A later, vaguer look never undoes a confident match.
+            return meeting
+        fields: dict[str, Any] = {"calendar_json": json.dumps(raw, ensure_ascii=False)}
+        if enrichment.title and title_is_open(meeting):
             fields["title"] = enrichment.title
             fields["title_source"] = "calendar"
-        fields["calendar_json"] = json.dumps(enrichment.as_raw(), ensure_ascii=False)
         updated = self.dao.update_meeting(meeting.id, **fields)
-        log.info("enrichment from %s applied to %s", self.enrichment_source.name, meeting.id)
+        log.info(
+            "enrichment from %s applied to %s (%s)",
+            self.enrichment_source.name,
+            meeting.id,
+            state,
+        )
         return updated
+
+    def rematch(self, meeting_id: str) -> Meeting:
+        """Match again with what is known now: the real end time, or events that arrived
+        after the recording started. Never a meeting whose title the user wrote."""
+        meeting = self.dao.require_meeting(meeting_id)
+        if meeting.title_source == "user":
+            return meeting
+        outcome = fetch(
+            self.enrichment_source,
+            parse_iso(meeting.started_at),
+            parse_iso(meeting.ended_at) if meeting.ended_at else None,
+            timeout_s=float(self.config.get("enrichment.timeout_s", 2.0)),
+        )
+        if outcome.enrichment is None:
+            return meeting
+        return self.apply_enrichment(meeting, outcome.enrichment)
+
+    def rematch_recent(self, days: int = 30) -> int:
+        """After a sync: give every recent meeting without a confident match another look."""
+        since = iso(self.clock.now() - timedelta(days=days))
+        changed = 0
+        for meeting in self.dao.list_meetings(frm=since, limit=500):
+            match_state = (calendar_payload(meeting).get("match") or {}).get("state")
+            if match_state == "matched" or meeting.title_source == "user":
+                continue
+            if meeting.state in (MeetingState.RECORDING, MeetingState.DISCARDED):
+                continue
+            if self.rematch(meeting.id).calendar_json != meeting.calendar_json:
+                changed += 1
+        return changed
+
+    def choose_event(self, meeting_id: str, payload: dict[str, Any] | None) -> Meeting:
+        """The user picked the event, or said there is none. Final: nothing re-matches it.
+
+        ``payload`` is a snapshot from ``app.gcal.source.snapshot`` or None for "no event".
+        """
+        meeting = self.dao.require_meeting(meeting_id)
+        if payload is None:
+            raw: dict[str, Any] = {"match": {"state": "none", "source": "user"}}
+            fields: dict[str, Any] = {"calendar_json": json.dumps(raw)}
+            if meeting.title_source == "calendar":
+                fields["title_source"] = "user"  # keep the name, but it is theirs now
+            return self.dao.update_meeting(meeting_id, **fields)
+        fields = {"calendar_json": json.dumps(payload, ensure_ascii=False)}
+        if payload.get("title") and meeting.title_source != "user":
+            fields["title"] = payload["title"]
+            fields["title_source"] = "calendar"
+        return self.dao.update_meeting(meeting_id, **fields)
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -180,6 +265,8 @@ class MeetingService:
             log.info("meeting %s is %ss (< %ss) — discarding", meeting_id, seconds, minimum)
             return self.dao.set_state(meeting_id, MeetingState.DISCARDED)
         updated = self.dao.set_state(meeting_id, MeetingState.RECORDED)
+        # Now the end is known, which is what tells a late start from the next meeting.
+        updated = self.rematch(meeting_id)
         meta.mirror(self.dao.require_meeting(meeting_id))
         if enqueue:
             self.queue.enqueue(meeting_id, JobStage.TRANSCRIBE)

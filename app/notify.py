@@ -114,6 +114,16 @@ class BaseNotifier:
             )
         )
 
+    def meeting_starting(self, key: str, title: str) -> None:
+        """A calendar meeting is starting and nothing is recording. Said once per event."""
+        self.show(
+            Toast(
+                title=f"{title or 'A meeting'} is starting",
+                body="Upshot is not recording it. Open Upshot to record.",
+                key=f"starting:{key}",
+            )
+        )
+
     def near_miss(self, process: str, when: str) -> None:
         self.show(
             Toast(

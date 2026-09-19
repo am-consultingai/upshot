@@ -38,7 +38,8 @@ class Services:
     asr: Any = None  # overridden in tests via config-selected fakes
     llm: Any = None
     detector: Any = None
-    calendar: Any = None  # app.gcal.oauth.CalendarAuth, made on first use by the routes
+    calendar: Any = None  # app.gcal.oauth.CalendarAuth
+    calendar_sync: Any = None  # app.gcal.sync.CalendarSync
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -48,6 +49,8 @@ class Services:
         # closing database during shutdown.
         if self.detector is not None:
             self.detector.stop()
+        if self.calendar_sync is not None:
+            self.calendar_sync.stop()
         # A connect in progress holds a listening socket open for up to five minutes.
         if self.calendar is not None:
             self.calendar.close()
@@ -67,17 +70,24 @@ def build(
     dao = Dao(conn, clock)
     queue = JobQueue(conn, clock)
     events = EventBus()
+    calendar, calendar_sync, source = build_calendar(cfg, conn, events, clock)
+    from app.gcal.source import CalendarNow
+
+    calendar_now = CalendarNow(calendar_sync.store, available=calendar.connected)
     services = Services(
         config=cfg,
         conn=conn,
         dao=dao,
         queue=queue,
-        meetings=MeetingService(cfg, dao, queue, clock=clock),
+        meetings=MeetingService(cfg, dao, queue, clock=clock, source=source),
         events=events,
         auth=AuthState(),
         clock=clock,
         mailer=Mailer(cfg),
+        calendar=calendar,
+        calendar_sync=calendar_sync,
     )
+    calendar_sync.on_synced = lambda: services.meetings.rematch_recent()
     from app.notify import make_notifier
 
     services.notifier = make_notifier(cfg, events=events)
@@ -101,6 +111,7 @@ def build(
             clock=clock,
             notifier=services.notifier,
             events=events,
+            calendar=calendar_now,
         )
     if with_worker:
         from app.pipeline.stages import registry
@@ -115,3 +126,43 @@ def build(
             services=services,
         )
     return services
+
+
+def build_calendar(
+    cfg: Config, conn: sqlite3.Connection, events: EventBus, clock: Clock
+) -> tuple[Any, Any, Any]:
+    """The Google connection, its event cache and sync, and the enrichment source.
+
+    Built whether or not an account is connected: every piece asks ``connected()`` and
+    does nothing until it is, so connecting in Settings needs no restart.
+    """
+    from app.gcal.events import EventStore
+    from app.gcal.oauth import CalendarAuth
+    from app.gcal.sync import CalendarSync
+
+    store = EventStore(conn)
+    sync_ref: list[Any] = []
+
+    def on_auth(**payload: Any) -> None:
+        events.publish("calendar", **payload)
+        if sync_ref and payload.get("state") == "connected":
+            sync_ref[0].kick()
+
+    auth = CalendarAuth(
+        cfg.secrets,
+        publish=on_auth,
+        app_url=f"http://127.0.0.1:{cfg.server_port}/settings#calendar",
+    )
+    sync = CalendarSync(
+        auth,
+        store,
+        clock=clock,
+        publish=lambda **payload: events.publish("calendar", **payload),
+    )
+    sync_ref.append(sync)
+    source = None
+    if str(cfg.get("enrichment.source", "google")) == "google":
+        from app.gcal.source import GoogleCalendarSource
+
+        source = GoogleCalendarSource(store, available=auth.connected)
+    return auth, sync, source

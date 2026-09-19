@@ -1,4 +1,8 @@
-"""Which enrichment source is wired — ``null`` unless a test says otherwise."""
+"""Which enrichment source is wired when none is handed in.
+
+``google`` needs the event cache and the connection, so ``services.build`` makes it and
+passes it to ``MeetingService``; anything that builds a service without one gets null.
+"""
 
 from __future__ import annotations
 

@@ -119,7 +119,8 @@ export default function App() {
       };
       // "shadow" is the verdict reached while only watching: a meeting we are not
       // recording. In automatic mode the recording has already started and the bar says so.
-      if (payload.state === "shadow") setDetected(payload);
+      // "upcoming" is a calendar meeting starting with nothing recording it.
+      if (payload.state === "shadow" || payload.state === "upcoming") setDetected(payload);
     });
     return () => {
       source.close();
