@@ -900,3 +900,48 @@ correct, and deliberately withheld from `prefers-color-scheme` until no componen
 colour — because with the components unmigrated, flipping the tokens left a light background
 under near-white text and made the summary invisible. That was found by looking at a
 screenshot, which is also the general lesson: the CSS read correctly the whole time.
+
+## D43 — Google Calendar connects over loopback OAuth, in plain HTTP, with the client baked in
+
+Calendar 1 (ClickUp `z8tj1h8jrg`, epic `z8tj1h8jrf`) connects one Google account. How:
+
+**Loopback with PKCE, on a listener of its own.** Connect opens a one-shot HTTP listener on
+`127.0.0.1:<ephemeral>` and sends the user's own browser to Google's consent page. Google
+redirects back to the listener, which takes the first request carrying a `state`, checks it
+in constant time, exchanges the code with the PKCE verifier, answers "you can close this
+tab" and stops. It is not the app's own server on port 8000: that server sits behind
+cookie auth and CSRF, which a redirect from Google cannot satisfy, and punching a hole in
+that stack for one route is worse than a second socket that lives for at most five minutes.
+Out-of-band ("paste this code") is not an alternative: Google blocked it for every client
+on 2023-01-31.
+
+**Scope `calendar.events.readonly`, nothing else.** The account's address, which Settings
+shows, is read from the primary calendar's `summary` rather than from an identity scope, so
+the consent screen asks for exactly one thing. Google lets the user untick that one thing
+and still press Continue; that is caught and the partial grant is revoked, instead of
+storing a token that can read nothing.
+
+**No Google client libraries.** Four endpoints (auth, token, revoke, events) are plain
+`httpx`. `google-auth` and `googleapiclient` would add megabytes to the installer to wrap
+calls that are a form post each, and would hide the error codes the design depends on.
+
+**The client ships in the application and never in git.** It is a *Desktop app* client;
+its secret is not confidential by Google's own definition, and PKCE plus the loopback
+redirect are what protect the flow. But the repository is public, and a client posted there
+is found by leak scanners and can be disabled, which breaks every installation at once. So
+the downloaded JSON sits at `app/gcal/google_oauth_client.json`, ignored by git, and the
+PyInstaller spec copies it into the bundle when it exists. `UP_GOOGLE_CLIENT` points
+elsewhere for a run. What happens when the client is disabled anyway, and a fallback for it,
+is ClickUp `z8tj1h900g`.
+
+**Tokens.** The refresh token and the account address go to the OS credential store through
+`SecretStore`, never to `app_config.json`. Access tokens live in memory, with their expiry
+taken from Google's `expires_in` on the monotonic clock, so a wrong wall clock cannot make a
+live token look expired or a dead one look live.
+
+**Failures are states.** `invalid_grant` on refresh — revoked, expired, or a Testing-mode
+token past its seven days — deletes the token and shows *Reconnect*; nothing retries it. A
+rejected client (`invalid_client`) stops all token requests until the user connects again.
+No network is the opposite case: the token is kept and the caller tries later. Disconnect
+calls Google's revoke endpoint **and** deletes locally, whatever the revoke says; when the
+revoke could not be sent, Settings says so and links to the account's connections page.
