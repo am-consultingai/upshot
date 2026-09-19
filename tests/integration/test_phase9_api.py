@@ -68,6 +68,39 @@ def test_token_exchange_once(api) -> None:  # type: ignore[no-untyped-def]
     second = other.get(f"/?k={token}")
     assert second.status_code == 401
     assert "already been used" in second.json()["detail"]
+    assert "press N" in second.json()["detail"], "and it says where the next one comes from"
+
+
+def test_the_launcher_gets_a_fresh_link_with_its_key(api, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A second browser profile needs its own link. The launcher asks for one with the
+    key the app wrote to its home folder; nothing without the key gets one."""
+    from fastapi.testclient import TestClient
+
+    from app.api.security import LAUNCHER_HEADER, write_launcher_key
+
+    key = write_launcher_key(api.services.auth, tmp_path).read_text()
+    stranger = TestClient(api.app, base_url=api.base_url)
+    assert stranger.post("/api/auth/link").status_code == 401
+    assert stranger.post("/api/auth/link", headers={LAUNCHER_HEADER: "guess"}).status_code == 401
+
+    first = stranger.post("/api/auth/link", headers={LAUNCHER_HEADER: key}).json()["url"]
+    second = stranger.post("/api/auth/link", headers={LAUNCHER_HEADER: key}).json()["url"]
+    port = api.services.config.server_port
+    assert first.startswith(f"http://127.0.0.1:{port}/?k=") and first != second
+
+    browser = TestClient(api.app, base_url=api.base_url)
+    assert browser.get(first.removeprefix(f"http://127.0.0.1:{port}")).status_code == 200
+    assert browser.get("/api/status").status_code == 200, "the link authorized that browser"
+
+
+def test_an_unauthorized_browser_gets_a_page_that_says_what_to_do(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client(authorized=False)
+    page = client.get("/settings", headers={"Accept": "text/html,application/xhtml+xml"})
+    assert page.status_code == 401
+    assert page.headers["content-type"].startswith("text/html")
+    assert "Open dashboard" in page.text and "press <b>N</b>" in page.text
+    # The UI's own fetches still get JSON they can read.
+    assert client.get("/api/status", headers={"Accept": "text/html"}).json()["detail"]
 
 
 def test_spent_token_does_not_lock_out_an_authorized_browser(api) -> None:  # type: ignore[no-untyped-def]
