@@ -136,6 +136,13 @@
   --scrim: rgb(0 0 0 / 35%);
 
   /*
+   * The dropdown chevron, as a background image, because a native select cannot
+   * be given a child element and `currentColor` does not reach a background.
+   * Restated per theme for the same reason.
+   */
+  --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2315161a' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
+
+  /*
    * Status colours stay hand-picked rather than derived: recording red and the
    * detector's amber have to mean exactly one thing each, and a mix that drifts
    * with the canvas would undermine that.
@@ -188,6 +195,8 @@
     --lift: var(--ink);
     --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
     --scrim: rgb(0 0 0 / 60%);
+  --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
+    --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
 
     --shadow-sm: none;
     --shadow-md: none;
@@ -208,6 +217,7 @@
   --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
 
   --scrim: rgb(0 0 0 / 60%);
+  --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
 
   /*
    * Elevation without shadows, which is what Linear and Raycast both do: a
