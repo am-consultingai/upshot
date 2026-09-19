@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -166,6 +167,44 @@ def system_text(ctx: StageContext) -> tuple[str, str]:
     return shipped.text, shipped.version
 
 
+#: A link with a token in it, or a dial-in PIN: never sent to a model, even inside a title.
+_URL = re.compile(r"https?://\S+", re.IGNORECASE)
+_PIN = re.compile(r"(?i)\b(pin|passcode|password|code)\b\W*\d[\d\s#-]{3,}")
+
+
+def redact(text: str) -> str:
+    return _PIN.sub(r"\1 [removed]", _URL.sub("[link removed]", text)).strip()
+
+
+def meeting_context(ctx: StageContext) -> str | None:
+    """What the user's calendar says about this meeting, for the model (Calendar 4 and 7).
+
+    Only for a confident or user-chosen match, never for an event marked private, and
+    only what Settings allows: the title by default, attendee names when the user turned
+    that on. Never the description, never an address, never a meeting link.
+    """
+    from app.meetings import calendar_payload
+
+    payload = calendar_payload(ctx.meeting)
+    if (payload.get("match") or {}).get("state") != "matched" or payload.get("private"):
+        return None
+    lines: list[str] = []
+    title = redact(str(payload.get("title") or ""))
+    if title and ctx.config.get("calendar.prompt_title", True):
+        lines.append(f"Title: {title}")
+    names = [redact(str(name)) for name in payload.get("participants") or [] if name]
+    if names and ctx.config.get("calendar.prompt_attendees", False):
+        more = int(payload.get("participants_more") or 0)
+        listed = ", ".join(names) + (f", and {more} more" if more else "")
+        lines.append(
+            f"Invited (from the calendar invitation; the list may be incomplete): {listed}. "
+            "Action-item owners should be people from this list or the speaker labelled ME."
+        )
+    if not lines:
+        return None
+    return "Meeting details from the user's calendar:\n" + "\n".join(lines)
+
+
 def summarize(ctx: StageContext, transcript: str, *, system: str, system_version: str) -> None:
     """Free-form: the prompt writes the summary, and nothing here rewrites it.
 
@@ -195,18 +234,21 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         "and optionally `title`. Everything about that HTML is yours to decide."
     )
     instruction = language_instruction(language)
+    context = meeting_context(ctx)
     parts: list[str] = []
     usage: list[dict[str, Any]] = []
+    model_title = ""
     for window in windows:
         ctx.checkpoint()
         result = client.complete_json(
             system_blocks=system_blocks(f"{system}\n\n{instruction}\n\n{envelope}", glossary),
-            user=window.text,
+            user=f"{context}\n\nTranscript:\n{window.text}" if context else window.text,
             schema=FREE_SCHEMA,
             max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
         )
         usage.append(result.usage)
         parts.append(str(result.data.get("summary_html", "")))
+        model_title = model_title or str(result.data.get("title", "") or "").strip()
         log.info("window %d/%d done", window.index + 1, len(windows))
 
     if len(parts) > 1:
@@ -219,12 +261,17 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
             max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
         )
         usage.append(merged.usage)
-        notes = {
-            "summary_html": str(merged.data.get("summary_html", "")),
-            "title": str(merged.data.get("title", "") or ctx.meeting.title or ""),
-        }
+        model_title = str(merged.data.get("title", "") or "").strip() or model_title
+        notes = {"summary_html": str(merged.data.get("summary_html", ""))}
     else:
-        notes = {"summary_html": parts[0], "title": str(ctx.meeting.title or "")}
+        notes = {"summary_html": parts[0]}
+    # Title precedence (Calendar 4): the user, then the calendar, then the model, then
+    # the window title. The model's suggestion only replaces a window guess or nothing.
+    meeting = ctx.meeting
+    if model_title and (not meeting.title or meeting.title_source == "window"):
+        ctx.dao.update_meeting(meeting.id, title=model_title[:200], title_source="llm")
+        meeting = ctx.refresh()
+    notes["title"] = str(meeting.title or model_title or "")
 
     notes_path(ctx.folder).write_text(
         json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8"

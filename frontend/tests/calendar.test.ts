@@ -124,3 +124,40 @@ describe("locale labels", () => {
     expect(startOfWeek(at("2026-09-02T00:00:00")).getDay()).toBe(0);
   });
 });
+
+import { allDayKeys, isHappening, timedEvents } from "../src/lib/calendar";
+
+describe("calendar events on the grid", () => {
+  const base = {
+    calendar_id: "primary",
+    all_day: false,
+    start: "2026-09-21T09:00:00Z",
+    end: "2026-09-21T09:30:00Z",
+  };
+
+  it("draws a matched event as its recording, not as a second block", () => {
+    const events = [
+      { ...base, event_id: "matched", meeting_id: "m1" },
+      { ...base, event_id: "unrecorded", meeting_id: null },
+      { ...base, event_id: "elsewhere", meeting_id: "m-not-on-screen" },
+    ];
+    expect(timedEvents(events, new Set(["m1"])).map((e) => e.event_id)).toEqual([
+      "unrecorded",
+      "elsewhere",
+    ]);
+  });
+
+  it("keeps all-day events out of the hours and puts them on each day they cover", () => {
+    const holiday = { ...base, event_id: "h", all_day: true, start: "2026-09-21T00:00:00Z", end: "2026-09-23T00:00:00Z" };
+    expect(timedEvents([holiday], new Set())).toEqual([]);
+    expect(allDayKeys(holiday)).toEqual(["2026-09-21", "2026-09-22"]); // the end is exclusive
+  });
+
+  it("offers to record from ten minutes before until the end", () => {
+    const event = { ...base, event_id: "x" };
+    expect(isHappening(event, new Date("2026-09-21T08:49:00Z"))).toBe(false);
+    expect(isHappening(event, new Date("2026-09-21T08:51:00Z"))).toBe(true);
+    expect(isHappening(event, new Date("2026-09-21T09:29:00Z"))).toBe(true);
+    expect(isHappening(event, new Date("2026-09-21T09:30:00Z"))).toBe(false);
+  });
+});

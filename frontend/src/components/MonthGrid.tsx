@@ -1,7 +1,15 @@
 import { Link } from "react-router-dom";
-import type { Meeting } from "../api";
+import type { CalendarEvent, Meeting } from "../api";
 import { useI18n } from "../i18n";
-import { bucketByDay, dayKey, isSameMonth, isToday, weekdayLabels } from "../lib/calendar";
+import {
+  allDayKeys,
+  bucketByDay,
+  dayKey,
+  isSameMonth,
+  isToday,
+  timedEvents,
+  weekdayLabels,
+} from "../lib/calendar";
 import { formatClock } from "../lib/format";
 
 /** Beyond this a cell stops being readable, so the rest collapse into a count. */
@@ -16,13 +24,24 @@ export default function MonthGrid({
   days,
   anchor,
   meetings,
+  events = [],
 }: {
   days: Date[];
   anchor: Date;
   meetings: Meeting[];
+  /** Calendar events add density — a dot each — while recordings keep the chips. */
+  events?: CalendarEvent[];
 }) {
   const { t, locale } = useI18n();
   const buckets = bucketByDay(meetings);
+  const eventCount = new Map<string, number>();
+  for (const event of timedEvents(events, new Set(meetings.map((meeting) => meeting.id)))) {
+    const key = dayKey(new Date(event.start));
+    eventCount.set(key, (eventCount.get(key) ?? 0) + 1);
+  }
+  for (const event of events.filter((item) => item.all_day)) {
+    for (const key of allDayKeys(event)) eventCount.set(key, (eventCount.get(key) ?? 0) + 1);
+  }
 
   return (
     <div data-testid="calendar-monthgrid">
@@ -74,6 +93,18 @@ export default function MonthGrid({
                   {formatClock(meeting.started_at)} {meeting.title ?? t("timeline.recording")}
                 </Link>
               ))}
+              {(eventCount.get(dayKey(day)) ?? 0) > 0 && (
+                <div
+                  data-testid="calendar-gevent-dots"
+                  data-count={eventCount.get(dayKey(day))}
+                  title={t("calendar.eventsThisDay")}
+                  className="mb-0.5 flex flex-wrap gap-0.5"
+                >
+                  {Array.from({ length: Math.min(6, eventCount.get(dayKey(day)) ?? 0) }, (_, i) => (
+                    <span key={i} className="size-1.5 rounded-full bg-line" />
+                  ))}
+                </div>
+              )}
               {items.length > MAX_CHIPS && (
                 <span data-testid="calendar-more" className="text-xs text-tertiary">
                   +{items.length - MAX_CHIPS}

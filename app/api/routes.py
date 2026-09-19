@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -206,6 +207,10 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
         for job in svc.queue.for_meeting(meeting_id)
     ]
     payload["evidence"] = meeting.evidence
+    from app.meetings import calendar_payload
+
+    # Parsed for the page; the stored string stays as it was for anything that reads it.
+    payload["calendar"] = calendar_payload(meeting) or None
     mirrored = meta.read(meeting.path)
     # A meeting whose audio the retention policy removed is not a meeting that failed to
     # record, and the page must not say so.
@@ -787,7 +792,118 @@ def calendar_of(request: Request) -> Any:
 @router.get("/calendar/status")
 def calendar_status(request: Request) -> dict[str, Any]:
     """Whether a Google account is connected, and which. Never a token."""
-    return calendar_of(request).status()  # type: ignore[no-any-return]
+    svc = services_of(request)
+    status: dict[str, Any] = calendar_of(request).status()
+    if svc.calendar_sync is not None:
+        status.update(svc.calendar_sync.status())
+    return status
+
+
+class CalendarChoice(BaseModel):
+    """The event a recording belongs to, as the user picked it; or ``none``."""
+
+    calendar_id: str | None = None
+    event_id: str | None = None
+    none: bool = False
+
+
+def _event_store(svc: Services) -> Any:
+    from app.gcal.events import EventStore
+
+    return svc.calendar_sync.store if svc.calendar_sync is not None else EventStore(svc.conn)
+
+
+@router.get("/calendar/events")
+def calendar_events(
+    request: Request,
+    frm: str = Query(..., alias="from"),
+    to: str = Query(...),
+) -> dict[str, Any]:
+    """Cached events overlapping [from, to), each with the recording matched to it.
+
+    ``from``/``to`` are local dates (YYYY-MM-DD) or full ISO instants. Served from the
+    cache only, so the calendar view works offline and never waits on Google.
+    """
+    from datetime import datetime as dt
+
+    from app.gcal.events import iso_utc
+    from app.meetings import calendar_payload
+
+    svc = services_of(request)
+
+    def instant(text: str) -> Any:
+        parsed = dt.fromisoformat(text)
+        return parsed if parsed.tzinfo else parsed.astimezone()  # a date: local midnight
+
+    start, end = instant(frm), instant(to)
+    events = _event_store(svc).between(start, end)
+    matched: dict[tuple[str, str], str] = {}
+    for meeting in svc.dao.list_meetings(frm=iso_utc(start - timedelta(days=1)), limit=2000):
+        payload = calendar_payload(meeting)
+        ref = payload.get("event") or {}
+        if (payload.get("match") or {}).get("state") == "matched" and ref:
+            matched[(str(ref.get("calendar_id")), str(ref.get("event_id")))] = meeting.id
+    return {
+        "events": [{**e.as_api(), "meeting_id": matched.get(e.key)} for e in events],
+    }
+
+
+@router.post("/calendar/sync")
+def calendar_sync_now(request: Request) -> dict[str, Any]:
+    svc = services_of(request)
+    if svc.calendar_sync is not None:
+        svc.calendar_sync.kick()
+    return calendar_status(request)
+
+
+@router.delete("/calendar/cache")
+def calendar_forget(request: Request) -> dict[str, Any]:
+    """Delete every cached event. While connected, the next sync fetches them again."""
+    svc = services_of(request)
+    gone = svc.calendar_sync.forget() if svc.calendar_sync is not None else 0
+    return {"deleted": gone, **calendar_status(request)}
+
+
+@router.get("/meetings/{meeting_id}/calendar")
+def meeting_calendar(request: Request, meeting_id: str) -> dict[str, Any]:
+    """What this recording is matched to, and the events it could be matched to instead."""
+    from app.clock import parse_iso
+    from app.meetings import calendar_payload
+
+    svc = services_of(request)
+    meeting = svc.dao.get_meeting(meeting_id)
+    if meeting is None:
+        raise HTTPException(404, "no such meeting")
+    started = parse_iso(meeting.started_at)
+    ended = parse_iso(meeting.ended_at) if meeting.ended_at else started + timedelta(hours=1)
+    nearby = _event_store(svc).between(started - timedelta(hours=2), ended + timedelta(hours=2))
+    return {
+        "calendar": calendar_payload(meeting) or None,
+        "candidates": [e.as_api() for e in nearby if not e.all_day and not e.declined],
+    }
+
+
+@router.put("/meetings/{meeting_id}/calendar")
+def choose_meeting_event(request: Request, meeting_id: str, body: CalendarChoice) -> dict[str, Any]:
+    """The user says which event this recording was, or that it was none."""
+    from app.gcal.source import snapshot
+
+    svc = services_of(request)
+    if svc.dao.get_meeting(meeting_id) is None:
+        raise HTTPException(404, "no such meeting")
+    if body.none:
+        svc.meetings.choose_event(meeting_id, None)
+    else:
+        if not body.calendar_id or not body.event_id:
+            raise HTTPException(400, "name the event, or say none")
+        event = _event_store(svc).get(body.calendar_id, body.event_id)
+        if event is None:
+            raise HTTPException(404, "that event is not in the calendar cache")
+        svc.meetings.choose_event(
+            meeting_id, snapshot(event, state="matched", source="user", confidence=1.0)
+        )
+    svc.events.publish("meeting", meeting_id=meeting_id, action="calendar")
+    return _meeting_payload(svc, meeting_id)
 
 
 @router.post("/calendar/connect")
@@ -800,7 +916,7 @@ def calendar_connect(request: Request) -> dict[str, Any]:
         auth_url = calendar.start()
     except CalendarAuthError as exc:
         raise HTTPException(409, str(exc)) from exc
-    return {"auth_url": auth_url, **calendar.status()}
+    return {**calendar_status(request), "auth_url": auth_url}
 
 
 @router.post("/calendar/cancel")
@@ -813,8 +929,13 @@ def calendar_cancel(request: Request) -> dict[str, Any]:
 @router.post("/calendar/disconnect")
 def calendar_disconnect(request: Request) -> dict[str, Any]:
     """Revoke at Google and forget locally. Says so when the revoke could not be sent."""
+    svc = services_of(request)
     calendar = calendar_of(request)
-    return {**calendar.disconnect(), **calendar.status()}
+    result = calendar.disconnect()
+    # Revoking without wiping the cache is the common half-measure (Calendar 7).
+    if svc.calendar_sync is not None:
+        svc.calendar_sync.forget()
+    return {**result, **calendar_status(request)}
 
 
 @router.get("/llm/status")

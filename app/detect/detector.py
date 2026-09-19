@@ -39,6 +39,10 @@ class DetectorState(StrEnum):
     GRACE = "grace"  # mic released, waiting to see if it comes back
 
 
+#: A calendar meeting counts as *starting* for this long after its start time.
+STARTING_WINDOW_S = 300.0
+
+
 class Outcome(StrEnum):
     COMMITTED = "committed"
     NEAR_MISS = "near_miss"
@@ -68,6 +72,7 @@ class Detector:
         clock: Clock | None = None,
         notifier: Any = None,
         events: Any = None,
+        calendar: Any = None,
     ) -> None:
         self.config = config
         self.dao = dao
@@ -77,6 +82,10 @@ class Detector:
         self.clock = clock or SystemClock()
         self.notifier = notifier
         self.events = events
+        #: ``app.gcal.source.CalendarNow``, or None. Read from the local cache only.
+        self.calendar = calendar
+        #: Events already announced as starting, so each is said once.
+        self.announced: set[tuple[str, str]] = set()
         self.state = DetectorState.IDLE
         self.wake: Wake | None = None
         self.meeting_id: str | None = None
@@ -155,7 +164,36 @@ class Detector:
         found.extend(ev.title_evidence(titles, list(config.get("detection.title_patterns", []))))
         found.extend(ev.session_evidence(process, self.sources.sessions.render_processes()))
         found.extend(ev.camera_evidence(self.sources.camera.in_use()))
+        event = self.calendar_event()
+        found.extend(ev.calendar_evidence(event.title or "" if event else None))
         return found
+
+    def calendar_event(self) -> Any:
+        if self.calendar is None:
+            return None
+        try:
+            return self.calendar.current(self.clock.now())
+        except Exception:  # the calendar is advisory; detection never fails on it
+            log.exception("calendar lookup failed")
+            return None
+
+    def announce_starting(self) -> None:
+        """A calendar meeting is starting and nothing is recording: say so, once.
+
+        This is a nudge and nothing more. It never arms or commits: a blocked-out hour is
+        not a call, and only a microphone can start a recording.
+        """
+        event = self.calendar_event()
+        if event is None or event.key in self.announced:
+            return
+        self.announced.add(event.key)
+        if (self.clock.now() - event.start).total_seconds() > STARTING_WINDOW_S:
+            return  # already well under way when first seen: not "starting"
+        title = event.title or ""
+        log.info("calendar: %s is starting and nothing is recording", title or "a meeting")
+        self._publish("upcoming", event=title, starts_at=event.start.isoformat())
+        if self.notifier is not None:
+            self.notifier.meeting_starting(":".join(event.key), title)
 
     def score(self, evidence: list[Evidence]) -> int:
         return ev.score(evidence, self.config.detection_weights)
@@ -188,6 +226,7 @@ class Detector:
         names = {holder.process for holder in holders}
         self._note_acquisitions(holders)
         if self.state is DetectorState.IDLE:
+            self.announce_starting()
             self._tick_idle(self.candidate(holders))
         elif self.state is DetectorState.AWAKE:
             # Only the process that woke us counts now. Taking any holder would mean a
@@ -314,7 +353,13 @@ class Detector:
             self.state = DetectorState.IDLE
             self.wake = None
             self.fresh.discard(wake.process)
-            self._publish("shadow", process=wake.process, score=wake.peak_score)
+            event = self.calendar_event()
+            self._publish(
+                "shadow",
+                process=wake.process,
+                score=wake.peak_score,
+                event=event.title if event else None,
+            )
             return
         meeting = self.meetings.create(
             source="detected",

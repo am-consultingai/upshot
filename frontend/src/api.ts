@@ -39,6 +39,7 @@ export interface MeetingDetail extends Meeting {
   evidence: { code: string; weight: number; detail: string }[];
   /** When the retention policy removed the raw audio. Null while it is still there. */
   audio_deleted_at?: string | null;
+  calendar?: MeetingCalendar | null;
 }
 
 /** The Google Calendar connection. Never carries a token. */
@@ -51,6 +52,38 @@ export interface CalendarStatus {
   auth_url: string | null;
   error: string | null;
   scope: string;
+  last_synced_at?: string | null;
+  sync_error?: string | null;
+  cached_events?: number;
+}
+
+/** A Google Calendar event from the local cache. Names only — never an address. */
+export interface CalendarEvent {
+  calendar_id: string;
+  event_id: string;
+  title: string | null;
+  start: string;
+  end: string;
+  all_day: boolean;
+  response: string | null;
+  transparent: boolean;
+  attendees: string[];
+  attendees_partial: boolean;
+  conference_url: string | null;
+  /** The recording matched to this event, when there is one. */
+  meeting_id?: string | null;
+}
+
+/** What a recording knows about its calendar event (a snapshot taken when matched). */
+export interface MeetingCalendar {
+  event?: { calendar_id: string; event_id: string; start: string; end: string };
+  title?: string | null;
+  participants?: string[];
+  participants_more?: number;
+  conference_url?: string | null;
+  private?: boolean;
+  match?: { state: "matched" | "proposed" | "none"; source: "auto" | "user"; reason?: string };
+  candidates?: { calendar_id: string; event_id: string; title: string | null; start: string }[];
 }
 
 export interface Status {
@@ -255,6 +288,25 @@ export const api = {
       "/api/calendar/disconnect",
       { method: "POST" },
     ),
+  calendarEvents: (from: string, to: string) =>
+    request<{ events: CalendarEvent[] }>(
+      `/api/calendar/events?${new URLSearchParams({ from, to }).toString()}`,
+    ),
+  calendarSyncNow: () => request<CalendarStatus>("/api/calendar/sync", { method: "POST" }),
+  calendarForget: () =>
+    request<CalendarStatus & { deleted: number }>("/api/calendar/cache", { method: "DELETE" }),
+  meetingCalendar: (id: string) =>
+    request<{ calendar: MeetingCalendar | null; candidates: CalendarEvent[] }>(
+      `/api/meetings/${id}/calendar`,
+    ),
+  chooseMeetingEvent: (
+    id: string,
+    body: { calendar_id: string; event_id: string } | { none: true },
+  ) =>
+    request<MeetingDetail>(`/api/meetings/${id}/calendar`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   detectorEvents: () =>
     request<{ events: DetectorEvent[] }>("/api/detector/events?limit=50"),
   audioUrl: (id: string, track: string) =>
