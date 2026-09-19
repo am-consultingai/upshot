@@ -234,7 +234,7 @@ def _audio(args: argparse.Namespace) -> list[Check]:
             from tests.fixtures import speech  # source checkouts only
 
             if speech.available():
-                speech.synth("This is the meeting agent loopback self test. " * 6, fixture)
+                speech.synth("This is Upshot loopback self test. " * 6, fixture)
             else:
                 _tone_fixture(fixture, seconds)
         except Exception:
@@ -1149,10 +1149,10 @@ def _capture_injected(args: argparse.Namespace) -> list[Check]:
     except Exception as exc:
         detail = (
             f"no pair of usable virtual endpoints here ({exc}). "
-            "Install a virtual audio device, name two endpoints in MA_TEST_ME_RENDER and "
-            "MA_TEST_THEM_RENDER, or set MA_TEST_ALLOW_AUDIBLE=1 to borrow real ones."
+            "Install a virtual audio device, name two endpoints in UP_TEST_ME_RENDER and "
+            "UP_TEST_THEM_RENDER, or set UP_TEST_ALLOW_AUDIBLE=1 to borrow real ones."
         )
-        if os.environ.get("MA_REQUIRE_HARDWARE"):
+        if os.environ.get("UP_REQUIRE_HARDWARE"):
             # The Windows harness sets this: there, "nothing to test" is a failure, not a
             # pass. `skipped` reports ok=True, which is how a suite testing nothing at all
             # reads as green.
@@ -1314,7 +1314,7 @@ def _idle_injection_endpoints(seconds: float) -> tuple[_Channel, _Channel]:
     found: list[_Channel] = []
     # Explicit beats discovered: a provisioned machine names its injection endpoints and
     # the suite stops guessing. Discovery is the fallback, not the contract.
-    forced = [os.environ.get("MA_TEST_ME_RENDER"), os.environ.get("MA_TEST_THEM_RENDER")]
+    forced = [os.environ.get("UP_TEST_ME_RENDER"), os.environ.get("UP_TEST_THEM_RENDER")]
     with audio_host() as host:
         wasapi = int(_wasapi_info(host)["index"])
         renders = []
@@ -1336,7 +1336,7 @@ def _idle_injection_endpoints(seconds: float) -> tuple[_Channel, _Channel]:
         # Named outright: a provisioned machine says which endpoints are the test's, and
         # discovery stops guessing entirely.
         renders = [item for item in renders if str(item[0]) in forced]
-    elif not os.environ.get("MA_TEST_ALLOW_AUDIBLE"):
+    elif not os.environ.get("UP_TEST_ALLOW_AUDIBLE"):
         # On a machine with no virtual audio device this leaves nothing, and the suite
         # says so rather than playing a chirp through someone's speakers.
         renders = [item for item in renders if is_virtual(item[1])]

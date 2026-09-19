@@ -68,7 +68,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="meeting-agent",
+    name="upshot",
     console=False,
     icon=str(ROOT / "packaging" / "icon.ico") if (ROOT / "packaging" / "icon.ico").exists() else None,
 )
@@ -79,5 +79,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="meeting-agent",
+    name="upshot",
 )

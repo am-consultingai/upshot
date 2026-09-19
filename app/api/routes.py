@@ -1077,7 +1077,7 @@ def _seed_audio(svc: Services, folder: Path, seconds: float) -> None:
 
 
 def test_router() -> APIRouter:
-    """Mounted **only** when MA_TEST_MODE=1; its absence is itself asserted."""
+    """Mounted **only** when UP_TEST_MODE=1; its absence is itself asserted."""
     seed = APIRouter(prefix="/api/test")
 
     @seed.post("/seed")

@@ -1,5 +1,5 @@
 export const en = {
-  "app.title": "Meeting Agent",
+  "app.title": "Upshot",
   "palette.title": "Commands",
   "palette.placeholder": "Search meetings and commands…",
   "palette.empty": "No results found.",

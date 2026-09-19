@@ -1,7 +1,7 @@
 import type { MessageKey } from "./en";
 
 export const he: Record<MessageKey, string> = {
-  "app.title": "סוכן הפגישות",
+  "app.title": "Upshot",
   "palette.title": "פקודות",
   "palette.placeholder": "חיפוש פגישות ופקודות…",
   "palette.empty": "לא נמצאו תוצאות.",
