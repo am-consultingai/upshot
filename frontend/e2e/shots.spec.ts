@@ -30,9 +30,11 @@ const SEED = [
     state: "RENDERED",
     started_at: isoAt(0, 95),
     summary_html: SUMMARY,
+    audio_seconds: 6,
     turns: [
-      { speaker: "THEM", at_ms: 12000, text: "Let's start with the migration timeline." },
-      { speaker: "ME", at_ms: 18000, text: "We move ingest first, reporting after the audit." },
+      { speaker: "THEM", at_ms: 0, text: "Let's start with the migration timeline." },
+      { speaker: "ME", at_ms: 2000, text: "We move ingest first, reporting after the audit." },
+      { speaker: "THEM", at_ms: 4000, text: "And the audit window is still the last week of the quarter?" },
     ],
   },
   {

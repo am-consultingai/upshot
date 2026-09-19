@@ -1,46 +1,109 @@
 /*
- * Bundled, not fetched. This application runs on a machine that may be offline and
- * is local-first by design: a stylesheet request to fonts.googleapis.com on every
- * launch would break the first and leak a request in the second. The woff2 files sit
- * next to this one and Vite fingerprints them into the build.
+ * Bundled, not fetched: this application runs offline and keeps recordings on the
+ * machine, so a stylesheet request to fonts.googleapis.com on every launch would
+ * break the first and leak from the second.
  *
- * Both families are OFL (see OFL-*.txt alongside) and both cover Hebrew and Latin in
- * one family, which is the reason they were chosen: Inter, and every display face
- * used by the products this redesign draws on, have no Hebrew at all.
+ * IBM Plex Sans Hebrew rather than Heebo. Heebo's Latin *is* Roboto — Google's own
+ * description says it "extends Christian Roberton's Roboto Latin to Hebrew" — and
+ * the same file warns it is auto-hinted where Roboto is hand-hinted, "so the
+ * rendering quality of Roboto may be better on older Windows machines". This app
+ * ships on Windows and nowhere else, and half of what is read here is Latin.
+ * Plex Sans is a grotesque drawn for interfaces, in the register of Inter and Geist.
  *
- * Generated from Google Fonts' own css2 output so the unicode-ranges are exact —
- * they are what makes the browser load only the subset a page actually needs.
- * Only hebrew, latin and latin-ext are bundled; Heebo's math and symbols subsets
- * are large and nothing here sets mathematical copy.
+ * One family across both scripts on purpose. Hebrew and Latin collide inside a
+ * single line constantly — names, times, product words — and two x-heights meeting
+ * mid-sentence is worse than an adequate Latin.
+ *
+ * Generated from Google's own css2 output so the unicode-ranges are exact.
  */
 
-/* Heebo — hebrew */
+/* IBM Plex Sans Hebrew 400 — hebrew */
 @font-face {
-  font-family: "Heebo";
+  font-family: "IBM Plex Sans Hebrew";
   font-style: normal;
-  font-weight: 300 800;
+  font-weight: 400;
   font-display: swap;
-  src: url("./fonts/heebo-hebrew.woff2") format("woff2");
+  src: url("./fonts/plex-hebrew-400.woff2") format("woff2");
   unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
 }
 
-/* Heebo — latin */
+/* IBM Plex Sans Hebrew 400 — latin */
 @font-face {
-  font-family: "Heebo";
+  font-family: "IBM Plex Sans Hebrew";
   font-style: normal;
-  font-weight: 300 800;
+  font-weight: 400;
   font-display: swap;
-  src: url("./fonts/heebo-latin.woff2") format("woff2");
+  src: url("./fonts/plex-latin-400.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* Heebo — latin-ext */
+/* IBM Plex Sans Hebrew 400 — latin-ext */
 @font-face {
-  font-family: "Heebo";
+  font-family: "IBM Plex Sans Hebrew";
   font-style: normal;
-  font-weight: 300 800;
+  font-weight: 400;
   font-display: swap;
-  src: url("./fonts/heebo-latin-ext.woff2") format("woff2");
+  src: url("./fonts/plex-latin-ext-400.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* IBM Plex Sans Hebrew 500 — hebrew */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/plex-hebrew-500.woff2") format("woff2");
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+
+/* IBM Plex Sans Hebrew 500 — latin */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/plex-latin-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* IBM Plex Sans Hebrew 500 — latin-ext */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/plex-latin-ext-500.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* IBM Plex Sans Hebrew 600 — hebrew */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/plex-hebrew-600.woff2") format("woff2");
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+
+/* IBM Plex Sans Hebrew 600 — latin */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/plex-latin-600.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* IBM Plex Sans Hebrew 600 — latin-ext */
+@font-face {
+  font-family: "IBM Plex Sans Hebrew";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/plex-latin-ext-600.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
@@ -53,7 +116,6 @@
   src: url("./fonts/frank-ruhl-libre-hebrew.woff2") format("woff2");
   unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
 }
-
 /* Frank Ruhl Libre — latin */
 @font-face {
   font-family: "Frank Ruhl Libre";
@@ -63,7 +125,6 @@
   src: url("./fonts/frank-ruhl-libre-latin.woff2") format("woff2");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
-
 /* Frank Ruhl Libre — latin-ext */
 @font-face {
   font-family: "Frank Ruhl Libre";
@@ -73,4 +134,3 @@
   src: url("./fonts/frank-ruhl-libre-latin-ext.woff2") format("woff2");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-
