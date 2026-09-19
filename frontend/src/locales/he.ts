@@ -11,6 +11,7 @@ export const he: Record<MessageKey, string> = {
   "timeline.spanDay": "יום",
   "timeline.spanWeek": "שבוע",
   "timeline.spanMonth": "חודש",
+  "timeline.yesterday": "אתמול",
   "timeline.today": "היום",
   "timeline.previous": "הקודם",
   "timeline.next": "הבא",

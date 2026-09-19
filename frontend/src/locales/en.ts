@@ -9,6 +9,7 @@ export const en = {
   "timeline.spanDay": "Day",
   "timeline.spanWeek": "Week",
   "timeline.spanMonth": "Month",
+  "timeline.yesterday": "Yesterday",
   "timeline.today": "Today",
   "timeline.previous": "Previous",
   "timeline.next": "Next",

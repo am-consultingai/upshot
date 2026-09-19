@@ -174,15 +174,15 @@ export default function MeetingPage() {
 
   return (
     <section data-testid="meeting-page" data-meeting-id={id}>
-      <header className="mb-4 flex items-center gap-3">
-        <h1 className="text-xl font-semibold" data-testid="meeting-title">
+      <header className="mb-5 flex flex-wrap items-center gap-3">
+        <h1 className="display me-auto text-2xl" data-testid="meeting-title">
           {meeting.data.title ?? id}
         </h1>
         <StateBadge state={meeting.data.state} />
         <BusyButton
           data-testid="rename"
           busy={rename.isPending}
-          className="rounded border border-line px-2 py-1 text-sm"
+          className="rounded-md px-2 py-1 text-xs text-tertiary hover:bg-surface-2 hover:text-primary"
           onClick={() =>
             rename.mutate(`${meeting.data?.title ?? id} (renamed)`)
           }
@@ -289,7 +289,7 @@ export default function MeetingPage() {
         <div
           data-testid="summary-html"
           dir={dir}
-          className="summary-prose mb-6 rounded border border-line-subtle bg-raised p-4"
+          className="summary-prose mb-8 rounded-xl bg-raised p-6 shadow-sm ring-1 ring-line-subtle"
           dangerouslySetInnerHTML={{ __html: summary.data }}
         />
       ) : (
@@ -298,7 +298,7 @@ export default function MeetingPage() {
         </p>
       )}
 
-      <h2 className="mb-2 text-sm font-semibold text-tertiary">
+      <h2 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-tertiary">
         {t("meeting.transcript")}
       </h2>
       <ol
@@ -315,16 +315,17 @@ export default function MeetingPage() {
                 data-at-ms={Math.round(segment.start * 1000)}
                 data-speaking={speaking ? "true" : undefined}
                 onClick={() => playerRef.current?.seek(segment.start)}
-                className={`block w-full rounded px-2 py-1 text-start ${
+                className={`-mx-2 block w-full rounded-md px-2 py-1.5 text-start leading-relaxed transition-colors hover:bg-surface-1 ${
                   speaking ? "bg-accent-quiet" : ""
                 }`}
               >
+                {/* A fixed-width gutter, so the text starts on one line down the page. */}
                 <span
-                  className="text-xs text-tertiary"
+                  className="me-2 inline-block w-10 shrink-0 align-baseline text-2xs font-medium uppercase tracking-wide text-tertiary"
                   data-testid="turn-speaker"
                 >
                   {segment.speaker}
-                </span>{" "}
+                </span>
                 <span>{segment.text}</span>
               </button>
             </li>

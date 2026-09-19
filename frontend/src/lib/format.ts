@@ -52,3 +52,33 @@ export function formatEventTime(iso: string, locale: string): string {
     ...(sameDay ? { second: "2-digit" } : { day: "numeric", month: "short" }),
   }).format(when);
 }
+
+/**
+ * The label on a day group: "Today", "Yesterday", or a written date.
+ *
+ * The list was headed with raw ISO keys — 2026-09-22 — which is the shape the
+ * data happens to be stored in, not the way anyone thinks about when a meeting
+ * happened. Anything inside the last week is easier to place by name, and the
+ * year is only worth the space once it is no longer the current one.
+ */
+export function formatDayLabel(
+  dayKeyValue: string,
+  locale: string,
+  t: (key: "timeline.today" | "timeline.yesterday") => string,
+  today: Date = new Date(),
+): string {
+  const [year, month, day] = dayKeyValue.split("-").map(Number);
+  if (!year || !month || !day) return dayKeyValue;
+  const date = new Date(year, month - 1, day);
+  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.round((midnight.getTime() - date.getTime()) / 86_400_000);
+
+  if (days === 0) return t("timeline.today");
+  if (days === 1) return t("timeline.yesterday");
+  return new Intl.DateTimeFormat(locale, {
+    weekday: days < 7 ? "long" : undefined,
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
+  }).format(date);
+}

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { groupByDay } from "../lib/timeline";
+import { formatDayLabel } from "../lib/format";
 import { daysFor, periodLabel, rangeFor, shift, startOfDay, type CalendarSpan } from "../lib/calendar";
 import MeetingCard from "../components/MeetingCard";
 import MonthGrid from "../components/MonthGrid";
@@ -74,28 +75,48 @@ export default function Timeline() {
   const items = meetings.data?.meetings ?? [];
   const days_ = groupByDay(items);
 
+  /*
+   * A segmented control: one recessed track, the selected segment raised out of
+   * it. Two separately bordered buttons never read as a single choice — they read
+   * as two things you might press.
+   */
   const toggle = (active: boolean) =>
-    `rounded border px-2 py-1 text-sm ${
-      active ? "border-accent bg-accent text-on-accent" : "border-line"
+    `rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+      active ? "bg-raised text-primary shadow-sm" : "text-secondary hover:text-primary"
     }`;
 
   return (
     <section data-testid="timeline">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <h1 className="display me-auto text-2xl">{t("nav.timeline")}</h1>
+
+        {/* The queue only earns space on screen when there is something in it. */}
+        {(status.data?.queue_depth ?? 0) > 0 && (
+          <span
+            className="rounded-full bg-surface-2 px-2.5 py-1 text-xs text-secondary"
+            data-testid="queue-depth"
+          >
+            {t("timeline.queued")}: {status.data?.queue_depth ?? 0}
+          </span>
+        )}
+        {(status.data?.queue_depth ?? 0) === 0 && (
+          <span className="sr-only" data-testid="queue-depth">
+            {t("timeline.queued")}: 0
+          </span>
+        )}
+
         <BusyButton
           data-testid="start-recording"
           busy={start.isPending}
           disabled={status.data?.recorder.active}
           onClick={() => start.mutate()}
-          className="rounded bg-accent px-3 py-1.5 text-on-accent disabled:opacity-40"
+          className="inline-flex h-8 items-center gap-2 rounded-md bg-accent px-3 text-sm font-medium text-on-accent shadow-sm hover:bg-accent-hover disabled:opacity-40"
         >
+          <span className="size-2 rounded-full bg-on-accent/90" aria-hidden="true" />
           {t("timeline.start")}
         </BusyButton>
-        <span className="text-sm text-secondary" data-testid="queue-depth">
-          {t("timeline.queued")}: {status.data?.queue_depth ?? 0}
-        </span>
 
-        <div className="ms-auto flex gap-2" data-testid="view-toggle">
+        <div className="flex gap-1 rounded-lg bg-surface-2 p-0.5" data-testid="view-toggle">
           <button
             type="button"
             data-testid="view-list"
@@ -178,11 +199,29 @@ export default function Timeline() {
 
       {!meetings.isLoading && !meetings.isError && view === "list" && (
         <>
-          {days_.length === 0 && <p data-testid="timeline-empty">{t("timeline.empty")}</p>}
+          {days_.length === 0 && (
+            <p data-testid="timeline-empty" className="py-16 text-center text-sm text-tertiary">
+              {t("timeline.empty")}
+            </p>
+          )}
           {days_.map(([day, dayItems]) => (
-            <div key={day} data-testid="timeline-day" data-day={day} className="mb-6">
-              <h2 className="mb-2 text-sm font-semibold text-tertiary">{day}</h2>
-              <div className="grid gap-2">
+            <div key={day} data-testid="timeline-day" data-day={day} className="mb-8">
+              {/*
+               * The date is a label on the group, not a heading competing with the
+               * meeting titles: small, spaced, and quiet, with a rule carrying the
+               * eye across to the count.
+               */}
+              <div className="mb-1 flex items-center gap-3">
+                <h2
+                  className="text-2xs font-semibold uppercase tracking-wide text-tertiary"
+                  title={day}
+                >
+                  {formatDayLabel(day, locale, t)}
+                </h2>
+                <span className="h-px flex-1 bg-line-subtle" />
+                <span className="text-2xs tabular-nums text-tertiary">{dayItems.length}</span>
+              </div>
+              <div className="divide-y divide-line-subtle">
                 {dayItems.map((meeting) => (
                   <MeetingCard
                     key={meeting.id}
