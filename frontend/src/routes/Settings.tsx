@@ -5,6 +5,7 @@ import { useI18n, type Locale } from "../i18n";
 import { THEMES, type Theme } from "../theme";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
+import CalendarSettings from "../components/CalendarSettings";
 import MicMeter from "../components/MicMeter";
 import SettingRow, { SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
@@ -29,12 +30,13 @@ const DETECTION_MODES = [
 
 /*
  * Sections, in the order someone meets them: what it records, how it looks,
- * where it puts things, then the two long ones.
+ * where it puts things, what it connects to, then the two long ones.
  */
 const SECTIONS: SettingsSection[] = [
   { id: "audio", label: "settings.groupAudio" },
   { id: "appearance", label: "settings.groupAppearance" },
   { id: "storage", label: "settings.groupStorage" },
+  { id: "calendar", label: "settings.groupCalendar" },
   { id: "summaries", label: "settings.groupSummaries" },
   { id: "prompt", label: "settings.prompt" },
 ];
@@ -304,6 +306,7 @@ export default function Settings() {
       </SettingGroup>
       )}
 
+      {section === "calendar" && <CalendarSettings />}
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}
       </div>

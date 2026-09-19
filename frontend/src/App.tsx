@@ -108,6 +108,8 @@ export default function App() {
     source.addEventListener("job", invalidate);
     source.addEventListener("recorder", invalidate);
     source.addEventListener("meeting", invalidate);
+    // The connection finishes in another tab — Google's — so Settings learns of it here.
+    source.addEventListener("calendar", invalidate);
     // Without this the Detector page only refreshed when something *else* happened, so a
     // detection took about a minute to appear — the detector reaches its verdict in ten.
     source.addEventListener("detector", (event) => {

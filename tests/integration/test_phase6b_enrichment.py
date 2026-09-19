@@ -116,7 +116,8 @@ def test_enrichment_dataclass_defaults() -> None:
 
 
 def test_no_google_imports() -> None:
-    """V1 ships with zero Google integration — not deferred, absent."""
+    """No Google client libraries. The calendar speaks plain HTTP through httpx: four
+    endpoints do not justify google-auth and googleapiclient in the installer."""
     offenders: list[str] = []
     for path in sorted(Path("app").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -160,10 +161,18 @@ def _code_without_prose(path: Path) -> str:
 
 
 @pytest.mark.parametrize("word", ["oauth", "client_secret", "refresh_token", "consent screen"])
-def test_no_oauth_flow_in_this_build(word: str) -> None:
+def test_oauth_lives_only_in_the_calendar_package(word: str) -> None:
+    """Calendar 1 brought a real OAuth flow in, deliberately, in ``app/gcal``. It stays
+    there: nothing else handles tokens or client secrets, only asks that package."""
     hits = []
     for path in sorted(Path("app").rglob("*.py")):
-        code = _code_without_prose(path).replace("google_refresh_token", "")
+        if path.is_relative_to(Path("app/gcal")):
+            continue
+        code = (
+            _code_without_prose(path)
+            .replace("google_refresh_token", "")
+            .replace("app . gcal . oauth", "")  # the import, tokenized
+        )
         if word in code:
             hits.append(str(path))
     assert hits == [], hits

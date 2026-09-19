@@ -44,6 +44,10 @@ datas = [
 ]
 if (ROOT / "frontend" / "dist").exists():
     datas.append((str(ROOT / "frontend" / "dist"), "frontend/dist"))
+# Baked in, never committed (app/gcal/client.py). A build without it runs, and says in
+# Settings that it cannot connect a calendar.
+if (ROOT / "app" / "gcal" / "google_oauth_client.json").exists():
+    datas.append((str(ROOT / "app" / "gcal" / "google_oauth_client.json"), "app/gcal"))
 if (ROOT / "vendor" / "ffmpeg.exe").exists():
     datas.append((str(ROOT / "vendor" / "ffmpeg.exe"), "."))
 datas += collect_data_files("faster_whisper")  # the bundled Silero VAD model

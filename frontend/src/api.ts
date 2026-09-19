@@ -41,6 +41,18 @@ export interface MeetingDetail extends Meeting {
   audio_deleted_at?: string | null;
 }
 
+/** The Google Calendar connection. Never carries a token. */
+export interface CalendarStatus {
+  /** False when this build has no Google OAuth client baked in. */
+  configured: boolean;
+  state: "disconnected" | "connecting" | "connected" | "reconnect";
+  account: string | null;
+  /** Google's consent page, while a connection is waiting on the browser. */
+  auth_url: string | null;
+  error: string | null;
+  scope: string;
+}
+
 export interface Status {
   profile: string;
   policy: string;
@@ -234,6 +246,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({}),
     }),
+  calendarStatus: () => request<CalendarStatus>("/api/calendar/status"),
+  calendarConnect: () =>
+    request<CalendarStatus & { auth_url: string }>("/api/calendar/connect", { method: "POST" }),
+  calendarCancel: () => request<CalendarStatus>("/api/calendar/cancel", { method: "POST" }),
+  calendarDisconnect: () =>
+    request<CalendarStatus & { revoked: boolean; revoke_by_hand: string | null }>(
+      "/api/calendar/disconnect",
+      { method: "POST" },
+    ),
   detectorEvents: () =>
     request<{ events: DetectorEvent[] }>("/api/detector/events?limit=50"),
   audioUrl: (id: string, track: string) =>
