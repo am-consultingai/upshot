@@ -460,3 +460,44 @@ def test_the_spa_shell_is_never_served_from_cache(api, tmp_path: Path) -> None: 
                 assert "no-cache" in cache, f"{path} served as {cache!r}"
     finally:
         main.frontend_dir = original  # type: ignore[assignment]
+
+
+def test_a_short_recording_can_be_kept_after_all(api) -> None:  # type: ignore[no-untyped-def]
+    """The way back from a discard, which the state machine allowed and nothing offered.
+
+    A recording under `audio.min_meeting_s` is filed as DISCARDED rather than
+    transcribed — the detector wakes on a notification chime often enough that
+    without that rule the library fills with eight-second meetings. Nothing is
+    deleted: the audio stays and DISCARDED -> RECORDED has always been a legal
+    transition. But no endpoint exposed it, so in practice a two-minute
+    conversation was unreachable, which is indistinguishable from losing it.
+    """
+    with serve(api) as client:
+        started = client.post("/api/recording/start")
+        assert started.status_code == 200, started.text
+        meeting_id = started.json()["meeting_id"]
+
+        stopped = client.post("/api/recording/stop")
+        assert stopped.status_code == 200, stopped.text
+        # Nothing ran for two minutes, so it is filed rather than transcribed.
+        assert stopped.json()["state"] == MeetingState.DISCARDED
+
+        kept = client.post(f"/api/meetings/{meeting_id}/keep")
+        assert kept.status_code == 200, kept.text
+        assert kept.json()["state"] == MeetingState.RECORDED
+
+        detail = client.get(f"/api/meetings/{meeting_id}").json()
+        assert detail["state"] == MeetingState.RECORDED
+        # And it is queued, or "keep" would mean "keep it and do nothing with it".
+        assert any(job["stage"] == "transcribe" for job in detail["jobs"])
+
+
+def test_keeping_a_meeting_that_was_never_discarded_is_refused(api) -> None:  # type: ignore[no-untyped-def]
+    """A no-op that silently succeeds hides the case where it should not have run."""
+    with serve(api) as client:
+        started = client.post("/api/recording/start")
+        meeting_id = started.json()["meeting_id"]
+
+        refused = client.post(f"/api/meetings/{meeting_id}/keep")
+        assert refused.status_code == 409
+        assert "discarded" in refused.json()["detail"]

@@ -427,6 +427,33 @@ def retry_stage(
     return {"stage": job.stage, "state": job.state, "attempts": job.attempts}
 
 
+@router.post("/meetings/{meeting_id}/keep")
+def keep_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
+    """Undo a discard: treat this recording as a meeting after all.
+
+    A recording shorter than ``audio.min_meeting_s`` is filed as DISCARDED rather
+    than transcribed, which is the right default — the detector wakes on a
+    notification sound often enough that without it the library fills with
+    eight-second meetings. What was missing is the way back.
+
+    Nothing was ever deleted: DISCARDED is a state, the audio stays on disk, and
+    the state machine has always allowed DISCARDED -> RECORDED (the transition is
+    even commented "it was a meeting after all"). But no endpoint offered it and
+    no button called it, so in practice a two-minute conversation was unreachable
+    — which is indistinguishable from losing it, whatever the database says.
+    """
+    svc = services_of(request)
+    meeting = svc.dao.require_meeting(meeting_id)
+    if meeting.state != MeetingState.DISCARDED:
+        raise HTTPException(409, f"{meeting_id} is {meeting.state}, not discarded")
+
+    updated = svc.dao.set_state(meeting_id, MeetingState.RECORDED)
+    meta.mirror(svc.dao.require_meeting(meeting_id))
+    svc.queue.enqueue(meeting_id, JobStage.TRANSCRIBE)
+    svc.events.publish("meeting", meeting_id=meeting_id, state=str(updated.state))
+    return {"id": meeting_id, "state": str(updated.state)}
+
+
 @router.post("/import")
 async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     """An uploaded recording becomes chunk files and runs the ordinary pipeline."""
