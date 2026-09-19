@@ -1099,7 +1099,7 @@ def test_router() -> APIRouter:
             # cannot silently make the reset wrong.
             from app.config import DEFAULTS
 
-            for key in ("language", "theme"):
+            for key in ("language", "theme", "view", "calendar_span"):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
             svc.config.save()
         for event in body.get("detector_events", []):
