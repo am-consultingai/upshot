@@ -15,9 +15,10 @@ that way rather than by tests.
 
 - **What it is:** a local Windows application that records both sides of a meeting,
   transcribes it locally, summarizes it with an LLM, renders HTML and files it in a
-  browsable timeline. No cloud service is required; no Google account exists in this build.
+  browsable timeline. No cloud service is required. A Google account can be connected, for
+  the calendar only, and read-only: it names recordings and tells the app who was there.
 - **Design contract:** `DESIGN.md`, `TECHNICAL-DESIGN.md`, `DETECTION.md`, `STACK.md`,
-  `SECURITY-AND-AUTH.md`. Every judgment call is in `DECISIONS.md` (38 entries).
+  `SECURITY-AND-AUTH.md`. Every judgment call is in `DECISIONS.md` (44 entries).
   Phase-by-phase status is in `PROGRESS.md`. The Windows runbook is `windows-run.md`.
 
 ---
@@ -78,6 +79,19 @@ with a live level meter beside it. The meter is built through `make_capture`, so
 shows comes through the same path a recording would use. dB scale (speech peaks near 0.05
 linear, which would be one segment out of 24), peak-hold with decay, and silence stated in
 words rather than implied. **D33**.
+
+### Google Calendar
+
+Connected in Settings with loopback OAuth and PKCE; the refresh token lives in Windows
+Credential Manager. The events of the next few hours are polled every minute and thirty
+days either side every ten, into a local `calendar_events` cache that is safe to delete.
+What the calendar buys: recordings take the meeting's name and its attendees, the calendar
+view shows real events behind the recordings, and an event on now adds 3 to the detector's
+score — never enough on its own to start a recording. Attendee email addresses and event
+descriptions are dropped before anything is stored, and Settings says so.
+
+Run against a real account end to end on 2026-09-20: 42 real events cached, a live
+recording matched to the meeting that was on, named from it and given its attendees.
 
 ### Main screen: calendar view
 

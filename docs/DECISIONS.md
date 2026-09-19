@@ -945,3 +945,49 @@ rejected client (`invalid_client`) stops all token requests until the user conne
 No network is the opposite case: the token is kept and the caller tries later. Disconnect
 calls Google's revoke endpoint **and** deletes locally, whatever the revoke says; when the
 revoke could not be sent, Settings says so and links to the account's connections page.
+
+## D44 — The calendar is a cache, matching has three answers, and the description never leaves Google
+
+Calendar 2 to 7 of the epic, built on D43's connection.
+
+**A local cache, polled.** `calendar_events` is a SQLite table the app can delete at any
+time: everything in it comes back on the next sync. Two rhythms — the next few hours
+every minute, thirty days either side every ten — because `events.watch` needs a public
+HTTPS endpoint that a local app will never have. That is about 1,600 requests a day
+against a quota of a million, so the timer needs no cleverness. Sync tokens are
+deliberately not used: they may not be combined with a time window, and a windowed
+re-list is one idempotent request with no 410 recovery path. Every consumer reads the
+cache, never Google: the detector's tick, matching at the start of a meeting, and the
+calendar view all stay local, so they work offline and cannot be slowed by the network.
+
+**Matching answers "I don't know".** Overlap, never containment, so a recording started
+late and run over is still its meeting. The verdict is *matched*, *proposed* or *none*,
+and only *matched* renames a recording. Ambiguity is shown rather than resolved by
+guessing: two back-to-back meetings inside one recording is a proposal with both
+candidates, because attaching the wrong attendees is worse than attaching none. What the
+user picks is final — automatic matching never overrides a choice, and never touches a
+title the user typed. Times are compared as UTC instants only, so DST cannot move a
+match, and the expiry of an access token is measured on the monotonic clock.
+
+**A snapshot, not a reference.** A match stores the event's title and attendee names as
+they were. Renaming the event next week does not rename the recording, and deleting it
+does not lose the name.
+
+**Title precedence, written down**: the user, then the calendar, then the model, then the
+window title, with `title_source` recording the winner. A title typed at creation counts
+as the user's.
+
+**Privacy is enforced at the boundary, not by convention.** Attendee email addresses and
+event descriptions are dropped in `app/gcal/events.py` before anything is stored, so no
+later mistake can leak what was never kept; a display name Google omits is made from the
+address's local part inside that same function. Descriptions are never stored and never
+sent to a model, which overrides the epic's earlier idea of passing the agenda to the
+prompt: they routinely carry dial-in PINs and forwarded mail. The title goes to the
+summary model by default and attendee names only after the user turns them on, because
+that model may be a hosted one; a private or confidential event sends nothing at all.
+Tests assert that no address appears in the database, a prompt or a log line.
+
+**The detector gets a signal, not a trigger.** A calendar meeting on now is worth 3
+against a threshold of 5 — enough to make a known conferencing app's call immediate,
+never enough alone. Nothing but a microphone wakes the detector, so an event by itself
+cannot start a recording however it scores. It may say so, once, and offer to record.
