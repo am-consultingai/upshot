@@ -122,9 +122,19 @@ export default function MeetingPage() {
   });
   /** The title being typed, or null when the heading is not being edited. */
   const [draft, setDraft] = useState<string | null>(null);
+  /*
+   * Escape has to beat the blur that follows it. Removing the focused field makes the
+   * browser fire blur as it goes, so without this the cancel path saved the very text
+   * it was cancelling.
+   */
+  const cancelled = useRef(false);
   const commitRename = () => {
     const next = draft?.trim() ?? "";
     setDraft(null);
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
     // Empty would erase the name, and unchanged is not an edit: neither is sent.
     if (next && next !== (meeting.data?.title ?? "")) rename.mutate(next);
   };
@@ -220,7 +230,10 @@ export default function MeetingPage() {
             onBlur={commitRename}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") setDraft(null);
+              if (event.key === "Escape") {
+                cancelled.current = true;
+                setDraft(null);
+              }
             }}
             className="display me-auto min-w-0 flex-1 rounded-md bg-surface-2 px-2 py-0.5 text-2xl"
           />

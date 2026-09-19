@@ -35,9 +35,16 @@ VENV_SUFFIX = Path("upshot-win/venv/Scripts/python.exe")
 
 def powershell(script: str, timeout: float = 60) -> str:
     done = subprocess.run(
-        ["/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "-NoProfile",
-         "-Command", script],
-        capture_output=True, text=True, timeout=timeout, check=False,
+        [
+            "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+            "-NoProfile",
+            "-Command",
+            script,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
     )
     return done.stdout.strip()
 
@@ -51,11 +58,11 @@ def windows_paths() -> dict[str, str]:
     """
     found = powershell(
         "@{ local = $env:LOCALAPPDATA; temp = $env:TEMP; "
-        "chrome = @(\"$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe\", "
-        "\"${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe\", "
-        "\"$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe\", "
-        "\"$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe\", "
-        "\"${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe\") "
+        'chrome = @("$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe", '
+        '"${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe", '
+        '"$env:LOCALAPPDATA\\Google\\Chrome\\Application\\chrome.exe", '
+        '"$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe", '
+        '"${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe") '
         "| Where-Object { Test-Path $_ } | Select-Object -First 1 "
         "} | ConvertTo-Json -Compress"
     )
@@ -66,9 +73,11 @@ def windows_paths() -> dict[str, str]:
 
 
 def to_wsl(windows_path: str) -> Path:
-    return Path(subprocess.run(
-        ["wslpath", "-u", windows_path], capture_output=True, text=True, check=True
-    ).stdout.strip())
+    return Path(
+        subprocess.run(
+            ["wslpath", "-u", windows_path], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    )
 
 
 def to_windows(path: Path) -> str:
@@ -127,9 +136,16 @@ def kill_windows(match: str) -> int:
     )
     try:
         done = subprocess.run(
-            ["/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "-NoProfile",
-             "-Command", script],
-            capture_output=True, text=True, timeout=120, check=False,
+            [
+                "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoProfile",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
         )
         return int((done.stdout.strip() or "0").splitlines()[-1])
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -169,13 +185,20 @@ def windows_events(since: float) -> list[str]:
         "ProviderName='Application Error','Windows Error Reporting'; "
         f"StartTime=(Get-Date '{when}')}} -ErrorAction SilentlyContinue | "
         "ForEach-Object { $_.TimeCreated.ToString('HH:mm:ss') + ' ' + "
-        "($_.Message -split \"`n\")[0] }"
+        '($_.Message -split "`n")[0] }'
     )
     try:
         found = subprocess.run(
-            ["/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", "-NoProfile",
-             "-Command", script],
-            capture_output=True, text=True, timeout=120, check=False,
+            [
+                "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                "-NoProfile",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return []
@@ -249,12 +272,21 @@ def main(argv: list[str] | None = None) -> int:
     # variable is not part of that.
     app = subprocess.Popen(
         [str(venv_python), "-u", to_windows(ROOT / "scripts" / "e2e_server.py"), str(port)],
-        stdout=app_log, stderr=subprocess.STDOUT, env=environment,
+        stdout=app_log,
+        stderr=subprocess.STDOUT,
+        env=environment,
     )
     browser = subprocess.Popen(
-        [str(browser_exe), "--headless=new", f"--remote-debugging-port={cdp}",
-         f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [
+            str(browser_exe),
+            "--headless=new",
+            f"--remote-debugging-port={cdp}",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
     code = 1
