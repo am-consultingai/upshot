@@ -2,6 +2,12 @@ import type { MessageKey } from "./en";
 
 export const he: Record<MessageKey, string> = {
   "app.title": "סוכן הפגישות",
+  "palette.title": "פקודות",
+  "palette.placeholder": "חיפוש פגישות ופקודות…",
+  "palette.empty": "לא נמצאו תוצאות.",
+  "palette.navigate": "מעבר אל",
+  "palette.do": "פעולות",
+  "palette.open": "פגישות",
   "nav.timeline": "ציר זמן",
   "nav.search": "חיפוש",
   "nav.settings": "הגדרות",

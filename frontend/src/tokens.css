@@ -129,6 +129,13 @@
   --accent-hover: color-mix(in oklab, var(--accent), var(--ink) 14%);
 
   /*
+   * The scrim behind a dialog. Always black, never the ink: it has to push the
+   * page back, and on a dark canvas mixing the ink in would lift it instead.
+   * Heavier in dark for the same reason — 35% over near-black barely registers.
+   */
+  --scrim: rgb(0 0 0 / 35%);
+
+  /*
    * Status colours stay hand-picked rather than derived: recording red and the
    * detector's amber have to mean exactly one thing each, and a mix that drifts
    * with the canvas would undermine that.
@@ -180,6 +187,7 @@
 
     --lift: var(--ink);
     --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
+    --scrim: rgb(0 0 0 / 60%);
 
     --shadow-sm: none;
     --shadow-md: none;
@@ -198,6 +206,8 @@
 
   --lift: var(--ink);
   --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
+
+  --scrim: rgb(0 0 0 / 60%);
 
   /*
    * Elevation without shadows, which is what Linear and Raycast both do: a
@@ -242,6 +252,8 @@
    * changed colour with the theme would stop meaning one thing), so their
    * contrast partner does not need to move either.
    */
+  --color-scrim: var(--scrim);
+
   --color-on-solid: #ffffff;
 
   --color-danger: var(--danger);
