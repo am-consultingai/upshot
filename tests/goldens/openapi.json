@@ -15,6 +15,40 @@
         "title": "Body_import_audio_api_import_post",
         "type": "object"
       },
+      "CalendarChoice": {
+        "description": "The event a recording belongs to, as the user picked it; or ``none``.",
+        "properties": {
+          "calendar_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "none": {
+            "default": false,
+            "title": "None",
+            "type": "boolean"
+          }
+        },
+        "title": "CalendarChoice",
+        "type": "object"
+      },
       "GlossaryPut": {
         "properties": {
           "terms": {
@@ -294,6 +328,27 @@
         "summary": "Audio Level"
       }
     },
+    "/api/calendar/cache": {
+      "delete": {
+        "description": "Delete every cached event. While connected, the next sync fetches them again.",
+        "operationId": "calendar_forget_api_calendar_cache_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Forget Api Calendar Cache Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Forget"
+      }
+    },
     "/api/calendar/cancel": {
       "post": {
         "operationId": "calendar_cancel_api_calendar_cancel_post",
@@ -356,6 +411,57 @@
         "summary": "Calendar Disconnect"
       }
     },
+    "/api/calendar/events": {
+      "get": {
+        "description": "Cached events overlapping [from, to), each with the recording matched to it.\n\n``from``/``to`` are local dates (YYYY-MM-DD) or full ISO instants. Served from the\ncache only, so the calendar view works offline and never waits on Google.",
+        "operationId": "calendar_events_api_calendar_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "title": "To",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Events Api Calendar Events Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Calendar Events"
+      }
+    },
     "/api/calendar/status": {
       "get": {
         "description": "Whether a Google account is connected, and which. Never a token.",
@@ -375,6 +481,26 @@
           }
         },
         "summary": "Calendar Status"
+      }
+    },
+    "/api/calendar/sync": {
+      "post": {
+        "operationId": "calendar_sync_now_api_calendar_sync_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Sync Now Api Calendar Sync Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Sync Now"
       }
     },
     "/api/detector/events": {
@@ -1031,6 +1157,98 @@
           }
         },
         "summary": "Get Audio"
+      }
+    },
+    "/api/meetings/{meeting_id}/calendar": {
+      "get": {
+        "description": "What this recording is matched to, and the events it could be matched to instead.",
+        "operationId": "meeting_calendar_api_meetings__meeting_id__calendar_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Meeting Calendar Api Meetings  Meeting Id  Calendar Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Meeting Calendar"
+      },
+      "put": {
+        "description": "The user says which event this recording was, or that it was none.",
+        "operationId": "choose_meeting_event_api_meetings__meeting_id__calendar_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarChoice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Choose Meeting Event Api Meetings  Meeting Id  Calendar Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Choose Meeting Event"
       }
     },
     "/api/meetings/{meeting_id}/jobs/{stage}/retry": {

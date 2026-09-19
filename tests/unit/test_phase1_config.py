@@ -188,3 +188,15 @@ def test_the_launcher_does_not_force_a_detection_mode() -> None:
     """
     launcher = Path(__file__).resolve().parents[2] / "scripts" / "windows" / "run-app.ps1"
     assert "UP_DETECTION__MODE" not in launcher.read_text(encoding="utf-8")
+
+
+def test_a_config_saved_before_the_calendar_adopts_it(tmp_path: Path) -> None:
+    """Every installation that ran before Calendar 2 saved `enrichment.source: null`,
+    which was the default then. It must not pin the calendar off for ever."""
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"enrichment": {"source": "null", "timeout_s": 2.0}}))
+    assert Config.load(file=path).get("enrichment.source") == "google"
+
+    chosen = tmp_path / "chosen.json"
+    chosen.write_text(json.dumps({"enrichment": {"source": "fake"}}))
+    assert Config.load(file=chosen).get("enrichment.source") == "fake", "a real choice stands"

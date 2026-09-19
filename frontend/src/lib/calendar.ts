@@ -124,3 +124,59 @@ export function periodLabel(span: CalendarSpan, anchor: Date, locale: string): s
   const format = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" });
   return `${format.format(first)} – ${format.format(last)}`;
 }
+
+/** The fields of a calendar event the grids need. */
+export interface GridEvent {
+  calendar_id: string;
+  event_id: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  meeting_id?: string | null;
+}
+
+/** A stable key for an event, usable as a React key and a grid item id. */
+export function eventKey(event: { calendar_id: string; event_id: string }): string {
+  return `event:${event.calendar_id}:${event.event_id}`;
+}
+
+/**
+ * The calendar events a grid draws as blocks of their own.
+ *
+ * An event matched to a recording that is already on the grid is left out: the two are
+ * one meeting and draw as one block, the recording's. All-day events are left out too —
+ * they are not a time of day, and go in the day's header instead.
+ */
+export function timedEvents<T extends GridEvent>(events: T[], meetingIds: Set<string>): T[] {
+  return events.filter(
+    (event) => !event.all_day && !(event.meeting_id && meetingIds.has(event.meeting_id)),
+  );
+}
+
+/** The local days an all-day event covers. Its end date is exclusive, as Google sends it. */
+export function allDayKeys(event: GridEvent): string[] {
+  const keys: string[] = [];
+  const first = event.start.slice(0, 10);
+  const last = event.end.slice(0, 10);
+  for (let day = new Date(`${first}T00:00:00`); dayKey(day) < last; day = addDays(day, 1)) {
+    keys.push(dayKey(day));
+    if (keys.length > 366) break;
+  }
+  return keys;
+}
+
+/** An event as a grid item: an id, a start and a length, like a recording. */
+export function asGridItem(event: GridEvent): { id: string; started_at: string; duration_s: number } {
+  return {
+    id: eventKey(event),
+    started_at: event.start,
+    duration_s: Math.max(60, (new Date(event.end).getTime() - new Date(event.start).getTime()) / 1000),
+  };
+}
+
+/** Whether an event is on now, or starts within the next ten minutes. */
+export function isHappening(event: GridEvent, now: Date = new Date()): boolean {
+  const start = new Date(event.start).getTime();
+  const end = new Date(event.end).getTime();
+  return !event.all_day && now.getTime() >= start - 10 * 60_000 && now.getTime() < end;
+}

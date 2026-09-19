@@ -18,7 +18,7 @@ VAD_MIC = "vad.mic"
 WINDOW_TITLE = "window.title"
 SESSION_RENDER = "session.render"
 CAMERA = "camera"
-CALENDAR = "calendar"  # post-V1: the weight exists, nothing ever contributes it
+CALENDAR = "calendar"  # a calendar meeting is on now, or starting in two minutes
 IGNORED = "ignored"
 
 
@@ -99,6 +99,15 @@ def session_evidence(process: str, render_processes: Sequence[str]) -> list[Evid
     if process and matches_process(process, render_processes):
         return [Evidence(1, SESSION_RENDER, f"{process} is playing audio")]
     return []
+
+
+def calendar_evidence(title: str | None) -> list[Evidence]:
+    """Worth 3 against a threshold of 5: enough to make a known app's call confident and
+    quick, never enough on its own. Nothing wakes the detector but a microphone, so an
+    event alone cannot start a recording however it scores."""
+    if title is None:
+        return []
+    return [Evidence(3, CALENDAR, f"{title or 'a meeting'} is on your calendar")]
 
 
 def camera_evidence(in_use: bool, detail: str = "the camera is on") -> list[Evidence]:
