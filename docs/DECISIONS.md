@@ -817,7 +817,7 @@ microphone?** Furniture was already holding it; a meeting takes it. No names (D4
 
 **Machine state nothing in the code puts there.** Toasts with buttons work on this machine
 because the library falls back to Command Prompt's registered identity; plain toasts are
-silently swallowed, because `MeetingAgent.App` is not registered as an AppUserModelID and
+silently swallowed, because `Upshot.App` is not registered as an AppUserModelID and
 *nothing in the app registers it*. Had that been fixed by hand — one `reg add` on this
 machine — every test would have passed here and every fresh install would have shipped a
 notification that does nothing. The registration belongs in the app's first run.
@@ -836,7 +836,7 @@ So, as a standing rule:
 - **A test may not quietly change the machine it runs on.** The injected-audio suite uses
   virtual endpoints and leaves the system defaults alone; with none available it says so and
   stops, rather than borrowing the speakers and playing a chirp at whoever is sitting there.
-  `MA_TEST_ALLOW_AUDIBLE=1` is the way to say that is fine.
+  `UP_TEST_ALLOW_AUDIBLE=1` is the way to say that is fine.
 
 The tell for both failures is the same: a change that makes the tests pass without making
 the product work anywhere else.

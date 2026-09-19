@@ -131,7 +131,7 @@ database and must never be able to aim the delete somewhere else.
 `scripts/windows/run-app.cmd` is the whole interface. It stops any previous instance,
 picks a port that is actually free (probing `127.0.0.1`, because a Linux listener inside
 WSL answers there while Windows reports the port free), prints the resolved configuration
-before starting, and confines every download to `%LOCALAPPDATA%\meeting-agent-win` —
+before starting, and confines every download to `%LOCALAPPDATA%\upshot-win` —
 nothing is written into the source tree and nothing touches PATH. `-Uninstall` removes it
 all. Ctrl+C stops the app with no prompt. See `windows-run.md`.
 
@@ -210,8 +210,8 @@ is in `docs/windows-run.md`.
 # headless
 uv run python -m app.main
 # fakes end to end
-MA_AUDIO__CAPTURE='"synthetic"' MA_ASR__BACKEND='"fake"' MA_LLM__PROVIDER='"fake"' \
-MA_AUDIO__VAD='"energy"' uv run python -m app.main
+UP_AUDIO__CAPTURE='"synthetic"' UP_ASR__BACKEND='"fake"' UP_LLM__PROVIDER='"fake"' \
+UP_AUDIO__VAD='"energy"' uv run python -m app.main
 ```
 
 The frontend must be built once (`cd frontend && npm ci && npm run build`).

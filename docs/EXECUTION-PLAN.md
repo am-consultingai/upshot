@@ -1,4 +1,4 @@
-# Meeting Agent — Execution Plan
+# Upshot — Execution Plan
 
 An implementation plan for an autonomous full-stack agent. Every phase ends in a green
 automated check that **requires no human** — no clicking, no speaking into a microphone,
@@ -97,7 +97,7 @@ never by monkeypatching in the test body — so the wiring itself is exercised.
 - No `datetime.now()` outside `app.clock`; tests inject `FakeClock`.
 - No `random` without an injected seed. Meeting ids come from `clock` + a seeded counter in tests.
 - Golden files are regenerated with `pytest --update-goldens` and diffed in review, never silently overwritten.
-- Every test that touches the app home uses a `tmp_path` app home via the `MA_HOME` env var.
+- Every test that touches the app home uses a `tmp_path` app home via the `UP_HOME` env var.
 
 ### The single entry point
 ```
@@ -161,7 +161,7 @@ python -m app.selftest detect-shadow # 60 s of real detector signals, no commit
 **Depends on:** 0.
 
 **Deliverables**
-- `app/paths.py` — app home from `MA_HOME` or `%LOCALAPPDATA%\meeting-agent`; `resource()` resolves bundled assets under both source and frozen layouts
+- `app/paths.py` — app home from `UP_HOME` or `%LOCALAPPDATA%\upshot`; `resource()` resolves bundled assets under both source and frozen layouts
 - `app/config.py` — three-layer merge (defaults → `app_config.json` → env), schema-validated, typed accessors; `secrets.get/set` over `keyring` with `FakeKeyring` for tests
 - `app/db/schema.sql`, `migrate.py`, `dao.py` — exactly the DDL in `TECHNICAL-DESIGN.md` §3.1
 
@@ -184,7 +184,7 @@ python -m app.selftest detect-shadow # 60 s of real detector signals, no commit
 | `test_config_layer_precedence` | env beats file beats default, per key, with a 3-way conflict fixture |
 | `test_secrets_never_in_config_file` | write a secret, dump `app_config.json`, assert the value string does not appear anywhere in the file bytes |
 | `test_redacted_dump` | every key named in `SECRET_KEYS` renders as `"***"` |
-| `test_apphome_respects_env` | `MA_HOME=tmp` → DB created under tmp, nothing written to `%LOCALAPPDATA%` |
+| `test_apphome_respects_env` | `UP_HOME=tmp` → DB created under tmp, nothing written to `%LOCALAPPDATA%` |
 | `test_data_root_default` | unset `data_root` → resolves under the app home; set → resolves to the configured path |
 | `test_data_root_change_preserves_old` | create a meeting, change `data_root`, create another → both readable; the first still resolves via its stored absolute `folder` |
 | `test_synced_folder_warning` | `data_root` under a path containing `OneDrive`/`Dropbox`/`Google Drive` (or matching `%OneDrive%`) → config validation returns a warning, not an error |
@@ -571,7 +571,7 @@ an ephemeral port and hits `/api/status`.
 - `dir="rtl"` on the document root; Tailwind logical properties (`ps-`/`pe-`/`ms-`/`me-`) only — a lint rule bans `pl-`/`pr-`/`ml-`/`mr-` so mirroring never regresses.
 - Every element a test needs carries `data-testid`; tests never select by CSS class or visible text (text is Hebrew and will change).
 - `npm run build` output is served by FastAPI; Playwright runs against the built bundle, not the dev server, so the tested artifact is the shipped one.
-- A `POST /api/test/seed` route exists **only** when `MA_TEST_MODE=1`, and its absence in normal mode is itself asserted.
+- A `POST /api/test/seed` route exists **only** when `UP_TEST_MODE=1`, and its absence in normal mode is itself asserted.
 
 **Tests**
 
@@ -593,7 +593,7 @@ an ephemeral port and hits `/api/status`.
 | `e2e: data_root_picker` | Settings shows the current data root; setting a path containing `OneDrive` surfaces the sync warning inline |
 | `e2e: attention_lists_failures` | seed a `FAILED` meeting → it appears on `/attention` with a Retry button that calls the retry endpoint |
 | `e2e: settings_roundtrip` | change a setting, reload → persisted; assert no secret value is ever present in the DOM |
-| `e2e: test_seed_route_absent` | with `MA_TEST_MODE` unset → `POST /api/test/seed` returns 404 |
+| `e2e: test_seed_route_absent` | with `UP_TEST_MODE` unset → `POST /api/test/seed` returns 404 |
 
 **Exit criteria:** `npx playwright test` green headless in CI; screenshots archived on failure.
 
@@ -680,7 +680,7 @@ report. **This is milestone M2's core**; ship detection in shadow mode first, an
 **Depends on:** all.
 
 **Deliverables**
-- `packaging/meeting-agent.spec` (PyInstaller one-dir), `packaging/installer.iss` (Inno, per-user, no admin), `packaging/build.ps1`
+- `packaging/upshot.spec` (PyInstaller one-dir), `packaging/installer.iss` (Inno, per-user, no admin), `packaging/build.ps1`
 - `app/bootstrap.py` — first-run sequence from `TECHNICAL-DESIGN.md` §17
 
 **Implementation notes**
@@ -697,7 +697,7 @@ report. **This is milestone M2's core**; ship detection in shadow mode first, an
 | `test_frozen_selftest_pipeline` | frozen exe runs `selftest pipeline` on a fixture → produces `summary.html`, exit 0 |
 | `test_frozen_resources_present` | templates, prompts, `ffmpeg.exe` all resolve inside the freeze |
 | `test_installer_builds` | `build.ps1` produces `Setup.exe` and its size is within ±25 % of the recorded baseline (a sudden jump means something large was accidentally bundled) |
-| `test_bootstrap_idempotent` | run bootstrap twice on a fresh `MA_HOME` → same result, no duplicate scheduled task, no second migration |
+| `test_bootstrap_idempotent` | run bootstrap twice on a fresh `UP_HOME` → same result, no duplicate scheduled task, no second migration |
 | `test_bootstrap_offline` | with the network blocked and no model present → fails with a clear actionable error, does not hang |
 | `test_task_scheduler_registration` *(windows)* | after bootstrap, `schtasks /query` finds the logon task; uninstall removes it |
 

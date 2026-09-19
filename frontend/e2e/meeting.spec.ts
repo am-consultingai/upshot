@@ -124,7 +124,7 @@ test("detector_page_lists_events", async ({ page, seedBody }) => {
 });
 
 test("seed_route_is_not_open", async ({ request }) => {
-  // The launcher sets MA_TEST_MODE=1, so the route exists here; the *absence* case is
+  // The launcher sets UP_TEST_MODE=1, so the route exists here; the *absence* case is
   // asserted by the Python suite (test_test_seed_route_absent_by_default), which can
   // control the environment. What we assert here is that an unauthenticated caller —
   // no cookie, no CSRF header — is rejected before reaching it.

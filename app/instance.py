@@ -16,7 +16,7 @@ from app.log import get
 
 log = get(__name__)
 
-MUTEX_NAME = r"Global\meeting-agent"
+MUTEX_NAME = r"Global\upshot"
 ALREADY_RUNNING = 3
 
 

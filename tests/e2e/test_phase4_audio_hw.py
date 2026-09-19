@@ -50,7 +50,7 @@ def source_wav(tmp_path: Path) -> Path:
 
     target = tmp_path / "source.wav"
     if speech.available():
-        return speech.synth("This is the meeting agent loopback echo test. " * 8, target)
+        return speech.synth("This is Upshot loopback echo test. " * 8, target)
     index = np.arange(20 * RATE, dtype=np.float64)
     sweep = np.sin(2 * np.pi * (200 + 600 * index / len(index)) * index / RATE)
     envelope = 0.5 + 0.5 * np.sin(2 * np.pi * 3.0 * index / RATE)
@@ -185,7 +185,7 @@ def test_dual_stream_concurrent() -> None:
 @pytest.mark.slow
 def test_soak_two_hours(tmp_path: Path) -> None:
     """Reports clock drift between the two hardware clocks; fails past 1 s/hour."""
-    hours = float(__import__("os").environ.get("MA_SOAK_HOURS", "2"))
+    hours = float(__import__("os").environ.get("UP_SOAK_HOURS", "2"))
     recorder = _recorder(tmp_path)
     folder = tmp_path / "meeting"
     recorder.start(folder, "soak")

@@ -22,15 +22,15 @@ from app.services import Services, build
 log = get(__name__)
 
 INDEX_FALLBACK = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Meeting Agent</title></head>
-<body><h1>Meeting Agent</h1>
+<html lang="en"><head><meta charset="utf-8"><title>Upshot</title></head>
+<body><h1>Upshot</h1>
 <p>The web UI has not been built yet. Run <code>npm run build</code> in <code>frontend/</code>.</p>
 <p><a href="/api/status">/api/status</a></p></body></html>
 """
 
 
 def test_mode() -> bool:
-    return os.environ.get("MA_TEST_MODE") == "1"
+    return os.environ.get("UP_TEST_MODE") == "1"
 
 
 def frontend_dir() -> Any:
@@ -67,7 +67,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
         yield
 
     app = FastAPI(
-        title="Meeting Agent",
+        title="Upshot",
         version="1.0.0",
         lifespan=lifespan,
         docs_url=None,
@@ -77,7 +77,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(router)
     if test_mode():
         app.include_router(test_router())
-        log.warning("MA_TEST_MODE=1 — the seed route is mounted")
+        log.warning("UP_TEST_MODE=1 — the seed route is mounted")
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> Response:
@@ -93,6 +93,19 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     dist = frontend_dir()
     if (dist / "assets").exists():
         app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="assets")
+
+    # Vite copies public/ to the dist *root*, not into assets/, so without these
+    # the icons fall through to the SPA route below and the browser is handed an
+    # HTML document where it asked for an image — which it shows as no icon at all.
+    for name, media in (("favicon.svg", "image/svg+xml"), ("favicon.ico", "image/x-icon")):
+
+        def serve_root_file(_name: str = name, _media: str = media) -> Response:
+            candidate = frontend_dir() / _name
+            if not candidate.exists():  # a source checkout with no build yet
+                return Response(status_code=404)
+            return FileResponse(candidate, media_type=_media)
+
+        app.get(f"/{name}", include_in_schema=False)(serve_root_file)
 
     @app.api_route(
         "/api/{rest:path}",
@@ -154,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     token = services.auth.issue_token()
     url = f"http://127.0.0.1:{services.config.server_port}/?k={token}"
     log.info("open %s", url)
-    print(f"\n  Meeting Agent is running. Open this once to authorize the browser:\n\n  {url}\n")
+    print(f"\n  Upshot is running. Open this once to authorize the browser:\n\n  {url}\n")
     try:
         server.run()
     except KeyboardInterrupt:

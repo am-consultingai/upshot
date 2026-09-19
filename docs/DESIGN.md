@@ -1,4 +1,4 @@
-# Meeting Agent — Design
+# Upshot — Design
 
 A local Windows application that turns an online meeting into an HTML summary with no
 manual steps: it notices the meeting start on its own, records both audio tracks,
@@ -26,7 +26,7 @@ Replaces today's manual flow: Audacity → script → paste to LLM → paste to 
 | Delivery | **The local timeline is the product**; email over plain SMTP (app password — no Google API, no OAuth) is one optional channel out of it |
 | Meeting language | **Auto-detected per meeting** from the first chunk, then pinned. Default `he`; fully-English meetings are transcribed as English |
 | UI & summary language | **Multi-language with a selector, English default.** `ui.language` and `summary.language` are independent settings; text direction follows the selected locale |
-| Data location | **Configurable data root**, chosen at setup, changeable later. Default `%LOCALAPPDATA%\meeting-agent\meetings` |
+| Data location | **Configurable data root**, chosen at setup, changeable later. Default `%LOCALAPPDATA%\upshot\meetings` |
 
 ---
 
@@ -136,7 +136,7 @@ cores−2 threads. The meeting always wins.
 ## 6. Components
 
 ```
-┌─ Meeting Agent (single Windows process) ─────────────────────────┐
+┌─ Upshot (single Windows process) ─────────────────────────┐
 │                                                                  │
 │  Tray launcher (pystray)  ── status icon, Start/Stop/Pause,      │
 │                              "open dashboard", "skip this one"   │
@@ -306,7 +306,7 @@ shows a badge; the UI shows why.
 One self-contained folder per meeting — everything reproducible from what's on disk.
 
 ```
-%LOCALAPPDATA%\meeting-agent\meetings\2026-08-27_1400_weekly-sync\
+%LOCALAPPDATA%\upshot\meetings\2026-08-27_1400_weekly-sync\
   meta.json          calendar event, attendees, timings, flags, profile, model versions
   audio\
     me\chunk_0001.wav …            (mic)

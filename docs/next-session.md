@@ -39,7 +39,7 @@ That means you can, from here:
 - **read the Windows crash log** — `Get-WinEvent` with `Id=1000` gives the faulting module
   and exception code, which is how the PortAudio access violation was identified
 
-**An isolated instance costs one environment variable.** `MA_HOME` overrides the config
+**An isolated instance costs one environment variable.** `UP_HOME` overrides the config
 file, the database, the data root and the log directory together, so a whole second
 instance can be pointed at a scratch folder and driven from the launcher's venv without
 going near the real library. Use it before running anything that deletes.
@@ -47,10 +47,10 @@ going near the real library. Use it before running anything that deletes.
 **Read the app's own logs directly. Do not ask the user to paste them:**
 
 ```
-/mnt/c/Users/am/AppData/Local/meeting-agent/logs/app.log        the app's log
-/mnt/c/Users/am/AppData/Local/meeting-agent/console.err.log     the same, plus stdout
-/mnt/c/Users/am/AppData/Local/meeting-agent/meetings/<id>/      audio, transcript, summary
-/mnt/c/Users/am/AppData/Local/meeting-agent/app_config.json     saved settings
+/mnt/c/Users/am/AppData/Local/upshot/logs/app.log        the app's log
+/mnt/c/Users/am/AppData/Local/upshot/console.err.log     the same, plus stdout
+/mnt/c/Users/am/AppData/Local/upshot/meetings/<id>/      audio, transcript, summary
+/mnt/c/Users/am/AppData/Local/upshot/app_config.json     saved settings
 ```
 
 Recordings are real audio: measure them with numpy rather than reasoning about them. Peak,
@@ -105,10 +105,10 @@ In the order I would take it.
 5. **Settings for the keys that now delete things.** `retention.audio_days` deletes user
    recordings and is not in the UI.
 
-To run either of them on Windows without touching the real library, set `MA_HOME` to a
+To run either of them on Windows without touching the real library, set `UP_HOME` to a
 scratch folder — it overrides the config, the database, the data root and the logs
 together — and drive the stage or the sweep from the venv the launcher built at
-`%LOCALAPPDATA%\meeting-agent-win\venv`. That is how D37 and D38 were verified, and it is
+`%LOCALAPPDATA%\upshot-win\venv`. That is how D37 and D38 were verified, and it is
 much faster than recording a meeting each time.
 
 ---

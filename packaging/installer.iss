@@ -1,12 +1,12 @@
 ; Per-user install, no admin prompt (SECURITY-AND-AUTH.md §10 step 1).
-#define AppName "Meeting Agent"
+#define AppName "Upshot"
 #define AppVersion "1.0.0"
-#define AppExe "meeting-agent.exe"
+#define AppExe "upshot.exe"
 
 [Setup]
 AppName={#AppName}
 AppVersion={#AppVersion}
-DefaultDirName={localappdata}\Programs\meeting-agent
+DefaultDirName={localappdata}\Programs\upshot
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -16,10 +16,14 @@ OutputBaseFilename=Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Setup.exe's own icon. The installed app gets the same mark from the .exe, which
+; PyInstaller stamps with this file (see packaging/upshot.spec); both are generated
+; by scripts/make_icons.py.
+SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 
 [Files]
-Source: "..\dist\meeting-agent\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\upshot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -34,4 +38,4 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait pos
 
 [UninstallRun]
 ; The logon task is ours; remove it with the app.
-Filename: "schtasks"; Parameters: "/Delete /F /TN MeetingAgent"; Flags: runhidden; RunOnceId: "RemoveLogonTask"
+Filename: "schtasks"; Parameters: "/Delete /F /TN Upshot"; Flags: runhidden; RunOnceId: "RemoveLogonTask"

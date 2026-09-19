@@ -5,7 +5,7 @@ import { BASE_URL } from "./playwright.config";
  * The same specs, run against the app on Windows through a browser on Windows.
  *
  * No `webServer`: the harness (`scripts/windows/e2e.py`) owns the app instance and the
- * browser, because both live on the other side of the WSL boundary. `MA_E2E_CDP` points
+ * browser, because both live on the other side of the WSL boundary. `UP_E2E_CDP` points
  * the fixtures at that browser.
  */
 export default defineConfig({

@@ -21,7 +21,7 @@ plus hand-editing `app_config.json`. Fine for the author, fatal for anyone else.
 `dist/` has never been produced and there is no installer. This matters more than it did:
 the packaging spec changed on 2026-09-06 (the `templates/` bundle entry was removed with
 the Jinja renderer), so the spec is now **untested against a real build**. `console=False`
-in `packaging/meeting-agent.spec` also means every subprocess spawn needs
+in `packaging/upshot.spec` also means every subprocess spawn needs
 `CREATE_NO_WINDOW`, which the code does but which has only ever run from source with a
 console attached.
 
@@ -169,7 +169,7 @@ bugs.
 | The summary query cached its 404 | The file appeared and the page never asked again |
 | A range-based edit deleted `/api/llm/prompt` | The prompt editor rendered `null` and simply was not there |
 | Staleness ignored the prompt | Editing it and pressing Summarize did nothing |
-| `config.save()` wrote back the environment layer | The launcher's `MA_LLM__PROVIDER=fake` became permanent on any unrelated save |
+| `config.save()` wrote back the environment layer | The launcher's `UP_LLM__PROVIDER=fake` became permanent on any unrelated save |
 | Page freshness depended on a flag set by the click | A page opened mid-run reported "running" long after the work finished |
 
 The defences added in response are worth keeping: launch attempts are logged with full

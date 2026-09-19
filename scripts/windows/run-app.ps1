@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Run Meeting Agent on Windows for a real, manual test.
+  Run Upshot on Windows for a real, manual test.
 
 .DESCRIPTION
   Starts the application with real two-track capture (your microphone plus system audio)
@@ -44,8 +44,8 @@ param(
     [string] $ModelPath = "D:\deprecated_project\Learning Managers\temp\Scripts\ivrit_model",
     [string] $CudaDir   = "D:\deprecated_project\Learning Managers\temp\Scripts",
     [string] $Provider = "",
-    [string] $HomeDir = "$env:LOCALAPPDATA\meeting-agent",
-    [string] $WorkDir = "$env:LOCALAPPDATA\meeting-agent-win",
+    [string] $HomeDir = "$env:LOCALAPPDATA\upshot",
+    [string] $WorkDir = "$env:LOCALAPPDATA\upshot-win",
     [int]    $Port = 8000,
     [switch] $CheckAudio,
     [switch] $Uninstall,
@@ -175,7 +175,7 @@ $appProcess = $null
 $script:started = $false
 try {
     Write-Host ""
-    Write-Host "  Meeting Agent" -ForegroundColor White
+    Write-Host "  Upshot" -ForegroundColor White
     Write-Host "  source   $root  (read only - nothing is written here)"
     Write-Host "  runtime  $WorkDir"
     Write-Host "  data     $HomeDir"
@@ -344,33 +344,33 @@ try {
     }
 
     # ------------------------------------------------------- configure
-    $env:MA_HOME = $HomeDir
+    $env:UP_HOME = $HomeDir
     New-Item -ItemType Directory -Force -Path $HomeDir | Out-Null
 
-    $env:MA_SERVER__PORT         = "$Port"
-    $env:MA_AUDIO__CAPTURE       = '"wasapi"'    # real microphone + real loopback
-    $env:MA_ASR__BACKEND         = '"local"'     # real ivrit-ai transcription
+    $env:UP_SERVER__PORT         = "$Port"
+    $env:UP_AUDIO__CAPTURE       = '"wasapi"'    # real microphone + real loopback
+    $env:UP_ASR__BACKEND         = '"local"'     # real ivrit-ai transcription
     # Only when asked. Exporting this unconditionally overrode the provider chosen on
     # the Settings screen at every start, so that choice looked like it reverted by
     # itself - and any later save wrote the override permanently into app_config.json.
-    if ($Provider -ne "") { $env:MA_LLM__PROVIDER = '"' + $Provider + '"' }
-    $env:MA_DELIVERY__NOTIFIER   = '"windows"'
+    if ($Provider -ne "") { $env:UP_LLM__PROVIDER = '"' + $Provider + '"' }
+    $env:UP_DELIVERY__NOTIFIER   = '"windows"'
     # Detection is deliberately NOT set here. Forcing it off overrode the mode chosen on
     # the Settings screen at every start, exactly as the provider override above used to:
     # the file kept saying "shadow" while the running app watched nothing, and the setting
     # looked like it reverted by itself. The shipped default is watch-and-log (DECISIONS
     # D41), and anything else is the user's choice to make and keep.
-    $env:MA_AUDIO__MIN_MEETING_S = "5"           # keep short test recordings
-    $env:MA_JOB_POLICY           = '"asap"'      # transcribe as soon as you press Stop
+    $env:UP_AUDIO__MIN_MEETING_S = "5"           # keep short test recordings
+    $env:UP_JOB_POLICY           = '"asap"'      # transcribe as soon as you press Stop
     if ($modelOk) {
-        $env:MA_ASR__MODEL_PATH = '"' + ($ModelPath -replace '\\', '\\') + '"'
+        $env:UP_ASR__MODEL_PATH = '"' + ($ModelPath -replace '\\', '\\') + '"'
         Write-Good "model: $ModelPath"
     }
     if ($cudaOk) {
-        $env:MA_ASR__CUDA_DIR = '"' + ($CudaDir -replace '\\', '\\') + '"'
+        $env:UP_ASR__CUDA_DIR = '"' + ($CudaDir -replace '\\', '\\') + '"'
         # A GTX 1080 is Pascal: it has no fast float16, so int8 is the right compute type
         # (DESIGN.md section 20.5). Remove this line on newer hardware.
-        $env:MA_ASR__COMPUTE_TYPE = '"int8"'
+        $env:UP_ASR__COMPUTE_TYPE = '"int8"'
         Write-Good "CUDA: $CudaDir (int8, suits Pascal)"
     }
 

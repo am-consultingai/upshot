@@ -1,6 +1,6 @@
 """Launch the app for Playwright: fakes everywhere, a temp data root, seed route on.
 
-MA_E2E_PORT=8123 MA_E2E_SESSION=... uv run python scripts/e2e_server.py
+UP_E2E_PORT=8123 UP_E2E_SESSION=... uv run python scripts/e2e_server.py
 """
 
 from __future__ import annotations
@@ -20,17 +20,17 @@ from app.services import build
 
 
 def main() -> int:
-    os.environ.setdefault("MA_TEST_MODE", "1")
-    home = Path(os.environ.get("MA_HOME") or tempfile.mkdtemp(prefix="ma-e2e-"))
+    os.environ.setdefault("UP_TEST_MODE", "1")
+    home = Path(os.environ.get("UP_HOME") or tempfile.mkdtemp(prefix="ma-e2e-"))
     home.mkdir(parents=True, exist_ok=True)
-    os.environ["MA_HOME"] = str(home)
+    os.environ["UP_HOME"] = str(home)
     setup(to_file=False)
 
     # argv wins over the environment, and the harness always passes it. Not for
     # configuration — the env var did that fine — but so the port appears on the
     # *command line*, which is the only handle WSL has for killing this process on
     # the Windows side. See scripts/windows/e2e.py.
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("MA_E2E_PORT", "8123"))
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("UP_E2E_PORT", "8123"))
     config = default_config(
         asr__backend="fake",
         llm__provider="fake",
@@ -52,8 +52,8 @@ def main() -> int:
     config.set("llm.ollama_url", "http://127.0.0.1:9")
 
     services = build(config, with_worker=True, with_recorder=True)
-    services.auth.session_secret = os.environ.get("MA_E2E_SESSION", services.auth.session_secret)
-    services.auth.csrf_secret = os.environ.get("MA_E2E_CSRF", services.auth.csrf_secret)
+    services.auth.session_secret = os.environ.get("UP_E2E_SESSION", services.auth.session_secret)
+    services.auth.csrf_secret = os.environ.get("UP_E2E_CSRF", services.auth.csrf_secret)
     app = create_app(services)
     print(f"e2e server on http://127.0.0.1:{port} (home={home})", flush=True)
     LocalServer(app, host="127.0.0.1", port=port).run()

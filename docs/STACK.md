@@ -118,7 +118,7 @@ model, a short fixture WAV end-to-end, and golden-file tests on the renderer.
 ## Repo layout
 
 ```
-meeting-agent/
+upshot/
   pyproject.toml            uv-managed, cp313
   app/
     main.py                 FastAPI + startup wiring

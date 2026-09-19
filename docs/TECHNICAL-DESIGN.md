@@ -1,4 +1,4 @@
-# Meeting Agent — Technical Design
+# Upshot — Technical Design
 
 Implementation-level specification. Assumes `DESIGN.md` (architecture), `DETECTION.md`
 (detection mechanism), `STACK.md` (dependencies), `SECURITY-AND-AUTH.md` (auth model).
@@ -106,7 +106,7 @@ app/
 
 ### 3.1 SQLite schema
 
-`%LOCALAPPDATA%\meeting-agent\index.db`, `journal_mode=WAL`, `synchronous=NORMAL`.
+`%LOCALAPPDATA%\upshot\index.db`, `journal_mode=WAL`, `synchronous=NORMAL`.
 
 ```sql
 CREATE TABLE schema_version (version INTEGER NOT NULL);
@@ -177,7 +177,7 @@ words. Verify FTS5 exists in the bundled SQLite before relying on it (`STACK.md`
 
 ### 3.2 On-disk artifacts
 
-`<data_root>` defaults to `%LOCALAPPDATA%\meeting-agent\meetings` and is set at first run.
+`<data_root>` defaults to `%LOCALAPPDATA%\upshot\meetings` and is set at first run.
 `meetings.folder` stores an **absolute** path, so changing the root later affects only new
 meetings — existing ones stay readable with no migration.
 
@@ -694,11 +694,11 @@ Three layers, later overriding earlier:
 3. **environment** — `.env` for dev, non-secret paths only.
 
 **Secrets never appear in any of them.** `keyring` (Windows Credential Manager) holds
-`anthropic`, `smtp`, `google_refresh_token`, under service name `meeting-agent`.
+`anthropic`, `smtp`, `google_refresh_token`, under service name `upshot`.
 
 ```jsonc
 {
-  "data_root": null,                       // null → %LOCALAPPDATA%\meeting-agent\meetings
+  "data_root": null,                       // null → %LOCALAPPDATA%\upshot\meetings
   "ui":      {"language": "en"},           // en|he — interface locale, drives document dir
   "summary": {"language": "en"},           // en|he|auto  (auto = match the transcript)
   "asr":     {"language_mode": "detect",   // detect|fixed
@@ -739,11 +739,11 @@ Three layers, later overriding earlier:
 
 - **Bind** `127.0.0.1` explicitly, never `0.0.0.0`.
 - **Host-header middleware** rejecting anything not in `{localhost:8000, 127.0.0.1:8000}` → 421. This is the DNS-rebinding defense; it runs before routing.
-- **Auth:** on first launch the tray opens `http://127.0.0.1:8000/?k=<one-time token>`; the server exchanges it for an `HttpOnly; SameSite=Strict; Max-Age=1y` cookie. No cookie → 401 with *"open Meeting Agent from the tray"*. Calendar deep-links work because the cookie already exists.
+- **Auth:** on first launch the tray opens `http://127.0.0.1:8000/?k=<one-time token>`; the server exchanges it for an `HttpOnly; SameSite=Strict; Max-Age=1y` cookie. No cookie → 401 with *"open Upshot from the tray"*. Calendar deep-links work because the cookie already exists.
 - **CSRF:** double-submit token on all mutating routes; `SameSite=Strict` is the primary defense.
 - **CORS:** no `Access-Control-Allow-Origin` header at all.
 - **Audio streaming** is range-request only, gated by the same cookie.
-- **Single instance:** named mutex `Global\meeting-agent`; second launch focuses the first.
+- **Single instance:** named mutex `Global\upshot`; second launch focuses the first.
 
 ---
 

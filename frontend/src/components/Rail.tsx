@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import { Logo } from "./Logo";
 import type { MessageKey } from "../locales/en";
 
 /**
@@ -60,9 +61,9 @@ export default function Rail() {
       <span
         data-testid="app-title"
         title={t("app.title")}
-        className="mb-2.5 grid size-6.5 place-items-center rounded-lg bg-accent text-xs font-bold text-on-accent"
+        className="mb-2.5 grid size-6.5 place-items-center rounded-lg bg-accent text-on-accent"
       >
-        M
+        <Logo className="w-4.5" />
       </span>
 
       {/*

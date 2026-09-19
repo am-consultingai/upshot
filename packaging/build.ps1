@@ -28,11 +28,11 @@ npm run build
 Pop-Location
 
 Write-Host "== PyInstaller =="
-Remove-Item -Recurse -Force (Join-Path $root "dist\meeting-agent") -ErrorAction SilentlyContinue
-uv run pyinstaller --noconfirm --clean packaging\meeting-agent.spec
+Remove-Item -Recurse -Force (Join-Path $root "dist\upshot") -ErrorAction SilentlyContinue
+uv run pyinstaller --noconfirm --clean packaging\upshot.spec
 
 Write-Host "== selftest against the freeze =="
-$exe = Join-Path $root "dist\meeting-agent\meeting-agent.exe"
+$exe = Join-Path $root "dist\upshot\upshot.exe"
 & $exe --selftest imports
 if ($LASTEXITCODE -ne 0) { throw "the frozen build failed --selftest imports" }
 & $exe --selftest pipeline

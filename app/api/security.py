@@ -15,11 +15,11 @@ from app.log import get
 
 log = get(__name__)
 
-SESSION_COOKIE = "ma_session"
-CSRF_COOKIE = "ma_csrf"
+SESSION_COOKIE = "up_session"
+CSRF_COOKIE = "up_csrf"
 CSRF_HEADER = "x-csrf-token"
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-NO_COOKIE_MESSAGE = "open Meeting Agent from the tray to authorize this browser"
+NO_COOKIE_MESSAGE = "open Upshot from the tray to authorize this browser"
 
 
 @dataclass
@@ -50,7 +50,7 @@ class AuthState:
 
     def was_issued_here(self, token: str) -> bool:
         """False for a token this process never minted — which usually means the link
-        came from a *different* Meeting Agent answering on the same port."""
+        came from a *different* Upshot answering on the same port."""
         return token in self._tokens or token in self._used
 
     def valid_session(self, value: str | None) -> bool:
@@ -164,7 +164,7 @@ class AuthMiddleware:
                 log.warning("authorize link was not issued by this process: %s", host)
                 detail = (
                     "this link was not issued by the app answering on this port — "
-                    "another Meeting Agent is probably already running here "
+                    "another Upshot is probably already running here "
                     "(on WSL, a Linux instance shadows the Windows one). "
                     "Stop it, or start this one on a different port."
                 )

@@ -68,7 +68,7 @@ you."* You qualify. Publishing does **not** mean submitting for review.
 ## 3. About the warning you can't fully avoid
 
 On a personal Gmail account requesting a sensitive scope, you will see
-**"Google hasn't verified this app"** → *Advanced* → *Go to Meeting Agent (unsafe)* — **exactly
+**"Google hasn't verified this app"** → *Advanced* → *Go to Upshot (unsafe)* — **exactly
 once**, at first consent, and only you ever see it. It is not a recurring nag and it does
 not appear on subsequent token refreshes.
 
@@ -195,7 +195,7 @@ of every meeting you've ever had.
 - **Bind `127.0.0.1` explicitly**, never `0.0.0.0`. On a laptop that's the difference between "local tool" and "transcript server for the coffee shop wifi".
 - **DNS rebinding defense.** A malicious website can resolve its own hostname to 127.0.0.1 and make *your* browser talk to the app. Validate the `Host` header against an allowlist (`localhost`, `127.0.0.1`, plus the port) and reject everything else. This is the one that gets missed.
 - **CORS: deny all.** No cross-origin reads, `SameSite=Strict` cookies, CSRF token on every mutating route.
-- **Auth:** a per-install secret. First launch from the tray opens the browser with a one-time token that sets a long-lived `SameSite=Strict` cookie. Calendar links then just work; a request with no cookie gets *"open Meeting Agent from the tray to authorize"* instead of your transcripts.
+- **Auth:** a per-install secret. First launch from the tray opens the browser with a one-time token that sets a long-lived `SameSite=Strict` cookie. Calendar links then just work; a request with no cookie gets *"open Upshot from the tray to authorize"* instead of your transcripts.
 - **Secrets at rest:** OAuth refresh token, SMTP app password, and the Anthropic key go in **Windows Credential Manager** (via `keyring`) — not a `.env` file next to the code. An app password is full send-as-you mail access; treat it like one.
 - **Data at rest:** transcripts and audio are plaintext on disk. Document that BitLocker is the answer, and make the retention policy (auto-delete raw audio after N days) real rather than aspirational.
 - **Egress is auditable:** exactly two outbound destinations in normal operation — Google (calendar) and Anthropic (summaries), plus SMTP. Log every outbound call with meeting id and byte count so "what left this machine" is answerable. The `sensitive` flag must be enforced at the egress boundary, not just in the UI.

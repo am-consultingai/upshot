@@ -73,7 +73,7 @@ claude -p --output-format json
    - the same in **Hebrew** — the reason the character heuristic exists;
    - signed-out simulation with `HOME` pointed at an empty dir → `PermanentError(auth)`.
 2. **End to end:** `scripts/demo.sh` with fakes for audio and ASR and
-   `MA_LLM__PROVIDER='"claude-subscription"'` → the pipeline produces a real summary from
+   `UP_LLM__PROVIDER='"claude-subscription"'` → the pipeline produces a real summary from
    the fixture transcript; open it in the timeline; check the RTL render and `data-at-ms`.
 3. **Measure and record** (`docs/install-log.md`): wall time per window, `total_cost_usd`
    and cache hit ratio across a meeting's windows, and real `input_tokens` versus the

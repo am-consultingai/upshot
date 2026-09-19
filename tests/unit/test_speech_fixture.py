@@ -17,7 +17,7 @@ def _requires_sapi() -> None:
 
 
 def test_speech_fixture_generates(tmp_path: Path) -> None:
-    out = speech.synth("hello world, this is the meeting agent", tmp_path / "hello.wav")
+    out = speech.synth("hello world, this is Upshot", tmp_path / "hello.wav")
     assert out.exists()
     with wave.open(str(out), "rb") as w:
         assert w.getnchannels() == 1
@@ -25,8 +25,8 @@ def test_speech_fixture_generates(tmp_path: Path) -> None:
 
 
 def test_speech_fixture_cached() -> None:
-    first = speech.synth("cached phrase for the meeting agent")
+    first = speech.synth("cached phrase for Upshot")
     mtime = first.stat().st_mtime_ns
-    second = speech.synth("cached phrase for the meeting agent")
+    second = speech.synth("cached phrase for Upshot")
     assert second == first
     assert second.stat().st_mtime_ns == mtime

@@ -54,7 +54,7 @@ Notes:
 
 - Dependencies install into **`.venv-win`**, not `.venv` — the latter is a Linux
   environment if this repo came from WSL, and `uv sync` would otherwise replace it.
-- Recordings land in `%LOCALAPPDATA%\meeting-agent\meetings`.
+- Recordings land in `%LOCALAPPDATA%\upshot\meetings`.
 - Detection is off: nothing records until you press Start.
 
 ---
@@ -62,7 +62,7 @@ Notes:
 ## 1. One-time setup on Windows
 
 ```powershell
-cd $HOME\projects\meeting-agent      # or wherever this repo is checked out
+cd $HOME\projects\upshot            # or wherever this repo is checked out
 winget install --id=astral-sh.uv -e  # if uv is not installed
 uv sync
 ```
@@ -87,7 +87,7 @@ cd ..
 
 **Expected:** all green. `npm run e2e` starts the backend itself
 (`.venv\Scripts\python scripts\e2e_server.py` via the `webServer` block — set
-`MA_E2E_PYTHON` if your venv lives elsewhere).
+`UP_E2E_PYTHON` if your venv lives elsewhere).
 
 ---
 
@@ -161,20 +161,20 @@ uv run python scripts\make_fixture.py --minutes 10
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
-dist\meeting-agent\meeting-agent.exe --selftest imports
-dist\meeting-agent\meeting-agent.exe --selftest pipeline
+dist\upshot\upshot.exe --selftest imports
+dist\upshot\upshot.exe --selftest pipeline
 uv run pytest -q tests/e2e/test_phase13_frozen.py
 ```
 
 **Expected:** both `--selftest` runs exit 0, and the frozen tests stop skipping once
-`dist\meeting-agent\meeting-agent.exe` exists. The first is the PyInstaller
+`dist\upshot\upshot.exe` exists. The first is the PyInstaller
 hidden-import tripwire and must never be skipped before shipping a build.
 `build.ps1` runs both itself and fails the build if either does.
 
 First run on a clean profile:
 
 ```powershell
-dist\meeting-agent\meeting-agent.exe --bootstrap
+dist\upshot\upshot.exe --bootstrap
 ```
 
 prints the first-run report as JSON (profile, model, schema version, logon task).
@@ -183,8 +183,8 @@ prints the first-run report as JSON (profile, model, schema version, logon task)
 ## Where files go, and removing it all
 
 Nothing is written into the source folder. The launcher keeps every Windows-side
-artifact in `%LOCALAPPDATA%\meeting-agent-win` (override with `-WorkDir`), and your
-recordings in `%LOCALAPPDATA%\meeting-agent`. Nothing touches PATH, the registry or
+artifact in `%LOCALAPPDATA%\upshot-win` (override with `-WorkDir`), and your
+recordings in `%LOCALAPPDATA%\upshot`. Nothing touches PATH, the registry or
 Program Files.
 
 | What | Where | Size |
@@ -194,7 +194,7 @@ Program Files.
 | Dependencies | `<work>\venv\` | ~600 MB |
 | Package cache | `<work>\cache\` | ~600 MB, safe to delete any time |
 | Byte-code cache | `<work>\pycache\` | small |
-| Recordings, transcripts, database | `%LOCALAPPDATA%\meeting-agent\` | grows with use |
+| Recordings, transcripts, database | `%LOCALAPPDATA%\upshot\` | grows with use |
 
 (Sizes measured from the Linux environment; Windows differs somewhat.)
 

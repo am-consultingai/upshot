@@ -19,8 +19,8 @@ from app.log import get
 
 log = get(__name__)
 
-TASK_NAME = "MeetingAgent"
-APP_USER_MODEL_ID = "MeetingAgent.App"
+TASK_NAME = "Upshot"
+APP_USER_MODEL_ID = "Upshot.App"
 
 
 class BootstrapError(RuntimeError):
@@ -232,7 +232,7 @@ def preflight(config: Config, *, min_free_bytes: int = 2 * 1024**3) -> list[str]
     if free < min_free_bytes:
         problems.append(f"only {free // 1024**2} MB free under {root}")
     if (
-        os.environ.get("MA_SKIP_DEVICE_PREFLIGHT") != "1"
+        os.environ.get("UP_SKIP_DEVICE_PREFLIGHT") != "1"
         and str(config.get("audio.capture", "wasapi")) == "wasapi"
     ):
         from app.audio.devices import NoDeviceError, default_render, loopback_for

@@ -6,8 +6,8 @@
       "Read",
       "Glob",
       "Grep",
-      "Edit(//home/am/projects/meeting-agent/**)",
-      "Write(//home/am/projects/meeting-agent/**)",
+      "Edit(//home/am/projects/upshot/**)",
+      "Write(//home/am/projects/upshot/**)",
 
       "Bash(uv *)",
       "Bash(python *)",

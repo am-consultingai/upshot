@@ -88,7 +88,7 @@ class Mailer:
                 if bool(self.config.get("delivery.smtp.starttls", True)):
                     server.starttls()
                 user = str(self.config.get("delivery.smtp.user", ""))
-                password = self.config.secret("smtp", env="MA_SMTP_PASSWORD")
+                password = self.config.secret("smtp", env="UP_SMTP_PASSWORD")
                 if user and password:
                     server.login(user, password)
                 server.send_message(message)

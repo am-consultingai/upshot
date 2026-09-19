@@ -27,7 +27,7 @@ All paths are inside the project folder unless stated otherwise. Nothing outside
   and asks separately before touching the user's recordings.
 - Nothing is written to PATH or the registry by any path through this script.
 - Follow-up: all Windows artifacts moved out of the source tree into `-WorkDir`
-  (default `%LOCALAPPDATA%\meeting-agent-win`). Added `PYTHONPYCACHEPREFIX`, switched
+  (default `%LOCALAPPDATA%\upshot-win`). Added `PYTHONPYCACHEPREFIX`, switched
   to `uv sync --frozen`, moved the audio probe's report out of `docs\`, and made the
   npm build ask first since it is the only step that must write in place.
 log: killed stale Linux app.main (pids 49716, 49726), started Aug 30 by scripts/demo.sh

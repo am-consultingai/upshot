@@ -37,7 +37,7 @@ def test_selftest_reports_json(tmp_path: Path, app_home: Path) -> None:
 
 
 def test_selftest_runs_as_a_module(tmp_path: Path) -> None:
-    env = {**dict(**__import__("os").environ), "MA_HOME": str(tmp_path / "home")}
+    env = {**dict(**__import__("os").environ), "UP_HOME": str(tmp_path / "home")}
     proc = subprocess.run(
         [sys.executable, "-m", "app.selftest", "imports", "--quiet"],
         capture_output=True,

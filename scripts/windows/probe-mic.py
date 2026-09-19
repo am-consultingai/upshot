@@ -2,7 +2,7 @@
 
 Standalone on purpose: it imports nothing from ``app``, so it runs under any Windows
 Python that has ``pyaudiowpatch``, including the launcher's venv at
-``%LOCALAPPDATA%\\meeting-agent-win\\venv\\Scripts\\python.exe``.
+``%LOCALAPPDATA%\\upshot-win\\venv\\Scripts\\python.exe``.
 
     python probe-mic.py            # who holds the microphone right now
     python probe-mic.py watch      # print every acquire/release edge as it happens

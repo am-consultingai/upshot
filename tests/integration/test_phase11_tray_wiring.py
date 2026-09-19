@@ -108,7 +108,7 @@ def test_single_instance(tmp_path: Path) -> None:
     """Two entry points, one winner; the second exits 3 and says why."""
     import os
 
-    env = {**os.environ, "MA_HOME": str(tmp_path / "home")}
+    env = {**os.environ, "UP_HOME": str(tmp_path / "home")}
     first = subprocess.Popen(
         [sys.executable, "-m", "app.instance", "hold", "--seconds", "20"],
         stdout=subprocess.PIPE,

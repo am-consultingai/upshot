@@ -19,9 +19,18 @@ describe("catalogue parity", () => {
     expect(Object.keys(he).sort()).toEqual(Object.keys(en).sort());
   });
 
+  /*
+   * The product name is a proper noun and stays in Latin script in both catalogues,
+   * exactly as it does inside Hebrew prose elsewhere ("הופק על ידי Upshot"). It is the
+   * one key where identical strings mean translated, not forgotten.
+   */
+  const PROPER_NOUNS = new Set(["app.title"]);
+
   it("no translation is left as the English string", () => {
     const identical = Object.keys(en).filter(
-      (key) => he[key as keyof typeof he] === en[key as keyof typeof en],
+      (key) =>
+        !PROPER_NOUNS.has(key) &&
+        he[key as keyof typeof he] === en[key as keyof typeof en],
     );
     expect(identical).toEqual([]);
   });

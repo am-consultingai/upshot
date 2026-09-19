@@ -35,7 +35,7 @@ and skipped — see `docs/windows-run.md`), **blocked**.
 | 10 — frontend | green | `npm run typecheck && npm test` (17 unit tests) and `npx playwright test` (15 e2e, headless chromium) | 2026-08-29 | Found and fixed two real bugs: deep links 404'd (no SPA fallback) and concurrent FTS5 queries on one connection raised `InterfaceError` (DECISIONS D21) |
 | 11 — tray, notifications, single instance | green | same gate; `pytest tests/unit/test_phase11_tray.py tests/integration/test_phase11_tray_wiring.py` (22 tests) | 2026-08-29 | All headless with `FakeNotifier`; the visual toast check is recorded in `docs/manual-checks.md` and gates nothing |
 | 12 — detection (**M2 core**) | green (fakes + logic) / windows-pending (real signals) | `python -m app.selftest detect-e2e` → OK; `pytest tests/unit/test_phase12_evidence.py tests/integration/test_phase12_detector.py` (30 tests) | 2026-08-29 | `detect-shadow` skips here (no ConsentStore); T3 `test_registry_sees_self`, `test_registry_rearm`, `test_window_titles_enumerated` are written and skipped |
-| 13 — packaging and first run | green (bootstrap) / **windows-pending** (freeze) | `pytest tests/integration/test_phase13_bootstrap.py` (10 tests); the 5 frozen tests skip without `dist/meeting-agent` | 2026-08-29 | Closes with `packaging\build.ps1` on Windows, which itself runs `--selftest imports` and `--selftest pipeline` against the freeze |
+| 13 — packaging and first run | green (bootstrap) / **windows-pending** (freeze) | `pytest tests/integration/test_phase13_bootstrap.py` (10 tests); the 5 frozen tests skip without `dist/upshot` | 2026-08-29 | Closes with `packaging\build.ps1` on Windows, which itself runs `--selftest imports` and `--selftest pipeline` against the freeze |
 | 14 — milestone acceptance | M0 green · M1 green (synthetic) · M2 green | the three gate commands below | 2026-08-29 | M1 ran in **synthetic** capture mode: no WASAPI in WSL2. The same command runs the real render endpoint on Windows |
 
 ## Milestone gates — this run
@@ -107,7 +107,7 @@ products to offer claude.ai login.
 | Hebrew tokens-per-word (§19.4) | Phase 7 | `uv run python -m app.selftest live-llm` (needs an Anthropic key) |
 | Language-detection confidence on a first chunk (§19.6) | Phase 5 | `uv run pytest -m windows -k detect_english_fixture` (needs SAPI + a local model) |
 | FTS5 present (§19.1) | **closed** | measured in Phase 1: FTS5 is available |
-| `nemotron_h` in the local runtime (§19.3) | optional | `MA_OLLAMA=1 uv run pytest -m live_api -k local_model_path` |
+| `nemotron_h` in the local runtime (§19.3) | optional | `UP_OLLAMA=1 uv run pytest -m live_api -k local_model_path` |
 
 ## Exactly what is skipped here, and what closes it
 
@@ -122,7 +122,7 @@ by default. Nothing else is skipped.
 | SAPI speech fixtures (T1) — fixture generation and caching, VAD on speech, real transcription, English detection | 5 | Windows: `uv run pytest -m windows` (the last two also need a local ASR model) |
 | `test_windows_dll_dirs_registered` — `add_dll_directory` **and** the PATH prepend | 1 | Windows: `uv run pytest -m windows` |
 | `live_api` — Hebrew tokens-per-word, cache hit on window 2, live smoke, cross-language summary, Ollama | 5 (deselected) | `uv run pytest -m live_api` with an Anthropic key, or `python -m app.selftest live-llm` |
-| ONNX diarization — well-formed turns, real speaker separation | 2 | `uv sync --extra diarization`, download the models, then `MA_DIARIZATION_MODELS=<dir> uv run pytest -q tests/e2e/test_diarization_onnx.py` |
+| ONNX diarization — well-formed turns, real speaker separation | 2 | `uv sync --extra diarization`, download the models, then `UP_DIARIZATION_MODELS=<dir> uv run pytest -q tests/e2e/test_diarization_onnx.py` |
 
 ---
 
