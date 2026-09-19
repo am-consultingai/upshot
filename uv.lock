@@ -791,7 +791,7 @@ wheels = [
 ]
 
 [[package]]
-name = "meeting-agent"
+name = "upshot"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

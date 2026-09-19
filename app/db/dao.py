@@ -176,14 +176,14 @@ class Connection(sqlite3.Connection):
     are materialized before the lock is released.
     """
 
-    ma_capabilities: Capabilities
+    up_capabilities: Capabilities
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self.ma_lock = threading.RLock()
+        self.up_lock = threading.RLock()
 
     def execute(self, sql: str, parameters: Any = (), /) -> Any:
-        with self.ma_lock:
+        with self.up_lock:
             cursor = super().execute(sql, parameters)
             try:
                 rows = cursor.fetchall()
@@ -192,7 +192,7 @@ class Connection(sqlite3.Connection):
             return Result(rows, cursor.lastrowid, cursor.rowcount)
 
     def executemany(self, sql: str, parameters: Any, /) -> Any:
-        with self.ma_lock:
+        with self.up_lock:
             cursor = super().executemany(sql, parameters)
             return Result([], cursor.lastrowid, cursor.rowcount)
 
@@ -210,12 +210,12 @@ def connect(path: Path | None = None, *, fts: bool = True) -> Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
     migrations.migrate(conn)
-    conn.ma_capabilities = Capabilities(fts=migrations.ensure_fts(conn, enabled=fts))
+    conn.up_capabilities = Capabilities(fts=migrations.ensure_fts(conn, enabled=fts))
     return conn
 
 
 def capabilities(conn: sqlite3.Connection) -> Capabilities:
-    caps = getattr(conn, "ma_capabilities", None)
+    caps = getattr(conn, "up_capabilities", None)
     if isinstance(caps, Capabilities):
         return caps
     return Capabilities(fts=False)

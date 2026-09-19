@@ -19,7 +19,7 @@ def make_backend(config: Config) -> AsrBackend:
         # an afternoon wondering why every recording says the same thing.
         log.warning(
             "asr.backend=fake — transcripts are canned text, NOT your audio. "
-            "Set MA_ASR__BACKEND to 'local' for real transcription."
+            "Set UP_ASR__BACKEND to 'local' for real transcription."
         )
         return FakeAsr(
             language=str(config.get("asr.fake_language", config.default_language)),

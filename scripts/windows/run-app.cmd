@@ -1,5 +1,5 @@
 @echo off
-REM Double-click this to run Meeting Agent.
+REM Double-click this to run Upshot.
 REM
 REM If Claude Code is already installed it offers to remove it first, so the Settings
 REM screen starts at "Not installed" and its Install button can be tested from a clean
@@ -11,5 +11,5 @@ REM cmd.exe ask "Terminate batch job (Y/N)?", and there is no way to suppress th
 REM inside the batch file. Ctrl+C means stop, not "ask me whether I meant it" - so by the
 REM time the app is running, no batch file is left to prompt.
 setlocal
-start "Meeting Agent" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-app.ps1" %*
+start "Upshot" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run-app.ps1" %*
 endlocal

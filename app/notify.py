@@ -179,7 +179,7 @@ class WindowsToastNotifier(BaseNotifier):
     def __init__(
         self,
         *,
-        app_id: str = "MeetingAgent.App",
+        app_id: str = "Upshot.App",
         debounce_s: float = DEBOUNCE_S,
         clock: Any = None,
         spawn: Callable[[list[str]], Any] | None = None,

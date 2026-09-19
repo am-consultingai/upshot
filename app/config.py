@@ -4,7 +4,7 @@ Three layers, later overriding earlier, per key:
 
 1. ``DEFAULTS`` — in code
 2. ``app_config.json`` in the app home — the only file the settings screen writes
-3. the environment — ``MA_<DOTTED__PATH>`` plus the documented non-secret aliases
+3. the environment — ``UP_<DOTTED__PATH>`` plus the documented non-secret aliases
 
 **Secrets never appear in any of them.** They live in the OS credential store behind
 ``SecretStore``; which store is used is itself a config key, so tests select the fake
@@ -27,7 +27,7 @@ from app.log import get
 
 log = get(__name__)
 
-SERVICE_NAME = "meeting-agent"
+SERVICE_NAME = "upshot"
 
 #: Secret names in the credential store.
 SECRET_NAMES = ("anthropic", "openai", "gemini", "smtp", "google_refresh_token")
@@ -336,7 +336,7 @@ def _merge(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def env_var_for(dotted: str) -> str:
-    return "MA_" + dotted.upper().replace(".", "__")
+    return "UP_" + dotted.upper().replace(".", "__")
 
 
 def _coerce(raw: str) -> Any:
@@ -447,7 +447,7 @@ class Config:
         self._data = data
         self.source_file = source_file
         self._secrets: SecretStore | None = None
-        #: Values that came from ``MA_*`` rather than from the file. They must not be
+        #: Values that came from ``UP_*`` rather than from the file. They must not be
         #: written back: an environment override is meant to last for one run, and a
         #: launcher that exports one on every start would otherwise make it permanent
         #: the first time the user saves anything at all.

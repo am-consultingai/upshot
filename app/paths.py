@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-APP_NAME = "meeting-agent"
+APP_NAME = "upshot"
 
 
 def is_frozen() -> bool:
@@ -30,8 +30,8 @@ def resource(*parts: str) -> Path:
 
 
 def app_home() -> Path:
-    """Writable per-user state directory. ``MA_HOME`` overrides it everywhere."""
-    env = os.environ.get("MA_HOME")
+    """Writable per-user state directory. ``UP_HOME`` overrides it everywhere."""
+    env = os.environ.get("UP_HOME")
     if env:
         return Path(env).expanduser().resolve()
     local = os.environ.get("LOCALAPPDATA")

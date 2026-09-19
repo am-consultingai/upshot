@@ -72,11 +72,11 @@ def test_bootstrap_report_is_json(tmp_path: Path, app_home: Path) -> None:
 
 
 def test_logon_task_command_shape() -> None:
-    command = bootstrap.task_scheduler_command(Path(r"C:\Apps\meeting-agent.exe"))
+    command = bootstrap.task_scheduler_command(Path(r"C:\Apps\upshot.exe"))
     assert command[:2] == ["schtasks", "/Create"]
     assert "/SC" in command and command[command.index("/SC") + 1] == "ONLOGON"
-    assert command[command.index("/TN") + 1] == "MeetingAgent"
-    assert "meeting-agent.exe" in command[command.index("/TR") + 1]
+    assert command[command.index("/TN") + 1] == "Upshot"
+    assert "upshot.exe" in command[command.index("/TR") + 1]
 
 
 def test_logon_task_skipped_off_windows(tmp_path: Path, app_home: Path) -> None:
@@ -104,7 +104,7 @@ def test_entry_point_runs_selftest(tmp_path: Path) -> None:
     """`--selftest imports` is the tripwire the frozen build runs; it works unfrozen too."""
     import os
 
-    env = {**os.environ, "MA_HOME": str(tmp_path / "home")}
+    env = {**os.environ, "UP_HOME": str(tmp_path / "home")}
     result = subprocess.run(
         [
             sys.executable,
@@ -125,7 +125,7 @@ def test_entry_point_runs_selftest(tmp_path: Path) -> None:
 def test_entry_point_runs_bootstrap(tmp_path: Path) -> None:
     import os
 
-    env = {**os.environ, "MA_HOME": str(tmp_path / "home")}
+    env = {**os.environ, "UP_HOME": str(tmp_path / "home")}
     result = subprocess.run(
         [
             sys.executable,
@@ -145,7 +145,7 @@ def test_entry_point_runs_bootstrap(tmp_path: Path) -> None:
 
 
 def test_packaging_files_exist() -> None:
-    spec = Path("packaging/meeting-agent.spec").read_text(encoding="utf-8")
+    spec = Path("packaging/upshot.spec").read_text(encoding="utf-8")
     for hidden in (
         "ctranslate2",
         "onnxruntime.capi",

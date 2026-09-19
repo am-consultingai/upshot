@@ -12,6 +12,7 @@ import webbrowser
 from collections.abc import Callable
 from typing import Any
 
+from app import brand
 from app.instance import ALREADY_RUNNING, SingleInstance
 from app.log import get, setup
 from app.services import Services
@@ -20,7 +21,7 @@ from app.tray_state import Action, AppState, IconSpec, MenuItem, RecorderState, 
 log = get(__name__)
 
 ICON_SIZE = 64
-APP_USER_MODEL_ID = "MeetingAgent.App"
+APP_USER_MODEL_ID = "Upshot.App"
 
 
 def register_app_user_model_id(app_id: str = APP_USER_MODEL_ID) -> bool:
@@ -35,15 +36,13 @@ def register_app_user_model_id(app_id: str = APP_USER_MODEL_ID) -> bool:
 
 
 def render_icon(spec: IconSpec) -> Any:
-    """A filled circle in the state's colour, with a corner badge when needed."""
-    from PIL import Image, ImageDraw
+    """The mark in the state's colour, with a corner badge when needed.
 
-    image = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    draw.ellipse((6, 6, ICON_SIZE - 6, ICON_SIZE - 6), fill=(*spec.rgb, 255))
-    if spec.badge:
-        draw.ellipse((ICON_SIZE - 26, 0, ICON_SIZE, 26), fill=(230, 160, 30, 255))
-    return image
+    Every decision except the drawing still belongs to :func:`app.tray_state.icon_for`
+    and the geometry belongs to :mod:`app.brand`; this function only puts the two
+    together.
+    """
+    return brand.render(ICON_SIZE, spec.rgb, badge=spec.badge)
 
 
 class TrayApp:
@@ -164,7 +163,7 @@ class TrayApp:
 
         register_app_user_model_id()
         spec = self.spec()
-        self.icon = pystray.Icon("meeting-agent", render_icon(spec), spec.tooltip, self._menu(spec))
+        self.icon = pystray.Icon("upshot", render_icon(spec), spec.tooltip, self._menu(spec))
         threading.Thread(target=self._poll, name="tray-poll", daemon=True).start()
         self.icon.run()
 
@@ -181,7 +180,7 @@ class TrayApp:
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
     """The frozen executable's entry point.
 
-    ``meeting-agent.exe --selftest imports`` is the PyInstaller hidden-import tripwire:
+    ``upshot.exe --selftest imports`` is the PyInstaller hidden-import tripwire:
     it imports every ``app.*`` module *inside the freeze*, where a missing hidden import
     is the classic failure.
     """
@@ -208,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     setup()
     guard = SingleInstance()
     if not guard.acquire():
-        log.error("Meeting Agent is already running")
+        log.error("Upshot is already running")
         return ALREADY_RUNNING
     from app.main import create_app, start_background
     from app.server import LocalServer

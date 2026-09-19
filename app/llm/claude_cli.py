@@ -58,7 +58,7 @@ CREATE_NO_WINDOW = 0x08000000
 def creation_flags(*, visible: bool) -> int:
     """How a child process gets, or is denied, a console of its own. Windows only.
 
-    The frozen build is built with ``console=False`` (``packaging/meeting-agent.spec``)
+    The frozen build is built with ``console=False`` (``packaging/upshot.spec``)
     and so owns no console. Every console-subsystem child therefore either flashes up a
     window of its own or must be told not to:
 

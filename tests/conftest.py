@@ -47,10 +47,10 @@ def golden(update_goldens: bool):  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def app_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Every test that touches app state gets its own app home via MA_HOME."""
+    """Every test that touches app state gets its own app home via UP_HOME."""
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("MA_HOME", str(home))
+    monkeypatch.setenv("UP_HOME", str(home))
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     yield home
 
@@ -68,6 +68,6 @@ def seeded() -> random.Random:
 @pytest.fixture(autouse=True)
 def _no_wall_clock_home(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
     """Nothing in the suite may write to a real user profile."""
-    if "MA_HOME" not in os.environ:
-        monkeypatch.setenv("MA_HOME", str(tmp_path_factory.mktemp("ma-home")))
+    if "UP_HOME" not in os.environ:
+        monkeypatch.setenv("UP_HOME", str(tmp_path_factory.mktemp("ma-home")))
     yield

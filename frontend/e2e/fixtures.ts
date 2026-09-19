@@ -38,21 +38,21 @@ export const test = base.extend<{
   /** Seed *without* clearing first: for asserting what a live event does to an open page. */
   seedMore: (body: SeedBody) => Promise<void>;
 }>({
-  // With MA_E2E_CDP set, the specs run against a browser on another machine — in
+  // With UP_E2E_CDP set, the specs run against a browser on another machine — in
   // practice a Chrome on Windows, driven from WSL, because Chromium inside WSL produces
   // no animation frames at all and every click times out waiting for the page to settle.
   // The page then resolves 127.0.0.1 on the browser's machine, which is exactly where the
   // app under test is listening.
   context: async ({ playwright, contextOptions, context: local }, use) => {
-    const endpoint = process.env.MA_E2E_CDP;
+    const endpoint = process.env.UP_E2E_CDP;
     const remote = endpoint ? await playwright.chromium.connectOverCDP(endpoint) : null;
     // A fresh context, not `contexts()[0]`: the browser's default context carries none of
     // the test options, so `baseURL` is unset and every relative `goto("/")` has nothing
     // to resolve against.
     const context = remote ? await remote.newContext(contextOptions) : local;
     await context.addCookies([
-      { name: "ma_session", value: SESSION, url: BASE_URL },
-      { name: "ma_csrf", value: CSRF, url: BASE_URL },
+      { name: "up_session", value: SESSION, url: BASE_URL },
+      { name: "up_csrf", value: CSRF, url: BASE_URL },
     ]);
     await use(context);
     if (remote) {
@@ -65,7 +65,7 @@ export const test = base.extend<{
       const response = await request.post("/api/test/seed", {
         headers: {
           "X-CSRF-Token": CSRF,
-          Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+          Cookie: `up_session=${SESSION}; up_csrf=${CSRF}`,
         },
         data: { meetings, reset: true },
       });
@@ -77,7 +77,7 @@ export const test = base.extend<{
       const response = await request.post("/api/test/seed", {
         headers: {
           "X-CSRF-Token": CSRF,
-          Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+          Cookie: `up_session=${SESSION}; up_csrf=${CSRF}`,
         },
         data: { ...body },
       });
@@ -89,7 +89,7 @@ export const test = base.extend<{
       const response = await request.post("/api/test/seed", {
         headers: {
           "X-CSRF-Token": CSRF,
-          Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+          Cookie: `up_session=${SESSION}; up_csrf=${CSRF}`,
         },
         data: { ...body, reset: true },
       });
@@ -105,7 +105,7 @@ export async function reset(request: APIRequestContext): Promise<void> {
   const response = await request.post("/api/test/seed", {
     headers: {
       "X-CSRF-Token": CSRF,
-      Cookie: `ma_session=${SESSION}; ma_csrf=${CSRF}`,
+      Cookie: `up_session=${SESSION}; up_csrf=${CSRF}`,
     },
     data: { meetings: [], reset: true },
   });

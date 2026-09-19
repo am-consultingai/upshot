@@ -5,7 +5,7 @@ Skipped unless the models are present, because they are a ~37 MB opt-in download
     uv sync --extra diarization
     uv run python -c "from app.asr.models import download_diarization; \\
         from app.config import default_config; print(download_diarization(default_config()))"
-    MA_DIARIZATION_MODELS=<dir> uv run pytest -q tests/e2e/test_diarization_onnx.py
+    UP_DIARIZATION_MODELS=<dir> uv run pytest -q tests/e2e/test_diarization_onnx.py
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.slow
 def models_dir() -> Path | None:
     from app.config import default_config
 
-    env = os.environ.get("MA_DIARIZATION_MODELS")
+    env = os.environ.get("UP_DIARIZATION_MODELS")
     if env and Path(env).is_dir():
         return Path(env)
     from app.asr.models import resolve_diarization
@@ -72,10 +72,10 @@ def test_onnx_diarizer_produces_well_formed_turns(diarizer: OnnxDiarizer) -> Non
 
 def test_onnx_separates_real_speakers(diarizer: OnnxDiarizer) -> None:
     """The accuracy check. Needs a real multi-speaker recording, not a synthetic tone."""
-    sample = os.environ.get("MA_DIARIZATION_SAMPLE")
+    sample = os.environ.get("UP_DIARIZATION_SAMPLE")
     if not sample or not Path(sample).exists():
-        pytest.skip("set MA_DIARIZATION_SAMPLE to a two-speaker WAV")
-    expected = int(os.environ.get("MA_DIARIZATION_SAMPLE_SPEAKERS", "2"))
+        pytest.skip("set UP_DIARIZATION_SAMPLE to a two-speaker WAV")
+    expected = int(os.environ.get("UP_DIARIZATION_SAMPLE_SPEAKERS", "2"))
     audio, rate = read_wav(Path(sample))
     started = time.monotonic()
     turns = diarizer.diarize(audio, rate)

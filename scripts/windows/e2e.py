@@ -11,7 +11,7 @@ CDP endpoint reaches the browser, and nothing is exposed beyond loopback.
 What it owns, and tears down again: a scratch app instance with its own data folder and
 fixed auth secrets, a headless Chrome with its own profile, and the artifacts both leave
 behind. It never touches the app the user is running — different port, different
-`MA_HOME`, and deliberately not `run-app.ps1`, which stops every `app.main` it finds.
+`UP_HOME`, and deliberately not `run-app.ps1`, which stops every `app.main` it finds.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 SESSION = "harness-session"
 CSRF = "harness-csrf"
 #: Where `run-app.ps1` keeps the Windows-side interpreter, relative to %LOCALAPPDATA%.
-VENV_SUFFIX = Path("meeting-agent-win/venv/Scripts/python.exe")
+VENV_SUFFIX = Path("upshot-win/venv/Scripts/python.exe")
 
 
 def powershell(script: str, timeout: float = 60) -> str:
@@ -232,13 +232,13 @@ def main(argv: list[str] | None = None) -> int:
 
     environment = dict(os.environ)
     environment.update(
-        MA_E2E_PORT=str(port),
-        MA_E2E_SESSION=SESSION,
-        MA_E2E_CSRF=CSRF,
-        MA_TEST_MODE="1",
-        MA_HOME=to_windows(home),
+        UP_E2E_PORT=str(port),
+        UP_E2E_SESSION=SESSION,
+        UP_E2E_CSRF=CSRF,
+        UP_TEST_MODE="1",
+        UP_HOME=to_windows(home),
         # Variables do not cross into a Windows process unless they are named here.
-        WSLENV="MA_E2E_PORT:MA_E2E_SESSION:MA_E2E_CSRF:MA_TEST_MODE:MA_HOME",
+        WSLENV="UP_E2E_PORT:UP_E2E_SESSION:UP_E2E_CSRF:UP_TEST_MODE:UP_HOME",
     )
 
     phases.mark("discover")
@@ -274,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         run = subprocess.run(
             command,
             cwd=ROOT / "frontend",
-            env={**environment, "MA_E2E_CDP": f"http://127.0.0.1:{cdp}"},
+            env={**environment, "UP_E2E_CDP": f"http://127.0.0.1:{cdp}"},
             check=False,
         )
         code = run.returncode
@@ -285,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
             # browser or app instance the user started is never touched.
             # Both matches must appear on a *command line*, which is the only thing
             # visible to Win32_Process from here. The previous app matcher looked for
-            # `MA_E2E_PORT`, an environment variable that appears on no command line,
+            # `UP_E2E_PORT`, an environment variable that appears on no command line,
             # so the app was never killed at all: three consecutive runs left three
             # live instances and a hundred browser processes behind, and the third run
             # slowed to a crawl against its own litter. Hence the port on argv.

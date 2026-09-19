@@ -28,7 +28,7 @@ def available() -> bool:
 
 
 def cache_dir() -> Path:
-    root = Path(os.environ.get("MA_SPEECH_CACHE", Path(tempfile.gettempdir()) / "ma-speech"))
+    root = Path(os.environ.get("UP_SPEECH_CACHE", Path(tempfile.gettempdir()) / "ma-speech"))
     root.mkdir(parents=True, exist_ok=True)
     return root
 

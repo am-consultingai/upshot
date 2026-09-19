@@ -256,7 +256,7 @@ def test_test_seed_route_absent_by_default(api) -> None:  # type: ignore[no-unty
 def test_test_seed_route_present_in_test_mode(
     tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("MA_TEST_MODE", "1")
+    monkeypatch.setenv("UP_TEST_MODE", "1")
     harness = build_harness(tmp_path)
     client = harness.client()
     response = client.post(
@@ -501,3 +501,35 @@ def test_keeping_a_meeting_that_was_never_discarded_is_refused(api) -> None:  # 
         refused = client.post(f"/api/meetings/{meeting_id}/keep")
         assert refused.status_code == 409
         assert "discarded" in refused.json()["detail"]
+
+
+def test_root_static_files_are_not_shadowed_by_the_spa(tmp_path: Path) -> None:
+    """The favicons sit at the dist root, where the catch-all route also lives.
+
+    Vite copies ``public/`` to the root of the build, not into ``assets/``, so
+    only ``/assets`` being mounted left ``/favicon.svg`` falling through to the
+    SPA route — which answers every unknown path with the HTML shell and a 200.
+    The browser then gets a web page where it asked for an image and quietly
+    shows no icon at all, which is indistinguishable from having no favicon.
+    """
+    dist = tmp_path / "frontend" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>shell</title>", encoding="utf-8")
+    (dist / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
+    (dist / "favicon.ico").write_bytes(b"\x00\x00\x01\x00")
+
+    import app.main as main
+
+    original = main.frontend_dir
+    main.frontend_dir = lambda: dist  # type: ignore[assignment]
+    try:
+        harness = build_harness(tmp_path / "app")
+        with harness.client() as client:
+            for path, kind in (("/favicon.svg", "image/svg+xml"), ("/favicon.ico", "image/x-icon")):
+                response = client.get(path)
+                assert response.status_code == 200, path
+                assert response.headers["content-type"].startswith(kind), (
+                    f"{path} served as {response.headers['content-type']!r}"
+                )
+    finally:
+        main.frontend_dir = original  # type: ignore[assignment]

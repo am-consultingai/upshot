@@ -100,7 +100,7 @@ def test_window_titles_enumerated() -> None:
         pytest.skip("EnumWindows is Windows-only")
     import tkinter
 
-    title = "meeting-agent-title-probe"
+    title = "upshot-title-probe"
     root = tkinter.Tk()
     root.title(title)
     root.geometry("200x100")

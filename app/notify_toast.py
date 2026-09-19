@@ -20,7 +20,7 @@ import sys
 import time
 from typing import Any
 
-APP_ID = "MeetingAgent.App"
+APP_ID = "Upshot.App"
 #: Windows takes the notification asynchronously. Leaving immediately can drop it, and a
 #: fraction of a second in a process nothing waits on costs nothing.
 SETTLE_S = 0.5
