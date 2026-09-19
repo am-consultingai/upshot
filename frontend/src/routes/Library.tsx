@@ -39,7 +39,7 @@ export default function Library() {
   /*
    * On a narrow window the list yields to what you opened.
    *
-   * The rail and the list cost 376px permanently, which is fine in a wide window
+   * The rail and the list cost 328px permanently, which is fine in a wide window
    * and most of a small one. Granola solves the same problem by closing its
    * sidebar the moment you open a note, and describes that one responsive rule as
    * what makes the app feel like an app rather than a page. The rail stays, so
@@ -143,7 +143,7 @@ export default function Library() {
       <section
         data-testid="timeline"
         data-collapsed={reading ? "narrow" : undefined}
-        className={`w-80 shrink-0 flex-col border-e border-line-subtle bg-surface-1 ${
+        className={`w-[280px] shrink-0 flex-col border-e border-line-subtle bg-surface-1 ${
           reading ? "hidden lg:flex" : "flex"
         }`}
       >
