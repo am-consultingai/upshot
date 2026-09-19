@@ -30,3 +30,10 @@ reports/
 tests/transcripts/
 artifacts/
 frontend/tsconfig.tsbuildinfo
+
+# The Google OAuth client ships inside the application but never in git: this repository
+# is public, and a client posted here gets picked up by leak scanners and disabled
+# (app/gcal/client.py).
+app/gcal/google_oauth_client.json
+client_secret*.json
+google_oauth_client.json

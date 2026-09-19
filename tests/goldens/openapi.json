@@ -294,6 +294,89 @@
         "summary": "Audio Level"
       }
     },
+    "/api/calendar/cancel": {
+      "post": {
+        "operationId": "calendar_cancel_api_calendar_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Cancel Api Calendar Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Cancel"
+      }
+    },
+    "/api/calendar/connect": {
+      "post": {
+        "description": "Start a connection. The browser opens the returned URL; the rest is the listener's.",
+        "operationId": "calendar_connect_api_calendar_connect_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Connect Api Calendar Connect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Connect"
+      }
+    },
+    "/api/calendar/disconnect": {
+      "post": {
+        "description": "Revoke at Google and forget locally. Says so when the revoke could not be sent.",
+        "operationId": "calendar_disconnect_api_calendar_disconnect_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Disconnect Api Calendar Disconnect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Disconnect"
+      }
+    },
+    "/api/calendar/status": {
+      "get": {
+        "description": "Whether a Google account is connected, and which. Never a token.",
+        "operationId": "calendar_status_api_calendar_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Status Api Calendar Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Status"
+      }
+    },
     "/api/detector/events": {
       "get": {
         "operationId": "detector_events_api_detector_events_get",

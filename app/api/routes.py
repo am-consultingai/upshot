@@ -767,6 +767,56 @@ def secret_status(request: Request) -> dict[str, Any]:
     return {"secrets": {name: bool(svc.config.secrets.get(name)) for name in SECRET_NAMES}}
 
 
+# --------------------------------------------------------------------------- calendar
+
+
+def calendar_of(request: Request) -> Any:
+    """The Google connection, made on first use: most runs never touch it."""
+    svc = services_of(request)
+    if svc.calendar is None:
+        from app.gcal.oauth import CalendarAuth
+
+        svc.calendar = CalendarAuth(
+            svc.config.secrets,
+            publish=lambda **payload: svc.events.publish("calendar", **payload),
+            app_url=f"http://127.0.0.1:{svc.config.server_port}/settings#calendar",
+        )
+    return svc.calendar
+
+
+@router.get("/calendar/status")
+def calendar_status(request: Request) -> dict[str, Any]:
+    """Whether a Google account is connected, and which. Never a token."""
+    return calendar_of(request).status()  # type: ignore[no-any-return]
+
+
+@router.post("/calendar/connect")
+def calendar_connect(request: Request) -> dict[str, Any]:
+    """Start a connection. The browser opens the returned URL; the rest is the listener's."""
+    from app.gcal.oauth import CalendarAuthError
+
+    calendar = calendar_of(request)
+    try:
+        auth_url = calendar.start()
+    except CalendarAuthError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"auth_url": auth_url, **calendar.status()}
+
+
+@router.post("/calendar/cancel")
+def calendar_cancel(request: Request) -> dict[str, Any]:
+    calendar = calendar_of(request)
+    calendar.cancel()
+    return calendar.status()  # type: ignore[no-any-return]
+
+
+@router.post("/calendar/disconnect")
+def calendar_disconnect(request: Request) -> dict[str, Any]:
+    """Revoke at Google and forget locally. Says so when the revoke could not be sent."""
+    calendar = calendar_of(request)
+    return {**calendar.disconnect(), **calendar.status()}
+
+
 @router.get("/llm/status")
 def llm_status(request: Request) -> dict[str, Any]:
     """What each summarization provider needs, and whether it has it."""

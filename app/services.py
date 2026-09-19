@@ -38,6 +38,7 @@ class Services:
     asr: Any = None  # overridden in tests via config-selected fakes
     llm: Any = None
     detector: Any = None
+    calendar: Any = None  # app.gcal.oauth.CalendarAuth, made on first use by the routes
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -47,6 +48,9 @@ class Services:
         # closing database during shutdown.
         if self.detector is not None:
             self.detector.stop()
+        # A connect in progress holds a listening socket open for up to five minutes.
+        if self.calendar is not None:
+            self.calendar.close()
         self.conn.close()
 
 
