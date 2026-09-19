@@ -29,7 +29,10 @@ def register_app_user_model_id(app_id: str = APP_USER_MODEL_ID) -> bool:
     try:  # pragma: no cover - Windows only
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)  # type: ignore[attr-defined]
+        # `windll` exists only on Windows, where the ignore is in turn unused.
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(  # type: ignore[attr-defined,unused-ignore]
+            app_id
+        )
         return True
     except Exception:
         return False
