@@ -48,6 +48,7 @@ export default function MeetingCard({
   stopping = false,
   onDelete,
   deleting = false,
+  selected = false,
 }: {
   meeting: Meeting;
   onStop?: () => void;
@@ -55,6 +56,8 @@ export default function MeetingCard({
   stopping?: boolean;
   onDelete?: () => void;
   deleting?: boolean;
+  /** Whether this is the meeting the detail pane is showing. */
+  selected?: boolean;
 }) {
   const { t } = useI18n();
   const [now, setNow] = useState(() => Date.now());
@@ -73,6 +76,8 @@ export default function MeetingCard({
       data-testid="meeting-card"
       data-meeting-id={meeting.id}
       data-state={meeting.state}
+      role="option"
+      aria-selected={selected}
       className={`group relative rounded-md ${
         recording ? "bg-danger-quiet" : "hover:bg-surface-2"
       }`}
