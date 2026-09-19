@@ -139,7 +139,14 @@ body :dir(rtl) {
  * on the left by definition.
  */
 .summary-prose {
-  line-height: 1.6;
+  /*
+   * 15px, not the 14px the chrome uses. At 14px a 672px measure runs to about 95
+   * characters a line, well past where prose stops being comfortable — the column
+   * was the right width paired with the wrong size. Height ships exactly this
+   * split: 15px/22 for prose, 14px for interface.
+   */
+  font-size: 0.9375rem;
+  line-height: 1.65;
   color: var(--text-primary);
 }
 

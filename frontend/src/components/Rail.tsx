@@ -9,9 +9,11 @@ import type { MessageKey } from "../locales/en";
  *
  * It replaces a horizontal bar of text links across the top. The bar cost a full
  * row of vertical space on every screen and still had nowhere to put a persistent
- * search or a record button; the rail costs 56px of a 1360px window and puts both
- * within reach from anywhere. Every application in this category — Linear, Height,
- * Raycast, Granola — keeps navigation down the side for the same reason.
+ * search or a record button; the rail costs 48px and puts both within reach from
+ * anywhere.
+ *
+ * 48px rather than the 56 this started at: Superhuman's rail is exactly 40px and
+ * Obsidian's ribbon is 44px, so 56 was wider than anything actually shipped.
  *
  * Icons are drawn on a 16px grid at stroke 1.5, which is what the products worth
  * copying actually ship. Scaling a 24px/2.0 icon down to 16px puts its stroke on
@@ -53,7 +55,7 @@ export default function Rail() {
   return (
     <nav
       data-testid="rail"
-      className="flex w-14 shrink-0 flex-col items-center gap-1.5 border-e border-line-subtle bg-surface-2 py-3"
+      className="flex w-12 shrink-0 flex-col items-center gap-1.5 border-e border-line-subtle bg-surface-2 py-3"
     >
       <span
         data-testid="app-title"
