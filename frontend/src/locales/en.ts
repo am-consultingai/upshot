@@ -39,6 +39,8 @@ export const en = {
   "meeting.forward15": "Forward 15 seconds",
   "meeting.themSaid": "Them",
   "meeting.meSaid": "Me",
+  "meeting.discardedShort": "This recording was shorter than the minimum, so it was not transcribed. The audio is still here.",
+  "meeting.keepAnyway": "Transcribe it anyway",
   "meeting.transcript": "Transcript",
   "meeting.notRendered": "This meeting has no summary yet.",
   "meeting.noAudio": "This meeting has no audio.",

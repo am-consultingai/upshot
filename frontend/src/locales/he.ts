@@ -41,6 +41,8 @@ export const he: Record<MessageKey, string> = {
   "meeting.forward15": "15 שניות קדימה",
   "meeting.themSaid": "הם",
   "meeting.meSaid": "אני",
+  "meeting.discardedShort": "ההקלטה הייתה קצרה מהמינימום ולכן לא תומללה. האודיו עדיין כאן.",
+  "meeting.keepAnyway": "תמלל בכל זאת",
   "meeting.transcript": "תמליל",
   "meeting.notRendered": "לפגישה הזו אין עדיין סיכום.",
   "meeting.noAudio": "לפגישה הזו אין אודיו.",

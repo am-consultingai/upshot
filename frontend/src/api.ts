@@ -167,6 +167,9 @@ export const api = {
     request<{ segments: { start: number; speaker: string; text: string }[] }>(
       `/api/meetings/${id}/transcript`,
     ),
+  /** Undo a discard: transcribe this recording after all. */
+  keepMeeting: (id: string) =>
+    request<{ id: string; state: string }>(`/api/meetings/${id}/keep`, { method: "POST" }),
   patchMeeting: (id: string, body: Record<string, unknown>) =>
     request<MeetingDetail>(`/api/meetings/${id}`, {
       method: "PATCH",

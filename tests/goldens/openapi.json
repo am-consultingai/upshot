@@ -1011,6 +1011,48 @@
         "summary": "Retry Stage"
       }
     },
+    "/api/meetings/{meeting_id}/keep": {
+      "post": {
+        "description": "Undo a discard: treat this recording as a meeting after all.\n\nA recording shorter than ``audio.min_meeting_s`` is filed as DISCARDED rather\nthan transcribed, which is the right default — the detector wakes on a\nnotification sound often enough that without it the library fills with\neight-second meetings. What was missing is the way back.\n\nNothing was ever deleted: DISCARDED is a state, the audio stays on disk, and\nthe state machine has always allowed DISCARDED -> RECORDED (the transition is\neven commented \"it was a meeting after all\"). But no endpoint offered it and\nno button called it, so in practice a two-minute conversation was unreachable\n— which is indistinguishable from losing it, whatever the database says.",
+        "operationId": "keep_meeting_api_meetings__meeting_id__keep_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Keep Meeting Api Meetings  Meeting Id  Keep Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep Meeting"
+      }
+    },
     "/api/meetings/{meeting_id}/notes": {
       "get": {
         "operationId": "get_notes_api_meetings__meeting_id__notes_get",

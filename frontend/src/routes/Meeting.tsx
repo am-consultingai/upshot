@@ -107,6 +107,10 @@ export default function MeetingPage() {
       queryClient.invalidateQueries({ queryKey: ["meetings"] });
     }
   }, [running.length, pipelineBusy, queryClient, id]);
+  const keep = useMutation({
+    mutationFn: () => api.keepMeeting(id),
+    onSuccess: () => queryClient.invalidateQueries(),
+  });
   const rename = useMutation({
     mutationFn: (title: string) => api.patchMeeting(id, { title }),
     onSuccess: () =>
@@ -208,6 +212,32 @@ export default function MeetingPage() {
           {t("meeting.recordedBecause")}:{" "}
           {meeting.data.evidence.map((item) => item.detail).join(", ")}
         </p>
+      )}
+
+      {meeting.data.state === "DISCARDED" && (
+        /*
+         * A recording shorter than the minimum is filed rather than transcribed,
+         * which is the right default: the detector wakes on a notification chime
+         * often enough that without it the library fills with eight-second
+         * meetings. Nothing was deleted — the audio is on disk and the state
+         * machine has always allowed the way back — but until now nothing offered
+         * it, and a conversation you cannot reach is lost whatever the database
+         * says.
+         */
+        <div
+          data-testid="discarded-notice"
+          className="mb-5 flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-sm"
+        >
+          <span className="text-secondary">{t("meeting.discardedShort")}</span>
+          <BusyButton
+            data-testid="keep-meeting"
+            busy={keep.isPending}
+            onClick={() => keep.mutate()}
+            className="ms-auto rounded-sm bg-accent px-2.5 py-1 text-xs font-medium text-on-accent"
+          >
+            {t("meeting.keepAnyway")}
+          </BusyButton>
+        </div>
       )}
 
       {meeting.data.audio_deleted_at ? (
