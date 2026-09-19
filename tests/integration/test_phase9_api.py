@@ -431,3 +431,32 @@ def test_resummarize_does_not_re_transcribe(api) -> None:  # type: ignore[no-unt
     # either: a rerun there would discard the transcript and start the model again.
     assert queue.take_rerun(ids[0], "transcribe") is False
     assert queue.take_rerun(ids[0], "summarize") is True
+
+
+def test_the_spa_shell_is_never_served_from_cache(api, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """A cached shell keeps asking for the bundle it was built against.
+
+    The shell is the only document that names the content-hashed asset files, so a
+    browser that reuses it without asking goes on loading the previous build's
+    JavaScript and CSS. The application then looks completely unchanged after an
+    update — which is exactly how it was found: a rebuilt interface that appeared
+    not to have been rebuilt at all.
+    """
+    dist = tmp_path / "frontend" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>shell</title>", encoding="utf-8")
+
+    import app.main as main
+
+    original = main.frontend_dir
+    main.frontend_dir = lambda: dist  # type: ignore[assignment]
+    try:
+        harness = build_harness(tmp_path / "app")
+        with harness.client() as client:
+            for path in ("/", "/m/some-meeting-id"):
+                response = client.get(path)
+                assert response.status_code == 200, path
+                cache = response.headers.get("cache-control", "")
+                assert "no-cache" in cache, f"{path} served as {cache!r}"
+    finally:
+        main.frontend_dir = original  # type: ignore[assignment]
