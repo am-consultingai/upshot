@@ -174,7 +174,15 @@ export default function MeetingPage() {
 
   return (
     <section data-testid="meeting-page" data-meeting-id={id} className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
+      {/*
+        * A reading measure, not the width of the window. Every application in this
+        * category caps it and they land within sixty pixels of each other —
+        * Granola 640, Reflect 672, Obsidian 700 — because a summary is prose and
+        * prose stops being readable somewhere past 80 characters a line. The pane
+        * can be 900px wide; the text should not be.
+        */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-[42rem] px-7 py-6">
       <header className="mb-5 flex flex-wrap items-center gap-3">
         <h1 className="display me-auto text-2xl" data-testid="meeting-title">
           {meeting.data.title ?? id}
@@ -336,6 +344,7 @@ export default function MeetingPage() {
           );
         })}
       </ol>
+        </div>
       </div>
 
       {hasAudio && (
