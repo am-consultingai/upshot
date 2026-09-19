@@ -1,5 +1,11 @@
 export const en = {
   "app.title": "Meeting Agent",
+  "palette.title": "Commands",
+  "palette.placeholder": "Search meetings and commands…",
+  "palette.empty": "No results found.",
+  "palette.navigate": "Go to",
+  "palette.do": "Actions",
+  "palette.open": "Meetings",
   "nav.timeline": "Timeline",
   "nav.search": "Search",
   "nav.settings": "Settings",

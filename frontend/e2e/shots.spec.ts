@@ -67,5 +67,12 @@ for (const theme of ["light", "dark"] as const) {
       await page.waitForTimeout(400);
       await page.screenshot({ path: `../artifacts/shot-${name}-${theme}.png`, fullPage: false });
     }
+
+    // The palette, over the timeline.
+    await gotoApp(page, "/");
+    await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), theme);
+    await page.keyboard.press("Control+k");
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `../artifacts/shot-palette-${theme}.png`, fullPage: false });
   });
 }
