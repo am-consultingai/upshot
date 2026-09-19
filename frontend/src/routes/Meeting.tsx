@@ -113,9 +113,20 @@ export default function MeetingPage() {
   });
   const rename = useMutation({
     mutationFn: (title: string) => api.patchMeeting(id, { title }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["meeting", id] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["meeting", id] });
+      // The list and the calendar show the title too.
+      queryClient.invalidateQueries({ queryKey: ["meetings"] });
+    },
   });
+  /** The title being typed, or null when the heading is not being edited. */
+  const [draft, setDraft] = useState<string | null>(null);
+  const commitRename = () => {
+    const next = draft?.trim() ?? "";
+    setDraft(null);
+    // Empty would erase the name, and unchanged is not an edit: neither is sent.
+    if (next && next !== (meeting.data?.title ?? "")) rename.mutate(next);
+  };
 
   const [copied, setCopied] = useState(false);
   const copySummary = async (html: string) => {
@@ -188,20 +199,42 @@ export default function MeetingPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[42rem] px-7 py-6">
       <header className="mb-5 flex flex-wrap items-center gap-3">
-        <h1 className="display me-auto text-2xl" data-testid="meeting-title">
-          {meeting.data.title ?? id}
-        </h1>
+        {draft === null ? (
+          <h1 className="display me-auto text-2xl" data-testid="meeting-title">
+            {rename.isPending ? rename.variables : (meeting.data.title ?? id)}
+          </h1>
+        ) : (
+          /*
+           * The heading becomes the field, at the heading's size, so renaming reads as
+           * editing the name in place rather than filling in a form. Enter or leaving
+           * the field saves; Escape puts the old name back.
+           */
+          <input
+            data-testid="meeting-title-input"
+            aria-label={t("meeting.rename")}
+            autoFocus
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            onBlur={commitRename}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") setDraft(null);
+            }}
+            className="display me-auto min-w-0 flex-1 rounded-md bg-surface-2 px-2 py-0.5 text-2xl"
+          />
+        )}
         <StateBadge state={meeting.data.state} />
-        <BusyButton
-          data-testid="rename"
-          busy={rename.isPending}
-          className="rounded-md px-2 py-1 text-xs text-tertiary hover:bg-surface-2 hover:text-primary"
-          onClick={() =>
-            rename.mutate(`${meeting.data?.title ?? id} (renamed)`)
-          }
-        >
-          {t("meeting.rename")}
-        </BusyButton>
+        {draft === null && (
+          <BusyButton
+            data-testid="rename"
+            busy={rename.isPending}
+            className="rounded-md px-2 py-1 text-xs text-tertiary hover:bg-surface-2 hover:text-primary"
+            onClick={() => setDraft(meeting.data?.title ?? "")}
+          >
+            {t("meeting.rename")}
+          </BusyButton>
+        )}
       </header>
 
       {meeting.data.evidence.length > 0 && (
