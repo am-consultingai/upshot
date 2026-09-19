@@ -102,10 +102,16 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={value}>
-      <div className="min-h-screen bg-surface-1 text-primary" data-testid="app">
-        <header className="border-b border-line-subtle bg-raised">
-          <nav className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
-            <span className="font-semibold" data-testid="app-title">
+      <div className="min-h-screen bg-canvas text-primary" data-testid="app">
+        {/*
+         * Sticky, translucent, and separated by a hairline rather than a filled
+         * bar. The header was a white slab on a white page: it took the full
+         * weight of a section without being one. Here it stays out of the way and
+         * the content scrolls under it.
+         */}
+        <header className="sticky top-0 z-20 border-b border-line-subtle bg-canvas/85 backdrop-blur">
+          <nav className="mx-auto flex max-w-5xl items-center gap-1 px-4 py-2.5">
+            <span className="display me-4 text-sm" data-testid="app-title">
               {t("app.title")}
             </span>
             {NAV.map((item) => (
@@ -113,8 +119,17 @@ export default function App() {
                 key={item.to}
                 to={item.to}
                 data-testid={item.testid}
+                /*
+                 * The active tab is a filled pill, not an underline. An underline
+                 * on a text link reads as "this is a link", which every item here
+                 * already is; a filled shape reads as "you are here".
+                 */
                 className={({ isActive }) =>
-                  isActive ? "text-sm font-semibold underline" : "text-sm text-secondary"
+                  `rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+                    isActive
+                      ? "bg-surface-2 font-medium text-primary"
+                      : "text-secondary hover:bg-surface-1 hover:text-primary"
+                  }`
                 }
               >
                 {t(item.key)}
@@ -125,7 +140,7 @@ export default function App() {
         <ConnectionBanner />
         <RecordingBar />
         <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
-        <main className="mx-auto max-w-5xl px-4 py-6">
+        <main className="mx-auto max-w-5xl px-4 py-8">
           <Routes>
             <Route path="/" element={<Timeline />} />
             <Route path="/m/:id" element={<MeetingPage />} />
