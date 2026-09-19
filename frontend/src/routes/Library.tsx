@@ -254,7 +254,15 @@ export default function Library() {
         }}
         className="min-w-0 flex-1 overflow-y-auto outline-none"
       >
-        {view === "calendar" ? (
+        {/*
+         * The calendar is a different view of the list, so it lives on the detail
+         * side — but only while nothing is open. It used to hold that side
+         * unconditionally, which meant clicking a meeting in calendar view
+         * navigated correctly and then rendered the calendar anyway: the URL
+         * changed, the page did not, and the meeting appeared not to open at all.
+         * Whatever you opened wins the pane.
+         */}
+        {view === "calendar" && !reading ? (
           <div className="p-6">
             <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="calendar-controls">
               <button
