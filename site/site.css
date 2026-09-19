@@ -380,7 +380,6 @@ footer{font-size:var(--t-label)}
 /* ---- legal pages: privacy policy and terms ---- */
 .legal{max-width:800px;margin:0 auto;padding:72px var(--pad) 24px}
 .legal h1{font-size:clamp(36px,5vw,52px);line-height:1.1;letter-spacing:-.03em;margin-top:14px}
-.legal-meta{margin-top:14px;font-size:var(--t-label);color:var(--s4)}
 .legal h2{font-size:25px;max-width:none;margin-top:52px;scroll-margin-top:90px}
 .legal h3{font-size:19px;margin-top:30px}
 .legal p,.legal li{font-size:var(--t-body);line-height:1.7;color:var(--s2)}
