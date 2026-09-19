@@ -6,7 +6,7 @@ import { THEMES, type Theme } from "../theme";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import MicMeter from "../components/MicMeter";
-import BusyButton from "../components/BusyButton";
+import SettingRow, { SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -53,31 +53,45 @@ export default function Settings() {
 
   return (
     <section data-testid="settings-page">
-      {/* Selector and meter share a row: neither needs the full width, and side by side
-          the level reads as belonging to the device above it. */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-sm font-medium" htmlFor="mic-device">
-            {t("settings.microphone")}
-          </label>
-          {devices.length === 0 ? (
-            <div data-testid="mic-unavailable" className="text-sm text-secondary">
-              <p>
+      <h1 className="display mb-6 text-2xl">{t("nav.settings")}</h1>
+
+      {/*
+       * Everything here applies the moment it changes. There is no Save button and
+       * no confirmation toast, which is the current convention and the documented
+       * Windows rule: "when a user changes a setting, the app should immediately
+       * reflect the change — don't require a confirmation button." The control's
+       * own new state is the acknowledgement. The one exception is the data folder,
+       * which is a free-text path and cannot be applied on every keystroke.
+       */}
+
+      <SettingGroup title={t("settings.groupAudio")}>
+        <SettingRow
+          label={t("settings.microphone")}
+          htmlFor="mic-device"
+          description={
+            devices.length === 0 ? (
+              <>
                 {audio.data && audio.data.platform !== "win32"
                   ? t("settings.micWrongHost")
                   : t("settings.micUnavailable")}
-              </p>
-              {audio.data?.error && (
-                <p data-testid="mic-error" className="mt-1 font-mono text-xs text-tertiary">
-                  {audio.data.error}
-                </p>
-              )}
-              {audio.data && (
-                <p className="mt-1 text-xs text-tertiary">
-                  host: {audio.data.platform} · capture: {audio.data.capture}
-                </p>
-              )}
-            </div>
+                {audio.data?.error && (
+                  <span data-testid="mic-error" className="mt-1 block font-mono">
+                    {audio.data.error}
+                  </span>
+                )}
+                {audio.data && (
+                  <span className="mt-1 block">
+                    host: {audio.data.platform} · capture: {audio.data.capture}
+                  </span>
+                )}
+              </>
+            ) : undefined
+          }
+        >
+          {devices.length === 0 ? (
+            <span data-testid="mic-unavailable" className="text-xs text-tertiary">
+              —
+            </span>
           ) : (
             <select
               id="mic-device"
@@ -87,7 +101,7 @@ export default function Settings() {
                 const raw = event.target.value;
                 save.mutate({ "audio.input_device": raw === "" ? null : Number(raw) });
               }}
-              className="w-full rounded border border-line px-2 py-1"
+              className={SELECT_CLASS}
             >
               <option value="">{t("settings.microphoneDefault")}</option>
               {devices.map((device) => (
@@ -98,19 +112,24 @@ export default function Settings() {
               ))}
             </select>
           )}
-        </div>
-        {/*
-          * Not mounted until the saved device is known. The meter opens the device
-          * in an effect keyed on that prop, so rendering it while the setting is
-          * still loading opens the default device and then immediately reopens the
-          * real one — two opens per meter, for nothing.
-          */}
-        {settings.isSuccess && <MicMeter device={selectedDevice} track="me" />}
+          {/*
+           * Not mounted until the saved device is known. The meter opens the device
+           * in an effect keyed on that prop, so rendering it while the setting is
+           * still loading opens the default device and then immediately reopens the
+           * real one — two opens per meter, for nothing.
+           */}
+          {settings.isSuccess && (
+            <div className="w-40">
+              <MicMeter device={selectedDevice} track="me" />
+            </div>
+          )}
+        </SettingRow>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium" htmlFor="output-device">
-            {t("settings.systemAudio")}
-          </label>
+        <SettingRow
+          label={t("settings.systemAudio")}
+          htmlFor="output-device"
+          description={t("settings.systemAudioNote")}
+        >
           <select
             id="output-device"
             data-testid="output-device"
@@ -119,7 +138,7 @@ export default function Settings() {
               const raw = event.target.value;
               save.mutate({ "audio.output_device": raw === "" ? null : Number(raw) });
             }}
-            className="w-full rounded border border-line px-2 py-1"
+            className={SELECT_CLASS}
             disabled={outputs.length === 0}
           >
             <option value="">{t("settings.outputDefault")}</option>
@@ -130,134 +149,140 @@ export default function Settings() {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-tertiary">{t("settings.systemAudioNote")}</p>
-        </div>
-        {settings.isSuccess && (
-          <MicMeter device={null} track="them" hint={t("settings.systemAudioLevel")} />
-        )}
-      </div>
+          {settings.isSuccess && (
+            <div className="w-40">
+              <MicMeter device={null} track="them" hint={t("settings.systemAudioLevel")} />
+            </div>
+          )}
+        </SettingRow>
 
-      <label className="mb-1 block text-sm font-medium" htmlFor="data-root">
-        {t("settings.dataRoot")}
-      </label>
-      <input
-        id="data-root"
-        data-testid="data-root"
-        value={dataRoot}
-        onChange={(event) => setDataRoot(event.target.value)}
-        className="w-full rounded border border-line px-2 py-1"
-      />
-      {(localWarning || warnings.length > 0) && (
-        <p data-testid="sync-warning" className="mt-1 text-sm text-warning">
-          {t("settings.syncWarning")}
-        </p>
-      )}
+        <SettingRow
+          label={t("settings.detection")}
+          htmlFor="detection-mode"
+          description={<span data-testid="detection-hint">{t("settings.detectionHint")}</span>}
+        >
+          <select
+            id="detection-mode"
+            data-testid="detection-mode"
+            value={config.detection?.mode ?? "shadow"}
+            onChange={(event) => save.mutate({ "detection.mode": event.target.value })}
+            className={SELECT_CLASS}
+          >
+            {DETECTION_MODES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.label)}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+      </SettingGroup>
 
-      <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="ui-theme">
-        {t("settings.theme")}
-      </label>
-      <select
-        id="ui-theme"
-        data-testid="ui-theme"
-        value={theme}
-        onChange={(event) => {
-          const next = event.target.value as Theme;
-          // Applied before it is saved: appearance should answer the click, not
-          // the round trip.
-          setTheme(next);
-          save.mutate({ "ui.theme": next });
-        }}
-        className="rounded border border-line bg-raised px-2 py-1"
-      >
-        {THEMES.map((option) => (
-          <option key={option} value={option}>
-            {t(
-              option === "light"
-                ? "settings.themeLight"
-                : option === "dark"
-                  ? "settings.themeDark"
-                  : "settings.themeSystem",
-            )}
-          </option>
-        ))}
-      </select>
+      <SettingGroup title={t("settings.groupAppearance")}>
+        <SettingRow label={t("settings.theme")} htmlFor="ui-theme">
+          <select
+            id="ui-theme"
+            data-testid="ui-theme"
+            value={theme}
+            onChange={(event) => {
+              const next = event.target.value as Theme;
+              // Applied before it is saved: appearance should answer the click, not
+              // the round trip.
+              setTheme(next);
+              save.mutate({ "ui.theme": next });
+            }}
+            className={SELECT_CLASS}
+          >
+            {THEMES.map((option) => (
+              <option key={option} value={option}>
+                {t(
+                  option === "light"
+                    ? "settings.themeLight"
+                    : option === "dark"
+                      ? "settings.themeDark"
+                      : "settings.themeSystem",
+                )}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
 
-      <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="ui-language">
-        {t("settings.language")}
-      </label>
-      <select
-        id="ui-language"
-        data-testid="ui-language"
-        value={locale}
-        onChange={(event) => {
-          const next = event.target.value as Locale;
-          setLocale(next);
-          save.mutate({ "ui.language": next });
-        }}
-        className="rounded border border-line px-2 py-1"
-      >
-        {["en", "he"].map((code) => (
-          <option key={code} value={code}>
-            {LANGUAGE_NAMES[code]}
-          </option>
-        ))}
-      </select>
+        <SettingRow label={t("settings.language")} htmlFor="ui-language">
+          <select
+            id="ui-language"
+            data-testid="ui-language"
+            value={locale}
+            onChange={(event) => {
+              const next = event.target.value as Locale;
+              setLocale(next);
+              save.mutate({ "ui.language": next });
+            }}
+            className={SELECT_CLASS}
+          >
+            {["en", "he"].map((code) => (
+              <option key={code} value={code}>
+                {LANGUAGE_NAMES[code]}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
 
-      <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="summary-language">
-        {t("settings.summaryLanguage")}
-      </label>
-      <select
-        id="summary-language"
-        data-testid="summary-language"
-        value={config.summary?.language ?? "en"}
-        onChange={(event) => save.mutate({ "summary.language": event.target.value })}
-        className="rounded border border-line px-2 py-1"
-      >
-        {["en", "he", "auto"].map((code) => (
-          <option key={code} value={code}>
-            {LANGUAGE_NAMES[code]}
-          </option>
-        ))}
-      </select>
+        <SettingRow label={t("settings.summaryLanguage")} htmlFor="summary-language">
+          <select
+            id="summary-language"
+            data-testid="summary-language"
+            value={config.summary?.language ?? "en"}
+            onChange={(event) => save.mutate({ "summary.language": event.target.value })}
+            className={SELECT_CLASS}
+          >
+            {["en", "he", "auto"].map((code) => (
+              <option key={code} value={code}>
+                {LANGUAGE_NAMES[code]}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+      </SettingGroup>
 
-      <label className="mt-4 mb-1 block text-sm font-medium" htmlFor="detection-mode">
-        {t("settings.detection")}
-      </label>
-      <select
-        id="detection-mode"
-        data-testid="detection-mode"
-        value={config.detection?.mode ?? "shadow"}
-        onChange={(event) => save.mutate({ "detection.mode": event.target.value })}
-        className="rounded border border-line px-2 py-1"
-      >
-        {DETECTION_MODES.map((option) => (
-          <option key={option.value} value={option.value}>
-            {t(option.label)}
-          </option>
-        ))}
-      </select>
-      <p className="mt-1 max-w-3xl text-xs text-secondary" data-testid="detection-hint">
-        {t("settings.detectionHint")}
-      </p>
+      <SettingGroup title={t("settings.groupStorage")}>
+        <SettingRow
+          label={t("settings.dataRoot")}
+          htmlFor="data-root"
+          description={t("settings.dataRootNote")}
+          tone={
+            (localWarning || warnings.length > 0) && (
+              <p data-testid="sync-warning" className="mt-1 text-xs text-warning">
+                {t("settings.syncWarning")}
+              </p>
+            )
+          }
+        >
+          {/*
+           * The one setting that is not instant: a path is only meaningful once it
+           * is finished being typed, so this commits on blur and on Enter rather
+           * than on every keystroke.
+           */}
+          <input
+            id="data-root"
+            data-testid="data-root"
+            value={dataRoot}
+            onChange={(event) => setDataRoot(event.target.value)}
+            onBlur={() => dataRoot && save.mutate({ data_root: dataRoot })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+            spellCheck={false}
+            className="w-[22rem] max-w-full rounded-sm border border-line bg-canvas px-2 py-1.5 font-mono text-xs"
+          />
+          {save.isSuccess && (
+            <span data-testid="settings-saved" className="text-xs text-success">
+              {t("settings.saved")}
+            </span>
+          )}
+        </SettingRow>
+      </SettingGroup>
 
       <ProviderSettings />
       <PromptSettings />
-
-      <div className="mt-4">
-        <BusyButton
-          data-testid="settings-save"
-          busy={save.isPending}
-          onClick={() => save.mutate({ data_root: dataRoot })}
-          className="rounded bg-accent px-3 py-1.5 text-on-accent"
-        >
-          {t("settings.save")}
-        </BusyButton>
-        {save.isSuccess && (
-          <span data-testid="settings-saved" className="ms-2 text-sm text-success">
-            {t("settings.saved")}
-          </span>
-        )}
-      </div>
     </section>
   );
 }
