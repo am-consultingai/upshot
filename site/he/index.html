@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upshot: סיכומי פגישות בלי בוט בשיחה</title>
+<meta name="description" content="Upshot מזהה לבד שפגישה התחילה, מקליט אותה על המחשב שלכם ומגיש סיכום בעברית בפורמט שאתם בוחרים. אף בוט לא מצטרף לשיחה, וההקלטה לא יוצאת מהמחשב.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0f19">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="he_IL">
+<meta property="og:title" content="סיכום לכל פגישה, בלי בוט בשיחה.">
+<meta property="og:description" content="Upshot מקליט ומסכם את הפגישות שלכם על המחשב שלכם, עם תמלול שאומן על עברית. אף אחד לא מצטרף לשיחה, וההקלטה לא יוצאת מהמחשב.">
+<meta property="og:url" content="https://am-consultingai.github.io/upshot/he/">
+<meta property="og:image" content="https://am-consultingai.github.io/upshot/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" hreflang="en" href="https://am-consultingai.github.io/upshot/">
+<link rel="alternate" hreflang="he" href="https://am-consultingai.github.io/upshot/he/">
+<link rel="alternate" hreflang="x-default" href="https://am-consultingai.github.io/upshot/">
+<link rel="icon" type="image/svg+xml" href="../img/upshot-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Rubik:wght@400;500;600;700&family=Heebo:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/am-consultingai/am-assets@v2/brand.css">
+<link rel="stylesheet" href="../site.css">
+<script src="../site.js" defer></script>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="up-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/><stop offset=".55" stop-color="#38bdf8"/><stop offset="1" stop-color="#818cf8"/>
+    </linearGradient>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12c1.8-4 5.6-7 10-7s8.2 3 10 7c-1.8 4-5.6 7-10 7s-8.2-3-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.2a4.3 4.3 0 0 0 .6-8.55A6.2 6.2 0 0 0 5.9 9.4 4.6 4.6 0 0 0 7 18.5z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></symbol>
+    <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.6"/><path d="M2 19.5h20"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
+    <symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-ear" viewBox="0 0 24 24"><path d="M7 9a5 5 0 0 1 10 0c0 3-3 4-3 7a3 3 0 0 1-5.5 1.6"/><path d="M10 9a2 2 0 0 1 4 0"/></symbol>
+    <symbol id="i-rtl" viewBox="0 0 24 24"><path d="M20 6H8M20 10H4M20 14H10M20 18H6"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  </defs>
+</svg>
+
+<!-- BRAND ---------------------------------------------------------------->
+<section class="brand-band" aria-label="Upshot">
+  <svg class="up-logo ltr" viewBox="0 0 520 128" role="img" aria-labelledby="up-logo-title">
+    <title id="up-logo-title">Upshot</title>
+    <g transform="translate(4 4)">
+      <rect x="2" y="2" width="116" height="116" rx="30" fill="#0d1321" stroke="url(#up-grad)" stroke-width="3"/>
+      <g transform="translate(12 12) scale(3)">
+        <path d="M2.500 10.200C3.625 10.200 4.750 11.582 5.875 13.100C7.000 14.618 8.125 16.000 9.250 16.000C10.375 16.000 11.500 14.618 12.625 13.100C13.750 11.582 14.875 10.200 16.000 10.200C17.125 10.200 18.250 11.582 19.375 13.100C20.500 14.618 21.625 16.000 22.750 16.000C23.875 16.000 25.000 14.618 26.125 13.100C27.250 11.582 28.375 10.200 29.500 10.200" fill="none" stroke="url(#up-grad)" stroke-width="3"/>
+        <rect x="2.5" y="20.3" width="27" height="3" fill="url(#up-grad)"/>
+      </g>
+    </g>
+    <text x="156" y="88" font-family="Space Grotesk, Helvetica Neue, Arial, sans-serif" font-size="72" letter-spacing="-2.5"><tspan fill="#94a3b8" font-weight="500">up</tspan><tspan fill="#f3f4f6" font-weight="700">shot</tspan></text>
+  </svg>
+  <p class="brand-tag">כל פגישה, מסוכמת. בלי אף אחד נוסף בחדר.</p>
+</section>
+
+<header class="nav">
+  <div class="nav-in">
+    <a class="nav-mark" href="#top" aria-label="Upshot, חזרה למעלה"><img src="../img/upshot-mark.svg" alt="" width="30" height="30"><span>upshot</span></a>
+    <nav class="nav-links" aria-label="חלקי העמוד">
+      <a href="#hebrew">עברית</a>
+      <a href="#bots">בלי בוטים</a>
+      <a href="#how">איך זה עובד</a>
+      <a href="#faq">שאלות</a>
+    </nav>
+    <a class="lang-switch" href="../" hreflang="en" lang="en" data-lang="en">English</a>
+    <a class="btn btn-sec btn-sm nav-cta" href="https://github.com/am-consultingai/upshot">GitHub</a>
+  </div>
+</header>
+
+<main>
+
+  <!-- HERO ---------------------------------------------------------------->
+  <section class="hero" id="top">
+    <picture class="hero-bg" aria-hidden="true">
+      <source media="(max-width: 700px)" srcset="../img/hero-sm.webp">
+      <img src="../img/hero.webp" width="3200" height="1200" alt="" fetchpriority="high">
+    </picture>
+    <div class="hero-in">
+      <div class="hero-text">
+        <p class="eyebrow">סיכומי פגישות פרטיים ל-Windows</p>
+        <h1>סיכום לכל פגישה, בלי בוט בשיחה.</h1>
+        <p class="lede">Upshot מזהה לבד שהפגישה התחילה, מקליט אותה על המחשב שלכם ומגיש סיכום בעברית, בדיוק בפורמט שאתם אוהבים. אף אחד לא מצטרף לשיחה, וההקלטה לא יוצאת מהמחשב.</p>
+        <div class="hero-actions">
+          <a class="btn btn-pri" href="#start">להתחיל</a>
+          <a class="btn btn-sec" href="#hebrew">עברית אמיתית</a>
+        </div>
+        <p class="hero-meta">Windows · בלי בוט · בלי חשבון · שום אודיו לא עולה לענן · עברית ואנגלית</p>
+      </div>
+      <figure class="ready" aria-label="איור של רשימת משתתפים בשיחה, כש-Upshot מקליט על המחשב. נתוני הדגמה.">
+        <div class="ready-top">
+          <span class="live"></span>
+          <span>בשיחה</span>
+          <em>3 משתתפים · 0 בוטים</em>
+        </div>
+        <ul class="people">
+          <li><i>א</i>אני</li>
+          <li><i>ד</i>דנה <small>מארחת</small></li>
+          <li><i>י</i>יואב</li>
+          <li class="gone"><i><svg class="ic"><use href="#i-bot"/></svg></i><s>בוט רשמים</s> <small>לא הוזמן</small></li>
+        </ul>
+        <p class="ready-foot"><svg class="ic"><use href="#i-check"/></svg>Upshot מקליט על המחשב הזה, לא בתוך השיחה</p>
+        <figcaption>איור. נתוני הדגמה.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- PILLARS ------------------------------------------------------------->
+  <section class="pillars" aria-label="מה Upshot עושה אחרת">
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
+      <h2>הפגישות נשארות פרטיות</h2>
+      <p>מוקלטות ונשמרות על המחשב שלכם. שום דבר לא עולה לענן לתמלול, ועם מודל AI מקומי שום דבר לא יוצא בכלל.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
+      <h2>לא תשכחו להקליט <span class="tag-new">חדש</span></h2>
+      <p>Upshot מזהה כשפגישה מתחילה. תנו לו להקליט לבד, וכל שיחה תסתיים עם סיכום, גם אם שכחתם.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
+      <h2>סיכום שאפשר לשלוח כמו שהוא</h2>
+      <p>תגידו פעם אחת איך אתם אוהבים את הסיכום: פרקים, טון, אפילו צבעים. כל סיכום מוכן להדבקה במייל.</p>
+    </article>
+  </section>
+
+  <!-- STATS --------------------------------------------------------------->
+  <section class="stats" aria-label="במבט אחד">
+    <div><b>0</b><span>בוטים בשיחה</span></div>
+    <div><b>0</b><span>קליקים כדי להתחיל, עם הקלטה אוטומטית</span></div>
+    <div><b>0</b><span>דקות אודיו שעולות לענן</span></div>
+    <div><b data-providers>5</b><span>מודלי AI לבחירה, אחד פרטי לגמרי</span></div>
+  </section>
+
+  <!-- HEBREW -------------------------------------------------------------->
+  <section class="sec hebrew" id="hebrew">
+    <p class="eyebrow">עברית</p>
+    <h2>סוף סוף, תמלול שמבין עברית.</h2>
+    <p class="he-sub">רוב הכלים לסיכום פגישות נבנו לאנגלית. חלקם לא תומכים בעברית בכלל, ואחרים מתמללים אותה עם מנוע כללי שמפספס מילים, שמות ומונחים. Upshot מתמלל עם מודל שאומן במיוחד על עברית מדוברת.</p>
+
+    <figure class="wer" aria-label="כמה מילים יוצאות שגויות מתוך 100, בשיחה יומיומית בעברית">
+      <p class="wer-title">מתוך 100 מילים בשיחה יומיומית, כמה יוצאות שגויות</p>
+      <div class="wer-row us">
+        <span class="wer-name">Upshot</span>
+        <span class="wer-track"><i style="width:calc(7.2% * 100 / 36)"></i></span>
+        <b>7</b>
+      </div>
+      <div class="wer-row">
+        <span class="wer-name">OpenAI Whisper (large-v3)</span>
+        <span class="wer-track"><i style="width:calc(13.2% * 100 / 36)"></i></span>
+        <b>13</b>
+      </div>
+      <div class="wer-row range">
+        <span class="wer-name">מודלי תמלול AI ציבוריים</span>
+        <span class="wer-track"><i style="margin-inline-start:calc(9% * 100 / 36);width:calc(26.2% * 100 / 36)"></i></span>
+        <b class="ltr">9–35</b>
+      </div>
+      <figcaption>מקור: טבלת השוואה ציבורית לתמלול עברית ב-Hugging Face, מערך בדיקה של הודעות קוליות, מאי 2025. מספר נמוך יותר הוא טוב יותר.</figcaption>
+    </figure>
+
+    <div class="he-cards">
+      <article><svg class="ic"><use href="#i-ear"/></svg><b>מבין עברית מדוברת</b><p>המודלים אומנו על יותר מ-5,000 שעות של עברית: דיוני כנסת, הקראות והקלטות ציבוריות.</p></article>
+      <article><svg class="ic"><use href="#i-rtl"/></svg><b>סיכום מימין לשמאל</b><p>הסיכום נכתב בעברית, מיושר נכון ומוכן להדבקה במייל, בלי לתקן כלום.</p></article>
+      <article><svg class="ic"><use href="#i-globe"/></svg><b>עברית ואנגלית, איך שנוח</b><p>כל האפליקציה בעברית. אפשר לסכם פגישה באנגלית בעברית, ולהפך.</p></article>
+    </div>
+  </section>
+
+  <!-- BOTS ---------------------------------------------------------------->
+  <section class="risk-band" id="bots">
+    <img class="risk-bg" src="../img/room.webp" width="2000" height="1333" alt="" loading="lazy" aria-hidden="true">
+    <div class="risk-in">
+      <p class="eyebrow">הבעיה עם בוטים לסיכום פגישות</p>
+      <h2>בוט בשיחה הוא זר בחדר.</h2>
+      <div class="bot-grid">
+        <figure class="callwin" aria-label="איור של שיחת וידאו עם בוט רשמים בין המשתתפים. נתוני הדגמה.">
+          <div class="cw-bar"><i></i><i></i><i></i><span>סקירה עם לקוח · 4 משתתפים</span></div>
+          <div class="cw-tiles">
+            <div class="cw-t"><b>ד</b><span>דנה</span></div>
+            <div class="cw-t"><b>י</b><span>יואב</span></div>
+            <div class="cw-t"><b>ל</b><span>הלקוח</span></div>
+            <div class="cw-t bot"><b><svg class="ic"><use href="#i-bot"/></svg></b><span>בוט רשמים</span><em>● מקליט</em></div>
+          </div>
+          <p class="cw-chat"><b>הלקוח:</b> סליחה, מי זה הבוט?</p>
+          <figcaption>איור. נתוני הדגמה.</figcaption>
+        </figure>
+        <article class="copy-card">
+          <svg class="ic big"><use href="#i-eye"/></svg>
+          <h3>כולם רואים אותו</h3>
+          <ul class="tags">
+            <li>זר בשיחה</li>
+            <li>״מי זה?״ עוד לפני שהתחלתם</li>
+            <li>אנשים מדברים פחות בחופשיות</li>
+            <li>יש מארחים שמוציאים אותו</li>
+          </ul>
+        </article>
+        <article class="copy-card">
+          <svg class="ic big"><use href="#i-cloud"/></svg>
+          <h3>השיחה יוצאת מהחדר</h3>
+          <ul class="tags">
+            <li>האודיו עולה לענן של ספק</li>
+            <li>נשמר לפי המדיניות שלהם</li>
+            <li>סיכומים שמשותפים בקישור</li>
+            <li>עוד חשבון מלא בשיחות שלכם</li>
+          </ul>
+        </article>
+      </div>
+      <p class="punch">Upshot אף פעם לא מצטרף לשיחה. <span>הוא מקשיב מהמחשב שלכם, ומשאיר שם את מה ששמע.</span></p>
+    </div>
+  </section>
+
+  <!-- HOW ----------------------------------------------------------------->
+  <section class="sec how" id="how">
+    <p class="eyebrow">איך זה עובד</p>
+    <h2>נכנסים לשיחה. Upshot מטפל בשאר.</h2>
+    <ol class="steps">
+      <li>
+        <span class="step-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
+        <h3>מזהה את הפגישה</h3>
+        <p>נכנסים כרגיל, בכל אפליקציה. Upshot מזהה לבד שפגישה התחילה</p>
+      </li>
+      <li>
+        <span class="step-ic"><svg class="ic"><use href="#i-mic"/></svg></span>
+        <h3>מקליט</h3>
+        <p>בשקט, על המחשב שלכם. אף אחד בשיחה לא רואה כלום</p>
+      </li>
+      <li>
+        <span class="step-ic"><svg class="ic"><use href="#i-doc"/></svg></span>
+        <h3>מקבלים סיכום</h3>
+        <p>אחרי השיחה, הסיכום בפורמט שלכם מחכה בציר הזמן</p>
+      </li>
+    </ol>
+    <div class="signals">
+      <article><b>אוטומטי כמה שתרצו</b><p>תנו לו להקליט כל פגישה שהוא מזהה, או רק להראות לכם אילו פגישות זיהה. תמיד אפשר ללחוץ על הקלטה בעצמכם.</p></article>
+      <article><b>ברור מה הבטחתם</b><p>המילים שלכם נשמרות בנפרד מהמילים של כל השאר, כך שתמיד ברור מה אמרתם שתעשו.</p></article>
+      <article><b>עובד על מחשב רגיל</b><p>בלי חומרה מיוחדת. כרטיס מסך מאיץ את העבודה; בלעדיו, הסיכום פשוט מגיע מאוחר יותר.</p></article>
+    </div>
+  </section>
+
+  <!-- FORMAT -------------------------------------------------------------->
+  <section class="sec format" id="format">
+    <p class="eyebrow">הפורמט שלכם</p>
+    <h2>כותבים את הפורמט פעם אחת. שולחים כל פעם.</h2>
+    <div class="fmt">
+      <div class="fmt-prompt">
+        <p class="fmt-label">מה שאומרים לו, פעם אחת</p>
+<pre>כתוב את הסיכום כמייל ללקוח. פתח
+בסיכום של שתי שורות, ואז <b>החלטות</b>,
+<b>משימות</b> עם אחראי ותאריך, ו<b>הפגישה הבאה</b>.
+כותרות בצבע טורקיז. עד 200 מילים.</pre>
+      </div>
+      <div class="fmt-arrow" aria-hidden="true">→</div>
+      <article class="mail" aria-label="דוגמה לסיכום שנכתב כמייל. נתוני הדגמה.">
+        <div class="mail-head"><span>נושא</span>סקירה עם הלקוח: סיכום וצעדים הבאים<em class="demo">נתוני הדגמה</em></div>
+        <div class="mail-body">
+          <p>תודה על הזמן היום. סיכמנו שהפיילוט מתחיל ב-1 לחודש, ומודול הדוחות עובר לשלב ב׳.</p>
+          <h4>החלטות</h4>
+          <ul><li>היקף הפיילוט: קליטת נתונים ודשבורדים</li><li>הדוחות עוברים לשלב ב׳</li></ul>
+          <h4>משימות</h4>
+          <ul><li><strong>דנה</strong>: לשלוח את תוכנית הפיילוט, יום ה׳</li><li><strong>הלקוח</strong>: לאשר מי אחראי על הנתונים, יום ב׳</li></ul>
+          <h4>הפגישה הבאה</h4>
+          <p>יום ג׳ 10:00, פתיחת הפיילוט</p>
+        </div>
+      </article>
+    </div>
+    <ul class="callouts three">
+      <li><b>כל מבנה</b> פרקים, סדר, כותרות, טון</li>
+      <li><b>כל עיצוב</b> הצבעים שלכם, הפריסה שלכם</li>
+      <li><b>מעתיקים, מדביקים, שולחים</b> העיצוב נשמר</li>
+    </ul>
+    <p class="chips-note">אפשר לשנות את ההוראות בכל רגע, ולכתוב מחדש כל פגישה בפורמט החדש.</p>
+  </section>
+
+  <!-- APPS CAROUSEL -------------------------------------------------------->
+  <section class="tools" id="apps">
+    <div class="tools-head">
+      <p class="eyebrow">עובד עם אפליקציית השיחות שלכם</p>
+      <h2>כל שיחה שהמחשב שומע.</h2>
+      <p class="legend"><span class="st on">נוסה בפגישות אמיתיות</span></p>
+    </div>
+    <div class="marquee" role="list" aria-label="אפליקציות שיחה">
+      <div class="track">
+        <div class="tool" role="listitem"><img src="../img/logos/zoom.svg" alt="" width="22" height="22">Zoom</div>
+        <div class="tool" role="listitem"><img src="../img/logos/microsoftteams.svg" alt="" width="22" height="22">Microsoft Teams</div>
+        <div class="tool" role="listitem"><img src="../img/logos/googlemeet.svg" alt="" width="22" height="22">Google Meet</div>
+        <div class="tool" role="listitem"><img src="../img/logos/webex.svg" alt="" width="22" height="22">Webex</div>
+        <div class="tool" role="listitem"><img src="../img/logos/slack.svg" alt="" width="22" height="22">Slack huddles</div>
+        <div class="tool" role="listitem"><img src="../img/logos/discord.svg" alt="" width="22" height="22">Discord</div>
+        <div class="tool" role="listitem"><img src="../img/logos/whatsapp.svg" alt="" width="22" height="22">WhatsApp</div>
+        <div class="tool" role="listitem"><img src="../img/logos/telegram.svg" alt="" width="22" height="22">Telegram</div>
+        <div class="tool" role="listitem"><img src="../img/logos/signal.svg" alt="" width="22" height="22">Signal</div>
+        <div class="tool" role="listitem" dir="rtl"><span class="mono-mark">www</span>כל לשונית בדפדפן</div>
+      </div>
+      <div class="track" aria-hidden="true">
+        <div class="tool"><img src="../img/logos/zoom.svg" alt="" width="22" height="22">Zoom</div>
+        <div class="tool"><img src="../img/logos/microsoftteams.svg" alt="" width="22" height="22">Microsoft Teams</div>
+        <div class="tool"><img src="../img/logos/googlemeet.svg" alt="" width="22" height="22">Google Meet</div>
+        <div class="tool"><img src="../img/logos/webex.svg" alt="" width="22" height="22">Webex</div>
+        <div class="tool"><img src="../img/logos/slack.svg" alt="" width="22" height="22">Slack huddles</div>
+        <div class="tool"><img src="../img/logos/discord.svg" alt="" width="22" height="22">Discord</div>
+        <div class="tool"><img src="../img/logos/whatsapp.svg" alt="" width="22" height="22">WhatsApp</div>
+        <div class="tool"><img src="../img/logos/telegram.svg" alt="" width="22" height="22">Telegram</div>
+        <div class="tool"><img src="../img/logos/signal.svg" alt="" width="22" height="22">Signal</div>
+        <div class="tool" dir="rtl"><span class="mono-mark">www</span>כל לשונית בדפדפן</div>
+      </div>
+    </div>
+    <div class="marquee reverse" role="list" aria-label="מודלי סיכום ותמלול">
+      <div class="track">
+        <div class="tool on" role="listitem"><img src="../img/logos/claude.svg" alt="" width="22" height="22">Claude Code<b>בשימוש</b></div>
+        <div class="tool" role="listitem"><img src="../img/logos/anthropic.svg" alt="" width="22" height="22">Anthropic API</div>
+        <div class="tool" role="listitem"><img src="../img/logos/openai.svg" alt="" width="22" height="22">OpenAI</div>
+        <div class="tool" role="listitem"><img src="../img/logos/googlegemini.svg" alt="" width="22" height="22">Gemini</div>
+        <div class="tool" role="listitem" dir="rtl"><img src="../img/logos/ollama.svg" alt="" width="22" height="22">Ollama, מקומי לגמרי</div>
+        <div class="tool on" role="listitem" dir="rtl"><span class="mono-mark">he</span>מודל דיבור עברי<b>בשימוש</b></div>
+      </div>
+      <div class="track" aria-hidden="true">
+        <div class="tool on"><img src="../img/logos/claude.svg" alt="" width="22" height="22">Claude Code<b>בשימוש</b></div>
+        <div class="tool"><img src="../img/logos/anthropic.svg" alt="" width="22" height="22">Anthropic API</div>
+        <div class="tool"><img src="../img/logos/openai.svg" alt="" width="22" height="22">OpenAI</div>
+        <div class="tool"><img src="../img/logos/googlegemini.svg" alt="" width="22" height="22">Gemini</div>
+        <div class="tool" dir="rtl"><img src="../img/logos/ollama.svg" alt="" width="22" height="22">Ollama, מקומי לגמרי</div>
+        <div class="tool on" dir="rtl"><span class="mono-mark">he</span>מודל דיבור עברי<b>בשימוש</b></div>
+      </div>
+    </div>
+    <p class="tools-note">Upshot עובד עם כל אפליקציית שיחות במחשב, בלי להצטרף לשיחה ובלי להוסיף לה שום דבר. את הסיכום כותב מודל ה-AI שתבחרו: Claude כבר כתב סיכומים לפגישות אמיתיות, והשאר מוכנים אבל עוד לא שימשו בפגישה חיה.</p>
+  </section>
+
+  <!-- SCREENSHOT ---------------------------------------------------------->
+  <section class="sec report" id="summary">
+    <p class="eyebrow">האפליקציה</p>
+    <h2>קוראים את הפגישה, לא מקשיבים לה שוב.</h2>
+    <div class="shot">
+      <div class="shot-bar"><i></i><i></i><i></i><span>Upshot</span><em class="demo">נתוני הדגמה</em></div>
+      <img src="../img/meeting.webp" width="1280" height="900" loading="lazy"
+           alt="עמוד פגישה ב-Upshot: ציר זמן בצד, סיכום עם החלטות, משימות ושאלות פתוחות, תמלול ונגן. נתוני הדגמה.">
+    </div>
+    <ul class="callouts">
+      <li><b>סיכום</b> במבנה שביקשתם</li>
+      <li><b>העתקה</b> נדבק במייל, עם העיצוב</li>
+      <li><b>תמלול</b> כל מילה, אם צריך</li>
+      <li><b>ציר זמן</b> כל הפגישות, לפי יום או בלוח שנה</li>
+    </ul>
+    <p class="chips-note">בצילום הממשק באנגלית. האפליקציה זמינה במלואה גם בעברית.</p>
+  </section>
+
+  <!-- COMPARE ------------------------------------------------------------->
+  <section class="sec compare" id="compare">
+    <p class="eyebrow">השוואה</p>
+    <h2>בוטים מצטרפים לשיחה. Upshot לא.</h2>
+    <div class="table-wrap">
+      <table class="vs">
+        <thead><tr><th scope="col"><span class="sr">שאלה</span></th><th scope="col">בוטים לסיכום פגישות</th><th scope="col" class="us">Upshot</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">מופיע ברשימת המשתתפים</th><td class="them">כן</td><td class="us">אף פעם</td></tr>
+          <tr><th scope="row">ההקלטה נשמרת בשרתים של ספק</th><td class="them">בדרך כלל</td><td class="us">אף פעם</td></tr>
+          <tr><th scope="row">תמלול שאומן על עברית</th><td class="them">לעיתים רחוקות</td><td class="us">כן</td></tr>
+          <tr><th scope="row">מתחיל בלי שתלחצו על הקלטה</th><td>לפי היומן</td><td class="us">כשהשיחה מתחילה, אם הפעלתם</td></tr>
+          <tr><th scope="row">סיכום בפורמט שאתם כותבים</th><td>תבניות</td><td class="us">כל פורמט</td></tr>
+          <tr><th scope="row">חשבון שצריך לפתוח</th><td class="them">כן</td><td class="us">לא</td></tr>
+          <tr><th scope="row">עובד על Mac</th><td>בדרך כלל</td><td class="us no">לא, רק Windows</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- TRUST --------------------------------------------------------------->
+  <section class="sec safe" id="trust">
+    <p class="eyebrow">אמון</p>
+    <h2>הפגישות שלכם נשארות שלכם.</h2>
+    <div class="tiles">
+      <div class="tile"><svg class="ic"><use href="#i-laptop"/></svg><b>נשאר על המחשב</b><span>מוקלט ומתומלל שם, לא עולה לענן</span></div>
+      <div class="tile"><svg class="ic"><use href="#i-user"/></svg><b>בלי חשבון</b><span>אין צורך להירשם לשום דבר</span></div>
+      <div class="tile"><svg class="ic"><use href="#i-disk"/></svg><b>שום דבר לא הולך לאיבוד</b><span>נשמר תוך כדי הקלטה, לא רק בסוף</span></div>
+      <div class="tile"><svg class="ic"><use href="#i-clock"/></svg><b>אתם מחליטים מה נשמר</b><span>ההקלטות נמחקות אחרי <span data-audio-days>30</span> יום; הסיכומים נשארים</span></div>
+    </div>
+  </section>
+
+  <!-- FAQ ----------------------------------------------------------------->
+  <section class="sec faq" id="faq">
+    <p class="eyebrow">שאלות</p>
+    <h2>שאלות נפוצות</h2>
+    <div class="faq-list">
+      <details class="acc"><summary>הפגישה יוצאת מהמחשב שלי?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">ההקלטה לא: היא נשמרת ומתומללת על המחשב שלכם. כדי לכתוב את הסיכום, הטקסט של השיחה נשלח למודל ה-AI שבחרתם. בחרו מודל מקומי (Ollama) ושום דבר לא יוצא בכלל.</div></details>
+      <details class="acc"><summary>כמה טוב הוא בעברית?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">מודל התמלול של Upshot אומן על יותר מ-5,000 שעות של עברית. בטבלת השוואה ציבורית הוא טועה בכ-7 מילים מתוך 100 בשיחה יומיומית, בערך חצי מהטעויות של OpenAI Whisper.</div></details>
+      <details class="acc"><summary>האנשים האחרים בשיחה יראו משהו?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">לא. Upshot מקליט מהמחשב שלכם, ושום דבר לא מצטרף לשיחה. החוק לגבי הקלטת שיחות משתנה ממדינה למדינה, אז ספרו למשתתפים שאתם מקליטים.</div></details>
+      <details class="acc"><summary>איך הוא יודע שפגישה התחילה?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">הוא מזהה כשאפליקציית שיחות מתחילה להשתמש במיקרופון, ומחפש סימנים לשיחה אמיתית. בהתחלה הוא רק מראה לכם אילו פגישות זיהה, כדי שתראו שהוא צודק. כשתסמכו עליו, הפעילו הקלטה אוטומטית. ההקלטה האוטומטית חדשה, ותמיד אפשר ללחוץ על הקלטה בעצמכם.</div></details>
+      <details class="acc"><summary>Upshot משתמש ביומן Google שלי?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b"><span class="soon-key">בקרוב</span> רק אם תחברו אותו. Upshot יקרא את האירועים ביומן, לקריאה בלבד ועל המחשב שלכם, כדי לדעת מתי הפגישות מתוכננות ולתת להן שם. נתוני היומן לא נשלחים אלינו ולא לספקי AI. הפרטים ב<a href="../privacy.html#google" hreflang="en">מדיניות הפרטיות</a>.</div></details>
+      <details class="acc"><summary>אפשר לשלוח את הסיכום ישר במייל?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">כן. בקשו מ-Upshot לכתוב אותו כמייל, עם הפרקים, הטון והצבעים שלכם. לוחצים העתקה, מדביקים במייל, והעיצוב עובר איתו.</div></details>
+      <details class="acc"><summary>צריך מחשב חזק?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">לא. כרטיס מסך של NVIDIA מאיץ את העבודה. בלעדיו, Upshot מחכה לסוף השיחה כדי לא להאט את הפגישה, והסיכום מגיע מאוחר יותר.</div></details>
+      <details class="acc"><summary>על אילו מחשבים זה עובד?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">Windows בלבד. האפליקציה עצמה זמינה בעברית ובאנגלית.</div></details>
+    </div>
+  </section>
+
+  <!-- START --------------------------------------------------------------->
+  <section class="sec start" id="start">
+    <img class="start-mark" src="../img/upshot-mark.svg" alt="" width="64" height="64">
+    <h2>הפגישה הבאה שלכם, מסוכמת.</h2>
+    <p class="start-sub">קובץ אחד להרצה. הוא מבין לבד מה צריך להוריד, ושואל פעם אחת.</p>
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i>
+        <button class="copy" type="button" data-copy="quickstart" data-done="הועתק" data-fail="סמנו כדי להעתיק" hidden><svg class="ic"><use href="#i-copy"/></svg><span>העתקה</span></button>
+      </div>
+<pre id="quickstart"><code>git clone https://github.com/am-consultingai/upshot.git
+cd upshot
+scripts\windows\run-app.cmd</code></pre>
+    </div>
+    <p class="req">Windows · כרטיס מסך לא חובה · תוכנת התקנה <span class="soon-key">בקרוב</span></p>
+    <p class="limits">עדיין אי אפשר להבחין בין המשתתפים האחרים בשיחה: הדברים שלהם מסומנים יחד.</p>
+  </section>
+
+</main>
+
+<footer>
+  <p class="legal-links"><a href="../privacy.html" hreflang="en">מדיניות פרטיות</a> · <a href="../terms.html" hreflang="en">תנאי שימוש</a> (באנגלית)</p>
+  upshot <span data-version>0.1.0</span> · <a href="https://github.com/am-consultingai/upshot">GitHub</a>
+  <a class="powered" href="https://www.amconsultingai.com" aria-label="Powered by AM Consulting" dir="ltr">
+    <span>Powered by</span>
+    <img src="https://cdn.jsdelivr.net/gh/am-consultingai/am-assets@v2/logo/am-logo-white-600.png" alt="AM Consulting" width="111" height="30" loading="lazy">
+  </a>
+</footer>
+</body>
+</html>
