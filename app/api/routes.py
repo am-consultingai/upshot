@@ -1273,6 +1273,41 @@ def test_router() -> APIRouter:
             for key in ("language", "theme", "view", "calendar_span"):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
             svc.config.save()
+        if body.get("reset"):
+            svc.conn.execute("DELETE FROM calendar_events")
+        for item in body.get("calendar_events", []):
+            # Seeded the way a sync would leave them, so the grids and the matcher are
+            # exercised without a Google account.
+            from datetime import datetime as _dt
+
+            from app.gcal.events import Attendee, CalendarEvent, EventStore
+
+            start = _dt.fromisoformat(str(item["start"]))
+            end = _dt.fromisoformat(str(item["end"]))
+            EventStore(svc.conn).replace_window(
+                str(item.get("calendar_id", "primary")),
+                start,
+                end,
+                [
+                    CalendarEvent(
+                        calendar_id=str(item.get("calendar_id", "primary")),
+                        event_id=str(item["id"]),
+                        title=item.get("title"),
+                        start=start,
+                        end=end,
+                        all_day=bool(item.get("all_day")),
+                        ical_uid=f"{item['id']}@seed",
+                        response=item.get("response", "accepted"),
+                        attendees=tuple(
+                            Attendee(name=str(name))
+                            for name in item.get("attendees", ["Dana Levi"])
+                        ),
+                        attendee_count=len(item.get("attendees", ["Dana Levi"])),
+                        conference_url=item.get("conference_url", "https://meet.google.com/seed"),
+                    )
+                ],
+                synced_at=svc.clock.now(),
+            )
         for event in body.get("detector_events", []):
             outcome = event.get("outcome", "shadow")
             svc.dao.add_detector_event(
@@ -1345,6 +1380,21 @@ def test_router() -> APIRouter:
                     outcome=item.get("outcome", "committed"),
                     process=item.get("process"),
                     meeting_id=meeting.id,
+                )
+            if item.get("calendar"):
+                # A meeting already matched to a seeded event, as the matcher leaves it.
+                ref = dict(item["calendar"])
+                svc.dao.update_meeting(
+                    meeting.id,
+                    calendar_json=json.dumps(
+                        {
+                            "event": ref,
+                            "title": item.get("title"),
+                            "participants": ref.pop("participants", []),
+                            "match": {"state": "matched", "source": "auto", "confidence": 1.0},
+                        }
+                    ),
+                    title_source="calendar",
                 )
             if item.get("audio_seconds"):
                 _seed_audio(svc, folder, float(item["audio_seconds"]))

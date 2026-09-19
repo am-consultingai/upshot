@@ -138,8 +138,10 @@ def report(url: str) -> str:
         return digest
 
     stats = parse(unfold(body))
-    print(f"  events {stats['events']}   with a title {stats['with_summary']}"
-          f"   recurring {stats['recurring']}   with a meeting link {stats['conference']}")
+    print(
+        f"  events {stats['events']}   with a title {stats['with_summary']}"
+        f"   recurring {stats['recurring']}   with a meeting link {stats['conference']}"
+    )
     named, total = stats["named_attendees"], stats["attendees"]
     share = f"{named}/{total}" if total else "none present"
     print(f"  attendees {share} carry a display name   organizers {stats['organizers']}")
@@ -187,18 +189,27 @@ def watch(url: str, every: int, limit: int) -> int:
         print()
 
     if not changes:
-        print("\nno change seen in the window. Either nothing was edited, or the feed "
-              "is cached for longer than this run — both are findings worth writing down.")
+        print(
+            "\nno change seen in the window. Either nothing was edited, or the feed "
+            "is cached for longer than this run — both are findings worth writing down."
+        )
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url-file", help="file holding the secret URL (not an argument)")
-    parser.add_argument("--watch", type=seconds, metavar="EVERY",
-                        help="poll this often, e.g. 120s or 5m")
-    parser.add_argument("--for", dest="limit", type=seconds, default="1h", metavar="TOTAL",
-                        help="how long to keep watching (default 1h)")
+    parser.add_argument(
+        "--watch", type=seconds, metavar="EVERY", help="poll this often, e.g. 120s or 5m"
+    )
+    parser.add_argument(
+        "--for",
+        dest="limit",
+        type=seconds,
+        default="1h",
+        metavar="TOTAL",
+        help="how long to keep watching (default 1h)",
+    )
     args = parser.parse_args(argv)
     if isinstance(args.limit, str):
         args.limit = seconds(args.limit)

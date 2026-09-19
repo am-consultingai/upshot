@@ -81,10 +81,17 @@ def main(argv: list[str] | None = None) -> int:
     server = serve(mocks, port)
 
     browser = subprocess.Popen(
-        [str(browser_exe), "--headless=new", f"--remote-debugging-port={cdp}",
-         f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
-         "--force-device-scale-factor=2"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [
+            str(browser_exe),
+            "--headless=new",
+            f"--remote-debugging-port={cdp}",
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--force-device-scale-factor=2",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     try:
         if not wait_for(f"http://127.0.0.1:{cdp}/json/version", 60):
@@ -114,10 +121,18 @@ const { chromium } = require("playwright");
             encoding="utf-8",
         )
         run = subprocess.run(
-            ["node", str(script.name), f"http://127.0.0.1:{cdp}",
-             f"http://127.0.0.1:{port}", str(out), str(args.width), str(args.height),
-             *[p.name for p in pages]],
-            cwd=ROOT / "frontend", check=False,
+            [
+                "node",
+                str(script.name),
+                f"http://127.0.0.1:{cdp}",
+                f"http://127.0.0.1:{port}",
+                str(out),
+                str(args.width),
+                str(args.height),
+                *[p.name for p in pages],
+            ],
+            cwd=ROOT / "frontend",
+            check=False,
         )
         script.unlink(missing_ok=True)
         if run.returncode != 0:
