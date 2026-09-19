@@ -5,10 +5,12 @@ Middleware order is load-bearing and asserted: **Host check → auth → CSRF �
 
 from __future__ import annotations
 
+import contextlib
 import secrets
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.log import get
@@ -19,7 +21,18 @@ SESSION_COOKIE = "up_session"
 CSRF_COOKIE = "up_csrf"
 CSRF_HEADER = "x-csrf-token"
 MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-NO_COOKIE_MESSAGE = "open Upshot from the tray to authorize this browser"
+#: Where a fresh one-time link comes from. Both are things only the person at this
+#: computer can reach, which is the point: a link is proof the app handed it out.
+FRESH_LINK_HINT = (
+    "choose Open dashboard from the Upshot tray icon, or press N in the Upshot launcher window"
+)
+NO_COOKIE_MESSAGE = f"this browser is not authorized yet: {FRESH_LINK_HINT}"
+
+#: Asked for by the launcher, which cannot open the tray menu. It proves itself with the
+#: key the app wrote to its own home folder, readable by this Windows user only.
+LINK_PATH = "/api/auth/link"
+LAUNCHER_HEADER = "x-upshot-launcher"
+LAUNCHER_KEY_FILE = "launcher.key"
 
 
 @dataclass
@@ -28,6 +41,7 @@ class AuthState:
 
     session_secret: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     csrf_secret: str = field(default_factory=lambda: secrets.token_urlsafe(24))
+    launcher_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     _tokens: set[str] = field(default_factory=set)
     _used: set[str] = field(default_factory=set)
 
@@ -52,6 +66,13 @@ class AuthState:
         """False for a token this process never minted — which usually means the link
         came from a *different* Upshot answering on the same port."""
         return token in self._tokens or token in self._used
+
+    def link(self, port: int) -> str:
+        """A fresh one-time link. Every browser profile needs its own, once."""
+        return f"http://127.0.0.1:{port}/?k={self.issue_token()}"
+
+    def valid_launcher(self, value: str | None) -> bool:
+        return bool(value) and secrets.compare_digest(str(value), self.launcher_key)
 
     def valid_session(self, value: str | None) -> bool:
         return bool(value) and secrets.compare_digest(str(value), self.session_secret)
@@ -137,14 +158,31 @@ class HostHeaderMiddleware:
 class AuthMiddleware:
     """Cookie auth. No cookie → 401 with the tray message; never a redirect."""
 
-    def __init__(self, app: ASGIApp, auth: AuthState, exempt: frozenset[str] | None = None) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        auth: AuthState,
+        exempt: frozenset[str] | None = None,
+        port: int = 8000,
+    ) -> None:
         self.app = app
         self.auth = auth
         self.exempt = exempt or frozenset({"/api/health"})
+        self.port = port
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("path") in self.exempt:
             await self.app(scope, receive, send)
+            return
+        if scope.get("path") == LINK_PATH and scope.get("method") == "POST":
+            # Answered here, before CSRF and routing: the launcher has no cookie and no
+            # CSRF token, only the key. A browser cannot send the header cross-origin
+            # without a preflight this server never approves.
+            if self.auth.valid_launcher(_header(scope, LAUNCHER_HEADER)):
+                response = JSONResponse({"url": self.auth.link(self.port)})
+            else:
+                response = JSONResponse({"detail": "not the launcher"}, 401)
+            await response(scope, receive, send)
             return
         token = _query(scope, "k")
         if token:
@@ -170,14 +208,13 @@ class AuthMiddleware:
                 )
             else:
                 detail = (
-                    "this link has already been used — open "
-                    f"http://{host}/ in the browser you first authorized, "
-                    "or restart the app for a fresh link"
+                    "this link has already been used. Each link authorizes one browser, "
+                    f"once. For a fresh one, {FRESH_LINK_HINT}."
                 )
-            await JSONResponse({"detail": detail}, 401)(scope, receive, send)
+            await _refuse(scope, receive, send, detail)
             return
         if not self.auth.valid_session(_cookies(scope).get(SESSION_COOKIE)):
-            await JSONResponse({"detail": NO_COOKIE_MESSAGE}, 401)(scope, receive, send)
+            await _refuse(scope, receive, send, NO_COOKIE_MESSAGE)
             return
         await self.app(scope, receive, send)
 
@@ -196,6 +233,66 @@ class AuthMiddleware:
             await send(message)
 
         return wrapped
+
+
+async def _refuse(scope: Scope, receive: Receive, send: Send, detail: str) -> None:
+    """401, as a page when a person navigated here and as JSON for the UI's fetches.
+
+    A browser opened on the app with the wrong profile used to show a line of raw JSON
+    that named a tray the launcher does not have.
+    """
+    wants_page = (
+        scope.get("method") == "GET"
+        and not str(scope.get("path", "")).startswith("/api/")
+        and "text/html" in _header(scope, "accept")
+    )
+    if not wants_page:
+        await JSONResponse({"detail": detail}, 401)(scope, receive, send)
+        return
+    import html
+
+    page = UNAUTHORIZED_PAGE.format(detail=html.escape(detail))
+    await HTMLResponse(page, 401, headers={"Cache-Control": "no-store"})(scope, receive, send)
+
+
+UNAUTHORIZED_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Upshot</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{{font:16px/1.55 system-ui,sans-serif;margin:0;min-height:100vh;display:grid;
+place-items:center;background:#f6f7f9;color:#111}}
+main{{max-width:32rem;padding:2rem}} h1{{font-size:1.25rem;margin:0 0 .75rem}}
+p,li{{color:#444}} li{{margin:.35rem 0}} small{{color:#777}}
+@media (prefers-color-scheme:dark){{body{{background:#0b0f19;color:#eee}}
+p,li{{color:#bbb}} small{{color:#888}}}}
+</style></head>
+<body><main>
+<h1>Authorize this browser</h1>
+<p>Upshot only opens in a browser it has handed a one-time link to, so nothing else on
+this computer can reach your meetings. Get a fresh link from Upshot itself:</p>
+<ul>
+<li>choose <b>Open dashboard</b> from the Upshot icon in the taskbar tray, or</li>
+<li>press <b>N</b> in the Upshot launcher window, and paste the link it prints here.</li>
+</ul>
+<p>Each browser, or browser profile, needs this once.</p>
+<p><small>{detail}</small></p>
+</main></body></html>
+"""
+
+
+def write_launcher_key(auth: AuthState, home: Path) -> Path:
+    """Leave the launcher key where only this Windows user can read it.
+
+    The app home is under %LOCALAPPDATA%, private to the user, which is the same trust
+    the log file holding the startup link already relies on. Rewritten on every start,
+    so a key from an earlier run opens nothing.
+    """
+    path = home / LAUNCHER_KEY_FILE
+    home.mkdir(parents=True, exist_ok=True)
+    path.write_text(auth.launcher_key, encoding="utf-8")
+    with contextlib.suppress(OSError):
+        path.chmod(0o600)
+    return path
 
 
 class CsrfMiddleware:
