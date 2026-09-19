@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -36,6 +37,24 @@ def frontend_dir() -> Any:
     return paths.resource("frontend", "dist")
 
 
+def shell(path: Path) -> Response:
+    """The SPA shell, explicitly not cached.
+
+    `FileResponse` sends an etag and a last-modified date but no `Cache-Control`,
+    and a browser given no instruction is free to reuse an HTML document without
+    asking. That is fine for a page; it is not fine for this page, because this
+    page is the only thing that names the hashed asset files. A stale shell keeps
+    requesting the bundle it was built against, so a rebuilt application goes on
+    looking exactly like the old one until someone thinks to hard-refresh — which
+    is not a thing to ask of anyone, and would happen on every future update.
+
+    `no-cache` rather than `no-store`: the browser still holds the file and the
+    etag still answers most requests with a 304, it simply has to ask first.
+    The assets themselves are content-hashed, so they stay cacheable forever.
+    """
+    return FileResponse(path, headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:
     svc = services or build(config)
 
@@ -64,7 +83,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     def index() -> Response:
         candidate = frontend_dir() / "index.html"
         if candidate.exists():
-            return FileResponse(candidate)
+            return shell(candidate)
         return HTMLResponse(INDEX_FALLBACK)
 
     @app.exception_handler(KeyError)
@@ -92,7 +111,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
         """
         candidate = frontend_dir() / "index.html"
         if candidate.exists():
-            return FileResponse(candidate)
+            return shell(candidate)
         return HTMLResponse(INDEX_FALLBACK)
 
     # Middleware runs in reverse registration order, so this registers
