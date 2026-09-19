@@ -55,11 +55,15 @@ export default function SettingRow({
   );
 }
 
-/** A named group of settings. The heading is a label on the group, not a title. */
-export function SettingGroup({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * A group of settings. The heading is optional because a section of one group
+ * already has the section's name at the top of the screen, and repeating it
+ * immediately underneath is just noise.
+ */
+export function SettingGroup({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="mb-8">
-      <h2 className="mb-1.5 px-1 text-xs font-medium text-tertiary">{title}</h2>
+      {title && <h2 className="mb-1.5 px-1 text-xs font-medium text-tertiary">{title}</h2>}
       {/*
        * Four pixels between cards, which is what the Windows sample stacks them
        * with: enough to read as separate surfaces, not enough to read as

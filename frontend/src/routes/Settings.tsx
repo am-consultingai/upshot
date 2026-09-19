@@ -7,6 +7,7 @@ import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import MicMeter from "../components/MicMeter";
 import SettingRow, { SELECT_CLASS, SettingGroup } from "../components/SettingRow";
+import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -26,7 +27,20 @@ const DETECTION_MODES = [
   { value: "off", label: "settings.detectionOff" },
 ] as const;
 
+/*
+ * Sections, in the order someone meets them: what it records, how it looks,
+ * where it puts things, then the two long ones.
+ */
+const SECTIONS: SettingsSection[] = [
+  { id: "audio", label: "settings.groupAudio" },
+  { id: "appearance", label: "settings.groupAppearance" },
+  { id: "storage", label: "settings.groupStorage" },
+  { id: "summaries", label: "settings.groupSummaries" },
+  { id: "prompt", label: "settings.prompt" },
+];
+
 export default function Settings() {
+  const section = useSection(SECTIONS);
   const { t, locale, setLocale, theme, setTheme } = useI18n();
   const queryClient = useQueryClient();
   const [dataRoot, setDataRoot] = useState("");
@@ -52,8 +66,11 @@ export default function Settings() {
   const selectedOutput = config.audio?.output_device ?? null;
 
   return (
-    <section data-testid="settings-page">
-      <h1 className="display mb-6 text-2xl">{t("nav.settings")}</h1>
+    <section data-testid="settings-page" className="flex gap-10">
+      <SettingsNav sections={SECTIONS} />
+
+      <div className="min-w-0 flex-1">
+      <h1 className="display mb-6 text-2xl">{t(SECTIONS.find((s) => s.id === section)!.label)}</h1>
 
       {/*
        * Everything here applies the moment it changes. There is no Save button and
@@ -64,7 +81,8 @@ export default function Settings() {
        * which is a free-text path and cannot be applied on every keystroke.
        */}
 
-      <SettingGroup title={t("settings.groupAudio")}>
+      {section === "audio" && (
+      <SettingGroup>
         <SettingRow
           label={t("settings.microphone")}
           htmlFor="mic-device"
@@ -176,8 +194,10 @@ export default function Settings() {
           </select>
         </SettingRow>
       </SettingGroup>
+      )}
 
-      <SettingGroup title={t("settings.groupAppearance")}>
+      {section === "appearance" && (
+      <SettingGroup>
         <SettingRow label={t("settings.theme")} htmlFor="ui-theme">
           <select
             id="ui-theme"
@@ -242,8 +262,10 @@ export default function Settings() {
           </select>
         </SettingRow>
       </SettingGroup>
+      )}
 
-      <SettingGroup title={t("settings.groupStorage")}>
+      {section === "storage" && (
+      <SettingGroup>
         <SettingRow
           label={t("settings.dataRoot")}
           htmlFor="data-root"
@@ -280,9 +302,11 @@ export default function Settings() {
           )}
         </SettingRow>
       </SettingGroup>
+      )}
 
-      <ProviderSettings />
-      <PromptSettings />
+      {section === "summaries" && <ProviderSettings />}
+      {section === "prompt" && <PromptSettings />}
+      </div>
     </section>
   );
 }

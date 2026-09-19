@@ -15,11 +15,19 @@ import DetectionNudge, { type Detection } from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
 import CommandPalette from "./components/CommandPalette";
 
-/** A screen that is not one item from the library: it gets the whole width. */
-function Full({ children }: { children: React.ReactNode }) {
+/**
+ * A screen that is not one item from the library: it gets the whole width.
+ *
+ * `wide` is for a screen that carries its own navigation. Settings does, and a
+ * centred 896px column left its section list floating in the middle of the
+ * window with a void to the left of it — the nav has to start where the content
+ * area starts. Microsoft puts a settings page at 1000-1100px, which is what
+ * `max-w-5xl` is.
+ */
+function Full({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-8 py-8">{children}</div>
+      <div className={`px-8 py-8 ${wide ? "max-w-5xl" : "mx-auto max-w-4xl"}`}>{children}</div>
     </div>
   );
 }
@@ -141,7 +149,7 @@ export default function App() {
                 <Route path="/m/:id" element={<MeetingPage />} />
               </Route>
               <Route path="/search" element={<Full><SearchPage /></Full>} />
-              <Route path="/settings" element={<Full><Settings /></Full>} />
+              <Route path="/settings" element={<Full wide><Settings /></Full>} />
               <Route path="/detector" element={<Full><Detector /></Full>} />
             </Routes>
           </main>

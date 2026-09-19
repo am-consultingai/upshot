@@ -1,4 +1,4 @@
-import { expect, gotoApp, isoAt, minutesAgo, test } from "./fixtures";
+import { expect, gotoApp, isoAt, minutesAgo, test, gotoSettings } from "./fixtures";
 
 test("timeline_renders_seeded", async ({ page, seed }) => {
   await seed([
@@ -53,7 +53,7 @@ test("default_locale_is_english", async ({ page }) => {
 });
 
 test("locale_switch_no_reload", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.evaluate(() => {
     (window as unknown as { __marker: number }).__marker = 42;
   });
@@ -65,7 +65,7 @@ test("locale_switch_no_reload", async ({ page }) => {
 
 test("rtl_direction", async ({ page, seed }) => {
   await seed([{ id: "e2e-rtl", title: "פגישה עם Kubernetes", started_at: isoAt(0, 9) }]);
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.getByTestId("ui-language").selectOption("he");
   await page.getByTestId("nav-timeline").click();
   const link = page.getByTestId("meeting-name").first();

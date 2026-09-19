@@ -1,4 +1,4 @@
-import { expect, gotoApp, isoAt, test } from "./fixtures";
+import { expect, gotoApp, isoAt, test, gotoSettings } from "./fixtures";
 
 const SUMMARY_HE = `<html dir="rtl" lang="he"><body><h1>סיכום</h1>
 <p>הועבר ל-Kubernetes</p></body></html>`;
@@ -72,7 +72,7 @@ test("content_dir_independent_of_chrome", async ({ page, seed }) => {
 });
 
 test("settings_roundtrip", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.getByTestId("summary-language").selectOption("he");
   await page.reload();
   await expect(page.getByTestId("summary-language")).toHaveValue("he");
@@ -82,7 +82,7 @@ test("settings_roundtrip", async ({ page }) => {
 });
 
 test("data_root_picker", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "storage");
   const input = page.getByTestId("data-root");
   await expect(input).toBeVisible();
   await input.fill("C:/Users/am/OneDrive/meetings");
@@ -136,7 +136,7 @@ test("seed_route_is_not_open", async ({ request }) => {
 });
 
 test("mic_picker_and_meter", async ({ page }) => {
-  await page.goto("/settings");
+  await gotoSettings(page, "audio");
   await expect(page.getByTestId("mic-meter-me")).toBeVisible();
   // The synthetic source is a tone, so a working meter must leave zero.
   await expect
@@ -157,7 +157,7 @@ test("mic_picker_and_meter", async ({ page }) => {
 test("mic_meter_opens_the_device_once", async ({ page }) => {
   // A React effect that depended on an unstable value once reopened the microphone on
   // every incoming level — several times a second, for as long as Settings was open.
-  await page.goto("/settings");
+  await gotoSettings(page, "audio");
   await expect(page.getByTestId("mic-meter-me")).toBeVisible();
 
   const opens = async () => {
@@ -177,7 +177,7 @@ test("mic_meter_opens_the_device_once", async ({ page }) => {
 });
 
 test("settings_shows_both_meters", async ({ page }) => {
-  await page.goto("/settings");
+  await gotoSettings(page, "audio");
   await expect(page.getByTestId("mic-meter-me")).toBeVisible();
   await expect(page.getByTestId("mic-meter-them")).toBeVisible();
   // Two endpoints, two independent streams — one open each, not one per render.
