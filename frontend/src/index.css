@@ -84,6 +84,22 @@ body :dir(rtl) {
 }
 
 /*
+ * The one exception, and it is about clipping rather than taste.
+ *
+ * Inside a rounded container with `overflow: hidden` — the command palette — an
+ * outline is cropped to the parts that overlap the box, so a ring around a
+ * full-width input renders as a stray coloured line across the dialog. The
+ * dialog is already the thing that has focus; the input inside it does not need
+ * to say so a second time.
+ *
+ * Declared after the rule above so it wins on order rather than on specificity,
+ * which is also why the Tailwind utility could not do this.
+ */
+.no-focus-ring:focus-visible {
+  outline: none;
+}
+
+/*
  * Summaries are HTML the model wrote, injected into the page by Meeting.tsx,
  * which owns the `.summary-prose` class these rules hang off.
  *

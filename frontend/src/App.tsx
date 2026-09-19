@@ -13,6 +13,7 @@ import Rail from "./components/Rail";
 import RecordingBar from "./components/RecordingBar";
 import DetectionNudge, { type Detection } from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
+import CommandPalette from "./components/CommandPalette";
 
 /** A screen that is not one item from the library: it gets the whole width. */
 function Full({ children }: { children: React.ReactNode }) {
@@ -122,6 +123,7 @@ export default function App() {
   return (
     <I18nContext.Provider value={value}>
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
+        <CommandPalette />
         <Rail />
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />
