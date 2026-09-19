@@ -1,5 +1,5 @@
 [project]
-name = "meeting-agent"
+name = "upshot"
 version = "0.1.0"
 description = "Local Windows meeting recorder, transcriber and summarizer"
 requires-python = ">=3.13"
@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
-meeting-agent = "app.tray:main"
+upshot = "app.tray:main"
 
 [project.optional-dependencies]
 # Speaker diarization. Opt-in: the default install stays small, and this pulls a second

@@ -91,7 +91,7 @@ def test_cross_language_summary() -> None:
     assert json.dumps(result.data, ensure_ascii=False)
 
 
-@pytest.mark.skipif(not os.environ.get("MA_OLLAMA"), reason="set MA_OLLAMA=1 to test Ollama")
+@pytest.mark.skipif(not os.environ.get("UP_OLLAMA"), reason="set UP_OLLAMA=1 to test Ollama")
 def test_local_model_path() -> None:
     from app.llm.client import OllamaClient
 

@@ -41,7 +41,13 @@ def serve(directory: Path, port: int) -> socketserver.TCPServer:
             ),
         },
     )
-    server = socketserver.TCPServer(("127.0.0.1", port), handler)
+    # SO_REUSEADDR, or a second render inside the TIME_WAIT minute cannot rebind the
+    # port and dies with "address already in use" — which is exactly the loop a mock
+    # gets looked at in.
+    server = socketserver.TCPServer(("127.0.0.1", port), handler, bind_and_activate=False)
+    server.allow_reuse_address = True
+    server.server_bind()
+    server.server_activate()
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 

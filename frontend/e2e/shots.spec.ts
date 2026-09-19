@@ -1,10 +1,10 @@
 /**
  * Screenshots of the real app, for design review.
  *
- * Skipped unless MA_SHOTS is set: it writes files and there is no assertion in
+ * Skipped unless UP_SHOTS is set: it writes files and there is no assertion in
  * it, so it has no business slowing down or reporting on an ordinary run.
  *
- *   MA_SHOTS=1 python3 scripts/windows/e2e.py --grep shots_
+ *   UP_SHOTS=1 python3 scripts/windows/e2e.py --grep shots_
  *
  * Output lands in artifacts/, which is gitignored. Worth running before and
  * after any visual change — the unreadable dark-mode summary that stopped the
@@ -49,7 +49,7 @@ const SEED = [
 
 for (const theme of ["light", "dark"] as const) {
   test(`shots_${theme}`, async ({ page, seed }) => {
-    test.skip(!process.env.MA_SHOTS, "set MA_SHOTS=1 to capture screenshots");
+    test.skip(!process.env.UP_SHOTS, "set UP_SHOTS=1 to capture screenshots");
     await seed(SEED);
     await page.setViewportSize({ width: 1280, height: 900 });
     for (const [name, path] of [

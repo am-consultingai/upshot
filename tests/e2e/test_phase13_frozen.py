@@ -14,8 +14,8 @@ import pytest
 
 pytestmark = pytest.mark.windows
 
-DIST = Path("dist/meeting-agent")
-EXE = DIST / "meeting-agent.exe"
+DIST = Path("dist/upshot")
+EXE = DIST / "upshot.exe"
 BASELINE = Path("packaging/installer-size.json")
 
 

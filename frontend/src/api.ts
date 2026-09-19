@@ -123,7 +123,7 @@ export interface DetectorEvent {
 }
 
 function csrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)ma_csrf=([^;]+)/);
+  const match = document.cookie.match(/(?:^|;\s*)up_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
 

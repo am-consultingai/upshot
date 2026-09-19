@@ -61,20 +61,20 @@ fi
 mkdir -p "$HOME_DIR"
 
 # Config comes from the environment layer; values are JSON, hence the inner quotes.
-export MA_HOME="$HOME_DIR"
-export MA_SERVER__PORT="$PORT"
-export MA_AUDIO__CAPTURE='"synthetic"'   # a tone instead of a microphone
-export MA_AUDIO__VAD='"energy"'          # Silero would reject a tone as "not speech"
-export MA_ASR__BACKEND='"fake"'          # deterministic transcript, no 3 GB model
-export MA_LLM__PROVIDER="\"$PROVIDER\""
-export MA_DELIVERY__NOTIFIER='"fake"'    # no Windows toasts in this shell
-export MA_DETECTION__MODE='"off"'        # manual Start/Stop only
-export MA_AUDIO__MIN_MEETING_S=5         # so a short demo is not discarded
-export MA_JOB_POLICY='"asap"'            # process immediately, do not wait for idle
+export UP_HOME="$HOME_DIR"
+export UP_SERVER__PORT="$PORT"
+export UP_AUDIO__CAPTURE='"synthetic"'   # a tone instead of a microphone
+export UP_AUDIO__VAD='"energy"'          # Silero would reject a tone as "not speech"
+export UP_ASR__BACKEND='"fake"'          # deterministic transcript, no 3 GB model
+export UP_LLM__PROVIDER="\"$PROVIDER\""
+export UP_DELIVERY__NOTIFIER='"fake"'    # no Windows toasts in this shell
+export UP_DETECTION__MODE='"off"'        # manual Start/Stop only
+export UP_AUDIO__MIN_MEETING_S=5         # so a short demo is not discarded
+export UP_JOB_POLICY='"asap"'            # process immediately, do not wait for idle
 
 cat <<BANNER
 
-  Meeting Agent — demo
+  Upshot — demo
   home       $HOME_DIR
   provider   $PROVIDER $([[ "$PROVIDER" == "fake" ]] && echo "(no model: the summary is a placeholder)")
   audio      synthetic tone, transcript is fixture text
