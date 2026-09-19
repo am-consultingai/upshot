@@ -1,7 +1,7 @@
-import { expect, gotoApp, test } from "./fixtures";
+import { expect, gotoSettings, test } from "./fixtures";
 
 test("provider_settings_list_every_option", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "summaries");
   const rows = page.getByTestId("provider-row");
   await expect(rows).toHaveCount(5);
   for (const id of ["anthropic", "gemini", "openai", "claude-subscription", "ollama"]) {
@@ -10,7 +10,7 @@ test("provider_settings_list_every_option", async ({ page }) => {
 });
 
 test("api_key_is_stored_and_never_rendered", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "summaries");
   const row = page.locator('[data-provider="gemini"]');
   await expect(row.getByTestId("provider-ready")).toHaveText("No key yet");
 
@@ -27,7 +27,7 @@ test("api_key_is_stored_and_never_rendered", async ({ page }) => {
 });
 
 test("switching_provider_persists", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "summaries");
   const ollama = page.locator('[data-provider="ollama"]');
   await ollama.getByTestId("provider-select").click();
   await expect(ollama).toHaveAttribute("data-active", "true", { timeout: 10_000 });
@@ -41,7 +41,7 @@ test("switching_provider_persists", async ({ page }) => {
 });
 
 test("test_button_reports_a_real_result", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "summaries");
   const gemini = page.locator('[data-provider="gemini"]');
   // clear any key a previous test stored, so this asserts the no-key path deterministically
   await gemini.getByTestId("provider-key").fill("");
@@ -54,7 +54,7 @@ test("test_button_reports_a_real_result", async ({ page }) => {
 });
 
 test("claude_subscription_shows_install_state", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "summaries");
   const row = page.locator('[data-provider="claude-subscription"]');
   await expect(row.getByTestId("provider-hint")).toBeVisible();
   const ready = await row.getAttribute("data-ready");

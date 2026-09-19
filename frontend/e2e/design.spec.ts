@@ -1,4 +1,4 @@
-import { expect, gotoApp, isoAt, test } from "./fixtures";
+import { expect, gotoApp, isoAt, test, gotoSettings } from "./fixtures";
 
 /**
  * The design foundation: bundled fonts, derived colour tokens, and a dark theme
@@ -197,7 +197,7 @@ test("hebrew_is_not_letter_spaced_and_latin_is", async ({ page, seed }) => {
   expect(latin).not.toBe("normal");
   expect(parseFloat(latin)).toBeLessThan(0);
 
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.getByTestId("ui-language").selectOption("he");
   await page.getByTestId("nav-timeline").click();
 
@@ -221,9 +221,11 @@ test("hebrew_is_not_letter_spaced_and_latin_is", async ({ page, seed }) => {
  * and the meter fills from the right with red on the left, reading backwards.
  */
 test("level_meters_do_not_mirror_in_hebrew", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.getByTestId("ui-language").selectOption("he");
 
+  // The meter is in a different section from the language control.
+  await gotoSettings(page, "audio");
   const meter = page.getByTestId("mic-meter-me").locator("[role=meter]");
   await expect(meter).toHaveAttribute("dir", "ltr");
 
@@ -237,7 +239,7 @@ test("level_meters_do_not_mirror_in_hebrew", async ({ page }) => {
  * is worse than not offering the choice at all.
  */
 test("the_appearance_choice_survives_a_reload", async ({ page }) => {
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.getByTestId("ui-theme").selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
@@ -276,7 +278,7 @@ test("transcript_sides_mirror_in_hebrew_but_the_transport_does_not", async ({ pa
     },
   ]);
 
-  await gotoApp(page, "/settings");
+  await gotoSettings(page, "appearance");
   await page.getByTestId("ui-language").selectOption("he");
   await gotoApp(page, "/m/e2e-rtl-sides");
 

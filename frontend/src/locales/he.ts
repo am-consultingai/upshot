@@ -79,6 +79,7 @@ export const he: Record<MessageKey, string> = {
   "settings.dataRoot": "תיקיית נתונים",
   "settings.groupAudio": "אודיו וזיהוי",
   "settings.groupAppearance": "מראה ושפה",
+  "settings.groupSummaries": "סיכומים",
   "settings.groupStorage": "אחסון",
   "settings.dataRootNote": "היכן נשמרות ההקלטות והתמלילים. נשמר כשיוצאים מהשדה.",
   "settings.theme": "מראה",

@@ -80,6 +80,7 @@ export const en = {
     "The level stream stopped. Reload the page to restart it.",
   "settings.groupAudio": "Audio and detection",
   "settings.groupAppearance": "Appearance and language",
+  "settings.groupSummaries": "Summaries",
   "settings.groupStorage": "Storage",
   "settings.dataRootNote": "Where recordings and transcripts are kept. Applied when you leave the field.",
   "settings.theme": "Appearance",
