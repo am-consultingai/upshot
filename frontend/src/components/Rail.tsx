@@ -63,6 +63,26 @@ export default function Rail() {
         M
       </span>
 
+      {/*
+       * Recording sits at the top, not the foot.
+       *
+       * Apple's guidance is blunt about the reason: "avoid putting critical
+       * information or actions at the bottom of a sidebar. People often relocate a
+       * window in a way that hides its bottom edge." A settings icon down there is
+       * survivable; the control that starts and stops a recording is not.
+       */}
+      <button
+        type="button"
+        data-testid="start-recording"
+        disabled={recording || start.isPending}
+        onClick={() => start.mutate()}
+        title={t("timeline.start")}
+        aria-label={t("timeline.start")}
+        className="mb-2 grid size-8.5 place-items-center rounded-full bg-danger disabled:opacity-40"
+      >
+        <span className="size-2.5 rounded-full bg-on-solid" />
+      </button>
+
       {ITEMS.map((item) => (
         <NavLink
           key={item.to}
@@ -85,22 +105,7 @@ export default function Rail() {
         </NavLink>
       ))}
 
-      {/*
-       * Recording lives at the foot of the rail rather than in a page header: it
-       * is the one action worth reaching from every screen, and it was previously
-       * only on the timeline.
-       */}
-      <button
-        type="button"
-        data-testid="start-recording"
-        disabled={recording || start.isPending}
-        onClick={() => start.mutate()}
-        title={t("timeline.start")}
-        aria-label={t("timeline.start")}
-        className="mt-auto grid size-8.5 place-items-center rounded-full bg-danger disabled:opacity-40"
-      >
-        <span className="size-2.5 rounded-full bg-on-solid" />
-      </button>
+
     </nav>
   );
 }
