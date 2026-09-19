@@ -163,3 +163,51 @@ test("a_dead_backend_says_so_instead_of_something_went_wrong", async ({ page }) 
   await expect(page.getByTestId("connection-lost")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("connection-lost")).toContainText("run-app.cmd");
 });
+
+/**
+ * Clicking a meeting opens it. Obvious, and untested until someone reported that
+ * it did not: every other spec reached a meeting by URL, by keyboard or through
+ * the palette, so the one route a person actually uses was the one route nothing
+ * covered.
+ */
+test("clicking_a_meeting_opens_it", async ({ page, seed }) => {
+  await seed([
+    { id: "click-1", title: "Openable", state: "RENDERED", started_at: isoAt(0, 20) },
+  ]);
+  await gotoApp(page, "/");
+  await expect(page.getByTestId("no-meeting-open")).toBeVisible();
+
+  await page.getByTestId("meeting-link").first().click();
+  await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "click-1");
+});
+
+/**
+ * And it opens from the calendar too. The calendar shares the detail side with
+ * whatever is open, and it used to hold that side unconditionally — so the click
+ * navigated, the URL changed, and the calendar carried on being drawn over the
+ * meeting. Nothing looked broken; it just did nothing.
+ */
+test("clicking_a_meeting_opens_it_from_the_calendar_too", async ({ page, seed }) => {
+  await seed([
+    { id: "click-2", title: "Openable from calendar", state: "RENDERED", started_at: isoAt(0, 20) },
+  ]);
+  await gotoApp(page, "/");
+  await page.getByTestId("view-calendar").click();
+  await expect(page.getByTestId("calendar-controls")).toBeVisible();
+
+  await page.getByTestId("meeting-link").first().click();
+  await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "click-2");
+  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
+});
+
+/** A narrow window hides the list rather than the meeting. */
+test("a_narrow_window_still_opens_the_meeting", async ({ page, seed }) => {
+  await seed([
+    { id: "click-3", title: "Narrow", state: "RENDERED", started_at: isoAt(0, 20) },
+  ]);
+  await page.setViewportSize({ width: 900, height: 800 });
+  await gotoApp(page, "/");
+  await page.getByTestId("meeting-link").first().click();
+  await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "click-3");
+  await page.setViewportSize({ width: 1280, height: 900 });
+});
