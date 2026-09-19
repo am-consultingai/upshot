@@ -51,7 +51,13 @@ class SingleInstance:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self._file = self.lock_path.open("a+")
         try:
-            fcntl.flock(self._file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # On Windows this branch never runs and fcntl has no flock, which mypy
+            # checking for that platform is right about; the ignore is itself unused on
+            # POSIX, so both are named.
+            fcntl.flock(  # type: ignore[attr-defined,unused-ignore]
+                self._file.fileno(),
+                fcntl.LOCK_EX | fcntl.LOCK_NB,  # type: ignore[attr-defined,unused-ignore]
+            )
         except OSError:
             self._file.close()
             self._file = None
@@ -71,7 +77,10 @@ class SingleInstance:
         if self._file is not None:
             import fcntl
 
-            fcntl.flock(self._file.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(  # type: ignore[attr-defined,unused-ignore]
+                self._file.fileno(),
+                fcntl.LOCK_UN,  # type: ignore[attr-defined,unused-ignore]
+            )
             self._file.close()
             self._file = None
         self.acquired = False
