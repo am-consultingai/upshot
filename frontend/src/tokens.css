@@ -35,13 +35,13 @@
    * used at the display tier only — 20px and up, 600 and heavier — where its
    * stroke contrast reads as deliberate. Body copy in it would be a mistake.
    *
-   * Heebo extends Roboto's Latin to Hebrew with the Hebrew as the primary
-   * design. Caveat recorded in the ticket and worth keeping in mind: it is
-   * auto-hinted where Roboto is hand-hinted, so small sizes want checking on a
-   * low-DPI Windows display. The system stack stays as the fallback.
+   * IBM Plex Sans Hebrew for UI. Heebo was the first choice and was wrong: its
+   * Latin *is* Roboto, and Google's own notes warn it is auto-hinted where Roboto
+   * is hand-hinted, so it renders worse on older Windows — the only platform this
+   * ships on. Plex Sans is a grotesque drawn for interfaces.
    */
   --font-display: "Frank Ruhl Libre", "Times New Roman", serif;
-  --font-ui: "Heebo", "Segoe UI", "Arial Hebrew", Arial, sans-serif;
+  --font-ui: "IBM Plex Sans Hebrew", "Segoe UI", "Arial Hebrew", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   /* 14px body, as Linear, Raycast and Notion Calendar all independently land on. */
@@ -63,6 +63,12 @@
 
   /* --- Shape ------------------------------------------------------------ */
 
+  /*
+   * Stratified by element size, not one value everywhere. Read out of shipped
+   * stylesheets: a 28-32px control takes 4-6px (Linear puts 4px on every button
+   * height, Vercel 6px), a list row 6px, a card 9-12px, a panel 14-20px. The
+   * uniform-8px habit is itself a dated tell.
+   */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -110,9 +116,14 @@
   --text-tertiary: color-mix(in oklab, var(--base), var(--ink) 48%);
   --text-on-accent: var(--accent-ink);
 
-  --border-subtle: color-mix(in oklab, var(--base), var(--ink) 10%);
-  --border: color-mix(in oklab, var(--base), var(--ink) 16%);
-  --border-strong: color-mix(in oklab, var(--base), var(--ink) 28%);
+  /*
+   * Translucent rather than opaque, so one value is correct on every surface —
+   * Linear ships #0000000d and #00000014. A `1px solid #ddd` is the most
+   * recognisable border of 2018.
+   */
+  --border-subtle: color-mix(in oklab, var(--base), var(--ink) 7%);
+  --border: color-mix(in oklab, var(--base), var(--ink) 12%);
+  --border-strong: color-mix(in oklab, var(--base), var(--ink) 24%);
 
   --accent-quiet: color-mix(in oklab, var(--base), var(--accent) 10%);
   --accent-hover: color-mix(in oklab, var(--accent), var(--ink) 14%);
@@ -130,13 +141,16 @@
   --success-quiet: color-mix(in oklab, var(--base), var(--success) 8%);
 
   /*
-   * Elevation, light mode: layered and low-opacity, each layer roughly doubling
-   * offset and blur. One shadow at 15% is the thing that looks cheap.
+   * Elevation, light mode. Offset, blur and NEGATIVE spread each roughly double
+   * per step while alpha climbs 3% -> 6% and stops there. Two things carry most
+   * of the difference between this and a 2018 shadow: the alpha ceiling (Bootstrap
+   * and Material sat at 12-25%) and the negative spread, which keeps the shadow
+   * under the element instead of haloing all four sides.
    */
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 4%), 0 2px 4px rgb(0 0 0 / 3%);
-  --shadow-md: 0 2px 4px rgb(0 0 0 / 4%), 0 6px 10px rgb(0 0 0 / 5%);
-  --shadow-lg: 0 4px 8px rgb(0 0 0 / 4%), 0 12px 24px rgb(0 0 0 / 6%),
-    0 32px 48px rgb(0 0 0 / 5%);
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 3%), 0 2px 4px -2px rgb(0 0 0 / 4%);
+  --shadow-md: 0 2px 4px -2px rgb(0 0 0 / 3%), 0 8px 16px -4px rgb(0 0 0 / 5%);
+  --shadow-lg: 0 2px 4px -2px rgb(0 0 0 / 3%), 0 16px 32px -8px rgb(0 0 0 / 5%),
+    0 32px 64px -16px rgb(0 0 0 / 6%);
   /* In light mode a hairline is a real border; dark mode overrides this. */
   --hairline: 0 0 0 1px var(--border-subtle);
 }

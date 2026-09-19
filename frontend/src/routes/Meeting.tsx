@@ -173,7 +173,8 @@ export default function MeetingPage() {
   const hasAudio = Object.keys(meeting.data.audio_tracks ?? {}).length > 0;
 
   return (
-    <section data-testid="meeting-page" data-meeting-id={id}>
+    <section data-testid="meeting-page" data-meeting-id={id} className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-6">
       <header className="mb-5 flex flex-wrap items-center gap-3">
         <h1 className="display me-auto text-2xl" data-testid="meeting-title">
           {meeting.data.title ?? id}
@@ -201,32 +202,25 @@ export default function MeetingPage() {
         </p>
       )}
 
-      {hasAudio ? (
-        <AudioPlayer ref={playerRef} src={api.audioUrl(id, "mix")} onTime={setPlayhead} />
-      ) : meeting.data.audio_deleted_at ? (
+      {meeting.data.audio_deleted_at ? (
         // Deleted on purpose, after the retention period. Saying "no audio" here would
         // read as a failed recording.
-        <p
-          data-testid="audio-deleted"
-          className="mb-3 text-sm text-secondary"
-        >
+        <p data-testid="audio-deleted" className="mb-4 text-sm text-secondary">
           {t("meeting.audioDeleted")}
         </p>
-      ) : (
-        <p data-testid="no-audio" className="mb-3 text-sm text-secondary">
+      ) : !hasAudio ? (
+        <p data-testid="no-audio" className="mb-4 text-sm text-secondary">
           {t("meeting.noAudio")}
         </p>
-      )}
+      ) : null}
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-tertiary">
-          {t("meeting.summary")}
-        </h2>
+        <h2 className="text-xs font-medium text-tertiary">{t("meeting.summary")}</h2>
         <BusyButton
           data-testid="summarize"
           busy={working}
           onClick={() => summarize.mutate()}
-          className="rounded border border-line px-2 py-0.5 text-xs"
+          className="rounded-sm bg-surface-2 px-2 py-1 text-xs text-secondary hover:text-primary"
         >
           {summary.data ? t("meeting.resummarize") : t("meeting.summarize")}
         </BusyButton>
@@ -235,7 +229,7 @@ export default function MeetingPage() {
         <Link
           to="/settings#prompt"
           data-testid="view-prompt"
-          className="rounded border border-line px-2 py-0.5 text-xs"
+          className="rounded-sm bg-surface-2 px-2 py-1 text-xs text-secondary hover:text-primary"
         >
           {t("meeting.viewPrompt")}
         </Link>
@@ -244,7 +238,7 @@ export default function MeetingPage() {
             type="button"
             data-testid="copy-summary"
             onClick={() => copySummary(summary.data as string)}
-            className="rounded border border-line px-2 py-0.5 text-xs"
+            className="rounded-sm bg-surface-2 px-2 py-1 text-xs text-secondary hover:text-primary"
           >
             {copied ? t("meeting.copied") : t("meeting.copy")}
           </button>
@@ -275,7 +269,7 @@ export default function MeetingPage() {
       {failed.length > 0 && (
         <div
           data-testid="stage-failed"
-          className="mb-4 rounded border border-danger bg-danger-quiet p-3 text-sm text-danger"
+          className="mb-4 rounded-lg bg-danger-quiet p-3 text-sm text-danger"
         >
           {failed.map((job) => (
             <p key={job.stage}>
@@ -289,7 +283,7 @@ export default function MeetingPage() {
         <div
           data-testid="summary-html"
           dir={dir}
-          className="summary-prose mb-8 rounded-xl bg-raised p-6 shadow-sm ring-1 ring-line-subtle"
+          className="summary-prose mb-8 rounded-xl bg-raised p-6 shadow-md"
           dangerouslySetInnerHTML={{ __html: summary.data }}
         />
       ) : (
@@ -298,40 +292,55 @@ export default function MeetingPage() {
         </p>
       )}
 
-      <h2 className="mb-3 text-2xs font-semibold uppercase tracking-wide text-tertiary">
-        {t("meeting.transcript")}
-      </h2>
-      <ol
-        data-testid="transcript"
-        dir={contentDirection(meeting.data.language)}
-      >
+      <h2 className="mb-3 text-xs font-medium text-tertiary">{t("meeting.transcript")}</h2>
+
+      {/*
+       * Two sides, by recorded track rather than by speaker name.
+       *
+       * This app captures two streams — the microphone and everything the machine
+       * played — and that is all it actually knows. It has no diarisation, so the
+       * "speaker" on a segment is the track it came from. Granola shows the same
+       * data the same way, and for the same reason: system audio on one side, your
+       * own microphone on the other. Inventing names the app cannot know would be
+       * worse than showing the two sides it can.
+       *
+       * The sides are flipped with logical properties, so a Hebrew transcript
+       * mirrors correctly without a second layout.
+       */}
+      <ol data-testid="transcript" dir={contentDirection(meeting.data.language)} className="space-y-1.5 pb-2">
         {(transcript.data?.segments ?? []).map((segment, index) => {
           const speaking = index === spokenIndex;
+          const mine = segment.speaker === "ME";
           return (
-            <li key={index}>
+            <li key={index} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <button
                 type="button"
                 data-testid="transcript-turn"
                 data-at-ms={Math.round(segment.start * 1000)}
+                data-track={mine ? "me" : "them"}
                 data-speaking={speaking ? "true" : undefined}
                 onClick={() => playerRef.current?.seek(segment.start)}
-                className={`-mx-2 block w-full rounded-md px-2 py-1.5 text-start leading-relaxed transition-colors hover:bg-surface-1 ${
-                  speaking ? "bg-accent-quiet" : ""
-                }`}
+                className={`max-w-[38rem] rounded-lg px-3 py-2 text-start leading-relaxed transition-colors ${
+                  mine ? "bg-accent-quiet" : "bg-surface-2"
+                } ${speaking ? "ring-1 ring-accent" : "hover:brightness-[.98]"}`}
               >
-                {/* A fixed-width gutter, so the text starts on one line down the page. */}
                 <span
-                  className="me-2 inline-block w-10 shrink-0 align-baseline text-2xs font-medium uppercase tracking-wide text-tertiary"
                   data-testid="turn-speaker"
+                  className="mb-0.5 block text-2xs font-medium text-tertiary"
                 >
-                  {segment.speaker}
+                  {mine ? t("meeting.meSaid") : t("meeting.themSaid")}
                 </span>
-                <span>{segment.text}</span>
+                <span className="text-md">{segment.text}</span>
               </button>
             </li>
           );
         })}
       </ol>
+      </div>
+
+      {hasAudio && (
+        <AudioPlayer ref={playerRef} src={api.audioUrl(id, "mix")} onTime={setPlayhead} />
+      )}
     </section>
   );
 }

@@ -18,9 +18,9 @@ test("bundled_fonts_load_rather_than_falling_back", async ({ page }) => {
   // The UI face is in use on every page, so it must already be loaded.
   const ui = await page.evaluate(async () => {
     await document.fonts.ready;
-    return document.fonts.check('400 14px "Heebo"');
+    return document.fonts.check('400 14px "IBM Plex Sans Hebrew"');
   });
-  expect(ui, "Heebo should be loaded, not substituted").toBe(true);
+  expect(ui, "IBM Plex Sans Hebrew should be loaded, not substituted").toBe(true);
 
   // The display face is loaded lazily and correctly so: `unicode-range` means the
   // browser fetches a subset only when something actually renders with it, and on
@@ -46,7 +46,7 @@ test("bundled_fonts_load_rather_than_falling_back", async ({ page }) => {
 
   expect(
     await page.evaluate(() => getComputedStyle(document.body).fontFamily),
-  ).toContain("Heebo");
+  ).toContain("IBM Plex Sans Hebrew");
 });
 
 test("colour_tokens_derive_from_the_three_inputs", async ({ page }) => {
