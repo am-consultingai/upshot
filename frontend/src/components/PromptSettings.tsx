@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
@@ -28,20 +27,18 @@ export default function PromptSettings() {
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
-  // Arrived from a meeting's "View prompt": bring the box into view once it exists. The
-  // router does not scroll to a hash, and this section renders nothing until the text loads.
-  const { hash } = useLocation();
-  const section = useRef<HTMLElement | null>(null);
-  const loaded = Boolean(prompt.data);
-  useEffect(() => {
-    if (hash === "#prompt" && loaded) section.current?.scrollIntoView({ block: "start" });
-  }, [hash, loaded]);
-
+  /*
+   * No self-scrolling any more. "View prompt" used to land here and then get
+   * pushed off it: the provider section above grows as its status query resolves
+   * and its key rows appear, so the thing you had just scrolled to slid down the
+   * page. The prompt is its own settings section now, with nothing above it that
+   * can change height.
+   */
   // Never render nothing: an endpoint that 404s used to make this whole section vanish,
   // which looks exactly like a feature that was never built.
   if (prompt.isError) {
     return (
-      <section data-testid="prompt-settings" className="mt-6">
+      <section data-testid="prompt-settings">
         <h2 className="mb-2 text-sm font-semibold text-tertiary">{t("settings.prompt")}</h2>
         <p className="text-xs text-danger" data-testid="prompt-error">
           {prompt.error instanceof Error ? prompt.error.message : String(prompt.error)}
@@ -54,7 +51,7 @@ export default function PromptSettings() {
   const dirty = text.trim() !== prompt.data.text.trim();
 
   return (
-    <section id="prompt" ref={section} data-testid="prompt-settings" className="mt-6 scroll-mt-4">
+    <section id="prompt" data-testid="prompt-settings">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-tertiary">{t("settings.prompt")}</h2>
         <span

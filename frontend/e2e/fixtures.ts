@@ -128,6 +128,24 @@ export async function gotoApp(page: Page, path = "/"): Promise<void> {
   });
 }
 
+/**
+ * Open Settings at a given section.
+ *
+ * Settings is sectioned now, so a control only exists while its section is
+ * showing. The section lives in the hash, which is also what a meeting's
+ * "View prompt" link uses.
+ */
+export async function gotoSettings(
+  page: Page,
+  section: "audio" | "appearance" | "storage" | "summaries" | "prompt" = "audio",
+): Promise<void> {
+  await gotoApp(page, `/settings#${section}`);
+  await expect(page.getByTestId(`settings-section-${section}`)).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+}
+
 /** A timestamp `minutes` in the past — a "recording now" card needs one. */
 export function minutesAgo(minutes: number): string {
   const date = new Date(Date.now() - minutes * 60_000);
