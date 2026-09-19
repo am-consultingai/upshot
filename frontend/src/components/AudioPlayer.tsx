@@ -6,25 +6,31 @@ export interface AudioPlayerHandle {
   seek: (seconds: number) => void;
 }
 
+function clock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 /**
- * Playback for a finished meeting, and the reason it matters more than it looks.
+ * The transport, sitting at the foot of the meeting.
  *
- * The best-regarded product in this category transcribes and discards, so its own
- * reviewers list "no playback for verification" as the gap. This application keeps
- * the mix on disk, which means a generated claim can be checked against what was
- * actually said — first to the transcript line, then to the audio itself. That is
- * the whole argument for building this rather than leaving a bare <audio> tag.
+ * Nothing in this category ships `<audio controls>` — Descript, Happy Scribe,
+ * Otter, Fireflies and Sonix all draw their own — and the browser's default
+ * player was the one visibly undesigned thing left on this page.
  *
- * Two deliberate choices:
+ * The element survives, as the engine. wavesurfer will make its own
+ * `HTMLAudioElement` if you do not hand it one; here it is handed ours, so
+ * playback streams by byte range and starts at once whatever the meeting's
+ * length, while wavesurfer only draws and syncs. The waveform therefore appears
+ * a moment after the audio is already playable, which is the right way round:
+ * decoding an hour of 16 kHz audio is about 58 MB of work and nobody should wait
+ * for it to press play.
  *
- * The <audio> element stays the transport. The server sets Accept-Ranges on the
- * WAV, so it streams and seeks without downloading the file, and playback starts
- * immediately whatever the meeting's length.
- *
- * The waveform is opt-in and lazily imported. Drawing it means decoding the whole
- * file: at 16 kHz that is roughly 58 MB an hour, and nobody should pay that on
- * page load to read a summary. Pressed, it attaches to the same element rather
- * than taking over playback — wavesurfer draws and syncs, the audio element plays.
+ * Until it resolves, a flat strip holds the space — so the bar does not jump when
+ * the real peaks arrive.
  */
 const AudioPlayer = forwardRef<AudioPlayerHandle, {
   src: string;
@@ -32,11 +38,14 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
 }>(function AudioPlayer({ src, onTime }, ref) {
   const { t } = useI18n();
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const waveBox = useRef<HTMLDivElement | null>(null);
   const waveRef = useRef<WaveSurfer | null>(null);
-  const [showWave, setShowWave] = useState(false);
-  const [drawing, setDrawing] = useState(false);
-  const [failed, setFailed] = useState(false);
+
+  const [playing, setPlaying] = useState(false);
+  const [at, setAt] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [drawn, setDrawn] = useState(false);
+  const [rate, setRate] = useState(1);
 
   useImperativeHandle(ref, () => ({
     seek(seconds: number) {
@@ -49,101 +58,143 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
   }), []);
 
   useEffect(() => {
-    if (!showWave || waveRef.current || !containerRef.current || !audioRef.current) return;
     let disposed = false;
-    setDrawing(true);
     void (async () => {
-      try {
-        const { default: WaveSurferClass } = await import("wavesurfer.js");
-        if (disposed || !containerRef.current || !audioRef.current) return;
-        const style = getComputedStyle(document.documentElement);
-        const wave = WaveSurferClass.create({
-          container: containerRef.current,
-          media: audioRef.current,
-          height: 56,
-          waveColor: style.getPropertyValue("--border-strong").trim() || "#999",
-          progressColor: style.getPropertyValue("--accent").trim() || "#0f6f68",
-          cursorColor: style.getPropertyValue("--text-primary").trim() || "#111",
-          cursorWidth: 1,
-          barWidth: 2,
-          barGap: 1,
-          barRadius: 1,
-          normalize: true,
-        });
-        wave.on("ready", () => setDrawing(false));
-        wave.on("error", () => {
-          setFailed(true);
-          setDrawing(false);
-        });
-        waveRef.current = wave;
-      } catch {
-        if (!disposed) {
-          setFailed(true);
-          setDrawing(false);
-        }
-      }
+      const { default: WaveSurferClass } = await import("wavesurfer.js");
+      if (disposed || !waveBox.current || !audioRef.current) return;
+      const style = getComputedStyle(document.documentElement);
+      const wave = WaveSurferClass.create({
+        container: waveBox.current,
+        media: audioRef.current,
+        height: 28,
+        waveColor: style.getPropertyValue("--border-strong").trim() || "#bbb",
+        progressColor: style.getPropertyValue("--accent").trim() || "#0f6f68",
+        cursorWidth: 0,
+        barWidth: 2,
+        barGap: 1,
+        barRadius: 1,
+        normalize: true,
+      });
+      wave.on("ready", () => setDrawn(true));
+      wave.on("error", () => setDrawn(false));
+      waveRef.current = wave;
     })();
     return () => {
       disposed = true;
-    };
-  }, [showWave]);
-
-  // Destroyed only on unmount: tearing it down when `showWave` goes false would
-  // mean decoding the file again to show it a second time.
-  useEffect(
-    () => () => {
       waveRef.current?.destroy();
       waveRef.current = null;
-    },
-    [],
-  );
+    };
+  }, [src]);
 
-  const handleTime = useCallback(() => {
+  const tick = useCallback(() => {
     const audio = audioRef.current;
-    if (audio && onTime) onTime(audio.currentTime);
+    if (!audio) return;
+    setAt(audio.currentTime);
+    onTime?.(audio.currentTime);
   }, [onTime]);
 
+  const nudge = (by: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = Math.max(0, Math.min(audio.duration || 0, audio.currentTime + by));
+  };
+
+  const cycleRate = () => {
+    const next = rate === 1 ? 1.5 : rate === 1.5 ? 2 : 1;
+    setRate(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+
   return (
-    <div className="mb-3" data-testid="audio-player">
-      {/* dir is pinned: a transport is an instrument, and play never mirrors. */}
+    // dir is pinned: a transport is an instrument, and play never mirrors.
+    <div
+      dir="ltr"
+      data-testid="audio-player"
+      className="flex items-center gap-3 border-t border-line-subtle bg-canvas/80 px-6 py-2.5 backdrop-blur"
+    >
       <audio
-        dir="ltr"
         ref={audioRef}
         data-testid="audio"
         src={src}
-        controls
-        preload="none"
-        className="w-full"
-        onTimeUpdate={handleTime}
-        onSeeked={handleTime}
+        preload="metadata"
+        className="hidden"
+        onTimeUpdate={tick}
+        onSeeked={tick}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onLoadedMetadata={(event) => setTotal(event.currentTarget.duration)}
       />
-      <div className="mt-1 flex items-center gap-3">
-        <button
-          type="button"
-          data-testid="toggle-waveform"
-          aria-expanded={showWave}
-          onClick={() => setShowWave((open) => !open)}
-          className="text-xs text-secondary underline underline-offset-2"
-        >
-          {showWave ? t("meeting.hideWaveform") : t("meeting.showWaveform")}
-        </button>
-        {drawing && (
-          <span className="text-xs text-tertiary" data-testid="waveform-loading">
-            {t("meeting.waveformLoading")}
-          </span>
+
+      <button
+        type="button"
+        data-testid="skip-back"
+        onClick={() => nudge(-15)}
+        aria-label={t("meeting.back15")}
+        title={t("meeting.back15")}
+        className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary hover:bg-surface-2 hover:text-primary"
+      >
+        <svg viewBox="0 0 16 16" className="size-4 fill-none stroke-current stroke-[1.5]">
+          <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9" />
+          <path d="M4 1.5v3.2h3.2" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
+        data-testid="play-pause"
+        onClick={() => {
+          const audio = audioRef.current;
+          if (!audio) return;
+          if (audio.paused) void audio.play().catch(() => undefined);
+          else audio.pause();
+        }}
+        aria-label={playing ? t("meeting.pause") : t("meeting.play")}
+        className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent"
+      >
+        {playing ? (
+          <svg viewBox="0 0 12 12" className="size-3 fill-current"><path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" /></svg>
+        ) : (
+          <svg viewBox="0 0 12 12" className="ms-0.5 size-3 fill-current"><path d="M3 1.5v9l7-4.5z" /></svg>
         )}
-        {failed && (
-          <span className="text-xs text-danger" data-testid="waveform-failed">
-            {t("meeting.waveformFailed")}
-          </span>
+      </button>
+
+      <button
+        type="button"
+        data-testid="skip-forward"
+        onClick={() => nudge(15)}
+        aria-label={t("meeting.forward15")}
+        title={t("meeting.forward15")}
+        className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary hover:bg-surface-2 hover:text-primary"
+      >
+        <svg viewBox="0 0 16 16" className="size-4 fill-none stroke-current stroke-[1.5]">
+          <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+          <path d="M12 1.5v3.2H8.8" />
+        </svg>
+      </button>
+
+      <span data-testid="transport-time" className="w-24 shrink-0 text-xs tabular-nums text-tertiary">
+        {clock(at)} / {clock(total)}
+      </span>
+
+      <div className="relative min-w-0 flex-1">
+        <div ref={waveBox} data-testid="waveform" className={drawn ? "" : "hidden"} />
+        {!drawn && (
+          <div className="flex h-7 items-center gap-px" aria-hidden="true">
+            {Array.from({ length: 64 }, (_, index) => (
+              <span key={index} className="h-1 flex-1 rounded-px bg-line" />
+            ))}
+          </div>
         )}
       </div>
-      <div
-        dir="ltr"
-        ref={containerRef}
-        data-testid="waveform"
-        className={showWave && !failed ? "mt-2 rounded border border-line-subtle bg-raised p-2" : "hidden"}
-      />
+
+      <button
+        type="button"
+        data-testid="playback-rate"
+        onClick={cycleRate}
+        className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 text-2xs tabular-nums text-secondary"
+      >
+        {rate.toFixed(1)}×
+      </button>
     </div>
   );
 });

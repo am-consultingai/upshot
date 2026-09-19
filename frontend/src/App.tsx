@@ -1,24 +1,43 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import { I18nContext, applyLocale, catalogues, type Locale, type MessageKey } from "./i18n";
+import { I18nContext, applyLocale, catalogues, useI18n, type Locale, type MessageKey } from "./i18n";
 import { applyTheme, isTheme, type Theme } from "./theme";
-import Timeline from "./routes/Timeline";
+import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
 import Settings from "./routes/Settings";
 import Detector from "./routes/Detector";
+import Rail from "./components/Rail";
 import RecordingBar from "./components/RecordingBar";
 import DetectionNudge, { type Detection } from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
 
-const NAV: { to: string; key: MessageKey; testid: string }[] = [
-  { to: "/", key: "nav.timeline", testid: "nav-timeline" },
-  { to: "/search", key: "nav.search", testid: "nav-search" },
-  { to: "/detector", key: "nav.detector", testid: "nav-detector" },
-  { to: "/settings", key: "nav.settings", testid: "nav-settings" },
-];
+/** A screen that is not one item from the library: it gets the whole width. */
+function Full({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-4xl px-8 py-8">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The detail side with nothing open yet. Worth a sentence rather than a blank
+ * panel: an empty half-screen reads as something failing to load.
+ */
+function EmptyDetail() {
+  const { t } = useI18n();
+  return (
+    <div
+      data-testid="no-meeting-open"
+      className="grid h-full place-items-center px-8 text-center text-sm text-tertiary"
+    >
+      {t("timeline.pickOne")}
+    </div>
+  );
+}
 
 export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
@@ -102,53 +121,29 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={value}>
-      <div className="min-h-screen bg-canvas text-primary" data-testid="app">
-        {/*
-         * Sticky, translucent, and separated by a hairline rather than a filled
-         * bar. The header was a white slab on a white page: it took the full
-         * weight of a section without being one. Here it stays out of the way and
-         * the content scrolls under it.
-         */}
-        <header className="sticky top-0 z-20 border-b border-line-subtle bg-canvas/85 backdrop-blur">
-          <nav className="mx-auto flex max-w-5xl items-center gap-1 px-4 py-2.5">
-            <span className="display me-4 text-sm" data-testid="app-title">
-              {t("app.title")}
-            </span>
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                data-testid={item.testid}
-                /*
-                 * The active tab is a filled pill, not an underline. An underline
-                 * on a text link reads as "this is a link", which every item here
-                 * already is; a filled shape reads as "you are here".
-                 */
-                className={({ isActive }) =>
-                  `rounded-md px-2.5 py-1.5 text-sm transition-colors ${
-                    isActive
-                      ? "bg-surface-2 font-medium text-primary"
-                      : "text-secondary hover:bg-surface-1 hover:text-primary"
-                  }`
-                }
-              >
-                {t(item.key)}
-              </NavLink>
-            ))}
-          </nav>
-        </header>
-        <ConnectionBanner />
-        <RecordingBar />
-        <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
-        <main className="mx-auto max-w-5xl px-4 py-8">
-          <Routes>
-            <Route path="/" element={<Timeline />} />
-            <Route path="/m/:id" element={<MeetingPage />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/detector" element={<Detector />} />
-          </Routes>
-        </main>
+      <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
+        <Rail />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <ConnectionBanner />
+          <RecordingBar />
+          <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
+          <main className="flex min-h-0 flex-1">
+            <Routes>
+              {/*
+               * The library owns the list; what you open renders beside it. Search,
+               * settings and the detector are whole screens rather than one item
+               * from a collection, so they take the full width instead.
+               */}
+              <Route element={<Library />}>
+                <Route path="/" element={<EmptyDetail />} />
+                <Route path="/m/:id" element={<MeetingPage />} />
+              </Route>
+              <Route path="/search" element={<Full><SearchPage /></Full>} />
+              <Route path="/settings" element={<Full><Settings /></Full>} />
+              <Route path="/detector" element={<Full><Detector /></Full>} />
+            </Routes>
+          </main>
+        </div>
       </div>
     </I18nContext.Provider>
   );

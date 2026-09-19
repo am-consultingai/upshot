@@ -164,10 +164,16 @@ test("mic_meter_opens_the_device_once", async ({ page }) => {
     const response = await page.request.get("/api/audio/devices");
     return (await response.json()).meter_opens as number;
   };
+
+  // Wait for the streams to actually reach the server before taking a baseline.
+  // Becoming visible only means the element mounted; the EventSource connects a
+  // moment later, and sampling in between measures the connection rather than a
+  // reopen — which is what this test is for.
+  await expect.poll(opens, { timeout: 10_000 }).toBeGreaterThan(0);
   const first = await opens();
+
   await page.waitForTimeout(6000);
-  const later = await opens();
-  expect(later - first).toBeLessThanOrEqual(1);
+  expect(await opens()).toBe(first);
 });
 
 test("settings_shows_both_meters", async ({ page }) => {
@@ -386,8 +392,9 @@ test("transcript_seeks_the_audio_and_playback_marks_the_line", async ({ page, se
   ]);
   await gotoApp(page, "/m/e2e-loop");
 
+  // Present and driving playback, but never shown: the transport is the UI.
   const audio = page.getByTestId("audio");
-  await expect(audio).toBeVisible();
+  await expect(audio).toHaveCount(1);
 
   // Clicking the second turn seeks the transport to that turn's start.
   await page.getByTestId("transcript-turn").nth(1).click();
@@ -406,15 +413,22 @@ test("transcript_seeks_the_audio_and_playback_marks_the_line", async ({ page, se
     "data-speaking",
     "true",
   );
+
+  // Sides are the two recorded tracks, which is all this app actually knows:
+  // it has no diarisation, so a turn is the microphone or the system, never a name.
+  await expect(page.getByTestId("transcript-turn").nth(0)).toHaveAttribute("data-track", "me");
+  await expect(page.getByTestId("transcript-turn").nth(1)).toHaveAttribute("data-track", "them");
 });
 
 /**
- * Drawing a waveform means decoding the whole file — roughly 58 MB an hour at
- * 16 kHz — so it must not happen merely because someone opened the page to read
- * a summary. It is opt-in, and the library is a separate chunk that is not
- * fetched until it is asked for.
+ * The transport replaces the browser's default player.
+ *
+ * Nothing in this category ships `<audio controls>`; the element survives only as
+ * the engine, hidden, while wavesurfer draws and syncs. Playback must therefore be
+ * possible before the waveform exists — decoding an hour of audio is real work and
+ * pressing play should not wait for it.
  */
-test("the_waveform_is_opt_in", async ({ page, seed }) => {
+test("the_transport_replaces_the_native_player", async ({ page, seed }) => {
   await seed([
     {
       id: "e2e-wave",
@@ -426,16 +440,23 @@ test("the_waveform_is_opt_in", async ({ page, seed }) => {
     },
   ]);
 
-  const chunks: string[] = [];
-  page.on("request", (request) => {
-    if (/wavesurfer/i.test(request.url())) chunks.push(request.url());
-  });
-
   await gotoApp(page, "/m/e2e-wave");
-  await expect(page.getByTestId("toggle-waveform")).toHaveAttribute("aria-expanded", "false");
-  expect(chunks, "wavesurfer must not load until asked for").toEqual([]);
 
-  await page.getByTestId("toggle-waveform").click();
-  await expect(page.getByTestId("toggle-waveform")).toHaveAttribute("aria-expanded", "true");
-  await expect.poll(() => chunks.length, { timeout: 10000 }).toBeGreaterThan(0);
+  // Our own controls, not the browser's.
+  await expect(page.getByTestId("play-pause")).toBeVisible();
+  await expect(page.getByTestId("skip-back")).toBeVisible();
+  await expect(page.getByTestId("skip-forward")).toBeVisible();
+  await expect(page.getByTestId("playback-rate")).toBeVisible();
+
+  // The element is present and driving playback, but never shown.
+  const audio = page.getByTestId("audio");
+  await expect(audio).toHaveCount(1);
+  expect(await audio.evaluate((el) => el.hasAttribute("controls"))).toBe(false);
+
+  await page.getByTestId("play-pause").click();
+  await expect
+    .poll(async () => audio.evaluate((el) => (el as HTMLAudioElement).currentTime), {
+      timeout: 5000,
+    })
+    .toBeGreaterThan(0);
 });

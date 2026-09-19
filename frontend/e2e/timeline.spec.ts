@@ -12,7 +12,7 @@ test("timeline_renders_seeded", async ({ page, seed }) => {
   await expect(page.getByTestId("meeting-card")).toHaveCount(5);
   const days = page.getByTestId("timeline-day");
   await expect(days).toHaveCount(3);
-  const titles = await page.getByTestId("meeting-link").allTextContents();
+  const titles = await page.getByTestId("meeting-name").allTextContents();
   expect(titles[0]).toBe("Today late");
   expect(titles.at(-1)).toBe("Day one morning");
 });
@@ -42,13 +42,13 @@ test("queue_card_shows_eta", async ({ page, seed }) => {
   ]);
   await gotoApp(page);
   const card = page.getByTestId("meeting-card").filter({ hasText: "Being transcribed" });
-  await expect(card.getByTestId("state-badge")).toHaveText("Transcribing");
+  await expect(card.getByTestId("meeting-state")).toHaveText("Transcribing");
   await expect(card.getByTestId("eta")).not.toHaveText("");
 });
 
 test("default_locale_is_english", async ({ page }) => {
   await gotoApp(page);
-  await expect(page.getByTestId("nav-timeline")).toHaveText("Timeline");
+  await expect(page.getByTestId("nav-timeline")).toHaveAttribute("aria-label", "Timeline");
   expect(await page.evaluate(() => document.dir)).toBe("ltr");
 });
 
@@ -58,7 +58,7 @@ test("locale_switch_no_reload", async ({ page }) => {
     (window as unknown as { __marker: number }).__marker = 42;
   });
   await page.getByTestId("ui-language").selectOption("he");
-  await expect(page.getByTestId("nav-timeline")).toHaveText("ציר זמן");
+  await expect(page.getByTestId("nav-timeline")).toHaveAttribute("aria-label", "ציר זמן");
   expect(await page.evaluate(() => document.dir)).toBe("rtl");
   expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(42);
 });
@@ -68,7 +68,7 @@ test("rtl_direction", async ({ page, seed }) => {
   await gotoApp(page, "/settings");
   await page.getByTestId("ui-language").selectOption("he");
   await page.getByTestId("nav-timeline").click();
-  const link = page.getByTestId("meeting-link").first();
+  const link = page.getByTestId("meeting-name").first();
   const box = await link.boundingBox();
   const container = await page.getByTestId("timeline").boundingBox();
   expect(box).not.toBeNull();

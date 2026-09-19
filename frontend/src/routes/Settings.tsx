@@ -99,7 +99,13 @@ export default function Settings() {
             </select>
           )}
         </div>
-        <MicMeter device={selectedDevice} track="me" />
+        {/*
+          * Not mounted until the saved device is known. The meter opens the device
+          * in an effect keyed on that prop, so rendering it while the setting is
+          * still loading opens the default device and then immediately reopens the
+          * real one — two opens per meter, for nothing.
+          */}
+        {settings.isSuccess && <MicMeter device={selectedDevice} track="me" />}
 
         <div>
           <label className="mb-1 block text-sm font-medium" htmlFor="output-device">
@@ -126,7 +132,9 @@ export default function Settings() {
           </select>
           <p className="mt-1 text-xs text-tertiary">{t("settings.systemAudioNote")}</p>
         </div>
-        <MicMeter device={null} track="them" hint={t("settings.systemAudioLevel")} />
+        {settings.isSuccess && (
+          <MicMeter device={null} track="them" hint={t("settings.systemAudioLevel")} />
+        )}
       </div>
 
       <label className="mb-1 block text-sm font-medium" htmlFor="data-root">
