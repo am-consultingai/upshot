@@ -23,6 +23,28 @@ test("meeting_page_loads", async ({ page, seed }) => {
   await expect(page.getByTestId("state-badge")).toHaveText("Ready");
 });
 
+test("rename_edits_the_title_in_place", async ({ page, seed }) => {
+  await seed([
+    { id: "e2e-rename", title: "Weekly sync", state: "RENDERED", started_at: isoAt(0, 10) },
+  ]);
+  await gotoApp(page, "/m/e2e-rename");
+
+  // Escape leaves the name as it was.
+  await page.getByTestId("rename").click();
+  await page.getByTestId("meeting-title-input").fill("Not this");
+  await page.getByTestId("meeting-title-input").press("Escape");
+  await expect(page.getByTestId("meeting-title")).toHaveText("Weekly sync");
+
+  // Enter saves exactly what was typed — nothing appended.
+  await page.getByTestId("rename").click();
+  await expect(page.getByTestId("meeting-title-input")).toHaveValue("Weekly sync");
+  await page.getByTestId("meeting-title-input").fill("Budget review with Dana");
+  await page.getByTestId("meeting-title-input").press("Enter");
+  await expect(page.getByTestId("meeting-title")).toHaveText("Budget review with Dana");
+  await page.reload();
+  await expect(page.getByTestId("meeting-title")).toHaveText("Budget review with Dana");
+});
+
 test("click_transcript_seeks", async ({ page, seed }) => {
   await seed([
     {
