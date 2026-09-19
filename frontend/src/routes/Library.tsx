@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useMatch } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
@@ -36,6 +36,16 @@ interface UiConfig {
  */
 export default function Library() {
   const { t, locale } = useI18n();
+  /*
+   * On a narrow window the list yields to what you opened.
+   *
+   * The rail and the list cost 376px permanently, which is fine in a wide window
+   * and most of a small one. Granola solves the same problem by closing its
+   * sidebar the moment you open a note, and describes that one responsive rule as
+   * what makes the app feel like an app rather than a page. The rail stays, so
+   * getting back to the list is always one click.
+   */
+  const reading = useMatch("/m/:id") !== null;
   const queryClient = useQueryClient();
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [override, setOverride] = useState<{ view?: View; span?: CalendarSpan }>({});
@@ -90,7 +100,10 @@ export default function Library() {
     <div className="flex min-w-0 flex-1" data-testid="library">
       <section
         data-testid="timeline"
-        className="flex w-80 shrink-0 flex-col border-e border-line-subtle bg-surface-1"
+        data-collapsed={reading ? "narrow" : undefined}
+        className={`w-80 shrink-0 flex-col border-e border-line-subtle bg-surface-1 ${
+          reading ? "hidden lg:flex" : "flex"
+        }`}
       >
         <header className="flex items-center gap-2 px-3.5 pt-3.5 pb-2">
           <h1 className="text-md font-semibold tracking-tight">{t("nav.timeline")}</h1>
