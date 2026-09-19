@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Outlet, useMatch } from "react-router-dom";
+import { useRef, useState } from "react";
+import { Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
@@ -45,7 +45,13 @@ export default function Library() {
    * what makes the app feel like an app rather than a page. The rail stays, so
    * getting back to the list is always one click.
    */
-  const reading = useMatch("/m/:id") !== null;
+  // From the match rather than useParams: this is the layout route, and the id
+  // belongs to the child, so useParams here is empty.
+  const open = useMatch("/m/:id");
+  const openId = open?.params.id;
+  const reading = open !== null;
+  const navigate = useNavigate();
+  const listRef = useRef<HTMLDivElement | null>(null);
   const queryClient = useQueryClient();
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [override, setOverride] = useState<{ view?: View; span?: CalendarSpan }>({});
@@ -90,6 +96,42 @@ export default function Library() {
   const items = meetings.data?.meetings ?? [];
   const byDay = groupByDay(items);
   const queued = status.data?.queue_depth ?? 0;
+
+  /*
+   * Keyboard movement through the list.
+   *
+   * Both j/k and the arrows, unmodified: cmdk ships vim bindings on by default,
+   * Linear documents "arrow/J-K", Gmail is j and k. They are bare here rather than
+   * Ctrl-prefixed because in a two-pane app the list owns focus, not a text field.
+   *
+   * Moving the selection swaps what the detail shows — it does not push a second
+   * history entry per keystroke, or holding j would bury the back button under
+   * fifty of them. Enter and `o` hand focus to the detail instead of navigating
+   * again, because the thing is already on screen; the only thing left to do with
+   * it is read it.
+   */
+  const move = (by: number) => {
+    if (items.length === 0) return;
+    const at = items.findIndex((meeting) => meeting.id === openId);
+    const next = at === -1 ? 0 : Math.min(items.length - 1, Math.max(0, at + by));
+    navigate(`/m/${items[next].id}`, { replace: at !== -1 });
+  };
+
+  const onListKeyDown = (event: React.KeyboardEvent) => {
+    if (event.target instanceof HTMLInputElement) return;
+    const key = event.key;
+    if (key === "j" || key === "ArrowDown") {
+      event.preventDefault();
+      move(1);
+    } else if (key === "k" || key === "ArrowUp") {
+      event.preventDefault();
+      move(-1);
+    } else if (key === "Enter" || key === "o") {
+      event.preventDefault();
+      // Focus, not navigation: the detail is already showing.
+      document.querySelector<HTMLElement>("[data-detail-pane]")?.focus();
+    }
+  };
 
   const toggle = (active: boolean) =>
     `rounded-sm px-2 py-0.5 text-2xs font-medium transition-colors ${
@@ -145,7 +187,15 @@ export default function Library() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <div
+          ref={listRef}
+          data-testid="meeting-list"
+          role="listbox"
+          aria-label={t("nav.timeline")}
+          tabIndex={0}
+          onKeyDown={onListKeyDown}
+          className="ma-list min-h-0 flex-1 overflow-y-auto px-2 pb-3 outline-none"
+        >
           {meetings.isLoading && (
             <p data-testid="loading" className="px-2 py-3 text-sm text-tertiary">
               {t("common.loading")}
@@ -174,6 +224,7 @@ export default function Library() {
                 <MeetingCard
                   key={meeting.id}
                   meeting={meeting}
+                  selected={meeting.id === openId}
                   onStop={() => stop.mutate()}
                   stopping={stop.isPending}
                   onDelete={() => remove.mutate(meeting.id)}
@@ -185,7 +236,24 @@ export default function Library() {
         </div>
       </section>
 
-      <section className="min-w-0 flex-1 overflow-y-auto">
+      {/*
+       * One tab stop, so the ring goes rail -> list -> detail -> transport, and a
+       * real focus target so the detail scrolls with the keys it should:
+       * forwarding PageDown and Home from the list would mean reimplementing them,
+       * and would break text selection and scrollIntoView along the way.
+       */}
+      <section
+        data-detail-pane
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !reading) return;
+          if (event.key === "Escape") {
+            event.preventDefault();
+            listRef.current?.focus();
+          }
+        }}
+        className="min-w-0 flex-1 overflow-y-auto outline-none"
+      >
         {view === "calendar" ? (
           <div className="p-6">
             <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="calendar-controls">
