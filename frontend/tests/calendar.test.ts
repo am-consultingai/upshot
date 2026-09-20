@@ -125,7 +125,7 @@ describe("locale labels", () => {
   });
 });
 
-import { allDayKeys, isHappening, timedEvents } from "../src/lib/calendar";
+import { allDayKeys, isHappening, recordedIds, timedEvents } from "../src/lib/calendar";
 
 describe("calendar events on the grid", () => {
   const base = {
@@ -135,21 +135,26 @@ describe("calendar events on the grid", () => {
     end: "2026-09-21T09:30:00Z",
   };
 
-  it("draws a matched event as its recording, not as a second block", () => {
+  it("keeps a recorded meeting as its calendar event, not as the recording", () => {
     const events = [
       { ...base, event_id: "matched", meeting_id: "m1" },
       { ...base, event_id: "unrecorded", meeting_id: null },
-      { ...base, event_id: "elsewhere", meeting_id: "m-not-on-screen" },
     ];
-    expect(timedEvents(events, new Set(["m1"])).map((e) => e.event_id)).toEqual([
-      "unrecorded",
-      "elsewhere",
-    ]);
+    // The event keeps its name and its slot whether or not it was recorded...
+    expect(timedEvents(events).map((e) => e.event_id)).toEqual(["matched", "unrecorded"]);
+    // ...and the recording it represents is not drawn a second time.
+    expect(recordedIds(events)).toEqual(new Set(["m1"]));
   });
 
   it("keeps all-day events out of the hours and puts them on each day they cover", () => {
-    const holiday = { ...base, event_id: "h", all_day: true, start: "2026-09-21T00:00:00Z", end: "2026-09-23T00:00:00Z" };
-    expect(timedEvents([holiday], new Set())).toEqual([]);
+    const holiday = {
+      ...base,
+      event_id: "h",
+      all_day: true,
+      start: "2026-09-21T00:00:00Z",
+      end: "2026-09-23T00:00:00Z",
+    };
+    expect(timedEvents([holiday])).toEqual([]);
     expect(allDayKeys(holiday)).toEqual(["2026-09-21", "2026-09-22"]); // the end is exclusive
   });
 

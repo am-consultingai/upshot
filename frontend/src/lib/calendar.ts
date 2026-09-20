@@ -141,16 +141,28 @@ export function eventKey(event: { calendar_id: string; event_id: string }): stri
 }
 
 /**
- * The calendar events a grid draws as blocks of their own.
+ * The timed events a grid draws.
  *
- * An event matched to a recording that is already on the grid is left out: the two are
- * one meeting and draw as one block, the recording's. All-day events are left out too —
- * they are not a time of day, and go in the day's header instead.
+ * All of them, including the ones that were recorded: a meeting in the calendar keeps its
+ * name and its slot whether or not a recording exists. What the recording changes is how
+ * the block is marked, not which block is drawn — see `recordedIds` for the other half.
  */
-export function timedEvents<T extends GridEvent>(events: T[], meetingIds: Set<string>): T[] {
-  return events.filter(
-    (event) => !event.all_day && !(event.meeting_id && meetingIds.has(event.meeting_id)),
-  );
+export function timedEvents<T extends GridEvent>(events: T[]): T[] {
+  return events.filter((event) => !event.all_day);
+}
+
+/**
+ * Recordings already represented by an event on the grid.
+ *
+ * A recording starts when someone pressed record and stops when the call ended, so drawing
+ * it as well as its event would put the same meeting on the grid twice, at two different
+ * times, under two names. The event wins: it is what was scheduled, and the recording is a
+ * fact about it. Recordings with no event of their own still draw as themselves.
+ */
+export function recordedIds<T extends GridEvent>(events: T[]): Set<string> {
+  const ids = new Set<string>();
+  for (const event of events) if (event.meeting_id) ids.add(event.meeting_id);
+  return ids;
 }
 
 /** The local days an all-day event covers. Its end date is exclusive, as Google sends it. */
