@@ -74,6 +74,7 @@
     <nav class="nav-links" aria-label="חלקי העמוד">
       <a href="#hebrew">עברית</a>
       <a href="#bots">בלי בוטים</a>
+      <a href="#record">הקלטה אוטומטית</a>
       <a href="#how">איך זה עובד</a>
       <a href="#faq">שאלות</a>
     </nav>
@@ -92,29 +93,24 @@
     </picture>
     <div class="hero-in">
       <div class="hero-text">
-        <p class="eyebrow">סיכומי פגישות פרטיים ל-Windows</p>
-        <h1>סיכום לכל פגישה, בלי בוט בשיחה.</h1>
-        <p class="lede">Upshot מזהה לבד שהפגישה התחילה, מקליט אותה על המחשב שלכם ומגיש סיכום בעברית, בדיוק בפורמט שאתם אוהבים. אף אחד לא מצטרף לשיחה, וההקלטה לא יוצאת מהמחשב.</p>
+        <p class="eyebrow">סיכומי פגישות ל-Windows</p>
+        <h1>אתם שולטים במידע שלכם.</h1>
+        <p class="lede">הפגישה שלכם מוקלטת והופכת לטקסט על המחשב שלכם. אף בוט לא מצטרף לשיחה, אף ספק AI לא מקבל את ההקלטה, ואתם מחליטים עד לאן המילים מגיעות: ל-AI שאתם כבר משתמשים בו, או לשום מקום.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">להתחיל</a>
-          <a class="btn btn-sec" href="#hebrew">עברית אמיתית</a>
+          <a class="btn btn-sec" href="#dial">לאן המידע שלכם מגיע</a>
         </div>
-        <p class="hero-meta">Windows · בלי בוט · בלי חשבון · שום אודיו לא עולה לענן · עברית ואנגלית</p>
+        <p class="hero-meta">Windows · בלי בוט · בלי חשבון · ההקלטה לא נשלחת לספק AI · עברית ואנגלית</p>
       </div>
-      <figure class="ready" aria-label="איור של רשימת משתתפים בשיחה, כש-Upshot מקליט על המחשב. נתוני הדגמה.">
-        <div class="ready-top">
-          <span class="live"></span>
-          <span>בשיחה</span>
-          <em>3 משתתפים · 0 בוטים</em>
-        </div>
-        <ul class="people">
-          <li><i>א</i>אני</li>
-          <li><i>ד</i>דנה <small>מארחת</small></li>
-          <li><i>י</i>יואב</li>
-          <li class="gone"><i><svg class="ic"><use href="#i-bot"/></svg></i><s>בוט רשמים</s> <small>לא הוזמן</small></li>
-        </ul>
-        <p class="ready-foot"><svg class="ic"><use href="#i-check"/></svg>Upshot מקליט על המחשב הזה, לא בתוך השיחה</p>
-        <figcaption>איור. נתוני הדגמה.</figcaption>
+      <figure class="flow" aria-label="לאן הפגישה מגיעה: מוקלטת ומתומללת על המחשב שלכם, ורק הטקסט יוצא.">
+        <ol>
+          <li><span class="f-ic"><svg class="ic"><use href="#i-mic"/></svg></span><b>הפגישה שלכם</b><span>הקול שלכם ושל האחרים</span></li>
+          <li class="f-here"><span class="f-ic"><svg class="ic"><use href="#i-laptop"/></svg></span><b>המחשב שלכם</b><span>מוקלטת והופכת לטקסט, כאן</span></li>
+        </ol>
+        <p class="f-stop"><svg class="ic"><use href="#i-lock"/></svg>ההקלטה נעצרת כאן</p>
+        <ol>
+          <li><span class="f-ic"><svg class="ic"><use href="#i-doc"/></svg></span><b>רק הטקסט</b><span>ל-AI שבחרתם — או למודל על המחשב שלכם, ואז שום דבר לא יוצא</span></li>
+        </ol>
       </figure>
     </div>
   </section>
@@ -123,27 +119,65 @@
   <section class="pillars" aria-label="מה Upshot עושה אחרת">
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
-      <h2>הפגישות נשארות פרטיות</h2>
-      <p>מוקלטות ונשמרות על המחשב שלכם. שום דבר לא עולה לענן לתמלול, ועם מודל AI מקומי שום דבר לא יוצא בכלל.</p>
+      <h2>הקול שלכם נשאר בבית</h2>
+      <p>ההקלטה נעשית והופכת לטקסט על המחשב שלכם. אף ספק AI לא מקבל אותה — רק המילים ממשיכות הלאה.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
+      <h2>ה-AI שכבר יש לכם</h2>
+      <p>Claude, OpenAI או Gemini בחשבון שלכם, או מודל על המחשב כשפגישה צריכה להישאר בחדר. בלי ספק חדש ובלי חשבון נוסף.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
       <h2>לא תשכחו להקליט <span class="tag-new">חדש</span></h2>
       <p>Upshot מזהה כשפגישה מתחילה. תנו לו להקליט לבד, וכל שיחה תסתיים עם סיכום, גם אם שכחתם.</p>
     </article>
-    <article>
-      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
-      <h2>סיכום שאפשר לשלוח כמו שהוא</h2>
-      <p>תגידו פעם אחת איך אתם אוהבים את הסיכום: פרקים, טון, אפילו צבעים. כל סיכום מוכן להדבקה במייל.</p>
-    </article>
   </section>
 
   <!-- STATS --------------------------------------------------------------->
   <section class="stats" aria-label="במבט אחד">
     <div><b>0</b><span>בוטים בשיחה</span></div>
-    <div><b>0</b><span>קליקים כדי להתחיל, עם הקלטה אוטומטית</span></div>
-    <div><b>0</b><span>דקות אודיו שעולות לענן</span></div>
-    <div><b data-providers>5</b><span>מודלי AI לבחירה, אחד פרטי לגמרי</span></div>
+    <div><b>0</b><span>דקות אודיו שנשלחות לספק AI</span></div>
+    <div><b>3</b><span>דרכים להפעיל, מפרטיות מלאה ועד ה-AI הרגיל שלכם</span></div>
+    <div><b data-providers>5</b><span>מודלי AI לבחירה, אחד על המחשב שלכם</span></div>
+  </section>
+
+  <!-- DIAL ---------------------------------------------------------------->
+  <section class="sec dial" id="dial">
+    <p class="eyebrow">המידע שלכם</p>
+    <h2>אתם מחליטים עד לאן הפגישה מגיעה.</h2>
+    <p class="he-sub">מה שאתם בוחרים זה מי כותב את הסיכום — וזה קובע מה יוצא מהמחשב, אם בכלל. אף ספק AI לא מקבל את האודיו שלכם.</p>
+    <div class="track-line" aria-hidden="true"></div>
+    <ol class="stops">
+      <li class="stop">
+        <p class="stop-name">שום דבר לא יוצא</p>
+        <div class="journey" aria-hidden="true">
+          <span class="node"><svg class="ic"><use href="#i-laptop"/></svg><b>המחשב שלכם</b></span>
+          <span class="wire wire-none"><i></i><span class="carries">כלום</span></span>
+          <span class="node dest dest-safe"><svg class="ic"><use href="#i-lock"/></svg><b>נשאר כאן</b></span>
+        </div>
+        <ul class="stop-facts"><li class="good">יוצא: כלום</li><li class="">צריך מודל מקומי</li><li class="">דירקטוריון, משפטי, משאבי אנוש</li></ul>
+      </li>
+      <li class="stop is-default">
+        <p class="stop-name">רק המילים<em>ברירת מחדל</em></p>
+        <div class="journey" aria-hidden="true">
+          <span class="node"><svg class="ic"><use href="#i-laptop"/></svg><b>המחשב שלכם</b></span>
+          <span class="wire wire-text"><i></i><span class="carries">הטקסט</span></span>
+          <span class="node dest "><svg class="ic"><use href="#i-cloud"/></svg><b>ה-AI שלכם</b></span>
+        </div>
+        <ul class="stop-facts"><li class="">יוצא: הטקסט</li><li class="">חשבון AI שלכם</li><li class="">פגישות יומיומיות</li></ul>
+      </li>
+      <li class="stop">
+        <p class="stop-name">מחשב שני שלכם</p>
+        <div class="journey" aria-hidden="true">
+          <span class="node"><svg class="ic"><use href="#i-laptop"/></svg><b>המחשב שלכם</b></span>
+          <span class="wire wire-audio"><i></i><span class="carries">ההקלטה</span></span>
+          <span class="node dest dest-yours"><svg class="ic"><use href="#i-laptop"/></svg><b>המחשב השני</b></span>
+        </div>
+        <ul class="stop-facts"><li class="">יוצא: ההקלטה</li><li class="">מחשב נוסף שלכם</li><li class="">לפטופ שלא צריך להתאמץ</li></ul>
+      </li>
+    </ol>
+    <p class="chips-note">אף ספק AI לא מקבל את האודיו שלכם: Upshot הופך אותו לטקסט קודם. ההקלטה יוצאת מהמחשב הזה רק אם תבחרו לשלוח אותה למחשב אחר שלכם. <span class="soon-key">בקרוב</span> הבחירה תהיה גם לכל פגישה בנפרד, כך שפגישה רגישה אחת תישאר מקומית והשאר ימשיכו כרגיל.</p>
   </section>
 
   <!-- HEBREW -------------------------------------------------------------->
@@ -247,6 +281,17 @@
       <article><b>אוטומטי כמה שתרצו</b><p>תנו לו להקליט כל פגישה שהוא מזהה, או רק להראות לכם אילו פגישות זיהה. תמיד אפשר ללחוץ על הקלטה בעצמכם.</p></article>
       <article><b>ברור מה הבטחתם</b><p>המילים שלכם נשמרות בנפרד מהמילים של כל השאר, כך שתמיד ברור מה אמרתם שתעשו.</p></article>
       <article><b>עובד על מחשב רגיל</b><p>בלי חומרה מיוחדת. כרטיס מסך מאיץ את העבודה; בלעדיו, הסיכום פשוט מגיע מאוחר יותר.</p></article>
+    </div>
+  </section>
+
+  <!-- RECORD --------------------------------------------------------------->
+  <section class="sec record" id="record">
+    <p class="eyebrow">הקלטה אוטומטית</p>
+    <h2>הוא מזהה את הפגישה, כדי שלא תצטרכו לזכור.</h2>
+    <div class="signals">
+      <article><b>מחפש את הסימנים <span class="tag-new">חדש</span></b><p>כשאפליקציית שיחות תופסת את המיקרופון, Upshot בודק איזו אפליקציה זו, את כותרת החלון, אם המצלמה פועלת ואם מדברים משני הצדדים. מספיק סימנים יחד אומרים פגישה.</p></article>
+      <article><b>מראה לכם לפני שהוא פועל</b><p>מההתחלה הוא רק מציג את הפגישות שזיהה, כדי שתראו שהוא צודק. כשתסמכו עליו, הפעילו הקלטה אוטומטית ותפסיקו ללחוץ על הקלטה.</p></article>
+      <article><b>מעדיף לפספס מאשר להפריע</b><p>פגישה שפוספסה עולה לכם קליק אחד; הקלטה של משהו שהוא לא פגישה עולה באמון. כל הקלטה מספרת מה גרם לה להתחיל, כך שתמיד אפשר לענות "למה זה הוקלט?"</p></article>
     </div>
   </section>
 
@@ -364,6 +409,7 @@
       <table class="vs">
         <thead><tr><th scope="col"><span class="sr">שאלה</span></th><th scope="col">בוטים לסיכום פגישות</th><th scope="col" class="us">Upshot</th></tr></thead>
         <tbody>
+          <tr><th scope="row">מה יוצא מהמחשב</th><td class="them">כל ההקלטה</td><td class="us">הטקסט, או כלום</td></tr>
           <tr><th scope="row">מופיע ברשימת המשתתפים</th><td class="them">כן</td><td class="us">אף פעם</td></tr>
           <tr><th scope="row">ההקלטה נשמרת בשרתים של ספק</th><td class="them">בדרך כלל</td><td class="us">אף פעם</td></tr>
           <tr><th scope="row">תמלול שאומן על עברית</th><td class="them">לעיתים רחוקות</td><td class="us">כן</td></tr>
@@ -381,7 +427,7 @@
     <p class="eyebrow">אמון</p>
     <h2>הפגישות שלכם נשארות שלכם.</h2>
     <div class="tiles">
-      <div class="tile"><svg class="ic"><use href="#i-laptop"/></svg><b>נשאר על המחשב</b><span>מוקלט ומתומלל שם, לא עולה לענן</span></div>
+      <div class="tile"><svg class="ic"><use href="#i-laptop"/></svg><b>אף ספק לא שומע</b><span>מוקלט ומתומלל על המחשב שלכם</span></div>
       <div class="tile"><svg class="ic"><use href="#i-user"/></svg><b>בלי חשבון</b><span>אין צורך להירשם לשום דבר</span></div>
       <div class="tile"><svg class="ic"><use href="#i-disk"/></svg><b>שום דבר לא הולך לאיבוד</b><span>נשמר תוך כדי הקלטה, לא רק בסוף</span></div>
       <div class="tile"><svg class="ic"><use href="#i-clock"/></svg><b>אתם מחליטים מה נשמר</b><span>ההקלטות נמחקות אחרי <span data-audio-days>30</span> יום; הסיכומים נשארים</span></div>
@@ -394,7 +440,7 @@
     <h2>שאלות נפוצות</h2>
     <div class="faq-list">
       <details class="acc"><summary>הפגישה יוצאת מהמחשב שלי?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">ההקלטה לא: היא נשמרת ומתומללת על המחשב שלכם. כדי לכתוב את הסיכום, הטקסט של השיחה נשלח למודל ה-AI שבחרתם. בחרו מודל מקומי (Ollama) ושום דבר לא יוצא בכלל.</div></details>
+        <div class="acc-b">ההקלטה לא: היא נשמרת והופכת לטקסט על המחשב שלכם. משם זו הבחירה שלכם — הטקסט נשלח ל-AI שבחרתם, או למודל על המחשב שלכם, ואז שום דבר לא יוצא. ראו <a href="#dial">עד לאן הפגישה מגיעה</a>.</div></details>
       <details class="acc"><summary>כמה טוב הוא בעברית?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">מודל התמלול של Upshot אומן על יותר מ-5,000 שעות של עברית. בטבלת השוואה ציבורית הוא טועה בכ-7 מילים מתוך 100 בשיחה יומיומית, בערך חצי מהטעויות של OpenAI Whisper.</div></details>
       <details class="acc"><summary>האנשים האחרים בשיחה יראו משהו?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>

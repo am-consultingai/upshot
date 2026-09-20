@@ -35,7 +35,7 @@
     <ul>
       <li>Upshot is a desktop application that runs on your own Windows computer. Your recordings, transcripts and summaries are stored there.</li>
       <li>AM Consulting, which makes Upshot, does not run a server that receives your data. We never receive your recordings, transcripts, summaries or Google data.</li>
-      <li>Audio is transcribed on your computer and is never uploaded.</li>
+      <li>Audio is transcribed on your computer and never reaches an AI provider. The only exception is one you set up yourself: a second machine of your own that does the work.</li>
       <li>To write a summary, the text of a meeting is sent to the AI provider you choose. If you choose a local model, nothing leaves your computer.</li>
       <li>If you connect Google Calendar, Upshot only reads your events, on your computer, to notice and name your meetings. It does not share calendar data with anyone, including AI providers.</li>
     </ul>
@@ -66,7 +66,7 @@
 
   <section id="how">
     <h2>2. How Upshot works</h2>
-    <p>Upshot records your meetings on your own computer, transcribes them there, and writes a summary. It runs entirely on your computer and has no account system: you do not sign up with us, and we do not operate any server that receives information from the app.</p>
+    <p>Upshot records your meetings on your own computer, transcribes them there, and writes a summary. It runs on your own computer and has no account system: you do not sign up with us, and we do not operate any server that receives information from the app. Where the transcript goes next is your choice, described in section 5.</p>
     <p>The app does not send usage statistics, analytics or crash reports to us or anyone else.</p>
   </section>
 
@@ -131,6 +131,7 @@
     <ul>
       <li><strong>AI summary providers.</strong> To write a summary, Upshot sends the meeting transcript and your summary instructions to the provider you select: Anthropic (Claude, through the API or through Claude Code on your own subscription), OpenAI or Google Gemini. If you select Ollama, the summary is written by a model running on your computer and nothing is sent. Audio is never sent to these providers.</li>
       <li><strong>Email.</strong> If you set up email delivery, Upshot sends summaries through the email server and account you configure.</li>
+      <li><strong>A second machine of your own.</strong> If you configure another computer of yours to do the transcription (the remote-worker setting), Upshot sends the recording to that machine over your own network. It goes nowhere else, and no third party is involved.</li>
       <li><strong>Model downloads.</strong> On first use, Upshot downloads speech-recognition models from Hugging Face and, if you enable speaker separation, its models from Hugging Face and GitHub. These downloads send no meeting data; like any web request, they reveal your IP address to the host.</li>
     </ul>
   </section>
