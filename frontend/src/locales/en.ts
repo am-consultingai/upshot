@@ -104,6 +104,7 @@ export const en = {
   "calendar.promptInvite": "Send the invitation to the summary model",
   "calendar.promptInviteHint": "The meeting's title, time, organizer, who was invited, what the organizer wrote and the files they attached go to the summary model with the transcript, so the summary knows what the meeting was for. Email addresses never go.",
   "calendar.untitled": "Untitled event",
+  "calendar.recorded": "Recorded by Upshot",
   "calendar.eventsThisDay": "Calendar events on this day",
   "calendar.declined": "You declined this event.",
   "calendar.attendees": "Invited",

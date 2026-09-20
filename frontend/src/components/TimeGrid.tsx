@@ -9,6 +9,7 @@ import {
   eventKey,
   isToday,
   placement,
+  recordedIds,
   timedEvents,
 } from "../lib/calendar";
 import { formatClock } from "../lib/format";
@@ -42,8 +43,11 @@ export default function TimeGrid({
   onEvent?: (event: CalendarEvent) => void;
 }) {
   const { t, locale } = useI18n();
-  const buckets = bucketByDay(meetings);
-  const shown = timedEvents(events, new Set(meetings.map((meeting) => meeting.id)));
+  // The event keeps its name and its slot; a recording of it only marks the block. A
+  // recording with no event of its own still draws as itself.
+  const recorded = recordedIds(events);
+  const buckets = bucketByDay(meetings.filter((meeting) => !recorded.has(meeting.id)));
+  const shown = timedEvents(events);
   const eventBuckets = bucketByDay(shown.map((event) => ({ ...event, started_at: event.start })));
   const allDay = new Map<string, CalendarEvent[]>();
   for (const event of events.filter((item) => item.all_day)) {
@@ -121,12 +125,55 @@ export default function TimeGrid({
                     day,
                   );
                   const past = new Date(event.end).getTime() < Date.now();
+                  const wasRecorded = Boolean(event.meeting_id);
+                  const body = (
+                    <>
+                      <span className="block truncate">{formatClock(event.start)}</span>
+                      <span className="block truncate">
+                        {event.title ?? t("calendar.untitled")}
+                      </span>
+                      {wasRecorded && (
+                        // A folded corner, drawn in the recording colour: the slot is the
+                        // calendar's, the mark says Upshot has the meeting itself.
+                        <span
+                          data-testid="calendar-recorded-flag"
+                          aria-hidden="true"
+                          className="absolute top-0 size-0 border-4 border-success border-b-transparent"
+                          style={{ insetInlineEnd: 0, borderInlineStartColor: "transparent" }}
+                        />
+                      )}
+                    </>
+                  );
+                  const shape = {
+                    top: startMinute * PX_PER_MINUTE,
+                    height: Math.max(14, minutes * PX_PER_MINUTE),
+                    insetInlineStart: `${(slot.column / slot.columns) * 100}%`,
+                    width: `${(1 / slot.columns) * 100}%`,
+                  };
+                  if (wasRecorded) {
+                    return (
+                      <Link
+                        key={slot.id}
+                        to={`/m/${event.meeting_id}`}
+                        data-testid="calendar-gevent"
+                        data-event={event.event_id}
+                        data-recorded="true"
+                        data-meeting={event.meeting_id}
+                        title={`${event.title ?? ""} — ${t("calendar.recorded")}`}
+                        className="absolute overflow-hidden rounded border border-success bg-success-quiet px-1 text-xs"
+                        style={shape}
+                      >
+                        {body}
+                      </Link>
+                    );
+                  }
                   return (
                     <button
                       key={slot.id}
                       type="button"
                       data-testid="calendar-gevent"
                       data-event={event.event_id}
+                      data-recorded="false"
                       data-past={past}
                       title={event.title ?? ""}
                       onClick={() => onEvent?.(event)}
@@ -136,15 +183,9 @@ export default function TimeGrid({
                       className={`absolute overflow-hidden rounded border border-dashed border-line bg-canvas px-1 text-start text-xs text-secondary hover:border-accent ${
                         past ? "opacity-60" : ""
                       }`}
-                      style={{
-                        top: startMinute * PX_PER_MINUTE,
-                        height: Math.max(14, minutes * PX_PER_MINUTE),
-                        insetInlineStart: `${(slot.column / slot.columns) * 100}%`,
-                        width: `${(1 / slot.columns) * 100}%`,
-                      }}
+                      style={shape}
                     >
-                      <span className="block truncate">{formatClock(event.start)}</span>
-                      <span className="block truncate">{event.title ?? t("calendar.untitled")}</span>
+                      {body}
                     </button>
                   );
                 }
