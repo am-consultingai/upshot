@@ -1011,7 +1011,11 @@ def llm_status(request: Request) -> dict[str, Any]:
         },
         {
             "id": "claude-subscription",
-            "label": "Claude Code (your own subscription)",
+            # Not "Claude Code": Anthropic's Agent SDK branding guidance permits
+            # "Claude Agent" and "Claude" but not the product name, and asks that a
+            # third-party product not appear to be Claude Code. The install and sign-in
+            # copy still names Claude Code, because that is the thing to install.
+            "label": "Claude Agent (your own subscription)",
             "needs": "cli",
             "ready": cli.installed,
             # Three-valued on purpose: `None` means the build is too old to be asked,
