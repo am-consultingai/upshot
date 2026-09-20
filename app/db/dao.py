@@ -102,6 +102,43 @@ class SearchHit:
     snippet: str
 
 
+#: Owners the prompt is allowed to use when it cannot name a person. ``ME`` is the
+#: person running this recorder, which is the only one the inbox can act on.
+MINE = frozenset({"me", "myself", "i"})
+
+
+@dataclass(frozen=True, slots=True)
+class ActionItem:
+    id: int
+    meeting_id: str
+    seq: int
+    who: str
+    what: str
+    due: str | None
+    at_ms: int | None
+    mine: bool
+    done_at: str | None
+    #: Filled in by :meth:`Dao.action_items`; the row itself does not carry it.
+    meeting_title: str | None = None
+    meeting_started_at: str | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.done_at is not None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {**asdict(self), "done": self.done}
+
+
+def normalize_action(what: str) -> str:
+    """The match key that carries a tick across a re-summarize.
+
+    Casefolded and whitespace-squeezed, so the model rewording its own punctuation
+    does not silently reopen something the user has already ticked off.
+    """
+    return " ".join(what.split()).casefold()
+
+
 @dataclass(frozen=True, slots=True)
 class DetectorEvent:
     id: int
@@ -219,6 +256,22 @@ def capabilities(conn: sqlite3.Connection) -> Capabilities:
     if isinstance(caps, Capabilities):
         return caps
     return Capabilities(fts=False)
+
+
+def _row_to_action(row: sqlite3.Row) -> ActionItem:
+    return ActionItem(
+        id=row["id"],
+        meeting_id=row["meeting_id"],
+        seq=row["seq"],
+        who=row["who"],
+        what=row["what"],
+        due=row["due"],
+        at_ms=row["at_ms"],
+        mine=bool(row["mine"]),
+        done_at=row["done_at"],
+        meeting_title=row["meeting_title"],
+        meeting_started_at=row["meeting_started_at"],
+    )
 
 
 def _row_to_meeting(row: sqlite3.Row) -> Meeting:
@@ -429,6 +482,94 @@ class Dao:
             snippet = ("…" if start else "") + text[start : idx + len(query) + 30]
             hits.append(SearchHit(row["meeting_id"], row["speaker"], row["at_ms"], text, snippet))
         return hits
+
+    # -- action items ------------------------------------------------------
+
+    def replace_action_items(
+        self, meeting_id: str, items: Sequence[tuple[str, str, str | None, int | None]]
+    ) -> int:
+        """Replace this meeting's action items, carrying the done state forward.
+
+        Each item is ``(who, what, due, at_ms)``. Re-summarizing is a routine act —
+        the prompt is editable and pressing Summarize redoes the work with no
+        staleness check — so it must not cost the user the ticks they have made.
+        What is ticked is theirs; what the list says is the model's.
+        """
+        done = {
+            row["norm"]: row["done_at"]
+            for row in self.conn.execute(
+                "SELECT norm, done_at FROM action_items "
+                "WHERE meeting_id = ? AND done_at IS NOT NULL",
+                (meeting_id,),
+            ).fetchall()
+        }
+        self.conn.execute("DELETE FROM action_items WHERE meeting_id = ?", (meeting_id,))
+        now = iso(self.clock.now())
+        count = 0
+        for who, what, due, at_ms in items:
+            what = what.strip()
+            who = who.strip()
+            if not what:
+                continue
+            norm = normalize_action(what)
+            self.conn.execute(
+                "INSERT INTO action_items"
+                "(meeting_id, seq, who, what, norm, due, at_ms, mine, done_at, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    meeting_id,
+                    count,
+                    who or "?",
+                    what,
+                    norm,
+                    (due or None),
+                    at_ms,
+                    int(who.casefold() in MINE),
+                    done.get(norm),
+                    now,
+                ),
+            )
+            count += 1
+        return count
+
+    def action_items(
+        self,
+        *,
+        meeting_id: str | None = None,
+        open_only: bool = False,
+        limit: int = 500,
+    ) -> list[ActionItem]:
+        """Across every meeting unless one is named. Mine first, newest meeting first."""
+        where: list[str] = []
+        args: list[Any] = []
+        if meeting_id:
+            where.append("a.meeting_id = ?")
+            args.append(meeting_id)
+        if open_only:
+            where.append("a.done_at IS NULL")
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        rows = self.conn.execute(
+            "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at "
+            f"FROM action_items a JOIN meetings m ON m.id = a.meeting_id {clause} "
+            "ORDER BY a.mine DESC, m.started_at DESC, a.seq ASC LIMIT ?",
+            [*args, limit],
+        ).fetchall()
+        return [_row_to_action(row) for row in rows]
+
+    def action_item(self, item_id: int) -> ActionItem | None:
+        row = self.conn.execute(
+            "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at "
+            "FROM action_items a JOIN meetings m ON m.id = a.meeting_id WHERE a.id = ?",
+            (item_id,),
+        ).fetchone()
+        return _row_to_action(row) if row else None
+
+    def set_action_done(self, item_id: int, *, done: bool) -> ActionItem | None:
+        self.conn.execute(
+            "UPDATE action_items SET done_at = ? WHERE id = ?",
+            (iso(self.clock.now()) if done else None, item_id),
+        )
+        return self.action_item(item_id)
 
     # -- glossary ----------------------------------------------------------
 

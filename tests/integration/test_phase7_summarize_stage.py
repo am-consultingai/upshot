@@ -217,3 +217,73 @@ def test_a_forced_summary_leaves_the_transcript_alone(tmp_path: Path) -> None:
         "the transcript was rewritten by a summary run"
     )
     assert first["summary_html"], "the first summary should still have been written"
+
+
+def test_action_items_reach_the_database(tmp_path: Path) -> None:
+    """The one piece of structure free-form still hands back (D47).
+
+    The document stays the model's. What is added is that the commitments inside it
+    are also returned as data, so the inbox can read across meetings — which
+    `known-issues.md` #10 recorded as impossible against opaque HTML.
+    """
+    h, meeting = prepared(tmp_path)
+
+    class WithItems(FakeLlm):
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            from app.llm.client import LlmResult
+
+            assert "action_items" in kwargs["schema"]["properties"], "the envelope must ask"
+            return LlmResult(
+                data={
+                    "summary_html": "<h2>Decisions</h2><p>Roll it back.</p>",
+                    "action_items": [
+                        {"who": "ME", "what": "take it to Monday review", "at_ms": 31000},
+                        {"who": "Dana", "what": "write the spec", "due": "Thursday"},
+                    ],
+                },
+                model="fake",
+                attempts=1,
+            )
+
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=WithItems())))
+
+    stored = h.dao.action_items(meeting_id=meeting.id)
+    assert [(item.who, item.what, item.due) for item in stored] == [
+        ("ME", "take it to Monday review", None),
+        ("Dana", "write the spec", "Thursday"),
+    ]
+    assert stored[0].mine is True and stored[0].at_ms == 31000
+    # And in notes.json, which is this meeting's own record of itself.
+    assert len(summarize.load_notes(meeting.path)["action_items"]) == 2
+
+
+def test_a_model_that_ignores_the_request_still_produces_a_summary(tmp_path: Path) -> None:
+    """The summary is the product; the list is a bonus on top of it."""
+    h, meeting = prepared(tmp_path)
+
+    class Silent(FakeLlm):
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            from app.llm.client import LlmResult
+
+            return LlmResult(data={"summary_html": "<p>A document.</p>"}, model="fake", attempts=1)
+
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=Silent())))
+    assert summarize.load_notes(meeting.path)["summary_html"] == "<p>A document.</p>"
+    assert h.dao.action_items(meeting_id=meeting.id) == []
+
+
+def test_resummarizing_keeps_the_ticks(tmp_path: Path) -> None:
+    """Editing the prompt is routine; losing what you ticked off must not be."""
+    h, meeting = prepared(tmp_path)
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services()))
+    first = h.dao.action_items(meeting_id=meeting.id)
+    assert first, "the fake provider should offer something to tick"
+    h.dao.set_action_done(first[0].id, done=True)
+
+    ctx = h.context(meeting, JobStage.SUMMARIZE, services=Services())
+    ctx.force = True
+    summarize.run(ctx)
+
+    again = h.dao.action_items(meeting_id=meeting.id)
+    assert [item.what for item in again] == [item.what for item in first]
+    assert again[0].done is True

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Link, Route, Routes } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { I18nContext, applyLocale, catalogues, useI18n, type Locale, type MessageKey } from "./i18n";
@@ -7,6 +7,7 @@ import { applyTheme, isTheme, type Theme } from "./theme";
 import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
+import ActionsPage from "./routes/Actions";
 import Settings from "./routes/Settings";
 import Detector from "./routes/Detector";
 import Rail from "./components/Rail";
@@ -14,6 +15,8 @@ import RecordingBar from "./components/RecordingBar";
 import DetectionNudge, { type Detection } from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
 import CommandPalette from "./components/CommandPalette";
+import ActionItemRow from "./components/ActionItemRow";
+import CaptureChoice from "./components/CaptureChoice";
 
 /**
  * A screen that is not one item from the library: it gets the whole width.
@@ -33,17 +36,56 @@ function Full({ children, wide = false }: { children: React.ReactNode; wide?: bo
 }
 
 /**
- * The detail side with nothing open yet. Worth a sentence rather than a blank
- * panel: an empty half-screen reads as something failing to load.
+ * The detail side with nothing open yet.
+ *
+ * It used to be one sentence centred in half a screen. That is a lot of window to
+ * spend saying nothing, and the thing most worth knowing on opening the app is not
+ * "pick a meeting" — it is what you still owe people. So the empty side is the
+ * inbox, trimmed to what is open, and the sentence only survives for the case where
+ * there is genuinely nothing to show.
  */
 function EmptyDetail() {
   const { t } = useI18n();
+  const open = useQuery({
+    queryKey: ["action-items", "open"],
+    queryFn: () => api.actionItems({ open: "true" }),
+  });
+  const items = open.data?.items ?? [];
+
+  if (items.length === 0) {
+    return (
+      <div
+        data-testid="no-meeting-open"
+        className="grid h-full place-items-center px-8 text-center text-sm text-tertiary"
+      >
+        {t("timeline.pickOne")}
+      </div>
+    );
+  }
+
   return (
-    <div
-      data-testid="no-meeting-open"
-      className="grid h-full place-items-center px-8 text-center text-sm text-tertiary"
-    >
-      {t("timeline.pickOne")}
+    <div data-testid="no-meeting-open" className="mx-auto max-w-2xl px-8 py-8">
+      <header className="mb-4 flex items-baseline gap-2">
+        <h2 className="display text-lg">{t("actions.title")}</h2>
+        <span
+          data-testid="empty-open-count"
+          className="rounded-full bg-surface-3 px-2 py-0.5 text-2xs text-secondary tabular-nums"
+        >
+          {items.length} {t("actions.open")}
+        </span>
+        <Link
+          to="/actions"
+          data-testid="empty-see-all"
+          className="ms-auto text-xs text-secondary hover:text-primary hover:underline"
+        >
+          {t("actions.showAll")}
+        </Link>
+      </header>
+      <ul>
+        {items.slice(0, 12).map((item) => (
+          <ActionItemRow key={item.id} item={item} />
+        ))}
+      </ul>
     </div>
   );
 }
@@ -140,6 +182,13 @@ export default function App() {
           <ConnectionBanner />
           <RecordingBar />
           <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
+          {/*
+           * Above the routes, not inside the empty detail pane where this started.
+           * How capture works is one decision about the whole application, and in the
+           * pane it was invisible to anyone whose saved view was the calendar — which
+           * is to say, invisible to exactly the person who uses the calendar most.
+           */}
+          <CaptureChoice />
           <main className="flex min-h-0 flex-1">
             <Routes>
               {/*
@@ -151,6 +200,7 @@ export default function App() {
                 <Route path="/" element={<EmptyDetail />} />
                 <Route path="/m/:id" element={<MeetingPage />} />
               </Route>
+              <Route path="/actions" element={<Full><ActionsPage /></Full>} />
               <Route path="/search" element={<Full><SearchPage /></Full>} />
               <Route path="/settings" element={<Full wide><Settings /></Full>} />
               <Route path="/detector" element={<Full><Detector /></Full>} />

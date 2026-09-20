@@ -23,6 +23,18 @@ export default function InviteCard({ meetingId }: { meetingId: string }) {
   const data = invite.data;
   if (!data || (!data.available && !data.reason)) return null;
 
+  /*
+   * Silence is the right answer for the ordinary cases.
+   *
+   * A manually started recording normally has no invitation, and this build may have
+   * no calendar at all — neither is a fault, and neither is news. Saying "the
+   * invitation could not be read" on every healthy meeting taught the reader to skip
+   * the line, which is expensive on the day it says something that matters.
+   */
+  if (!data.available && (data.code === "unmatched" || data.code === "no_connection")) {
+    return null;
+  }
+
   if (!data.available) {
     return (
       <p data-testid="invite-unavailable" className="mb-4 text-xs text-tertiary">
