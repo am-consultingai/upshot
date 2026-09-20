@@ -103,6 +103,7 @@ export const he: Record<MessageKey, string> = {
   "calendar.promptInvite": "לשלוח את ההזמנה למודל הסיכום",
   "calendar.promptInviteHint": "שם הפגישה, השעה, מי זימן, מי הוזמן, מה שנכתב בהזמנה והקבצים שצורפו אליה נשלחים למודל הסיכום יחד עם התמליל, כדי שהסיכום יֵדע לשם מה הפגישה. כתובות מייל לעולם לא נשלחות.",
   "calendar.untitled": "אירוע ללא שם",
+  "calendar.recorded": "הוקלט על ידי Upshot",
   "calendar.eventsThisDay": "אירועי יומן ביום הזה",
   "calendar.declined": "דחית את האירוע הזה.",
   "calendar.attendees": "מוזמנים",

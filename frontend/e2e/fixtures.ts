@@ -177,10 +177,10 @@ export function minutesAgo(minutes: number): string {
   );
 }
 
-export function isoAt(dayOffset: number, hour: number): string {
+export function isoAt(dayOffset: number, hour: number, minute = 0): string {
   const date = new Date();
   date.setDate(date.getDate() - dayOffset);
-  date.setHours(hour, 0, 0, 0);
+  date.setHours(hour, minute, 0, 0);
   const pad = (value: number) => String(value).padStart(2, "0");
   const offsetMinutes = -date.getTimezoneOffset();
   const sign = offsetMinutes >= 0 ? "+" : "-";
