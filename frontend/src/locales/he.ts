@@ -145,7 +145,7 @@ export const he: Record<MessageKey, string> = {
   "meeting.summarizeQueued": "בתור - הדף יתעדכן בסיום.",
   "settings.prompt": "‏פרומפט הסיכום",
   "settings.promptHint":
-    "ההנחיה המלאה שנשלחת בכל סיכום. היא קובעת גם את המבנה והעיצוב - שום דבר כאן לא מסדר מחדש את מה שהמודל כותב.",
+    "ההנחיה המלאה שנשלחת בכל סיכום. היא קובעת גם את המבנה והעיצוב - שום דבר כאן לא מסדר מחדש את מה שהמודל כותב. אפשר לכתוב {{meeting}} במקום שבו ההזמנה מהיומן תשובץ; בלי זה ההזמנה נשלחת לפני התמליל.",
   "settings.promptFormat": "מבנה התשובה",
   "settings.formatStructured": "מקטעים קבועים",
   "settings.formatFree": "חופשי",

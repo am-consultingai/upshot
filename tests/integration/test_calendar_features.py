@@ -461,6 +461,7 @@ def _summarize_prompt(
             services=svc,
         )
 
+    world.llm_calls = svc.llm.calls  # type: ignore[attr-defined]
     transcribe.run(ctx(JobStage.TRANSCRIBE))
     assemble.run(ctx(JobStage.ASSEMBLE))
     summarize.run(ctx(JobStage.SUMMARIZE))
@@ -521,6 +522,37 @@ def test_the_switch_turns_the_invitation_off(world: World, tmp_path: Path) -> No
     assert "from the calendar invitation" not in prompt
     assert "Q4 salaries" not in prompt and "the-plan.pdf" not in prompt
     assert "Transcript:" not in prompt, "with no context the transcript is the whole message"
+
+
+def test_the_shipped_prompt_knows_what_the_invitation_is() -> None:
+    """The context is only worth sending if the instructions say what it is. Before this,
+    the prompt told the model to attribute action items only to names heard in the
+    conversation — which forbade the very list the invitation supplies."""
+    from app.llm.prompts import load
+
+    text = " ".join(load("system").text.lower().split())  # the file is hard-wrapped
+    assert "meeting details, from the calendar invitation" in text
+    assert "named in the meeting details" in text
+    assert "never report an agenda item as though it had been discussed" in text
+
+
+def test_an_edited_prompt_can_place_the_invitation_itself(world: World, tmp_path: Path) -> None:
+    prompt = _summarize_prompt(
+        world,
+        tmp_path,
+        **{
+            "llm.summary_prompt": "Summarise this meeting.\n\nCONTEXT:\n{{meeting}}\n\nEnd.",
+        },
+    )
+    # Placed in the instructions, so it is no longer in front of the transcript.
+    assert "from the calendar invitation" not in prompt.split("Transcript:")[0]
+    system = "\n".join(
+        block["text"]
+        for call in world.llm_calls
+        for block in call["system"]  # type: ignore[index]
+    )
+    assert "CONTEXT:\nMeeting details, from the calendar invitation" in system
+    assert "Q4 salaries" in system and "{{meeting}}" not in system
 
 
 def test_an_html_agenda_becomes_readable_text_with_its_links() -> None:
