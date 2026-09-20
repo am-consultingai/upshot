@@ -95,12 +95,12 @@
       <div class="hero-text">
         <p class="eyebrow">סיכומי פגישות ל-Windows</p>
         <h1>אתם שולטים במידע שלכם.</h1>
-        <p class="lede">הפגישה שלכם מוקלטת והופכת לטקסט על המחשב שלכם. אף בוט לא מצטרף לשיחה, אף ספק AI לא מקבל את ההקלטה, ואתם מחליטים עד לאן המילים מגיעות: ל-AI שאתם כבר משתמשים בו, או לשום מקום.</p>
+        <p class="lede">הפגישה שלכם מוקלטת והופכת לטקסט על המחשב שלכם. אף בוט לא מצטרף לשיחה, ההקלטה לא יוצאת מהמחשב, ואתם מחליטים עד לאן המילים מגיעות: ל-AI שאתם כבר משתמשים בו, או לשום מקום.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">להתחיל</a>
           <a class="btn btn-sec" href="#dial">לאן המידע שלכם מגיע</a>
         </div>
-        <p class="hero-meta">Windows · בלי בוט · בלי חשבון · ההקלטה לא נשלחת לספק AI · עברית ואנגלית</p>
+        <p class="hero-meta">Windows · בלי בוט · בלי חשבון · ההקלטה לא יוצאת מהמחשב · עברית ואנגלית</p>
       </div>
       <figure class="flow" aria-label="לאן הפגישה מגיעה: מוקלטת ומתומללת על המחשב שלכם, ורק הטקסט יוצא.">
         <ol>
@@ -120,7 +120,7 @@
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
       <h2>הקול שלכם נשאר בבית</h2>
-      <p>ההקלטה נעשית והופכת לטקסט על המחשב שלכם. אף ספק AI לא מקבל אותה — רק המילים ממשיכות הלאה.</p>
+      <p>ההקלטה נעשית והופכת לטקסט על המחשב שלכם, ולא יוצאת ממנו. רק המילים יכולות להמשיך הלאה, ורק אם תרצו.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
@@ -138,7 +138,7 @@
   <section class="stats" aria-label="במבט אחד">
     <div><b>0</b><span>בוטים בשיחה</span></div>
     <div><b>0</b><span>דקות אודיו שנשלחות לספק AI</span></div>
-    <div><b>3</b><span>דרכים להפעיל, מפרטיות מלאה ועד ה-AI הרגיל שלכם</span></div>
+    <div><b data-audio-days>30</b><span>ימים עד שההקלטות נמחקות, כברירת מחדל</span></div>
     <div><b data-providers>5</b><span>מודלי AI לבחירה, אחד על המחשב שלכם</span></div>
   </section>
 
@@ -146,9 +146,9 @@
   <section class="sec dial" id="dial">
     <p class="eyebrow">המידע שלכם</p>
     <h2>אתם מחליטים עד לאן הפגישה מגיעה.</h2>
-    <p class="he-sub">מה שאתם בוחרים זה מי כותב את הסיכום — וזה קובע מה יוצא מהמחשב, אם בכלל. אף ספק AI לא מקבל את האודיו שלכם.</p>
+    <p class="he-sub">ההקלטה אף פעם לא יוצאת מהמחשב שלכם: Upshot הופך אותה לטקסט שם. מה שאתם בוחרים זה מי כותב את הסיכום מהטקסט הזה — ואם בכלל יוצא ממנו משהו.</p>
     <div class="track-line" aria-hidden="true"></div>
-    <ol class="stops">
+    <ol class="stops two">
       <li class="stop">
         <p class="stop-name">שום דבר לא יוצא</p>
         <div class="journey" aria-hidden="true">
@@ -165,19 +165,10 @@
           <span class="wire wire-text"><i></i><span class="carries">הטקסט</span></span>
           <span class="node dest "><svg class="ic"><use href="#i-cloud"/></svg><b>ה-AI שלכם</b></span>
         </div>
-        <ul class="stop-facts"><li class="">יוצא: הטקסט</li><li class="">חשבון AI שלכם</li><li class="">פגישות יומיומיות</li></ul>
-      </li>
-      <li class="stop">
-        <p class="stop-name">מחשב שני שלכם</p>
-        <div class="journey" aria-hidden="true">
-          <span class="node"><svg class="ic"><use href="#i-laptop"/></svg><b>המחשב שלכם</b></span>
-          <span class="wire wire-audio"><i></i><span class="carries">ההקלטה</span></span>
-          <span class="node dest dest-yours"><svg class="ic"><use href="#i-laptop"/></svg><b>המחשב השני</b></span>
-        </div>
-        <ul class="stop-facts"><li class="">יוצא: ההקלטה</li><li class="">מחשב נוסף שלכם</li><li class="">לפטופ שלא צריך להתאמץ</li></ul>
+        <ul class="stop-facts"><li class="">יוצא: הטקסט, אף פעם לא האודיו</li><li class="">חשבון AI שלכם</li><li class="">פגישות יומיומיות</li></ul>
       </li>
     </ol>
-    <p class="chips-note">אף ספק AI לא מקבל את האודיו שלכם: Upshot הופך אותו לטקסט קודם. ההקלטה יוצאת מהמחשב הזה רק אם תבחרו לשלוח אותה למחשב אחר שלכם. <span class="soon-key">בקרוב</span> הבחירה תהיה גם לכל פגישה בנפרד, כך שפגישה רגישה אחת תישאר מקומית והשאר ימשיכו כרגיל.</p>
+    <p class="chips-note">כך או כך, שום אודיו לא נשלח לשום מקום. <span class="soon-key">בקרוב</span> הבחירה תהיה גם לכל פגישה בנפרד, כך שפגישה רגישה אחת תישאר מקומית והשאר ימשיכו כרגיל.</p>
   </section>
 
   <!-- HEBREW -------------------------------------------------------------->
@@ -427,7 +418,7 @@
     <p class="eyebrow">אמון</p>
     <h2>הפגישות שלכם נשארות שלכם.</h2>
     <div class="tiles">
-      <div class="tile"><svg class="ic"><use href="#i-laptop"/></svg><b>אף ספק לא שומע</b><span>מוקלט ומתומלל על המחשב שלכם</span></div>
+      <div class="tile"><svg class="ic"><use href="#i-laptop"/></svg><b>נשאר על המחשב</b><span>מוקלט ומתומלל שם, לא עולה לענן</span></div>
       <div class="tile"><svg class="ic"><use href="#i-user"/></svg><b>בלי חשבון</b><span>אין צורך להירשם לשום דבר</span></div>
       <div class="tile"><svg class="ic"><use href="#i-disk"/></svg><b>שום דבר לא הולך לאיבוד</b><span>נשמר תוך כדי הקלטה, לא רק בסוף</span></div>
       <div class="tile"><svg class="ic"><use href="#i-clock"/></svg><b>אתם מחליטים מה נשמר</b><span>ההקלטות נמחקות אחרי <span data-audio-days>30</span> יום; הסיכומים נשארים</span></div>

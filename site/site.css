@@ -394,9 +394,10 @@ footer{font-size:var(--t-label)}
 /* ---- the dial: three ways to run it ---- */
 .dial{position:relative}
 .dial .he-sub{margin-bottom:8px}
-.track-line{max-width:var(--maxw);height:2px;margin-top:34px;border-radius:2px;
+.track-line{max-width:900px;height:2px;margin-top:34px;border-radius:2px;
   background:linear-gradient(90deg,var(--good),var(--cyan) 50%,var(--indigo))}
 .stops{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.stops.two{grid-template-columns:repeat(2,1fr);max-width:900px}
 .stop{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 22px 22px}
 .stop::before{content:"";position:absolute;top:-7px;inset-inline-start:26px;width:12px;height:12px;border-radius:50%;
   background:var(--bg);border:2px solid var(--s4)}
