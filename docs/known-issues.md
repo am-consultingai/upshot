@@ -28,9 +28,21 @@ console attached.
 ### 3. The interface is well behind the category
 
 `UX-PRIOR-ART.md` (2026-09-04) compares this against Granola, Circleback, Fireflies, Otter,
-Fathom, Meetily and Hyprnote. The short version: no search across meetings, no empty
-state, no list view beside the calendar, no export, and the settings screen is a flat
-stack of controls. Most of the gap is presentation of data the app already computes.
+Fathom, Meetily and Hyprnote.
+
+**That document is now stale and overstates the gap.** It claims we have no search across
+meetings, no list view beside the calendar, no click-to-seek and a flat settings screen; all
+four shipped afterwards, and it still describes the `notes.json` schema removed on
+2026-09-06. It was the first thing read in the 2026-09-20 review and it sent that review the
+wrong way for twenty minutes. Rewrite it before quoting it again.
+
+What was still missing on 2026-09-20, and has since been done: results that show the
+sentence that matched rather than a bare title, Markdown export, action items as objects with
+an owner and a checkbox (**D47**), and a calendar that opens on the working day instead of at
+00:00.
+
+Still open from that list: an editable summary, chat scoped to a meeting, speaker names in
+place of `ME`/`THEM`, and organisation by person or tag.
 
 ---
 
@@ -113,11 +125,19 @@ Measured on the AppsFlyer meeting (25 KB of Hebrew, two 6,000-token windows plus
 It generates the whole document including layout, so output tokens rise sharply. Worth
 knowing before pointing it at a backlog.
 
-### 10. No structured data for cross-meeting features
+### 10. No structured data for cross-meeting features — **closed 2026-09-20**
 
 Action items, decisions and participants were the basis for anything that reads across
 meetings — an action-item inbox, per-person views, "what did I promise this week". None of
 that is possible against opaque HTML.
+
+**Closed** by **D47**: the envelope now carries an optional `action_items` array beside
+`summary_html`, stored in an `action_items` table and read across meetings by
+`GET /api/action-items` and the inbox screen. The document itself is still entirely the
+prompt's — the list repeats what the model already wrote rather than shaping it.
+
+Decisions and participants are still HTML-only. Nobody has asked for them yet, and the same
+mechanism would extend to them if they do.
 
 ---
 

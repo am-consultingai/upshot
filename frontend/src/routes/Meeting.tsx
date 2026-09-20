@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Job } from "../api";
 import { useI18n } from "../i18n";
@@ -10,6 +10,8 @@ import InviteCard from "../components/InviteCard";
 import StateBadge from "../components/StateBadge";
 import BusyButton, { Spinner } from "../components/BusyButton";
 import AudioPlayer, { type AudioPlayerHandle } from "../components/AudioPlayer";
+import ActionItemRow from "../components/ActionItemRow";
+import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
 
 function contentDirection(language: string | null): "rtl" | "ltr" {
   return language === "he" ? "rtl" : "ltr";
@@ -22,6 +24,22 @@ const STAGE_LABEL: Record<string, MessageKey> = {
   summarize: "meeting.stageSummarize",
   render: "meeting.stageRender",
   deliver: "meeting.stageDeliver",
+};
+
+/**
+ * What a failed stage says in the user's terms.
+ *
+ * "summarize failed after attempts (0)" told the reader nothing they could use: not
+ * what "summarize" is as a noun, not whether the recording survived, not whether
+ * pressing the button costs money or five seconds. The technical detail is still
+ * here — it is just no longer the whole message.
+ */
+const FAILED_WHILE: Record<string, MessageKey> = {
+  transcribe: "meeting.failedWhileTranscribe",
+  assemble: "meeting.failedWhileAssemble",
+  summarize: "meeting.failedWhileSummarize",
+  render: "meeting.failedWhileRender",
+  deliver: "meeting.failedWhileDeliver",
 };
 
 /** The stage actually working, else the first one waiting. */
@@ -63,6 +81,26 @@ export default function MeetingPage() {
     queryFn: () => api.transcript(id),
     retry: false,
   });
+
+  /*
+   * Arrived from a search hit: play from the moment that matched.
+   *
+   * Waits on the transcript rather than firing on mount, because the player is only
+   * rendered once the meeting has audio, and seeking a <audio> that is not in the
+   * document yet does nothing at all. Done once per `at`, so scrubbing afterwards
+   * is not yanked back by a re-render.
+   */
+  const [params] = useSearchParams();
+  const at = params.get("at");
+  const seeked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!at || seeked.current === at || !transcript.data) return;
+    const seconds = Number(at) / 1000;
+    if (!Number.isFinite(seconds)) return;
+    seeked.current = at;
+    playerRef.current?.seek(seconds);
+    setPlayhead(seconds);
+  }, [at, transcript.data]);
   // Summarizing is the one pipeline stage worth running on demand: it is the only one
   // whose output you might want again after editing the prompt, and re-running it costs
   // tokens, so it stays a deliberate press rather than anything automatic.
@@ -158,6 +196,20 @@ export default function MeetingPage() {
     }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  const [exported, setExported] = useState(false);
+  const exportMarkdown = (html: string) => {
+    const text = summaryToMarkdown(html, meeting.data?.title ?? null);
+    const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = markdownFilename(meeting.data?.title ?? null, id);
+    link.click();
+    // Revoked on the next tick: Safari needs the object alive when the click is handled.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    setExported(true);
+    window.setTimeout(() => setExported(false), 2000);
   };
 
   const dir = useMemo(
@@ -332,6 +384,18 @@ export default function MeetingPage() {
             {copied ? t("meeting.copied") : t("meeting.copy")}
           </button>
         )}
+        {summary.data && (
+          /* Copy is for mail and chat, which take the layout. Markdown is for a repo,
+             a ticket or Notion, which do not. */
+          <button
+            type="button"
+            data-testid="export-markdown"
+            onClick={() => exportMarkdown(summary.data as string)}
+            className="rounded-sm bg-surface-2 px-2 py-1 text-xs text-secondary hover:text-primary"
+          >
+            {exported ? t("meeting.copied") : t("meeting.exportMarkdown")}
+          </button>
+        )}
         {working && (
           <span
             className="inline-flex items-center gap-1.5 text-xs text-secondary"
@@ -358,14 +422,29 @@ export default function MeetingPage() {
       {failed.length > 0 && (
         <div
           data-testid="stage-failed"
-          className="mb-4 rounded-lg bg-danger-quiet p-3 text-sm text-danger"
+          className="mb-4 rounded-lg bg-danger-quiet p-3 text-sm"
         >
+          <p className="font-medium text-danger">{t("meeting.failedLead")}</p>
           {failed.map((job) => (
-            <p key={job.stage}>
-              <strong>{job.stage}</strong> {t("meeting.stageFailed")} ({job.attempts})
-              {job.last_error ? `: ${job.last_error}` : ""}
+            <p key={job.stage} data-testid="failed-stage" data-stage={job.stage} className="text-danger">
+              {t(FAILED_WHILE[job.stage] ?? "meeting.failedWhileWorking")}
             </p>
           ))}
+          {/* The two questions the reader actually has, answered before the trace. */}
+          <p className="mt-1.5 text-secondary">{t("meeting.failedSafe")}</p>
+          <p className="text-secondary">{t("meeting.failedRetryHere")}</p>
+          {failed.some((job) => job.last_error) && (
+            <details data-testid="failed-detail" className="mt-2">
+              <summary className="cursor-pointer text-xs text-tertiary">
+                {t("meeting.failedDetail")}
+              </summary>
+              {failed.map((job) => (
+                <p key={job.stage} className="mt-1 font-mono text-2xs text-tertiary">
+                  {job.stage} ({job.attempts}){job.last_error ? `: ${job.last_error}` : ""}
+                </p>
+              ))}
+            </details>
+          )}
         </div>
       )}
       {summary.data ? (
@@ -379,6 +458,22 @@ export default function MeetingPage() {
         <p data-testid="no-summary" className="mb-6 text-sm text-secondary">
           {t("meeting.notRendered")}
         </p>
+      )}
+
+      {/*
+       * The commitments this summary recorded, as objects rather than as sentences
+       * inside the HTML. Same rows the inbox reads, so ticking one here ticks it
+       * there — which is the whole reason the envelope now carries them.
+       */}
+      {(meeting.data.action_items?.length ?? 0) > 0 && (
+        <section data-testid="meeting-actions" className="mb-8">
+          <h2 className="mb-1 text-xs font-medium text-tertiary">{t("meeting.actionItems")}</h2>
+          <ul>
+            {(meeting.data.action_items ?? []).map((item) => (
+              <ActionItemRow key={item.id} item={item} showMeeting={false} />
+            ))}
+          </ul>
+        </section>
       )}
 
       <h2 className="mb-3 text-xs font-medium text-tertiary">{t("meeting.transcript")}</h2>

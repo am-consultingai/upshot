@@ -301,10 +301,16 @@ class FakeLlm:
         lines = [line for line in user.splitlines() if line.strip()]
         first = lines[0][:110] if lines else "Meeting"
         body = "".join(f"<p>{line[:200]}</p>" for line in lines[:5])
-        return LlmResult(
-            data={"summary_html": f"<h1>{first}</h1>{body}", "title": first},
-            model="fake",
-        )
+        data: dict[str, Any] = {"summary_html": f"<h1>{first}</h1>{body}", "title": first}
+        # Two believable commitments, so the demo and the e2e specs exercise the inbox
+        # rather than an empty screen. Only when the caller asked for them: the probe
+        # schemas above must keep getting exactly what they requested.
+        if "action_items" in properties:
+            data["action_items"] = [
+                {"who": "ME", "what": f"follow up on {first[:60]}", "due": "this week"},
+                {"who": "THEM", "what": "send the numbers we agreed"},
+            ]
+        return LlmResult(data=data, model="fake")
 
     def count_tokens(self, text: str) -> int:
         return int(len(text) / self.chars_per_token) + 1

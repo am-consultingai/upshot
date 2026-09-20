@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { firstMinute } from "../src/components/TimeGrid";
 import {
   addDays,
   bucketByDay,
@@ -164,5 +165,28 @@ describe("calendar events on the grid", () => {
     expect(isHappening(event, new Date("2026-09-21T08:51:00Z"))).toBe(true);
     expect(isHappening(event, new Date("2026-09-21T09:29:00Z"))).toBe(true);
     expect(isHappening(event, new Date("2026-09-21T09:30:00Z"))).toBe(false);
+  });
+});
+
+describe("the grid opens on the working day", () => {
+  it("aims a little above the earliest meeting", () => {
+    // 09:30 with half an hour of air.
+    expect(firstMinute(["2026-09-20T09:30:00"])).toBe(9 * 60);
+  });
+
+  it("takes the earliest across every day shown", () => {
+    expect(firstMinute(["2026-09-22T14:00:00", "2026-09-20T08:15:00"])).toBe(7 * 60 + 45);
+  });
+
+  it("falls back to the start of the working day on an empty week", () => {
+    expect(firstMinute([])).toBe(8 * 60);
+  });
+
+  it("never scrolls above midnight for an early meeting", () => {
+    expect(firstMinute(["2026-09-20T00:10:00"])).toBe(0);
+  });
+
+  it("ignores a start it cannot read", () => {
+    expect(firstMinute(["not a date"])).toBe(8 * 60);
   });
 });

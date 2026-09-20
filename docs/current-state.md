@@ -262,6 +262,41 @@ The frontend must be built once (`cd frontend && npm ci && npm run build`).
 
 ---
 
+## 7. Reading across meetings (2026-09-20)
+
+A product review, done in the character of a product manager in six or seven meetings a
+day, found the core loop good and the product unadopted for a reason none of the interface
+work had touched: **nothing read across meetings.** Seven well-written documents, and no
+way to answer "what did I promise this week, and to whom".
+
+What shipped in response:
+
+- **Action items as data.** The envelope is now `{summary_html, title?, action_items?[]}`.
+  The model still writes whatever document it likes and then repeats the commitments in it;
+  nothing rearranges `summary_html`. Stored in an `action_items` table, optional and
+  forgiving, and `done_at` is the user's and survives a re-summarize. **D47**, closing
+  `known-issues.md` #10.
+- **An inbox across meetings** at `/actions`, grouped by owner with mine first, checkable
+  in place. The empty detail pane on the library screen shows what is still open instead of
+  a sentence.
+- **Capture stops being decided in silence.** `detection.mode` still defaults to `shadow`
+  — watching, never recording — but `detection.decided` is false until the user has been
+  asked, and the library asks. An install that reaches its second day recording nothing by
+  accident was the failure worth preventing.
+- **Search answers with the sentence.** `GET /api/search` returns hits — the matching line
+  with the term marked, the speaker, the moment — and a result lands on that moment.
+- **Failures speak to the user.** "summarize failed after attempts (0)" became what
+  stopped, that the recording is safe, and what the button will do, with the trace behind a
+  disclosure. The invitation line no longer appears on healthy meetings.
+- **Markdown export**, beside Copy. SMTP delivery stays deferred: `app/mail.py` implements
+  it and nothing in the frontend calls it.
+- **The calendar opens on the working day** rather than at 00:00, and opening it no longer
+  silently range-filters the meeting list beside it.
+
+Not done from that review: speaker names in place of `ME`/`THEM`.
+
+---
+
 ## 6. Known issues
 
 Moved to `known-issues.md` on 2026-09-06, and extended there with everything this session

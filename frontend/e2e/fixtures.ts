@@ -15,6 +15,8 @@ export interface SeedMeeting {
   turns?: { speaker: string; at_ms: number; text: string }[];
   summary_html?: string;
   notes?: Record<string, unknown>;
+  /** Action items, as a summary would have left them. `done` ticks one off. */
+  action_items?: { who?: string; what: string; due?: string; at_ms?: number; done?: boolean }[];
   /** Write this many seconds of real two-track audio, so the page shows a player. */
   audio_seconds?: number;
   /** Pretend the retention sweep already removed this meeting's audio. */

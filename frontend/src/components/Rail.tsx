@@ -23,6 +23,13 @@ import type { MessageKey } from "../locales/en";
 const ITEMS: { to: string; key: MessageKey; testid: string; path: string }[] = [
   { to: "/", key: "nav.timeline", testid: "nav-timeline", path: "M2.5 4h11M2.5 8h11M2.5 12h7" },
   {
+    to: "/actions",
+    key: "nav.actions",
+    testid: "nav-actions",
+    // A ticked box: the one screen in the app you act on rather than read.
+    path: "M3 8.5 6.2 11.6 13 4.8",
+  },
+  {
     to: "/search",
     key: "nav.search",
     testid: "nav-search",

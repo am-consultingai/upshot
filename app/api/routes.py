@@ -66,6 +66,10 @@ class MeetingPatch(BaseModel):
     discard: bool | None = None
 
 
+class ActionItemPatch(BaseModel):
+    done: bool
+
+
 class SettingsPut(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
@@ -116,6 +120,9 @@ def status(request: Request) -> dict[str, Any]:
         },
         "detector": {
             "mode": svc.config.get("detection.mode"),
+            # False until the user has answered how capture should work; the library
+            # asks until they do rather than letting the default decide in silence.
+            "decided": bool(svc.config.get("detection.decided", False)),
             "state": getattr(detector, "state", "idle") if detector else "off",
         },
         "queue": svc.queue.counts(),
@@ -221,6 +228,10 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     from app.audio.writer import track_summary
 
     payload["audio_tracks"] = track_summary(meeting.path)
+    # Rendered as checkboxes beside the summary, and the same rows the inbox reads.
+    payload["action_items"] = [
+        item.as_dict() for item in svc.dao.action_items(meeting_id=meeting.id)
+    ]
     return payload
 
 
@@ -236,6 +247,69 @@ def list_meetings(
     svc = services_of(request)
     meetings = svc.dao.list_meetings(frm=from_, to=to, q=q, state=state, limit=limit)
     return {"meetings": [meeting.as_dict() for meeting in meetings], "count": len(meetings)}
+
+
+@router.get("/search")
+def search(request: Request, q: str = "", limit: int = 50) -> dict[str, Any]:
+    """Hits, not titles: the sentence that matched, who said it, and when.
+
+    ``/meetings?q=`` answers "which meetings mention this", which left the Search
+    screen showing four identical-looking rows that each had to be opened to find
+    out whether they were the right one. This answers "show me the sentence".
+    """
+    svc = services_of(request)
+    hits = svc.dao.search(q, limit=limit)
+    titles = {
+        meeting.id: (meeting.title, meeting.started_at)
+        for meeting in svc.dao.list_meetings(limit=10_000)
+    }
+    return {
+        "q": q,
+        "hits": [
+            {
+                "meeting_id": hit.meeting_id,
+                "meeting_title": titles.get(hit.meeting_id, (None, None))[0],
+                "meeting_started_at": titles.get(hit.meeting_id, (None, None))[1],
+                "speaker": hit.speaker,
+                "at_ms": hit.at_ms,
+                "text": hit.text,
+                "snippet": hit.snippet,
+            }
+            for hit in hits
+        ],
+        "count": len(hits),
+    }
+
+
+@router.get("/action-items")
+def list_action_items(
+    request: Request,
+    open_only: bool = Query(default=False, alias="open"),
+    meeting_id: str | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Every commitment the summaries recorded, across every meeting.
+
+    The point of the whole structured-envelope change: "what did I promise this week,
+    and to whom" answered without opening a meeting.
+    """
+    svc = services_of(request)
+    items = svc.dao.action_items(meeting_id=meeting_id, open_only=open_only, limit=limit)
+    return {
+        "items": [item.as_dict() for item in items],
+        "count": len(items),
+        "open": sum(1 for item in items if not item.done),
+    }
+
+
+@router.patch("/action-items/{item_id}")
+def patch_action_item(request: Request, item_id: int, body: ActionItemPatch) -> dict[str, Any]:
+    svc = services_of(request)
+    item = svc.dao.set_action_done(item_id, done=body.done)
+    if item is None:
+        raise HTTPException(404, "no such action item")
+    svc.events.publish("action-item", item_id=item_id, done=item.done)
+    return item.as_dict()
 
 
 @router.get("/meetings/{meeting_id}")
@@ -901,18 +975,28 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
     payload = calendar_payload(meeting)
     ref = payload.get("event") or {}
     if (payload.get("match") or {}).get("state") != "matched" or not ref:
-        return {"available": False, "reason": "no calendar event is matched to this recording"}
+        # Not an error. A manually started recording normally has no invitation, and
+        # an error-toned line on every healthy meeting trains the reader to ignore all
+        # of them — including the ones that mean something. `code` lets the page tell
+        # the difference without matching on prose.
+        return {"available": False, "code": "unmatched", "reason": "no calendar event is matched"}
     if svc.calendar_invites is None:
-        return {"available": False, "reason": "no calendar connection in this process"}
+        return {
+            "available": False,
+            "code": "no_connection",
+            "reason": "no calendar connection in this process",
+        }
     try:
         invite = svc.calendar_invites.fetch(str(ref["calendar_id"]), str(ref["event_id"]))
     except CalendarAuthError as exc:
-        return {"available": False, "reason": str(exc), "reconnect": True}
+        return {"available": False, "code": "auth", "reason": str(exc), "reconnect": True}
     except CalendarUnavailable as exc:
-        return {"available": False, "reason": f"Google could not be reached ({exc})."}
+        reason = f"Google could not be reached ({exc})."
+        return {"available": False, "code": "offline", "reason": reason}
     except Exception as exc:  # a deleted event answers 404; that is an answer, not a fault
         log.info("invite unavailable for %s: %s", meeting_id, exc)
-        return {"available": False, "reason": "this event is no longer in the calendar"}
+        reason = "this event is no longer in the calendar"
+        return {"available": False, "code": "deleted", "reason": reason}
     return {"available": True, "invite": invite.as_api()}
 
 
@@ -1433,6 +1517,28 @@ def test_router() -> APIRouter:
                     ),
                     title_source="calendar",
                 )
+            if item.get("action_items"):
+                # As a summary would have left them, so the inbox can be exercised
+                # without running a model.
+                svc.dao.replace_action_items(
+                    meeting.id,
+                    [
+                        (
+                            str(entry.get("who", "ME")),
+                            str(entry["what"]),
+                            entry.get("due"),
+                            entry.get("at_ms"),
+                        )
+                        for entry in item["action_items"]
+                    ],
+                )
+                for entry, row in zip(
+                    item["action_items"],
+                    svc.dao.action_items(meeting_id=meeting.id),
+                    strict=False,
+                ):
+                    if entry.get("done"):
+                        svc.dao.set_action_done(row.id, done=True)
             if item.get("audio_seconds"):
                 _seed_audio(svc, folder, float(item["audio_seconds"]))
             if item.get("audio_deleted_at"):

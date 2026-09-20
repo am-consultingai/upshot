@@ -33,6 +33,41 @@ export interface AudioTrack {
   bytes: number;
 }
 
+/**
+ * One commitment a summary recorded, as data rather than as a sentence in the HTML.
+ *
+ * The model still writes whatever document it likes; it is now also asked to repeat
+ * the action items inside it, which is what makes an inbox across meetings possible
+ * at all. `done` is the user's and survives re-summarizing.
+ */
+export interface ActionItem {
+  id: number;
+  meeting_id: string;
+  seq: number;
+  who: string;
+  what: string;
+  due: string | null;
+  at_ms: number | null;
+  /** The owner resolved to the person running this recorder. */
+  mine: boolean;
+  done: boolean;
+  done_at: string | null;
+  meeting_title: string | null;
+  meeting_started_at: string | null;
+}
+
+/** One transcript turn that matched a search, with the sentence it matched in. */
+export interface SearchHit {
+  meeting_id: string;
+  meeting_title: string | null;
+  meeting_started_at: string | null;
+  speaker: string;
+  at_ms: number;
+  text: string;
+  /** The match with `[` `]` around the term, from SQLite's own snippet(). */
+  snippet: string;
+}
+
 export interface MeetingDetail extends Meeting {
   audio_tracks?: Record<string, AudioTrack>;
   jobs: Job[];
@@ -40,6 +75,7 @@ export interface MeetingDetail extends Meeting {
   /** When the retention policy removed the raw audio. Null while it is still there. */
   audio_deleted_at?: string | null;
   calendar?: MeetingCalendar | null;
+  action_items?: ActionItem[];
 }
 
 /** The Google Calendar connection. Never carries a token. */
@@ -115,7 +151,7 @@ export interface Status {
     meeting_id: string | null;
     levels: Record<string, number>;
   };
-  detector: { mode: string; state: string };
+  detector: { mode: string; state: string; decided?: boolean };
   queue: Record<string, number>;
   queue_depth: number;
   disk_free_bytes: number;
@@ -315,7 +351,14 @@ export const api = {
   calendarForget: () =>
     request<CalendarStatus & { deleted: number }>("/api/calendar/cache", { method: "DELETE" }),
   meetingInvite: (id: string) =>
-    request<{ available: boolean; reason?: string; reconnect?: boolean; invite?: Invite }>(
+    request<{
+      available: boolean;
+      /** Why, machine-readably: "unmatched" and "no_connection" are the normal cases. */
+      code?: "unmatched" | "no_connection" | "auth" | "offline" | "deleted";
+      reason?: string;
+      reconnect?: boolean;
+      invite?: Invite;
+    }>(
       `/api/meetings/${id}/invite`,
     ),
   meetingCalendar: (id: string) =>
@@ -330,6 +373,19 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  actionItems: (params: Record<string, string> = {}) =>
+    request<{ items: ActionItem[]; count: number; open: number }>(
+      `/api/action-items?${new URLSearchParams(params).toString()}`,
+    ),
+  setActionDone: (id: number, done: boolean) =>
+    request<ActionItem>(`/api/action-items/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ done }),
+    }),
+  search: (q: string) =>
+    request<{ q: string; hits: SearchHit[]; count: number }>(
+      `/api/search?${new URLSearchParams({ q }).toString()}`,
+    ),
   detectorEvents: () =>
     request<{ events: DetectorEvent[] }>("/api/detector/events?limit=50"),
   audioUrl: (id: string, track: string) =>

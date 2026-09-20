@@ -115,7 +115,17 @@ DEFAULTS: dict[str, Any] = {
         "echo_window_s": 60,  # the stretch it is fitted on, chosen where THEM is loudest
     },
     "detection": {
-        "mode": "shadow",  # shadow|on|off
+        # shadow|on|off. "shadow" watches and scores but never starts a recording, so
+        # out of the box nothing is captured unless the red button is pressed — and
+        # nobody joining a call three minutes late remembers the red button. The
+        # conservative default is a deliberate privacy choice and it stays, but it is
+        # no longer allowed to be a *silent* one: `decided` below is false until the
+        # user has been asked, and the library offers the choice until they answer.
+        "mode": "shadow",
+        # Whether the user has ever been asked how capture should work. An install that
+        # reaches its second day still recording nothing by accident is the failure
+        # this exists to prevent.
+        "decided": False,
         "sources": "windows",  # windows|fake
         "threshold": 5,
         # How long the score must hold before a wake counts. It guards against a

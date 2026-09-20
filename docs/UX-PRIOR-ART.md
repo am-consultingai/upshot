@@ -3,6 +3,24 @@
 Scanned 2026-09-04. Companion to `PRIOR-ART.md`, which asked *should we build this*.
 This one asks *why does ours look unfinished next to them*.
 
+> **Revised 2026-09-20.** The survey of other products below is unchanged and still
+> accurate — it was sourced from their own documentation. **The claims about *us* were
+> not.** Several things this document lists as missing had shipped by the time anyone
+> read it back, and it still describes the `notes.json` schema removed on 2026-09-06.
+> It was the first thing read in the 2026-09-20 product review and it sent that review
+> the wrong way for twenty minutes, so §3 now marks what is done. A gap document that
+> overstates the gap stops being used.
+>
+> **Shipped since this was written:** search across meetings (now returning the matching
+> sentence, not a bare title), a list view beside the calendar, click-to-seek on every
+> transcript turn, a grouped settings screen, a real empty state, a persistent player
+> with speed control, keyboard navigation, a command palette, dark mode, action items as
+> objects with an owner and a checkbox (**D47**), an action-item inbox across meetings,
+> Markdown export, and a calendar that opens on the working day.
+>
+> **Still open:** an editable summary, chat scoped to a meeting, speaker names in place of
+> `ME`/`THEM`, find-in-transcript, and organisation by person or tag.
+
 **Sourcing caveat, stated once.** I did not install and drive these products. Everything
 below comes from vendor documentation, help centres, a live shared Circleback note, and
 hands-on reviews — cited inline. Claims from a help centre or a real artefact are
@@ -181,35 +199,40 @@ Ordered by how much each closes the "looks unfinished" gap per unit of work.
 
 ### Meeting screen — where almost all the deficit is
 
-| # | Change | Why | Evidence |
-|---|---|---|---|
-| 1 | **Render `notes.json` as structure, not HTML.** Overview, topic headings, decisions, action items as typed sections | We already produce all of it and then flatten it | Circleback, Otter outline |
-| 2 | **Action items with owner + checkbox** | The schema has `who`/`what`/`due`; prose throws it away | Circleback |
-| 3 | **Click a timestamp → seek the audio.** Every quote and decision carries `at_ms` | The category's defining interaction, and we're one `onClick` from it | Fathom, Otter |
-| 4 | **Two panes: summary ⇔ transcript**, each collapsible | Category standard; we stack them in one column | Fireflies, Meetily |
-| 5 | **Find-in-transcript** | Expected in every product examined | Fireflies |
-| 6 | **Editable summary** | Ours is read-only; every competitor's is not | Granola, Fireflies |
-| 7 | **Persistent bottom playback bar** with speed and ±5s | Ours is a bare `<audio>` element | Otter |
-| 8 | Speaker rename by clicking a speaker in the transcript | We label `ME`/`THEM`; real names are the point | Otter, Hyprnote |
-| 9 | Export — Markdown and PDF | Assumed everywhere; paywalled by Meetily | Meetily, Fireflies |
-| 10 | Chat scoped to the meeting | Now table stakes | AskFred, Otter Chat, Circleback |
+**Status as of 2026-09-20** is in the right-hand column. Items 1 and 2 were overtaken by
+events: the structured `notes.json` schema they refer to was deleted on 2026-09-06, and
+action items came back a different way — as an optional array beside the free-form
+document rather than as fields the document is built from (**D47**).
+
+| # | Change | Why | Evidence | Status |
+|---|---|---|---|---|
+| 1 | **Render `notes.json` as structure, not HTML.** Overview, topic headings, decisions, action items as typed sections | We already produce all of it and then flatten it | Circleback, Otter outline | **Rejected.** The schema is gone; the prompt owns the document (D46, D47) |
+| 2 | **Action items with owner + checkbox** | The schema has `who`/`what`/`due`; prose throws it away | Circleback | **Done** differently — D47 |
+| 3 | **Click a timestamp → seek the audio.** Every quote and decision carries `at_ms` | The category's defining interaction, and we're one `onClick` from it | Fathom, Otter | **Done** — `Meeting.tsx`, and search results land on the moment |
+| 4 | **Two panes: summary ⇔ transcript**, each collapsible | Category standard; we stack them in one column | Fireflies, Meetily | Open |
+| 5 | **Find-in-transcript** | Expected in every product examined | Fireflies | Open — search across meetings exists; within one does not |
+| 6 | **Editable summary** | Ours is read-only; every competitor's is not | Granola, Fireflies | Open |
+| 7 | **Persistent bottom playback bar** with speed and ±5s | Ours is a bare `<audio>` element | Otter | **Done** — `AudioPlayer.tsx` |
+| 8 | Speaker rename by clicking a speaker in the transcript | We label `ME`/`THEM`; real names are the point | Otter, Hyprnote | Open |
+| 9 | Export — Markdown and PDF | Assumed everywhere; paywalled by Meetily | Meetily, Fireflies | Markdown **done**; PDF open. SMTP delivery deferred 2026-09-20 |
+| 10 | Chat scoped to the meeting | Now table stakes | AskFred, Otter Chat, Circleback | Open |
 
 ### Timeline screen
 
-| # | Change | Why |
-|---|---|---|
-| 1 | **Search across meetings** — one persistent box | FTS already exists in the schema; its absence is conspicuous |
-| 2 | **A real empty state** — what the app is, how to start one, that it is local | First-run currently shows an empty grid |
-| 3 | **A list view alongside the calendar**, with title, duration, participants, state | A calendar alone is poor for retrieval |
-| 4 | Meeting cards showing a one-line TL;DR and action-item count | Turns the list into something scannable |
-| 5 | Filters — has summary / needs review / failed | Cheap given the state machine |
-| 6 | Grouping by person or tag | Granola's sidebar model |
+| # | Change | Why | Status |
+|---|---|---|---|
+| 1 | **Search across meetings** — one persistent box | FTS already exists in the schema; its absence is conspicuous | **Done**, and results now carry the matching sentence |
+| 2 | **A real empty state** — what the app is, how to start one, that it is local | First-run currently shows an empty grid | **Done**; the empty detail pane now shows what is still open |
+| 3 | **A list view alongside the calendar**, with title, duration, participants, state | A calendar alone is poor for retrieval | **Done** — the List/Calendar toggle |
+| 4 | Meeting cards showing a one-line TL;DR and action-item count | Turns the list into something scannable | Open |
+| 5 | Filters — has summary / needs review / failed | Cheap given the state machine | Open |
+| 6 | Grouping by person or tag | Granola's sidebar model | Partly — the inbox groups action items by person |
 
 ### Settings screen
 
-| # | Change | Why |
-|---|---|---|
-| 1 | **Group into sections** with headings — Recording, Transcription, Summaries, Privacy | Currently a flat stack of controls |
+| # | Change | Why | Status |
+|---|---|---|---|
+| 1 | **Group into sections** with headings — Recording, Transcription, Summaries, Privacy | Currently a flat stack of controls | **Done** — six named sections |
 | 2 | **Say the privacy story out loud**: audio and transcripts never leave this machine; here is where they live; here is what each provider sends | Our strongest differentiator, currently invisible | 
 | 3 | **Promote the prompt editor to named templates** you can pick per meeting | Fireflies' summary-format dropdown |
 | 4 | Show storage location and disk used, with a purge control | Meetily surfaces this |
@@ -229,6 +252,9 @@ Ordered by how much each closes the "looks unfinished" gap per unit of work.
 
 ## 4. The honest summary
 
+*(Written 2026-09-04; the diagnosis was overtaken by D46 and then answered by D47. Kept
+because the reasoning is worth reading against what actually happened.)*
+
 Very little of the gap is missing *capability*. We already record two tracks, transcribe
 locally, produce a schema-validated summary with owners, due dates and millisecond
 timestamps, and hold it all on the user's own machine — which is more than several
@@ -240,6 +266,17 @@ screen renders it as one undifferentiated block of HTML with a bare audio elemen
 it. Items 1–3 under *Meeting screen* are essentially presentation work on data we already
 compute, and they are most of the distance between this and something that looks like the
 products above.
+
+**What actually happened.** Two days later the schema was deleted outright (D46-era work):
+it was the thing stopping an edited prompt from changing anything, so "render the structure
+we already have" stopped being available as an answer. The structure came back on
+2026-09-20 from the other direction — the model writes its document and then repeats the
+commitments in it as data (**D47**) — which is what an action-item inbox needed.
+
+**And the diagnosis was incomplete.** It read the gap as presentational, and most of the
+presentational items did get built. The 2026-09-20 review found the thing that was actually
+deciding adoption was not on this list at all: nothing in the product read *across*
+meetings. A person in seven meetings a day does not have a filing problem.
 
 ---
 

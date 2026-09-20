@@ -1073,3 +1073,50 @@ and an OpenAI engineer asked directly declined to answer and pointed at the Term
 That is an unanswered question, not a refusal. Build it the same way, ship it the same way —
 never the default, the user's own CLI and sign-in, no credential intermediation — and
 re-check before release.
+
+---
+
+## D47 — Action items come back as data, and the document stays the model's
+
+**2026-09-20.** D46's predecessor removed `NOTES_SCHEMA` because nine fixed fields plus a
+Jinja template meant an edited prompt could change wording but never structure — which is
+not what a prompt editor implies. That was right, and it stays. What it also did, recorded
+honestly in `known-issues.md` #10, was destroy the basis for anything that reads *across*
+meetings: an action-item inbox, per-person views, "what did I promise this week". None of
+that is possible against opaque HTML.
+
+A review on 2026-09-20, done in the character of a product manager in six or seven meetings
+a day, put a price on that. The verdict was that the app is a filing cabinet, and that she
+does not have a filing problem — she has a follow-through problem. Seven well-written
+documents and a notebook that still wins.
+
+**What changed.** The envelope grew one optional key:
+
+```
+{summary_html, title?, action_items?: [{who, what, due?, at_ms?}]}
+```
+
+**Why this is not the schema coming back.** The old schema *was* the document: nine fields
+in, a template laid them out, and the prompt could not reach past it. This asks the model to
+write whatever document it likes and then **repeat, as data, the commitments already in it**.
+Nothing downstream rearranges `summary_html`; the list adds no section, changes no heading,
+and omitting it costs only the cross-meeting view. The distinction that matters is that the
+structure is now *derived from* the document rather than *imposed on* it.
+
+**Optional, and forgiving, on purpose.** A summary written before this existed must keep
+opening, so the key is not required. A provider that half-honours the request — a string
+where an object belongs, a missing `what` — costs its own item and nothing else
+(`schema.action_items`). The summary is the product; this list is a bonus on top of it, and
+it must never be the reason a meeting has no notes.
+
+**The tick is the user's, and it outlives the model's.** `done_at` lives in the database, not
+in `notes.json`, and re-summarizing carries it forward by matching on the casefolded,
+whitespace-squeezed text. Editing the prompt and pressing Summarize is routine — there is
+deliberately no staleness check on it (D46-era reasoning) — so a checkbox that silently
+reopened itself because the prompt moved would be untrustworthy, and an untrustworthy
+checkbox is worse than no checkbox.
+
+**What it does not fix.** #7 stands: nothing validates a summary. A model that invents an
+owner still produces a valid envelope, and now the invention is a row in a table rather than
+a sentence in a paragraph — more visible, not more true. Attribution on imported transcripts
+remains unreliable by construction, because every imported turn is labelled `THEM`.
