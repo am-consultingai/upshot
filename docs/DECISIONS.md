@@ -1023,3 +1023,53 @@ matched. A meeting is summarized whatever the calendar is doing.
 can name and link it, which needs no permission beyond the calendar scope. Reading what is
 inside one needs a Drive scope, a second sensitive permission on the consent screen, and
 more of Google's verification. Left until it is asked for.
+
+## D46 — The subscription provider, re-checked against a policy that moved three times
+
+D30 was written when Anthropic's position had one part. It now has several, and two of
+them changed after that entry was filed. Checked **2026-09-20**; every date below is when
+the thing happened, so the next reader can tell how stale this is.
+
+**The mechanism is still the documented one.** The Agent SDK overview says, of driving the
+agent loop from another language: *"run the CLI as a subprocess with the `-p` flag and
+`--output-format json`."* That is what `app/llm/claude_cli.py` does, and it is why this
+provider is not a workaround. Anthropic's help centre goes further and names the category
+directly — *"third-party apps that authenticate with your Claude subscription through the
+Agent SDK"* — so an application running on a user's own plan is something they bill for and
+reason about, not a gap in their fence.
+
+**The prohibition, and why we are on the right side of it.** *"Unless previously approved,
+Anthropic does not allow third party developers to offer claude.ai login or rate limits for
+their products."* We offer no login. The machine's owner installs Anthropic's tool and signs
+in through Anthropic's own browser flow; this application never sees, stores or forwards
+that credential, which `test_claude_cli_never_sees_a_credential` asserts structurally.
+
+**What moved.**
+
+* **4 April 2026** — Claude subscriptions stopped covering usage through third-party
+  *harnesses* (OpenClaw and similar): agents that route their own OAuth and run autonomous
+  workloads. The remedies offered were usage bundles or an API key. Spawning Anthropic's own
+  CLI was not what that action was aimed at, but it is the clearest signal available of how
+  this door closes if it closes.
+* **13 May 2026** — a split was announced: Agent SDK, `claude -p`, GitHub Actions and
+  third-party apps on a subscription would move onto a separate monthly credit metered at
+  API list prices.
+* **15 June 2026** — that split was **paused**. Such usage continues to draw on Pro, Max,
+  Team and Enterprise limits *"exactly as before"*, with advance notice promised before any
+  future change.
+
+**A branding rule we were breaking.** The same page permits "Claude Agent" and "Claude" but
+lists "Claude Code" and "Claude Code Agent" as not permitted for a third-party product, and
+asks that the product not appear to be Claude Code. The provider was labelled *"Claude Code
+(your own subscription)"* in Settings; it is now *"Claude Agent (your own subscription)"*.
+Install and sign-in copy still names Claude Code, because that is the software the user has
+to install — naming a prerequisite is not branding a product as it.
+
+**Consequence for the OpenAI equivalent** (epic `z8tj1h9bnj`). Anthropic published both
+halves: how to drive it from another program, and how third-party apps on a subscription are
+treated. OpenAI has published only the first — `codex exec` is documented and supported,
+but nothing states whether a third-party application may drive it on someone's ChatGPT plan,
+and an OpenAI engineer asked directly declined to answer and pointed at the Terms of Use.
+That is an unanswered question, not a refusal. Build it the same way, ship it the same way —
+never the default, the user's own CLI and sign-in, no credential intermediation — and
+re-check before release.

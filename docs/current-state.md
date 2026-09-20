@@ -18,7 +18,7 @@ that way rather than by tests.
   browsable timeline. No cloud service is required. A Google account can be connected, for
   the calendar only, and read-only: it names recordings and tells the app who was there.
 - **Design contract:** `DESIGN.md`, `TECHNICAL-DESIGN.md`, `DETECTION.md`, `STACK.md`,
-  `SECURITY-AND-AUTH.md`. Every judgment call is in `DECISIONS.md` (44 entries).
+  `SECURITY-AND-AUTH.md`. Every judgment call is in `DECISIONS.md` (46 entries).
   Phase-by-phase status is in `PROGRESS.md`. The Windows runbook is `windows-run.md`.
 
 ---

@@ -1,5 +1,13 @@
 # Can the app run inference on a subscription instead of an API key?
 
+> **Re-checked 2026-09-20 — see `DECISIONS.md` D46.** Two of the questions this file left
+> open are now answered: `codex exec` does emit a machine-readable envelope
+> (`--output-schema`, `--output-last-message`, `--json`), and Codex needs no WSL on
+> Windows. The terms question is answered only for Anthropic, who permit the CLI-subprocess
+> path and name third-party apps on a subscription; OpenAI is silent on third parties
+> driving Codex on a plan. Anthropic's policy has moved three times in 2026 (4 April,
+> 13 May, 15 June) — D46 has the dates.
+
 Findings as of **2026-08-29**, verified against each vendor's own documentation rather
 than recalled. The short version:
 
