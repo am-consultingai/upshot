@@ -11,6 +11,7 @@ from typing import Any
 
 from app import glossary as glossary_module
 from app import meta
+from app.llm import schema
 from app.llm.client import LlmClient, LlmResult, make_client, system_blocks
 from app.llm.prompts import load as load_prompt
 from app.llm.schema import FREE_SCHEMA
@@ -247,7 +248,11 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
 
     envelope = (
         "Reply with a JSON object holding `summary_html` — the complete summary as HTML — "
-        "and optionally `title`. Everything about that HTML is yours to decide."
+        "and optionally `title` and `action_items`. Everything about that HTML is yours "
+        "to decide. `action_items` is an array of "
+        '{"who", "what", "due"?, "at_ms"?} repeating the commitments already in your '
+        "document; it adds nothing to the document and omitting it costs only the "
+        "cross-meeting list."
     )
     instruction = language_instruction(language)
     context = meeting_context(ctx)
@@ -260,6 +265,10 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
     parts: list[str] = []
     usage: list[dict[str, Any]] = []
     model_title = ""
+    # Collected per window and merged, because a two-hour meeting is summarized in
+    # pieces and a commitment made in the first hour belongs in the list as much as
+    # one made in the last.
+    items: list[dict[str, Any]] = []
     for window in windows:
         ctx.checkpoint()
         result = client.complete_json(
@@ -273,6 +282,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         usage.append(result.usage)
         parts.append(str(result.data.get("summary_html", "")))
         model_title = model_title or str(result.data.get("title", "") or "").strip()
+        items.extend(schema.action_items(result.data))
         log.info("window %d/%d done", window.index + 1, len(windows))
 
     if len(parts) > 1:
@@ -286,7 +296,11 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         )
         usage.append(merged.usage)
         model_title = str(merged.data.get("title", "") or "").strip() or model_title
-        notes = {"summary_html": str(merged.data.get("summary_html", ""))}
+        notes: dict[str, Any] = {"summary_html": str(merged.data.get("summary_html", ""))}
+        # The merge sees every partial summary, so its list is the deduplicated one.
+        # It is only trusted where it produced something: a model that merged the
+        # documents and dropped the list should not cost the user their action items.
+        items = schema.action_items(merged.data) or items
     else:
         notes = {"summary_html": parts[0]}
     # Title precedence (Calendar 4): the user, then the calendar, then the model, then
@@ -296,10 +310,19 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         ctx.dao.update_meeting(meeting.id, title=model_title[:200], title_source="llm")
         meeting = ctx.refresh()
     notes["title"] = str(meeting.title or model_title or "")
+    notes["action_items"] = items
 
     notes_path(ctx.folder).write_text(
         json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    # Into the database as well as notes.json: the file is this meeting's record, the
+    # table is what lets the inbox read across all of them. Ticks already made survive
+    # this — see Dao.replace_action_items.
+    stored = ctx.dao.replace_action_items(
+        ctx.meeting.id,
+        [(item["who"], item["what"], item["due"], item["at_ms"]) for item in items],
+    )
+    log.info("stored %d action item(s)", stored)
     ctx.dao.update_meeting(ctx.meeting.id, summary_language=language)
     # No sanity gates: they read action_items and owners, which free-form has no notion
     # of. Nothing here is in a position to judge what the prompt asked for.
