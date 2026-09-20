@@ -146,7 +146,7 @@ export const en = {
   "meeting.summarizeQueued": "Queued - this page updates when it is done.",
   "settings.prompt": "Summary prompt",
   "settings.promptHint":
-    "The whole instruction sent with every summary. It decides the structure and layout too - nothing here rearranges what the model writes.",
+    "The whole instruction sent with every summary. It decides the structure and layout too - nothing here rearranges what the model writes. Write {{meeting}} where you want the calendar invitation; leave it out and the invitation goes in front of the transcript instead.",
   "settings.promptFormat": "Response format",
   "settings.formatStructured": "Structured sections",
   "settings.formatFree": "Free-form",

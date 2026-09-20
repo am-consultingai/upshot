@@ -148,6 +148,12 @@ def client_for(ctx: StageContext) -> LlmClient:
     return make_client(ctx.config, sensitive=bool(ctx.meeting.sensitive))
 
 
+#: Optional in an edited prompt: where the calendar invitation should be written. Without
+#: it the invitation goes in front of the transcript instead, so a prompt that never heard
+#: of the calendar still gets the context.
+MEETING_SLOT = "{{meeting}}"
+
+
 def system_text(ctx: StageContext) -> tuple[str, str]:
     """The summarizing instructions, and the version to record against them.
 
@@ -245,6 +251,12 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
     )
     instruction = language_instruction(language)
     context = meeting_context(ctx)
+    # An edited prompt can place the invitation itself. Where it does, the block goes
+    # there and not in front of the transcript, so the prompt in Settings is the prompt
+    # that is sent.
+    if MEETING_SLOT in system:
+        system = system.replace(MEETING_SLOT, context or "")
+        context = None
     parts: list[str] = []
     usage: list[dict[str, Any]] = []
     model_title = ""
