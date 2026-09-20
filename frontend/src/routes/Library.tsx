@@ -77,12 +77,19 @@ export default function Library() {
 
   const days = daysFor(span, anchor);
   const range = rangeFor(span, anchor);
-  const meetings = useQuery({
-    queryKey: view === "calendar" ? ["meetings", range.from, range.to] : ["meetings"],
-    queryFn: () =>
-      view === "calendar"
-        ? api.meetings({ from: range.from, to: range.to, limit: "500" })
-        : api.meetings(),
+  /*
+   * The list is always the whole library; the calendar asks for its own window.
+   *
+   * These used to be one query, so opening the calendar silently range-filtered the
+   * list beside it: the header went from "Timeline 7" to "Timeline 4" with nothing
+   * to explain it, which reads as meetings having been deleted. The list is the
+   * thing you navigate with and it should not change because a different pane did.
+   */
+  const meetings = useQuery({ queryKey: ["meetings"], queryFn: () => api.meetings() });
+  const inRange = useQuery({
+    queryKey: ["meetings", range.from, range.to],
+    queryFn: () => api.meetings({ from: range.from, to: range.to, limit: "500" }),
+    enabled: view === "calendar",
   });
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
   // Google Calendar events, from the local cache. Empty until an account is connected.
@@ -104,6 +111,7 @@ export default function Library() {
   });
 
   const items = meetings.data?.meetings ?? [];
+  const windowed = inRange.data?.meetings ?? [];
   const byDay = groupByDay(items);
   const queued = status.data?.queue_depth ?? 0;
 
@@ -165,7 +173,7 @@ export default function Library() {
             <span
               data-testid="queue-depth"
               title={t("timeline.queued")}
-              className="rounded-full bg-surface-3 px-1.5 text-2xs text-secondary tabular-nums"
+              className="shrink-0 whitespace-nowrap rounded-full bg-surface-3 px-1.5 text-2xs text-secondary tabular-nums"
             >
               {t("timeline.queued")}: {queued}
             </span>
@@ -320,9 +328,9 @@ export default function Library() {
               </div>
             </div>
             {span === "month" ? (
-              <MonthGrid days={days} anchor={anchor} meetings={items} events={events} />
+              <MonthGrid days={days} anchor={anchor} meetings={windowed} events={events} />
             ) : (
-              <TimeGrid days={days} meetings={items} events={events} onEvent={setOpenEvent} />
+              <TimeGrid days={days} meetings={windowed} events={events} onEvent={setOpenEvent} />
             )}
             {openEvent && <EventDetails event={openEvent} onClose={() => setOpenEvent(null)} />}
           </div>

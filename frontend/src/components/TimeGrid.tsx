@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import type { CalendarEvent, Meeting } from "../api";
 import { useI18n } from "../i18n";
@@ -18,6 +19,33 @@ import { timelineLayout } from "../lib/timeline";
 /** Tall enough that a 30-minute meeting is legible, short enough that a day fits a screen. */
 const PX_PER_MINUTE = 0.9;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+
+/**
+ * Where the grid opens when the period has nothing in it.
+ *
+ * The week used to open at 00:00 every time, so the entire working day was below the
+ * fold and the first act on every visit was scrolling past nine empty hours. A
+ * calendar that does not open on your day is not a calendar you use twice.
+ */
+const DEFAULT_HOUR = 8;
+/** A little air above the first meeting, so it does not sit flush against the header. */
+const LEAD_MINUTES = 30;
+
+/** Minutes past midnight of the earliest thing drawn, across every day shown. */
+export function firstMinute(
+  starts: string[],
+  fallbackHour: number = DEFAULT_HOUR,
+): number {
+  let earliest: number | null = null;
+  for (const start of starts) {
+    const at = new Date(start);
+    if (Number.isNaN(at.getTime())) continue;
+    const minute = at.getHours() * 60 + at.getMinutes();
+    if (earliest === null || minute < earliest) earliest = minute;
+  }
+  if (earliest === null) return fallbackHour * 60;
+  return Math.max(0, earliest - LEAD_MINUTES);
+}
 
 function tone(state: string): string {
   if (state === "RECORDING") return "bg-warning-quiet border-warning";
@@ -55,8 +83,49 @@ export default function TimeGrid({
   }
   const dayFormat = new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric" });
 
+  /*
+   * Open on the day, not on midnight.
+   *
+   * Scrolled rather than clipped: the small hours still exist and can be scrolled
+   * back to, which matters for a meeting that genuinely ran at 07:00 or 22:00. The
+   * key is the set of days, so moving to another week re-aims at that week's first
+   * meeting instead of keeping the previous one's scroll.
+   */
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const spanKey = days.map(dayKey).join(",");
+  const openAt = firstMinute([
+    ...meetings.map((meeting) => meeting.started_at),
+    ...shown.map((event) => event.start),
+  ]);
+  /*
+   * Aimed once per period, and only once the period has something in it.
+   *
+   * Both the meetings and the events arrive asynchronously, so the first render of a
+   * week is always empty — computing the scroll position then pinned it to the 08:00
+   * fallback and never corrected itself, which put a 09:30 meeting back below the
+   * fold on a screen built to stop exactly that. Waiting for the first non-empty
+   * render fixes it; keying the guard on the period rather than on the position means
+   * scrolling by hand afterwards is not yanked back, and moving to another week aims
+   * again.
+   */
+  const aimedAt = useRef<string | null>(null);
+  const empty = meetings.length === 0 && shown.length === 0;
+  useEffect(() => {
+    const node = scroller.current;
+    if (!node || aimedAt.current === spanKey) return;
+    // An empty week still opens on the working day, but does not count as aimed: the
+    // data may yet arrive.
+    node.scrollTop = openAt * PX_PER_MINUTE;
+    if (!empty) aimedAt.current = spanKey;
+  }, [spanKey, openAt, empty]);
+
   return (
-    <div data-testid="calendar-timegrid" className="overflow-auto">
+    <div
+      ref={scroller}
+      data-testid="calendar-timegrid"
+      data-open-minute={openAt}
+      className="max-h-[calc(100vh-11rem)] overflow-auto"
+    >
       <div
         className="grid"
         style={{ gridTemplateColumns: `4rem repeat(${days.length}, minmax(6rem, 1fr))` }}

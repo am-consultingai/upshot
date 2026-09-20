@@ -20,11 +20,12 @@ describe("catalogue parity", () => {
   });
 
   /*
-   * The product name is a proper noun and stays in Latin script in both catalogues,
-   * exactly as it does inside Hebrew prose elsewhere ("הופק על ידי Upshot"). It is the
-   * one key where identical strings mean translated, not forgotten.
+   * Proper nouns stay in Latin script in both catalogues, exactly as they do inside
+   * Hebrew prose elsewhere ("הופק על ידי Upshot"). These are the keys where identical
+   * strings mean translated, not forgotten: the product name, and the name of a file
+   * format, which is not translated into Hebrew any more than "PDF" is.
    */
-  const PROPER_NOUNS = new Set(["app.title"]);
+  const PROPER_NOUNS = new Set(["app.title", "meeting.exportMarkdown"]);
 
   it("no translation is left as the English string", () => {
     const identical = Object.keys(en).filter(
