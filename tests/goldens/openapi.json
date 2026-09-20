@@ -1251,6 +1251,48 @@
         "summary": "Choose Meeting Event"
       }
     },
+    "/api/meetings/{meeting_id}/invite": {
+      "get": {
+        "description": "The invitation behind this recording, read from Google now — never from a store.\n\nThe agenda, the links in it and the files attached to it live in the calendar, which\nis where they are maintained. Editing the event changes what this returns; deleting\nit takes it away.",
+        "operationId": "meeting_invite_api_meetings__meeting_id__invite_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Meeting Invite Api Meetings  Meeting Id  Invite Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Meeting Invite"
+      }
+    },
     "/api/meetings/{meeting_id}/jobs/{stage}/retry": {
       "post": {
         "description": "Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.",

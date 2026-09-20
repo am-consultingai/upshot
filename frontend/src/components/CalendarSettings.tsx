@@ -70,9 +70,9 @@ export default function CalendarSettings() {
     },
   });
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const prompt = ((settings.data?.config ?? {}) as {
-    calendar?: { prompt_title?: boolean; prompt_attendees?: boolean };
-  }).calendar;
+  const prompt = (
+    (settings.data?.config ?? {}) as { calendar?: { prompt_invite?: boolean } }
+  ).calendar;
   const saveSetting = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
@@ -206,36 +206,22 @@ export default function CalendarSettings() {
       )}
 
       {/*
-       * What of the calendar may reach the summary model, which may be a hosted one.
-       * The title is on by default; attendee names are off until the user turns them on
-       * here, which is the asking. The description never goes, so it has no switch.
+       * The invitation is context for the summary, and it is on by default: a model that
+       * knows what the meeting was for writes about that meeting. Addresses are not part
+       * of it — an attendee is a name long before this switch is read.
        */}
       <SettingRow
-        label={t("calendar.promptTitle")}
-        htmlFor="calendar-prompt-title"
-        description={t("calendar.promptTitleHint")}
+        label={t("calendar.promptInvite")}
+        htmlFor="calendar-prompt-invite"
+        description={t("calendar.promptInviteHint")}
       >
         <input
-          id="calendar-prompt-title"
-          data-testid="calendar-prompt-title"
+          id="calendar-prompt-invite"
+          data-testid="calendar-prompt-invite"
           type="checkbox"
-          checked={prompt?.prompt_title ?? true}
-          onChange={(change) => saveSetting.mutate({ "calendar.prompt_title": change.target.checked })}
-          className="size-4"
-        />
-      </SettingRow>
-      <SettingRow
-        label={t("calendar.promptAttendees")}
-        htmlFor="calendar-prompt-attendees"
-        description={t("calendar.promptAttendeesHint")}
-      >
-        <input
-          id="calendar-prompt-attendees"
-          data-testid="calendar-prompt-attendees"
-          type="checkbox"
-          checked={prompt?.prompt_attendees ?? false}
+          checked={prompt?.prompt_invite ?? true}
           onChange={(change) =>
-            saveSetting.mutate({ "calendar.prompt_attendees": change.target.checked })
+            saveSetting.mutate({ "calendar.prompt_invite": change.target.checked })
           }
           className="size-4"
         />

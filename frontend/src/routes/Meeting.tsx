@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 import { formatElapsed } from "../lib/format";
 import MeetingCalendarCard from "../components/MeetingCalendarCard";
+import InviteCard from "../components/InviteCard";
 import StateBadge from "../components/StateBadge";
 import BusyButton, { Spinner } from "../components/BusyButton";
 import AudioPlayer, { type AudioPlayerHandle } from "../components/AudioPlayer";
@@ -252,6 +253,7 @@ export default function MeetingPage() {
       </header>
 
       <MeetingCalendarCard meetingId={id} calendar={meeting.data.calendar} />
+      <InviteCard meetingId={id} />
 
       {meeting.data.evidence.length > 0 && (
         <p

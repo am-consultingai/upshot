@@ -131,13 +131,18 @@ def test_metadata_present(page: Path) -> None:
 
 @each_page
 def test_examples_are_marked_as_demo(page: Path) -> None:
-    """Every illustration is invented data, and says so where it stands."""
+    """Every illustration that invents data says so where it stands.
+
+    A diagram is exempt: the benchmark chart states a measured source, and the hero
+    flow draws where a meeting goes. Neither puts words in anyone's mouth.
+    """
     html, _ = _parse(page)
     label = DEMO_LABEL[str(page.relative_to(SITE))]
+    diagrams = ('class="wer"', 'class="flow"')
     figures = [
         f
         for f in re.findall(r"<figure\b[^>]*>.*?</figure>", html, flags=re.S)
-        if 'class="wer"' not in f  # the benchmark chart is sourced, not invented
+        if not any(d in f for d in diagrams)
     ]
     assert figures and all(label in f for f in figures)
     # The screenshot and the example email are not figures, but are invented too.

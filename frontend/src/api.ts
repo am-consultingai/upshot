@@ -74,6 +74,25 @@ export interface CalendarEvent {
   meeting_id?: string | null;
 }
 
+/** The live invitation behind a recording. Read from Google when shown; never stored. */
+export interface Invite {
+  title: string | null;
+  start: string | null;
+  end: string | null;
+  location: string | null;
+  organizer: string | null;
+  attendees: string[];
+  declined: string[];
+  optional: string[];
+  /** The organizer's description, as text, with each link's address kept inline. */
+  agenda: string;
+  links: string[];
+  attachments: { title: string; url: string }[];
+  conference_url: string | null;
+  /** The event in Google Calendar. */
+  html_link: string | null;
+}
+
 /** What a recording knows about its calendar event (a snapshot taken when matched). */
 export interface MeetingCalendar {
   event?: { calendar_id: string; event_id: string; start: string; end: string };
@@ -295,6 +314,10 @@ export const api = {
   calendarSyncNow: () => request<CalendarStatus>("/api/calendar/sync", { method: "POST" }),
   calendarForget: () =>
     request<CalendarStatus & { deleted: number }>("/api/calendar/cache", { method: "DELETE" }),
+  meetingInvite: (id: string) =>
+    request<{ available: boolean; reason?: string; reconnect?: boolean; invite?: Invite }>(
+      `/api/meetings/${id}/invite`,
+    ),
   meetingCalendar: (id: string) =>
     request<{ calendar: MeetingCalendar | null; candidates: CalendarEvent[] }>(
       `/api/meetings/${id}/calendar`,

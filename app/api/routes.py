@@ -883,6 +883,39 @@ def meeting_calendar(request: Request, meeting_id: str) -> dict[str, Any]:
     }
 
 
+@router.get("/meetings/{meeting_id}/invite")
+def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
+    """The invitation behind this recording, read from Google now — never from a store.
+
+    The agenda, the links in it and the files attached to it live in the calendar, which
+    is where they are maintained. Editing the event changes what this returns; deleting
+    it takes it away.
+    """
+    from app.gcal.oauth import CalendarAuthError, CalendarUnavailable
+    from app.meetings import calendar_payload
+
+    svc = services_of(request)
+    meeting = svc.dao.get_meeting(meeting_id)
+    if meeting is None:
+        raise HTTPException(404, "no such meeting")
+    payload = calendar_payload(meeting)
+    ref = payload.get("event") or {}
+    if (payload.get("match") or {}).get("state") != "matched" or not ref:
+        return {"available": False, "reason": "no calendar event is matched to this recording"}
+    if svc.calendar_invites is None:
+        return {"available": False, "reason": "no calendar connection in this process"}
+    try:
+        invite = svc.calendar_invites.fetch(str(ref["calendar_id"]), str(ref["event_id"]))
+    except CalendarAuthError as exc:
+        return {"available": False, "reason": str(exc), "reconnect": True}
+    except CalendarUnavailable as exc:
+        return {"available": False, "reason": f"Google could not be reached ({exc})."}
+    except Exception as exc:  # a deleted event answers 404; that is an answer, not a fault
+        log.info("invite unavailable for %s: %s", meeting_id, exc)
+        return {"available": False, "reason": "this event is no longer in the calendar"}
+    return {"available": True, "invite": invite.as_api()}
+
+
 @router.put("/meetings/{meeting_id}/calendar")
 def choose_meeting_event(request: Request, meeting_id: str, body: CalendarChoice) -> dict[str, Any]:
     """The user says which event this recording was, or that it was none."""
