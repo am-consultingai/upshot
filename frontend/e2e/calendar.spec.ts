@@ -36,15 +36,16 @@ test("an_event_renders_and_opens", async ({ page, seedBody }) => {
   await expect(page.getByTestId("event-details")).toHaveCount(0);
 });
 
-test("a_matched_recording_and_its_event_are_one_block", async ({ page, seedBody }) => {
+test("a_recorded_meeting_keeps_its_calendar_slot_and_is_flagged", async ({ page, seedBody }) => {
   await seedBody({
     reset: true,
     meetings: [
       {
         id: "e2e-matched",
+        // The recording began late and ran short, as recordings do.
         title: "Design review",
         state: "RENDERED",
-        started_at: isoAt(0, 10),
+        started_at: isoAt(0, 10, 12),
         calendar: { calendar_id: "primary", event_id: "e2e-evt2" },
       },
     ],
@@ -55,9 +56,21 @@ test("a_matched_recording_and_its_event_are_one_block", async ({ page, seedBody 
   });
   await calendarView(page, "day");
 
-  await expect(page.getByTestId("calendar-event").filter({ hasText: "Design review" })).toHaveCount(1);
-  await expect(page.getByTestId("calendar-gevent")).toHaveCount(1);
-  await expect(page.getByTestId("calendar-gevent")).toContainText("Unrecorded call");
+  // One block for the meeting, drawn at the event's time under the event's name...
+  const recorded = page.getByTestId("calendar-gevent").filter({ hasText: "Design review" });
+  await expect(recorded).toHaveCount(1);
+  await expect(recorded).toHaveAttribute("data-recorded", "true");
+  await expect(recorded.getByTestId("calendar-recorded-flag")).toBeVisible();
+  // ...and the recording does not draw a second block of its own.
+  await expect(page.getByTestId("calendar-event")).toHaveCount(0);
+
+  // The unrecorded event is still there, and still unflagged.
+  const plain = page.getByTestId("calendar-gevent").filter({ hasText: "Unrecorded call" });
+  await expect(plain).toHaveAttribute("data-recorded", "false");
+
+  // Clicking the flagged block opens the recording.
+  await recorded.click();
+  await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "e2e-matched");
 });
 
 test("an_event_on_now_offers_to_record_it", async ({ page, seedBody }) => {

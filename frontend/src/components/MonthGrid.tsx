@@ -7,6 +7,7 @@ import {
   dayKey,
   isSameMonth,
   isToday,
+  recordedIds,
   timedEvents,
   weekdayLabels,
 } from "../lib/calendar";
@@ -33,9 +34,13 @@ export default function MonthGrid({
   events?: CalendarEvent[];
 }) {
   const { t, locale } = useI18n();
-  const buckets = bucketByDay(meetings);
+  // As in the time grid: an event that was recorded stays the event, and the recording
+  // does not draw a second chip beside it.
+  const recorded = recordedIds(events);
+  const buckets = bucketByDay(meetings.filter((meeting) => !recorded.has(meeting.id)));
+  const eventsByDay = bucketByDay(timedEvents(events).map((e) => ({ ...e, started_at: e.start })));
   const eventCount = new Map<string, number>();
-  for (const event of timedEvents(events, new Set(meetings.map((meeting) => meeting.id)))) {
+  for (const event of timedEvents(events)) {
     const key = dayKey(new Date(event.start));
     eventCount.set(key, (eventCount.get(key) ?? 0) + 1);
   }
@@ -93,6 +98,22 @@ export default function MonthGrid({
                   {formatClock(meeting.started_at)} {meeting.title ?? t("timeline.recording")}
                 </Link>
               ))}
+              {(eventsByDay.get(dayKey(day)) ?? [])
+                .filter((event) => event.meeting_id)
+                .slice(0, MAX_CHIPS)
+                .map((event) => (
+                  <Link
+                    key={`${event.calendar_id}:${event.event_id}`}
+                    to={`/m/${event.meeting_id}`}
+                    data-testid="calendar-event"
+                    data-recorded="true"
+                    data-meeting={event.meeting_id}
+                    title={`${event.title ?? ""} — ${t("calendar.recorded")}`}
+                    className="mb-0.5 block truncate rounded border-s-4 border-success bg-success-quiet px-1 text-xs"
+                  >
+                    {formatClock(event.start)} {event.title ?? t("calendar.untitled")}
+                  </Link>
+                ))}
               {(eventCount.get(dayKey(day)) ?? 0) > 0 && (
                 <div
                   data-testid="calendar-gevent-dots"
