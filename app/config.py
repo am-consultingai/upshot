@@ -210,11 +210,11 @@ DEFAULTS: dict[str, Any] = {
     },
     "enrichment": {"source": "google", "timeout_s": 2.0},  # google|null|fake
     "calendar": {
-        # What of a matched calendar event may go to the summary model (Calendar 7). The
-        # title is on by default; attendee names are asked for first, in Settings. An
-        # event's description never goes, whatever these say.
-        "prompt_title": True,
-        "prompt_attendees": False,
+        # Whether the calendar invitation goes to the summary model along with the
+        # transcript: what the meeting was called, when it ran, who was invited, what the
+        # organizer wrote and what they attached. Email addresses never go, whatever this
+        # says — an attendee is a name by the time anything here sees them.
+        "prompt_invite": True,
     },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory

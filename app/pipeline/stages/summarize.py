@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -167,42 +166,53 @@ def system_text(ctx: StageContext) -> tuple[str, str]:
     return shipped.text, shipped.version
 
 
-#: A link with a token in it, or a dial-in PIN: never sent to a model, even inside a title.
-_URL = re.compile(r"https?://\S+", re.IGNORECASE)
-_PIN = re.compile(r"(?i)\b(pin|passcode|password|code)\b\W*\d[\d\s#-]{3,}")
-
-
-def redact(text: str) -> str:
-    return _PIN.sub(r"\1 [removed]", _URL.sub("[link removed]", text)).strip()
-
-
 def meeting_context(ctx: StageContext) -> str | None:
-    """What the user's calendar says about this meeting, for the model (Calendar 4 and 7).
+    """What the calendar knows about this meeting, for the model (Calendar 4).
 
-    Only for a confident or user-chosen match, never for an event marked private, and
-    only what Settings allows: the title by default, attendee names when the user turned
-    that on. Never the description, never an address, never a meeting link.
+    The invitation is read live and in full — title, times, organizer, who was invited,
+    the agenda the organizer wrote, the links in it and the files attached to it — because
+    a model that knows what the meeting was *for* writes a better summary of what was
+    said. Email addresses are not part of it: an attendee is a name by the time this sees
+    them.
+
+    Advisory, like every other calendar path: no network, no connection or no match means
+    the snapshot taken at match time is used instead, and failing that, nothing.
     """
     from app.meetings import calendar_payload
 
-    payload = calendar_payload(ctx.meeting)
-    if (payload.get("match") or {}).get("state") != "matched" or payload.get("private"):
+    if not ctx.config.get("calendar.prompt_invite", True):
         return None
+    payload = calendar_payload(ctx.meeting)
+    if (payload.get("match") or {}).get("state") != "matched":
+        return None
+    reader = getattr(ctx.services, "calendar_invites", None)
+    ref = payload.get("event") or {}
+    if reader is not None and ref:
+        try:
+            invite = reader.fetch(str(ref["calendar_id"]), str(ref["event_id"]))
+            return str(invite.as_prompt())
+        except Exception as exc:
+            # The meeting is summarized whatever the calendar is doing.
+            log.info("invitation unavailable; summarizing without it (%s)", exc)
+    return snapshot_context(payload)
+
+
+def snapshot_context(payload: dict[str, Any]) -> str | None:
+    """The fallback: what was stored when the recording was matched."""
     lines: list[str] = []
-    title = redact(str(payload.get("title") or ""))
-    if title and ctx.config.get("calendar.prompt_title", True):
-        lines.append(f"Title: {title}")
-    names = [redact(str(name)) for name in payload.get("participants") or [] if name]
-    if names and ctx.config.get("calendar.prompt_attendees", False):
+    if payload.get("title"):
+        lines.append(f"Title: {payload['title']}")
+    names = [str(name) for name in payload.get("participants") or [] if name]
+    if names:
         more = int(payload.get("participants_more") or 0)
         listed = ", ".join(names) + (f", and {more} more" if more else "")
         lines.append(
-            f"Invited (from the calendar invitation; the list may be incomplete): {listed}. "
-            "Action-item owners should be people from this list or the speaker labelled ME."
+            f"Invited: {listed}. Action items should belong to one of these people or to "
+            "the speaker labelled ME."
         )
     if not lines:
         return None
-    return "Meeting details from the user's calendar:\n" + "\n".join(lines)
+    return "Meeting details, from the calendar invitation:\n" + "\n".join(lines)
 
 
 def summarize(ctx: StageContext, transcript: str, *, system: str, system_version: str) -> None:
@@ -242,6 +252,8 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         ctx.checkpoint()
         result = client.complete_json(
             system_blocks=system_blocks(f"{system}\n\n{instruction}\n\n{envelope}", glossary),
+            # The invitation leads, then the transcript: the model reads what the meeting
+            # was for before it reads what was said.
             user=f"{context}\n\nTranscript:\n{window.text}" if context else window.text,
             schema=FREE_SCHEMA,
             max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
