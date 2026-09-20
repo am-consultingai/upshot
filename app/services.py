@@ -40,6 +40,7 @@ class Services:
     detector: Any = None
     calendar: Any = None  # app.gcal.oauth.CalendarAuth
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
+    calendar_invites: Any = None  # app.gcal.invite.InviteReader
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -71,7 +72,10 @@ def build(
     queue = JobQueue(conn, clock)
     events = EventBus()
     calendar, calendar_sync, source = build_calendar(cfg, conn, events, clock)
+    from app.gcal.invite import InviteReader
     from app.gcal.source import CalendarNow
+
+    invites = InviteReader(calendar)
 
     calendar_now = CalendarNow(calendar_sync.store, available=calendar.connected)
     services = Services(
@@ -86,6 +90,7 @@ def build(
         mailer=Mailer(cfg),
         calendar=calendar,
         calendar_sync=calendar_sync,
+        calendar_invites=invites,
     )
     calendar_sync.on_synced = lambda: services.meetings.rematch_recent()
     from app.notify import make_notifier

@@ -108,29 +108,24 @@
     </picture>
     <div class="hero-in">
       <div class="hero-text">
-        <p class="eyebrow">Private meeting notes for Windows</p>
-        <h1>Meeting notes, without a bot in the&nbsp;meeting.</h1>
-        <p class="lede">Upshot notices when your meeting starts, records it on your own computer and gives you a summary written the way you like it. Nobody joins your call, and the recording never leaves your PC.</p>
+        <p class="eyebrow">Meeting notes for Windows</p>
+        <h1>You control your&nbsp;data.</h1>
+        <p class="lede">Upshot notices your meeting, records it on your own computer and transcribes it there. No bot joins the call, the recording never leaves your machine, and you decide how far the words go: to the AI you already use, or nowhere at all.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">Get started</a>
-          <a class="btn btn-sec" href="#bots">Why no bot</a>
+          <a class="btn btn-sec" href="#dial">See where your data goes</a>
         </div>
-        <p class="hero-meta">Windows · no bot · no account · audio never uploaded · Hebrew and English</p>
+        <p class="hero-meta">Windows · no bot · no account · the recording never leaves · Hebrew and English</p>
       </div>
-      <figure class="ready" aria-label="Illustration of a call's participant list with Upshot recording locally. Demo data.">
-        <div class="ready-top">
-          <span class="live"></span>
-          <span>In this call</span>
-          <em>3 people · 0 bots</em>
-        </div>
-        <ul class="people">
-          <li><i>Y</i>You</li>
-          <li><i>D</i>Dana <small>host</small></li>
-          <li><i>Y</i>Yoav</li>
-          <li class="gone"><i><svg class="ic"><use href="#i-bot"/></svg></i><s>Notetaker bot</s> <small>not invited</small></li>
-        </ul>
-        <p class="ready-foot"><svg class="ic"><use href="#i-check"/></svg>Upshot is recording on this PC, not in the call</p>
-        <figcaption>Illustration. Demo data.</figcaption>
+      <figure class="flow" aria-label="Where a meeting goes: recorded and transcribed on your PC, and only the text leaves.">
+        <ol>
+          <li><span class="f-ic"><svg class="ic"><use href="#i-mic"/></svg></span><b>Your meeting</b><span>Your voice and theirs</span></li>
+          <li class="f-here"><span class="f-ic"><svg class="ic"><use href="#i-laptop"/></svg></span><b>Your computer</b><span>Recorded and turned into text, here</span></li>
+        </ol>
+        <p class="f-stop"><svg class="ic"><use href="#i-lock"/></svg>The recording stops here</p>
+        <ol>
+          <li><span class="f-ic"><svg class="ic"><use href="#i-doc"/></svg></span><b>The text only</b><span>To the AI you chose — or to a local model, and nothing leaves</span></li>
+        </ol>
       </figure>
     </div>
   </section>
@@ -139,27 +134,65 @@
   <section class="pillars" aria-label="What Upshot does differently">
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
-      <h2>Your meetings stay private</h2>
-      <p>Recorded and kept on your own computer. Nothing is uploaded to be transcribed, and with a local AI model nothing leaves at all.</p>
+      <h2>Your voice stays home</h2>
+      <p>The recording is made and turned into text on your own computer, and is never uploaded. Only the words go any further.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
+      <h2>Use the AI you already pay for</h2>
+      <p>Claude, OpenAI or Gemini on your own account, or a model on your PC when a meeting should stay in the room. No new vendor, no new bill.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
       <h2>Never forget to record <span class="tag-new">New</span></h2>
       <p>Upshot notices when a meeting starts. Let it record on its own, and every call ends with notes, whether you remembered or not.</p>
     </article>
-    <article>
-      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
-      <h2>Notes you can send as they are</h2>
-      <p>Tell it once how you like your notes: sections, tone, even colours. Every summary is ready to paste into an email.</p>
-    </article>
   </section>
 
   <!-- STATS --------------------------------------------------------------->
   <section class="stats" aria-label="At a glance">
     <div><b>0</b><span>bots in your call</span></div>
-    <div><b>0</b><span>clicks to start, with auto-record on</span></div>
     <div><b>0</b><span>minutes of audio uploaded</span></div>
-    <div><b data-providers>5</b><span>AI models to choose from, one fully private</span></div>
+    <div><b>3</b><span>ways to run it, from fully private to your usual AI</span></div>
+    <div><b data-providers>5</b><span>AI models to choose from, one on your own PC</span></div>
+  </section>
+
+  <!-- DIAL ---------------------------------------------------------------->
+  <section class="sec dial" id="dial">
+    <p class="eyebrow">Your data</p>
+    <h2>Decide how far your meeting travels.</h2>
+    <p class="he-sub">The recording always stays on your computer. What you choose is how the summary gets written — and that decides what, if anything, leaves.</p>
+    <div class="track-line" aria-hidden="true"></div>
+    <ol class="stops">
+      <li class="stop">
+        <p class="stop-name">Nothing leaves</p>
+        <p class="stop-what">A model on your own PC writes the summary.</p>
+        <dl>
+          <dt>Leaves your PC</dt><dd class="good">Nothing at all</dd>
+          <dt>You need</dt><dd>A local model (Ollama) and a PC that can run it</dd>
+          <dt>Best for</dt><dd>Board, legal, HR, client-confidential</dd>
+        </dl>
+      </li>
+      <li class="stop is-default">
+        <p class="stop-name">The words only <em>Default</em></p>
+        <p class="stop-what">The AI you already use writes the summary.</p>
+        <dl>
+          <dt>Leaves your PC</dt><dd>The text of the meeting</dd>
+          <dt>You need</dt><dd>Your own Claude, OpenAI or Gemini account</dd>
+          <dt>Best for</dt><dd>Everyday meetings, best summaries</dd>
+        </dl>
+      </li>
+      <li class="stop">
+        <p class="stop-name">Your own second machine</p>
+        <p class="stop-what">A spare PC of yours does the heavy work.</p>
+        <dl>
+          <dt>Leaves your PC</dt><dd class="good">Nothing leaves your own hardware</dd>
+          <dt>You need</dt><dd>A second machine of yours on the network</dd>
+          <dt>Best for</dt><dd>A laptop that shouldn't work that hard</dd>
+        </dl>
+      </li>
+    </ol>
+    <p class="chips-note">Whichever you pick, the audio never goes to an AI vendor: Upshot turns it into text on your computer first. <span class="soon-key">Soon</span> the choice will also be per meeting, so one sensitive call can stay local while the rest take the usual path.</p>
   </section>
 
   <!-- BOTS ---------------------------------------------------------------->
@@ -347,6 +380,7 @@ Headings in #0f766e. Under 200 words.</pre>
       <table class="vs">
         <thead><tr><th scope="col"><span class="sr">Question</span></th><th scope="col">Notetaker bots</th><th scope="col" class="us">Upshot</th></tr></thead>
         <tbody>
+          <tr><th scope="row">What leaves your computer</th><td class="them">the whole recording</td><td class="us">the text, or nothing</td></tr>
           <tr><th scope="row">Shows up in the participant list</th><td class="them">yes</td><td class="us">never</td></tr>
           <tr><th scope="row">Recording stored on a vendor’s servers</th><td class="them">usually</td><td class="us">never</td></tr>
           <tr><th scope="row">Starts without you pressing Record</th><td>from your calendar</td><td class="us">when the call starts, if you turn it on</td></tr>
@@ -377,7 +411,7 @@ Headings in #0f766e. Under 200 words.</pre>
     <h2>FAQ</h2>
     <div class="faq-list">
       <details class="acc"><summary>Does my meeting leave my PC?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">The recording never does: it’s kept and transcribed on your computer. To write the summary, the text of the conversation goes to the AI model you pick. Pick a local model (Ollama) and nothing leaves at all.</div></details>
+        <div class="acc-b">The recording never does: it’s kept and turned into text on your computer. After that it is your choice — the text goes to the AI you picked, or to a model on your own PC, in which case nothing leaves at all. See <a href="#dial">how far your meeting travels</a>.</div></details>
       <details class="acc"><summary>Will the other people see anything?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">No. Upshot records from your own computer; nothing joins the call. Recording laws differ by country, so tell people you’re recording.</div></details>
       <details class="acc"><summary>How does it know a meeting started?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>

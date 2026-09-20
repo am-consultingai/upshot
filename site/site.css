@@ -377,6 +377,43 @@ footer{font-size:var(--t-label)}
 .he-cards b{display:block;margin-top:10px;font-family:var(--display);font-size:20px;font-weight:600;color:var(--ink)}
 .he-cards p{margin-top:8px;font-size:var(--t-body);color:var(--s3);line-height:1.55}
 
+/* ---- hero: where the meeting goes, and where it stops ---- */
+.flow{margin:0 0 8px;justify-self:end;width:min(100%,380px);background:rgba(13,19,33,.86);
+  border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:0 30px 60px -30px #000}
+.flow ol{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.flow li{display:grid;grid-template-columns:38px minmax(0,1fr);gap:12px;align-items:center}
+.flow b{font-family:var(--display);font-size:16px;font-weight:600;color:var(--ink);grid-column:2}
+.flow li span:last-child{grid-column:2;font-size:14px;color:var(--s3);line-height:1.45}
+.f-ic{grid-row:span 2;display:grid;place-items:center;width:38px;height:38px;border-radius:11px;
+  background:var(--tile);border:1px solid var(--line);color:var(--cyan)}
+.flow .f-here .f-ic{border-color:rgba(16,185,129,.5);color:#6ee7b7}
+.f-stop{display:flex;align-items:center;gap:8px;margin:14px 0;padding:9px 12px;border-radius:9px;
+  font-size:13px;color:#6ee7b7;background:rgba(16,185,129,.08);border:1px dashed rgba(16,185,129,.5)}
+.f-stop .ic{width:15px;height:15px}
+
+/* ---- the dial: three ways to run it ---- */
+.dial{position:relative}
+.dial .he-sub{margin-bottom:8px}
+.track-line{max-width:var(--maxw);height:2px;margin-top:34px;border-radius:2px;
+  background:linear-gradient(90deg,var(--good),var(--cyan) 50%,var(--indigo))}
+.stops{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.stop{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 22px 22px}
+.stop::before{content:"";position:absolute;top:-7px;inset-inline-start:26px;width:12px;height:12px;border-radius:50%;
+  background:var(--bg);border:2px solid var(--s4)}
+.stop:first-child::before{border-color:var(--good)}
+.stop.is-default::before{border-color:var(--cyan);box-shadow:0 0 0 4px rgba(34,211,238,.15)}
+.stop:last-child::before{border-color:var(--indigo)}
+.stop-name{font-family:var(--display);font-size:21px;font-weight:600;color:var(--ink);display:flex;
+  align-items:center;gap:10px;flex-wrap:wrap}
+.stop-name em{font-family:var(--mono);font-size:var(--t-micro);font-style:normal;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--cyan);border:1px solid rgba(34,211,238,.5);border-radius:6px;padding:2px 6px}
+.stop-what{margin-top:8px;font-size:var(--t-sub);color:var(--s2)}
+.stop dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:8px 14px;margin:18px 0 0;
+  padding-top:16px;border-top:1px solid var(--line-soft)}
+.stop dt{font-family:var(--mono);font-size:var(--t-label);color:var(--s4)}
+.stop dd{margin:0;font-size:var(--t-sub);color:var(--s2)}
+.stop dd.good{color:#6ee7b7}
+
 /* ---- legal pages: privacy policy and terms ---- */
 .legal{max-width:800px;margin:0 auto;padding:72px var(--pad) 24px}
 .legal h1{font-size:clamp(36px,5vw,52px);line-height:1.1;letter-spacing:-.03em;margin-top:14px}
@@ -435,6 +472,9 @@ footer{font-size:var(--t-label)}
 
 /* ---- responsive (kept last so it overrides the rules above) ---- */
 @media (max-width:980px){
+  .stops{grid-template-columns:1fr 1fr}
+  .stops .stop:last-child{grid-column:1/-1}
+  .flow{justify-self:start}
   .pillars{grid-template-columns:1fr}
   .bot-grid{grid-template-columns:1fr 1fr}
   .callwin{grid-column:1/-1}
@@ -451,6 +491,9 @@ footer{font-size:var(--t-label)}
   .tiles,.callouts{grid-template-columns:repeat(2,1fr)}
 }
 @media (max-width:640px){
+  .stops{grid-template-columns:1fr}
+  .track-line{display:none}
+  .stop::before{display:none}
   .toc ol{columns:1}
   .legal{padding-top:48px}
   .he-cards{grid-template-columns:1fr}

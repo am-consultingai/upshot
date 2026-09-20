@@ -991,3 +991,35 @@ Tests assert that no address appears in the database, a prompt or a log line.
 against a threshold of 5 — enough to make a known conferencing app's call immediate,
 never enough alone. Nothing but a microphone wakes the detector, so an event by itself
 cannot start a recording however it scores. It may say so, once, and offer to record.
+
+## D45 — The invitation is read live and sent whole; it is still never stored
+
+Amends D44, at the product owner's decision, after the first real meeting produced a
+summary that knew the title and nothing else.
+
+**What changed.** The whole invitation now goes to the summary model with the transcript:
+title, times, organizer, who was invited (and who declined), the agenda the organizer
+wrote, every link inside it, and the names and Drive URLs of the files attached to it. One
+switch in Settings governs it, on by default, replacing the two narrower switches for the
+title and attendee names. D44 said descriptions would never reach a model; this reverses
+that, because an agenda is what tells a summary what the meeting was *for*, and a summary
+written from the transcript alone reads like a stranger's notes.
+
+**What did not change.** Email addresses still stop at the boundary in
+`app/gcal/events.py` and `app/gcal/invite.py`: an attendee is a display name, or a name
+made from the local part of their address, before any of this is assembled. Nothing in the
+invitation is stored — not the description, not the attachments, not the links.
+
+**Live, not cached, and that is the point.** The invitation is fetched from Google when it
+is wanted: by the meeting page while it is open, and by the summarize stage while it builds
+its prompt, with a 60-second reuse window so the two do not ask twice. The agenda therefore
+lives where the user maintains it. Editing the event after the meeting corrects what the
+page shows and what a re-summary reads; deleting the event takes it away. The cost is that
+both paths need the network, so both degrade: the page says it could not read the
+invitation, and the summary falls back to the snapshot taken when the recording was
+matched. A meeting is summarized whatever the calendar is doing.
+
+**Not done: reading the attached files.** The app can see that a Drive file is attached and
+can name and link it, which needs no permission beyond the calendar scope. Reading what is
+inside one needs a Drive scope, a second sensitive permission on the consent screen, and
+more of Google's verification. Left until it is asked for.

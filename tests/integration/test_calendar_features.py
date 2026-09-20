@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -61,7 +62,14 @@ def g_event(
             {"email": "yossi@example.com", "displayName": "יוסי כהן", "responseStatus": "accepted"},
         ],
         "hangoutLink": "https://meet.google.com/abc-defg-hij",
-        "description": "Dial-in PIN: 445 221 9981 — agenda: salaries for Q4",
+        "description": (
+            "Dial-in PIN: 445 221 9981<br><br>Agenda:<br>Q4 salaries<br>"
+            '<a href="https://example.com/gtm-guide">the GTM guide</a>'
+        ),
+        "attachments": [
+            {"title": "the-plan.pdf", "fileUrl": "https://drive.google.com/open?id=abc"}
+        ],
+        "organizer": {"email": "me@example.com", "self": True},
         "updated": "2026-09-20T10:00:00.000Z",
         **extra,
     }
@@ -87,6 +95,12 @@ class FakeCalendarApi:
             return httpx.Response(200, json={"access_token": "a", "expires_in": 3600})
         if url.startswith("https://oauth2.googleapis.com/revoke"):
             return httpx.Response(200)
+        if re.search(r"/events/[^/?]+", url):  # events.get: one invitation
+            event_id = re.search(r"/events/([^/?]+)", url).group(1)  # type: ignore[union-attr]
+            for item in self.items:
+                if item["id"] == event_id:
+                    return httpx.Response(200, json=item)
+            return httpx.Response(404, json={"error": {"code": 404}})
         if "/events" in url:
             query = parse_qs(request.url.query.decode())
             lo, hi = query["timeMin"][0], query["timeMax"][0]
@@ -405,7 +419,9 @@ def test_a_slow_calendar_never_delays_a_meeting(world: World) -> None:
 # =========================================================================== the prompt
 
 
-def _summarize_prompt(world: World, tmp_path: Path, **config: Any) -> str:
+def _summarize_prompt(
+    world: World, tmp_path: Path, *, offline_at_summarize: bool = False, **config: Any
+) -> str:
     from app.llm.client import FakeLlm
     from app.pipeline.stages import assemble, summarize, transcribe
     from app.pipeline.states import JobStage
@@ -417,13 +433,17 @@ def _summarize_prompt(world: World, tmp_path: Path, **config: Any) -> str:
     world.synced()
     meeting = world.meetings.create(source="manual")
     write_chunks(meeting.path, seconds=90)
+    if offline_at_summarize:
+        world.api.offline = True
 
     class Svc:
         def __init__(self) -> None:
             from app.asr.fake import FakeAsr
+            from app.gcal.invite import InviteReader
 
             self.asr = FakeAsr()
             self.llm = FakeLlm()
+            self.calendar_invites = InviteReader(world.auth, monotonic=world.clock.monotonic)
 
     from app.pipeline.context import StageContext
 
@@ -447,41 +467,73 @@ def _summarize_prompt(world: World, tmp_path: Path, **config: Any) -> str:
     return "\n".join(call["user"] for call in svc.llm.calls)
 
 
-def test_the_title_reaches_the_prompt_and_names_only_when_allowed(
-    world: World, tmp_path: Path
-) -> None:
+def test_the_whole_invitation_reaches_the_prompt(world: World, tmp_path: Path) -> None:
+    """Title, times, organizer, who was invited, the agenda and the attached files — the
+    model should know what the meeting was *for*, not only what was said."""
     prompt = _summarize_prompt(world, tmp_path)
-    assert "Title: Design review" in prompt
-    assert "Dana Levi" not in prompt, "attendee names are asked for before they are sent"
+    for expected in (
+        "Title: Design review",
+        "Invited: Dana Levi, יוסי כהן",
+        "Q4 salaries",  # the agenda the organizer wrote
+        "the-plan.pdf",  # a file attached to the invitation
+        "https://example.com/gtm-guide",  # a link inside the agenda
+    ):
+        assert expected in prompt, expected
+    assert "Transcript:" in prompt, "the invitation leads, the transcript follows"
 
 
-def test_attendee_names_reach_the_prompt_once_allowed_and_never_an_address(
+def test_no_address_reaches_the_prompt_or_a_log_line(
     world: World, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    prompt = _summarize_prompt(world, tmp_path, **{"calendar.prompt_attendees": True})
-    assert "Dana Levi" in prompt and "יוסי כהן" in prompt
+    prompt = _summarize_prompt(world, tmp_path)
     for text in (prompt, caplog.text):
-        assert "@example.com" not in text, "no attendee address in a prompt or a log line"
-        assert "PIN" not in text and "salaries" not in text, "never the description"
-        assert "meet.google.com" not in text, "never the meeting link"
+        assert "@example.com" not in text and "@gmail.com" not in text
 
 
-def test_a_private_event_sends_nothing_to_the_model(world: World, tmp_path: Path) -> None:
-    world.api.items = []
-    prompt = _summarize_prompt(world, tmp_path, **{"calendar.prompt_attendees": True})
-    assert "Design review" in prompt  # sanity: the ordinary event does reach it
-    world2 = World(tmp_path / "private")
-    world2.api.items = [g_event("design", NOW, title="Design review", visibility="private")]
-    world2.synced()
-    meeting = world2.meetings.create(source="manual")
-    from app.pipeline.stages.summarize import meeting_context
+def test_the_invitation_is_never_stored(world: World, tmp_path: Path) -> None:
+    """It is read when wanted and not kept: the agenda lives in the calendar, and the
+    recordings database stays a database of recordings."""
+    _summarize_prompt(world, tmp_path)
+    dump = "\n".join(
+        str(tuple(row))
+        for table in ("calendar_events", "meetings")
+        for row in world.conn.execute(f"SELECT * FROM {table}")
+    )
+    assert "Q4 salaries" not in dump and "the-plan.pdf" not in dump
 
-    class Ctx:
-        config = world2.config
 
-    Ctx.meeting = meeting  # type: ignore[attr-defined]
-    assert meeting_context(Ctx) is None  # type: ignore[arg-type]
+def test_without_the_invitation_the_snapshot_still_names_the_meeting(
+    world: World, tmp_path: Path
+) -> None:
+    """Offline at summarize time: what was stored when the recording was matched is used,
+    and the meeting is summarized either way."""
+    prompt = _summarize_prompt(world, tmp_path, offline_at_summarize=True)
+    assert "Title: Design review" in prompt
+    assert "Invited: Dana Levi" in prompt
+    assert "Q4 salaries" not in prompt, "the agenda is only ever the live invitation"
+
+
+def test_the_switch_turns_the_invitation_off(world: World, tmp_path: Path) -> None:
+    """Nothing from the calendar reaches the summary model. (The local transcriber still
+    gets the names as a hint — that never leaves the machine.)"""
+    prompt = _summarize_prompt(world, tmp_path, **{"calendar.prompt_invite": False})
+    assert "from the calendar invitation" not in prompt
+    assert "Q4 salaries" not in prompt and "the-plan.pdf" not in prompt
+    assert "Transcript:" not in prompt, "with no context the transcript is the whole message"
+
+
+def test_an_html_agenda_becomes_readable_text_with_its_links() -> None:
+    from app.gcal.invite import plain_text
+
+    text, links = plain_text(
+        "Kickoff.<br><br>Agenda:<br>GTM<br>Tech readiness<br>"
+        '<a href="https://example.com/gtm">the GTM guide</a><br>'
+    )
+    assert "Agenda:\nGTM\nTech readiness" in text
+    assert "the GTM guide (https://example.com/gtm)" in text
+    assert links == ["https://example.com/gtm"]
+    assert "<br>" not in text and "<a " not in text
 
 
 # =========================================================================== Calendar 6
