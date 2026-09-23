@@ -17,6 +17,10 @@ Pick the next step of the lowest open stage whose gate is not met, and do it. Th
 - **Stage gates** are in each child task. When a gate is met, comment the evidence on the task and set it to `complete`. Start the next stage.
 - **Bugs** found along the way: a ClickUp Bug in Backlog linked to the epic, with the evidence. Fix it in the stage it blocks.
 
+## Sound on machine B (the user's request, 2026-09-23)
+
+B's speakers are in a room with people. **At most 5 audible plays of the test voice per job**, across everything the job runs (selftest `loopback_echo` / `capture-e2e`, hardware pytest, meeting scripts). Write it into each `job.md` that plays audio, and plan the job around it: run the hardware-audio checks once, not again in every retry of the gate (deselect them with pytest `-m` or run the selftest suites that do not play), and keep a played meeting to one clip of a few repetitions. Verifying a fix that does not touch audio needs no playback at all.
+
 ## If machine B's runner is broken
 
 B's heartbeat (`status/B.json`) older than 30 minutes while a job is pending, or a runner-level `error`: write `A-to-B-session NNN <topic>.md` to the Drive folder asking the backup session on B to diagnose (see RUNBOOK). No reply within an hour → "Needs you".
