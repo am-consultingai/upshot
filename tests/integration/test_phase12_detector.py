@@ -532,3 +532,29 @@ def test_a_recording_ends_when_its_own_app_lets_go(tmp_path: Path) -> None:
     assert h.detector.meeting_id is None, "the meeting was never ended"
     assert h.detector.state not in (DetectorState.RECORDING, DetectorState.GRACE)
     assert h.dao.list_meetings()[0].state == MeetingState.RECORDED
+
+
+def test_every_verdict_reaches_the_log_file(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
+    """The detector's audit trail must not live only in a table nobody reads.
+
+    `detector_events` had exactly one consumer — the Detector screen — and the
+    screen was removed on 2026-09-22. `_log_event` despite its name only ever
+    wrote the row, so "why did it record that?" would have had no answer short of
+    opening the database by hand. Each verdict now also goes to the log at INFO,
+    carrying the score and which signals fired.
+    """
+    h = build(tmp_path, detection__mode="shadow")
+    strong_evidence(h)
+    with caplog.at_level("INFO", logger="app.detect.detector"):
+        h.seconds(12)
+
+    events = h.dao.detector_events()
+    assert events, "the row is still written"
+
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("detector ")]
+    assert lines, f"no verdict was logged; saw {[r.getMessage() for r in caplog.records]}"
+    verdict = lines[-1]
+    assert str(Outcome.SHADOW) in verdict
+    assert str(events[0].peak_score) in verdict
+    # The evidence is summarised on the line, not just stored in the row.
+    assert any(item["code"] in verdict for item in events[0].evidence_list)

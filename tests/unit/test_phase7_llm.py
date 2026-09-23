@@ -200,4 +200,49 @@ def test_fake_llm_is_schema_valid() -> None:
     fake = FakeLlm()
     result = fake.complete_json(system_blocks=system_blocks("s", None), user="**[00:12] ME:** hi")
     validate(result.data)
-    assert "<h1>" in result.data["summary_html"]
+    # The shipped prompt (v6) opens with a lead sentence and no heading; so does the fake,
+    # so the demo shows what a real summary looks like.
+    assert result.data["summary_html"].startswith("<p>")
+    assert "<h1>" not in result.data["summary_html"]
+
+
+def test_fake_llm_cuts_chapters_at_the_transcripts_timestamps() -> None:
+    from app.llm.schema import chapters
+
+    fake = FakeLlm()
+    user = "Date: 2026-09-23 (Wednesday), 14:00 local time.\n\nTranscript:\n" + "\n".join(
+        f"**[0{m}:00] ME:** topic number {m} begins here" for m in range(6)
+    )
+    result = fake.complete_json(system_blocks=system_blocks("s", None), user=user)
+    validate(result.data)
+    parsed = chapters(result.data)
+    assert len(parsed) == 3
+    assert parsed[0]["start_ms"] == 0 and parsed[1]["start_ms"] == 120000
+    assert parsed[0]["title"].startswith("topic number 0")
+    items = result.data["action_items"]
+    assert items[0]["due_at"] == "2026-09-25", "this week, from the date it was given"
+    assert result.data["title"].startswith("**[00:00]"), "the title comes from what was said"
+
+    lone = fake.complete_json(system_blocks=system_blocks("s", None), user="no stamps at all")
+    assert chapters(lone.data) == [{"title": "The conversation", "start_ms": 0, "end_ms": None}]
+    assert lone.data["action_items"][0]["due_at"] is None, "no date given, none invented"
+
+
+def test_fake_llm_answers_from_the_best_matching_line() -> None:
+    from app.ask import ASK_SCHEMA
+
+    fake = FakeLlm()
+    user = (
+        "=== Meeting m-1 — Review (2026-09-20)\n"
+        "[00:05] ME: we start with churn\n"
+        "[01:10] Dana: churn in August was four percent\n\n"
+        "Question: What was churn in August?"
+    )
+    data = fake.complete_json(system_blocks=[], user=user, schema=ASK_SCHEMA).data
+    validate(data, ASK_SCHEMA)
+    assert data == {
+        "answer": "churn in August was four percent",
+        "citations": [{"at_ms": 70000, "meeting_id": "m-1"}],
+    }
+    none = fake.complete_json(system_blocks=[], user="Question: why?", schema=ASK_SCHEMA).data
+    assert none["citations"] == []

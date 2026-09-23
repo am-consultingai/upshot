@@ -9,7 +9,7 @@ from __future__ import annotations
 import random
 import sqlite3
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.clock import Clock, SystemClock, iso, parse_iso
@@ -172,6 +172,23 @@ class JobQueue:
             )
         return self.require(job.id)
 
+    def defer(self, job: Job, message: str, *, until: datetime) -> Job:
+        """Back to pending until ``until``, **without** counting an attempt.
+
+        For a provider that has said "not now" in a way backoff cannot fix — a plan's
+        allowance spent until a stated hour, a CLI waiting for someone to sign in. Counting
+        those against ``max_attempts`` would fail the meeting after five retries a minute
+        apart, all inside the same window the provider had already announced. The message
+        is kept in ``last_error``, which is where a waiting job says why it is waiting.
+        """
+        now = iso(self.clock.now())
+        self.conn.execute(
+            "UPDATE jobs SET state='pending', last_error=?, not_before=?, started_at=NULL, "
+            "updated_at=? WHERE id = ?",
+            (message[:2000], iso(until), now, job.id),
+        )
+        return self.require(job.id)
+
     def cancel(self, job: Job) -> Job:
         now = iso(self.clock.now())
         self.conn.execute(
@@ -272,6 +289,18 @@ class JobQueue:
         if when is None:
             return None
         return (parse_iso(when) - self.clock.now()).total_seconds()
+
+    def needing_attention(self) -> list[Job]:
+        """Failed jobs, and pending ones held back with a reason — newest first.
+
+        A job parked by :meth:`defer` (a plan's allowance spent, a CLI not signed in) is
+        not failed and not running; without this it would sit silently in the queue.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM jobs WHERE state='failed' OR (state='pending' AND last_error IS "
+            "NOT NULL) ORDER BY updated_at DESC, id DESC"
+        ).fetchall()
+        return [_row_to_job(row) for row in rows]
 
     def all_jobs(self) -> list[Job]:
         rows = self.conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()

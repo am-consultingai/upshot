@@ -54,12 +54,21 @@
   --text-xl: 1.25rem;
   --text-2xl: 1.5rem;
   --text-3xl: 1.875rem;
+  /*
+   * The display tier. Vercel's shipped Geist ladder runs to 72px and — the part
+   * that is easy to miss — sets 40px and above at weight 450, *lighter* than the
+   * 600 it uses at 14px, with line-height 1.0. Big type is not bold type.
+   */
+  --text-4xl: 2.5rem;
+  --text-5xl: 3.5rem;
 
   /* Tightening as size grows, which is the whole of the trick. */
   --tracking-tight: -0.022em;
   --tracking-snug: -0.014em;
   --tracking-normal: -0.006em;
   --tracking-wide: 0.04em;
+  /* Tracking scales negatively with size: ~-0.02em at body, -0.038em at display. */
+  --tracking-display: -0.038em;
 
   /* --- Shape ------------------------------------------------------------ */
 
@@ -121,9 +130,36 @@
    * Linear ships #0000000d and #00000014. A `1px solid #ddd` is the most
    * recognisable border of 2018.
    */
-  --border-subtle: color-mix(in oklab, var(--base), var(--ink) 7%);
-  --border: color-mix(in oklab, var(--base), var(--ink) 12%);
-  --border-strong: color-mix(in oklab, var(--base), var(--ink) 24%);
+  --border-subtle: color-mix(in oklab, var(--base), var(--ink) 4%);
+  --border: color-mix(in oklab, var(--base), var(--ink) 8%);
+  --border-strong: color-mix(in oklab, var(--base), var(--ink) 16%);
+
+  /*
+   * A hairline drawn as a ring rather than a border: it takes no layout box, so
+   * adding one never shifts anything, and it sits outside the radius correctly.
+   * `--ring` is the hairline; `--elevated` is the ring plus the shadow stack, which
+   * is the combination every panel wants.
+   */
+  --ring: 0 0 0 1px var(--border);
+  --ring-subtle: 0 0 0 1px var(--border-subtle);
+
+
+  /*
+   * Interaction surfaces: rest, hover, press.
+   *
+   * Alpha, not a `color-mix` against --base like the surfaces above. A hover
+   * fill has to be correct on top of *whatever is already there* — a raised
+   * card, a tinted calendar chip, a selected row — and a mix resolves against
+   * the canvas instead, so it reads wrong everywhere except the canvas. This is
+   * the one place in the file where a token is deliberately not derived.
+   *
+   * The three steps are one hue at 5 / 8 / 10%, which is the ladder Vercel's
+   * Geist scale assigns the same three jobs (100 rest, 200 hover, 300 active).
+   * Two steps of one colour, never two colours.
+   */
+  --a-100: rgb(0 0 0 / 5%);
+  --a-200: rgb(0 0 0 / 8%);
+  --a-300: rgb(0 0 0 / 10%);
 
   --accent-quiet: color-mix(in oklab, var(--base), var(--accent) 10%);
   --accent-hover: color-mix(in oklab, var(--accent), var(--ink) 14%);
@@ -134,6 +170,8 @@
    * Heavier in dark for the same reason — 35% over near-black barely registers.
    */
   --scrim: rgb(0 0 0 / 35%);
+  /* A confirmation's scrim is lighter still, with a blur doing the separating. */
+  --scrim-soft: rgb(0 0 0 / 10%);
 
   /*
    * The dropdown chevron, as a background image, because a native select cannot
@@ -155,6 +193,20 @@
   --success-quiet: color-mix(in oklab, var(--base), var(--success) 8%);
 
   /*
+   * Speakers. Five hues, spaced around the wheel away from the accent's teal and the
+   * recording red, at one lightness so no speaker reads as more important. The same
+   * colour marks a person's avatar, their talk-time bar and their stretch of the
+   * waveform, so the three can be read against each other.
+   */
+  --speaker-1: #56718d;
+  --speaker-2: #8b7ae6;
+  --speaker-3: #b9825a;
+  --speaker-4: #4f957a;
+  --speaker-5: #c0668a;
+  /* Initials on a speaker colour: white on the deep light-theme hues. */
+  --on-speaker: #ffffff;
+
+  /*
    * Elevation, light mode. Offset, blur and NEGATIVE spread each roughly double
    * per step while alpha climbs 3% -> 6% and stops there. Two things carry most
    * of the difference between this and a 2018 shadow: the alpha ceiling (Bootstrap
@@ -165,6 +217,8 @@
   --shadow-md: 0 2px 4px -2px rgb(0 0 0 / 3%), 0 8px 16px -4px rgb(0 0 0 / 5%);
   --shadow-lg: 0 2px 4px -2px rgb(0 0 0 / 3%), 0 16px 32px -8px rgb(0 0 0 / 5%),
     0 32px 64px -16px rgb(0 0 0 / 6%);
+  /* Nothing in light mode; the shadows already do this job. */
+  --edge-highlight: 0 0 #0000;
   /* In light mode a hairline is a real border; dark mode overrides this. */
   --hairline: 0 0 0 1px var(--border-subtle);
 }
@@ -194,13 +248,23 @@
 
     --lift: var(--ink);
     --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
+    --a-100: rgb(255 255 255 / 6%);
+    --a-200: rgb(255 255 255 / 9%);
+    --a-300: rgb(255 255 255 / 13%);
     --scrim: rgb(0 0 0 / 60%);
+    --speaker-1: #86a3c0;
+    --speaker-2: #a99cf2;
+    --speaker-3: #d3a07a;
+    --speaker-4: #74b99c;
+    --speaker-5: #dc8aab;
+    --on-speaker: #0e0f11;
   --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
     --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
 
     --shadow-sm: none;
     --shadow-md: none;
     --shadow-lg: none;
+    --edge-highlight: inset 0 1px 0 0 rgb(255 255 255 / 8%);
     --hairline: inset 0 0 0 1px color-mix(in oklab, var(--base), var(--ink) 14%);
   }
 }
@@ -216,7 +280,17 @@
   --lift: var(--ink);
   --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
 
+    --a-100: rgb(255 255 255 / 6%);
+    --a-200: rgb(255 255 255 / 9%);
+    --a-300: rgb(255 255 255 / 13%);
+
   --scrim: rgb(0 0 0 / 60%);
+  --speaker-1: #86a3c0;
+  --speaker-2: #a99cf2;
+  --speaker-3: #d3a07a;
+  --speaker-4: #74b99c;
+  --speaker-5: #dc8aab;
+  --on-speaker: #0e0f11;
   --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
 
   /*
@@ -228,6 +302,7 @@
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;
+  --edge-highlight: inset 0 1px 0 0 rgb(255 255 255 / 8%);
   --hairline: inset 0 0 0 1px color-mix(in oklab, var(--base), var(--ink) 14%);
 }
 
@@ -247,6 +322,10 @@
   --color-secondary: var(--text-secondary);
   --color-tertiary: var(--text-tertiary);
 
+  --color-a-100: var(--a-100);
+  --color-a-200: var(--a-200);
+  --color-a-300: var(--a-300);
+
   --color-line-subtle: var(--border-subtle);
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
@@ -263,6 +342,11 @@
    * contrast partner does not need to move either.
    */
   --color-scrim: var(--scrim);
+  --color-scrim-soft: var(--scrim-soft);
+  --color-on-speaker: var(--on-speaker);
+  --shadow-ring: var(--ring);
+  --shadow-ring-subtle: var(--ring-subtle);
+  --shadow-edge: var(--edge-highlight);
 
   --color-on-solid: #ffffff;
 

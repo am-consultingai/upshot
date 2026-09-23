@@ -3,8 +3,8 @@ import { expect, gotoSettings, test } from "./fixtures";
 test("provider_settings_list_every_option", async ({ page }) => {
   await gotoSettings(page, "summaries");
   const rows = page.getByTestId("provider-row");
-  await expect(rows).toHaveCount(5);
-  for (const id of ["anthropic", "gemini", "openai", "claude-subscription", "ollama"]) {
+  await expect(rows).toHaveCount(6);
+  for (const id of ["anthropic", "gemini", "openai", "claude-subscription", "codex-subscription", "ollama"]) {
     await expect(page.locator(`[data-provider="${id}"]`)).toBeVisible();
   }
 });

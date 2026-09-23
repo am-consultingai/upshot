@@ -2,16 +2,134 @@
   "components": {
     "schemas": {
       "ActionItemPatch": {
+        "description": "Every field optional. An absent field is left alone; an explicit null clears it —\nwhich is why the handler reads ``model_fields_set`` rather than testing for None.",
         "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
           "done": {
-            "title": "Done",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "snoozed_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snoozed Until"
+          },
+          "what": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "What"
+          },
+          "who": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Who"
+          }
+        },
+        "title": "ActionItemPatch",
+        "type": "object"
+      },
+      "ActionItemPost": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "what": {
+            "title": "What",
+            "type": "string"
+          },
+          "who": {
+            "default": "ME",
+            "title": "Who",
+            "type": "string"
           }
         },
         "required": [
-          "done"
+          "what"
         ],
-        "title": "ActionItemPatch",
+        "title": "ActionItemPost",
+        "type": "object"
+      },
+      "AskPost": {
+        "properties": {
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "scope": {
+            "default": "meeting",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "AskPost",
         "type": "object"
       },
       "Body_import_audio_api_import_post": {
@@ -126,6 +244,27 @@
             ],
             "title": "Sensitive"
           },
+          "speaker_names": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker Names"
+          },
           "title": {
             "anyOf": [
               {
@@ -184,6 +323,28 @@
       },
       "StartPost": {
         "properties": {
+          "calendar_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
           "title": {
             "anyOf": [
               {
@@ -197,6 +358,19 @@
           }
         },
         "title": "StartPost",
+        "type": "object"
+      },
+      "TagsPut": {
+        "properties": {
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "title": "TagsPut",
         "type": "object"
       },
       "ValidationError": {
@@ -335,7 +509,48 @@
       }
     },
     "/api/action-items/{item_id}": {
+      "delete": {
+        "description": "Remove one item, the model's or the user's. A model item comes back if a later\nre-summarize finds it again — deleting is \"not this\", not \"never\".",
+        "operationId": "delete_action_item_api_action_items__item_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "title": "Item Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Action Item Api Action Items  Item Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Action Item"
+      },
       "patch": {
+        "description": "Tick, reschedule, snooze, reassign or reword one item.\n\nOnly the fields sent are touched, and a field sent as null is cleared: ``{\"due_at\":\nnull}`` removes a date, where leaving ``due_at`` out keeps it.",
         "operationId": "patch_action_item_api_action_items__item_id__patch",
         "parameters": [
           {
@@ -383,6 +598,27 @@
           }
         },
         "summary": "Patch Action Item"
+      }
+    },
+    "/api/attention": {
+      "get": {
+        "description": "Everything the pipeline is stuck on, in words: failed stages and waiting ones.\n\nA waiting stage is one the queue parked on purpose — a plan's allowance used up until\na stated time, a CLI waiting to be signed in — with ``retry_at`` saying when it will\ntry again by itself. Nothing here is lost: the audio and transcript are on disk.",
+        "operationId": "attention_api_attention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Attention Api Attention Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Attention"
       }
     },
     "/api/audio/devices": {
@@ -857,8 +1093,25 @@
     },
     "/api/llm/install": {
       "post": {
-        "description": "Install Claude Code in a console the user can watch.\n\nTwo tiers, chosen in ``install_plan``: winget where it genuinely runs, and Anthropic's\nown installer where it does not. Neither is run blind — the exact command is rendered\nbeside the button before it is pressed.",
+        "description": "Install Claude Code or Codex in a console the user can watch.\n\nEach module's ``install_plan`` chooses: the vendor's own installer where PowerShell\ncan run it, and a native fallback where it cannot (winget for Claude Code; npm, then\nwinget, for Codex). Neither is run blind — the exact command is rendered beside the button\nbefore it is pressed.",
         "operationId": "llm_install_api_llm_install_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderPost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -871,6 +1124,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Llm Install"
@@ -899,8 +1162,25 @@
     },
     "/api/llm/signin": {
       "post": {
-        "description": "Launch Anthropic's own login. We never see the credential it creates.",
+        "description": "Launch the vendor's own login. We never see the credential it creates.",
         "operationId": "llm_signin_api_llm_signin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderPost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -913,6 +1193,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Llm Signin"
@@ -989,8 +1279,25 @@
     },
     "/api/llm/update": {
       "post": {
-        "description": "Update the Claude Code this application resolved — not whichever one PATH favours.\n\nOffered only where the app is already reporting a problem it cannot otherwise fix:\na build too old to say whether it is signed in. Installs that update themselves never\nreach that state, so this is the resolution to a complaint rather than a standing\nfeature.",
+        "description": "Update the CLI this application resolved — not whichever one PATH favours.\n\nOffered only where the app is already reporting a problem it cannot otherwise fix:\na build too old to say whether it is signed in, or to take the options sent to it.\nInstalls that update themselves never reach that state, so this is the resolution\nto a complaint rather than a standing feature.",
         "operationId": "llm_update_api_llm_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderPost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -1003,6 +1310,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Llm Update"
@@ -1242,6 +1559,110 @@
           }
         },
         "summary": "Patch Meeting"
+      }
+    },
+    "/api/meetings/{meeting_id}/action-items": {
+      "post": {
+        "description": "An item the user typed in. It is theirs: no re-summarize removes or rewrites it.",
+        "operationId": "add_action_item_api_meetings__meeting_id__action_items_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActionItemPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add Action Item Api Meetings  Meeting Id  Action Items Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Action Item"
+      }
+    },
+    "/api/meetings/{meeting_id}/ask": {
+      "post": {
+        "description": "A question answered from the transcript, with the moments it rests on.",
+        "operationId": "ask_meeting_api_meetings__meeting_id__ask_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Ask Meeting Api Meetings  Meeting Id  Ask Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask Meeting"
       }
     },
     "/api/meetings/{meeting_id}/audio": {
@@ -1566,6 +1987,48 @@
         "summary": "Get Notes"
       }
     },
+    "/api/meetings/{meeting_id}/related": {
+      "get": {
+        "description": "Up to five meetings this one is a thread with, best first, each with its reasons.",
+        "operationId": "related_meetings_api_meetings__meeting_id__related_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Related Meetings Api Meetings  Meeting Id  Related Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Related Meetings"
+      }
+    },
     "/api/meetings/{meeting_id}/summary.html": {
       "get": {
         "operationId": "get_summary_api_meetings__meeting_id__summary_html_get",
@@ -1601,6 +2064,58 @@
           }
         },
         "summary": "Get Summary"
+      }
+    },
+    "/api/meetings/{meeting_id}/tags": {
+      "put": {
+        "description": "Replace this meeting's tags. Deduplicated case-insensitively; see Dao.set_tags.",
+        "operationId": "put_meeting_tags_api_meetings__meeting_id__tags_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagsPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Meeting Tags Api Meetings  Meeting Id  Tags Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Meeting Tags"
       }
     },
     "/api/meetings/{meeting_id}/transcript": {
@@ -1841,7 +2356,7 @@
     },
     "/api/settings": {
       "get": {
-        "description": "Only ever the redacted dump — no secret ever reaches the DOM.",
+        "description": "Only ever the redacted dump — no secret ever reaches the DOM.\n\n``pinned`` names the keys the environment is holding down. Without it a control the\nlauncher has overridden looks like any other: it saves, it reads back, and it is\nquietly replaced again on the next start.",
         "operationId": "get_settings_api_settings_get",
         "responses": {
           "200": {
@@ -1976,6 +2491,27 @@
           }
         },
         "summary": "Status"
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "description": "Every tag in use, most used first: what the filter and the tag picker offer.",
+        "operationId": "list_tags_api_tags_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Tags Api Tags Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Tags"
       }
     }
   }

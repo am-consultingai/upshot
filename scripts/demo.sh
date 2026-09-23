@@ -68,9 +68,13 @@ export UP_AUDIO__VAD='"energy"'          # Silero would reject a tone as "not sp
 export UP_ASR__BACKEND='"fake"'          # deterministic transcript, no 3 GB model
 export UP_LLM__PROVIDER="\"$PROVIDER\""
 export UP_DELIVERY__NOTIFIER='"fake"'    # no Windows toasts in this shell
-export UP_DETECTION__MODE='"off"'        # manual Start/Stop only
 export UP_AUDIO__MIN_MEETING_S=5         # so a short demo is not discarded
 export UP_JOB_POLICY='"asap"'            # process immediately, do not wait for idle
+# Deliberately *not* set: detection.mode. It used to be pinned to "off" here, which made
+# the Settings control a lie — the choice saved to app_config.json and the environment
+# layer, which outranks the file, overrode it again on every single start. The default
+# ("shadow") watches and logs and never records on its own, and off Windows there is
+# nothing for it to watch, so there was nothing to pin it for.
 
 cat <<BANNER
 

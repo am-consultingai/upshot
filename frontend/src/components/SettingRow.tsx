@@ -1,4 +1,16 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+import { useI18n } from "../i18n";
+
+/**
+ * Config keys the environment is holding down, and the variable holding each.
+ *
+ * Settings provides it from `/api/settings`. It exists because the environment is the
+ * top configuration layer: a launcher that exports `UP_DETECTION__MODE` beats
+ * `app_config.json` on every start, so the control saved, read back correctly, and was
+ * silently overridden again the next time the app opened — which looks exactly like a
+ * screen that forgets. A control that is pinned now says so.
+ */
+export const PinnedContext = createContext<Record<string, string>>({});
 
 /**
  * One setting: what it is on the left, the control that changes it on the right.
@@ -24,6 +36,7 @@ export default function SettingRow({
   htmlFor,
   children,
   tone,
+  configKey,
 }: {
   label: string;
   description?: ReactNode;
@@ -32,7 +45,11 @@ export default function SettingRow({
   children: ReactNode;
   /** A warning attached to this setting, shown under the description. */
   tone?: ReactNode;
+  /** The dotted config key this row writes, so the row can say when it is pinned. */
+  configKey?: string;
 }) {
+  const { t } = useI18n();
+  const pinnedBy = useContext(PinnedContext)[configKey ?? ""];
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg bg-raised px-4 py-3 shadow-sm">
       <div className="min-w-[14rem] flex-1">
@@ -46,6 +63,15 @@ export default function SettingRow({
         {description && (
           <p className="mt-0.5 max-w-prose text-xs leading-relaxed text-tertiary">
             {description}
+          </p>
+        )}
+        {pinnedBy && (
+          <p
+            data-testid="setting-pinned"
+            data-config-key={configKey}
+            className="mt-1 max-w-prose text-xs leading-relaxed text-warning"
+          >
+            {t("settings.pinnedByEnv").replace("{var}", pinnedBy)}
           </p>
         )}
         {tone}
@@ -92,5 +118,5 @@ export const SELECT_CLASS = [
   "h-8 min-w-[10rem] appearance-none rounded-md bg-surface-2 ps-2.5 pe-8 text-sm",
   "bg-[length:14px] bg-no-repeat",
   "bg-[position:right_0.5rem_center] rtl:bg-[position:left_0.5rem_center]",
-  "bg-[image:var(--chevron)] hover:bg-surface-3",
+  "bg-[image:var(--chevron)] hover:bg-a-200 active:bg-a-300",
 ].join(" ");

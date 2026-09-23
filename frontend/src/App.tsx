@@ -1,22 +1,76 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import { I18nContext, applyLocale, catalogues, useI18n, type Locale, type MessageKey } from "./i18n";
+import { I18nContext, applyLocale, catalogues, type Locale, type MessageKey } from "./i18n";
 import { applyTheme, isTheme, type Theme } from "./theme";
 import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
 import Settings from "./routes/Settings";
-import Detector from "./routes/Detector";
-import Rail from "./components/Rail";
+import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
 import DetectionNudge, { type Detection } from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
 import CommandPalette from "./components/CommandPalette";
-import ActionItemRow from "./components/ActionItemRow";
 import CaptureChoice from "./components/CaptureChoice";
+import Toaster from "./components/Toaster";
+import ConfirmHost from "./components/ConfirmDialog";
+
+/** Typing into a field is not a shortcut. */
+function typing(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
+/**
+ * The keys the interface advertises, made true.
+ *
+ * The sidebar shows `/` beside Search and `Ctrl R` on the record button, and the
+ * palette teaches `G L`, `G A`, `G ,`. A hint for a key that does nothing is worse
+ * than no hint: it teaches the reader that the hints are decoration. Two-key
+ * sequences follow Gmail and Linear — G, then the destination, within a second.
+ */
+function useShortcuts(onRecord: () => void) {
+  const navigate = useNavigate();
+  const pendingG = useRef<number | null>(null);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        onRecord();
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
+      if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
+      if (pendingG.current !== null) {
+        window.clearTimeout(pendingG.current);
+        pendingG.current = null;
+        const to = { l: "/", a: "/actions", s: "/search", ",": "/settings" }[event.key.toLowerCase()];
+        if (to) {
+          event.preventDefault();
+          navigate(to);
+        }
+        return;
+      }
+      if (event.key === "/") {
+        event.preventDefault();
+        navigate("/search");
+      } else if (event.key.toLowerCase() === "g") {
+        pendingG.current = window.setTimeout(() => {
+          pendingG.current = null;
+        }, 1000);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [navigate, onRecord]);
+}
 
 /**
  * A screen that is not one item from the library: it gets the whole width.
@@ -30,62 +84,14 @@ import CaptureChoice from "./components/CaptureChoice";
 function Full({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="min-w-0 flex-1 overflow-y-auto">
-      <div className={`px-8 py-8 ${wide ? "max-w-5xl" : "mx-auto max-w-4xl"}`}>{children}</div>
-    </div>
-  );
-}
-
-/**
- * The detail side with nothing open yet.
- *
- * It used to be one sentence centred in half a screen. That is a lot of window to
- * spend saying nothing, and the thing most worth knowing on opening the app is not
- * "pick a meeting" — it is what you still owe people. So the empty side is the
- * inbox, trimmed to what is open, and the sentence only survives for the case where
- * there is genuinely nothing to show.
- */
-function EmptyDetail() {
-  const { t } = useI18n();
-  const open = useQuery({
-    queryKey: ["action-items", "open"],
-    queryFn: () => api.actionItems({ open: "true" }),
-  });
-  const items = open.data?.items ?? [];
-
-  if (items.length === 0) {
-    return (
-      <div
-        data-testid="no-meeting-open"
-        className="grid h-full place-items-center px-8 text-center text-sm text-tertiary"
-      >
-        {t("timeline.pickOne")}
-      </div>
-    );
-  }
-
-  return (
-    <div data-testid="no-meeting-open" className="mx-auto max-w-2xl px-8 py-8">
-      <header className="mb-4 flex items-baseline gap-2">
-        <h2 className="display text-lg">{t("actions.title")}</h2>
-        <span
-          data-testid="empty-open-count"
-          className="rounded-full bg-surface-3 px-2 py-0.5 text-2xs text-secondary tabular-nums"
-        >
-          {items.length} {t("actions.open")}
-        </span>
-        <Link
-          to="/actions"
-          data-testid="empty-see-all"
-          className="ms-auto text-xs text-secondary hover:text-primary hover:underline"
-        >
-          {t("actions.showAll")}
-        </Link>
-      </header>
-      <ul>
-        {items.slice(0, 12).map((item) => (
-          <ActionItemRow key={item.id} item={item} />
-        ))}
-      </ul>
+      {/*
+       * Anchored to the start edge, not centred. `mx-auto max-w-4xl` is a marketing
+       * measure applied to application chrome: on a 1440px window it left ~250px of
+       * nothing on either side of every screen, which is the single loudest thing
+       * about the old layout. The cap stays — a list still should not run to 1400px
+       * — but the leftover width belongs to the page, not to the margins.
+       */}
+      <div className={`px-8 py-7 ${wide ? "max-w-5xl" : "max-w-3xl"}`}>{children}</div>
     </div>
   );
 }
@@ -93,6 +99,7 @@ function EmptyDetail() {
 export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [theme, setTheme] = useState<Theme>("light");
+  const [tooltips, setTooltips] = useState(true);
   const [detected, setDetected] = useState<Detection | null>(null);
   const queryClient = useQueryClient();
 
@@ -112,12 +119,15 @@ export default function App() {
    */
   const saved = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const savedConfig = saved.data?.config as
-    | { ui?: { language?: string; theme?: string } }
+    | { ui?: { language?: string; theme?: string; tooltips_off?: boolean } }
     | undefined;
   useEffect(() => {
     const language = savedConfig?.ui?.language;
     if (language === "en" || language === "he") setLocale(language);
   }, [savedConfig?.ui?.language]);
+  useEffect(() => {
+    setTooltips(savedConfig?.ui?.tooltips_off !== true);
+  }, [savedConfig?.ui?.tooltips_off]);
   useEffect(() => {
     const next = savedConfig?.ui?.theme;
     if (isTheme(next)) setTheme(next);
@@ -152,8 +162,9 @@ export default function App() {
     source.addEventListener("meeting", invalidate);
     // The connection finishes in another tab — Google's — so Settings learns of it here.
     source.addEventListener("calendar", invalidate);
-    // Without this the Detector page only refreshed when something *else* happened, so a
-    // detection took about a minute to appear — the detector reaches its verdict in ten.
+    // The detector's verdicts go to the log file and to `detector_events`; what the
+    // interface still needs from them is the nudge, which is a different thing from
+    // the Detector screen removed on 2026-09-22.
     source.addEventListener("detector", (event) => {
       invalidate();
       const payload = JSON.parse((event as MessageEvent).data) as Detection & {
@@ -170,14 +181,26 @@ export default function App() {
     };
   }, [queryClient]);
 
+  const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
+  const recordNow = useCallback(() => {
+    if (status.data?.recorder.active) return;
+    void api.startRecording().then(() => queryClient.invalidateQueries());
+  }, [status.data?.recorder.active, queryClient]);
+  useShortcuts(recordNow);
+
   const t = useCallback((key: MessageKey) => catalogues[locale][key], [locale]);
-  const value = useMemo(() => ({ locale, t, setLocale, theme, setTheme }), [locale, t, theme]);
+  const value = useMemo(
+    () => ({ locale, t, setLocale, theme, setTheme, tooltips, setTooltips }),
+    [locale, t, theme, tooltips],
+  );
 
   return (
     <I18nContext.Provider value={value}>
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
         <CommandPalette />
-        <Rail />
+        <Toaster />
+        <ConfirmHost />
+        <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />
           <RecordingBar />
@@ -193,17 +216,33 @@ export default function App() {
             <Routes>
               {/*
                * The library owns the list; what you open renders beside it. Search,
-               * settings and the detector are whole screens rather than one item
-               * from a collection, so they take the full width instead.
+               * settings are a whole screen rather than one item from a
+               * collection, so it takes the full width instead.
                */}
               <Route element={<Library />}>
-                <Route path="/" element={<EmptyDetail />} />
+                {/*
+                 * The index renders nothing of its own: with no meeting open, Library
+                 * gives the detail side to the calendar and never reaches the Outlet.
+                 * It used to be a trimmed copy of the action-item inbox — one screen's
+                 * worth of the rows the inbox already holds and the rail already
+                 * reaches. The route itself has to stay, or "/" matches nothing and the
+                 * library does not render at all.
+                 */}
+                <Route path="/" element={<></>} />
                 <Route path="/m/:id" element={<MeetingPage />} />
               </Route>
-              <Route path="/actions" element={<Full><ActionsPage /></Full>} />
+              {/* The inbox carries its own bar and rail, like a meeting, so it is not in a Full column. */}
+              <Route path="/actions" element={<ActionsPage />} />
               <Route path="/search" element={<Full><SearchPage /></Full>} />
               <Route path="/settings" element={<Full wide><Settings /></Full>} />
-              <Route path="/detector" element={<Full><Detector /></Full>} />
+              {/*
+                * Anything else goes home rather than rendering an empty pane. There
+                * was no catch-all while every path in the rail had a route; removing
+                * the Detector screen on 2026-09-22 made `/detector` — which people
+                * may have bookmarked, and which the tray could still hold — resolve
+                * to nothing at all.
+                */}
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
         </div>

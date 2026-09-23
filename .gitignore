@@ -37,3 +37,7 @@ frontend/tsconfig.tsbuildinfo
 app/gcal/google_oauth_client.json
 client_secret*.json
 google_oauth_client.json
+
+# UI/UX makeover research: screenshots of this app and of competitors, plus notes.
+# Scratch material for a redesign, not part of the product.
+.ui-research/
