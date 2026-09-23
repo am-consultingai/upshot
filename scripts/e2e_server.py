@@ -54,6 +54,9 @@ def main() -> int:
         delivery__notifier="fake",
         secrets__backend="memory",
         job_policy="asap",
+        # Every spec but welcome.spec.ts starts in the app, not on first-run setup;
+        # that one asks for setup undone through the seed route.
+        setup__done=True,
     )
     config.set("data_root", str(home / "meetings"))
     config.set("server.port", port)

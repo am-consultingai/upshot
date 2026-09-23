@@ -66,11 +66,13 @@ class BootstrapReport:
 
 def choose_profile(config: Config) -> tuple[str, str]:
     """CUDA probe → profile → model. Pascal-class GPUs get int8 (DESIGN.md §20)."""
-    from app.asr.local import cuda_library_dirs
+    from app.asr.local import planned_device
     from app.asr.models import resolve
 
     configured = config.profile
-    device = "cuda" if cuda_library_dirs(configured=config.get("asr.cuda_dir")) else "cpu"
+    # The same decision the backend makes at load, VRAM gate included, so the profile
+    # and the model named here are the ones that will actually run.
+    device = planned_device(config)
     profile = (
         configured if configured != "auto" else ("gpu-live" if device == "cuda" else "cpu-deferred")
     )

@@ -66,6 +66,9 @@ class ModelStatus:
     total_bytes: int = 0
     free_bytes: int = 0
     error: str = ""
+    #: "no_space" when the drive is too full, so the screen can say that in the reader's
+    #: language instead of relaying this English sentence; "" for anything else.
+    code: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -224,6 +227,12 @@ class ModelManager:
             with self._lock:
                 self._status.state = "cancelled"
             log.info("model download cancelled; the partial files stay and resume next time")
+        except NotEnoughSpace as exc:
+            with self._lock:
+                self._status.state = "failed"
+                self._status.error = str(exc)
+                self._status.code = "no_space"
+            log.warning("model download refused: %s", exc)
         except Exception as exc:
             with self._lock:
                 self._status.state = "failed"

@@ -240,6 +240,13 @@ DEFAULTS: dict[str, Any] = {
         # says — an attendee is a name by the time anything here sees them.
         "prompt_invite": True,
     },
+    "setup": {
+        # Whether first-run setup (the /welcome screen) is finished or skipped. Until it
+        # is, the interface opens there: a stranger's install has no speech model and
+        # nothing had told them so. An install from before the screen existed, with a
+        # model already on disk, is marked done when it loads (``_adopt_existing_install``).
+        "done": False,
+    },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},
@@ -267,6 +274,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "summary.language": ("en", "he", "auto"),
     "asr.backend": ("local", "remote", "fake"),
     "asr.language_mode": ("detect", "fixed"),
+    "asr.device": ("auto", "cpu", "cuda"),
     "asr.diarization": ("off", "onnx", "fake"),
     "audio.capture": ("wasapi", "synthetic"),
     "ui.view": ("list", "calendar"),
@@ -554,6 +562,9 @@ class Config:
     ) -> Config:
         path = file if file is not None else paths.config_path()
         data = copy.deepcopy(DEFAULTS)
+        #: A file saved before first-run setup existed. ``save`` writes every key, so
+        #: any file written since holds ``setup`` — its absence dates the file.
+        predates_setup = False
         if path.exists():
             try:
                 file_layer = json.loads(path.read_text(encoding="utf-8"))
@@ -562,6 +573,7 @@ class Config:
             if not isinstance(file_layer, dict):
                 raise ConfigError(f"{path} must contain a JSON object")
             _forget_old_defaults(file_layer)
+            predates_setup = "setup" not in file_layer
             data = _merge(data, file_layer)
         env = env_layer(environ)
         data = _merge(data, env)
@@ -573,8 +585,25 @@ class Config:
         notices = _retire_providers(data)
         cfg = cls(data, source_file=path, from_env=cfg_from_env)
         cfg._notices.extend(notices)
+        if predates_setup and "setup.done" not in cfg_from_env:
+            cfg._adopt_existing_install()
         cfg.validate()
         return cfg
+
+    def _adopt_existing_install(self) -> None:
+        """An install that already transcribes is not sent through first-run setup.
+
+        Someone who has been using the app, with a speech model on disk, has nothing to
+        set up, and a screen that appears from nowhere after an update reads as a reset.
+        One whose old config has *no* model is exactly the stranger the screen is for,
+        so it still appears for them. The answer lands in the data, not in the file: the
+        next save persists it, and until then every load reaches the same answer.
+        """
+        from app.asr.models import any_model_on_disk  # the model module imports this one
+
+        if any_model_on_disk(self):
+            _set(self._data, "setup.done", True)
+            log.info("setup: an existing install with a speech model on disk; not shown")
 
     # -- access
 
