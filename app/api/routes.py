@@ -133,12 +133,70 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _disk_usage(path: Path) -> Any:
+    """From the nearest folder that exists: a data folder on an unplugged drive made
+    ``/status`` a 500, and the whole UI with it. A drive that is gone reads as full."""
+    probe = path
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    try:
+        return shutil.disk_usage(str(probe))
+    except OSError:
+        from types import SimpleNamespace
+
+        return SimpleNamespace(total=0, used=0, free=0)
+
+
+# --------------------------------------------------------------------------- speech model
+
+
+def _model_manager(svc: Services) -> Any:
+    from app.asr.local import planned_device
+    from app.asr.model_manager import manager_for
+    from app.asr.models import resolve
+
+    choice = resolve(svc.config, device=planned_device(svc.config))
+    return choice, manager_for(choice.repo_id or choice.reference)
+
+
+def _model_payload(svc: Services) -> dict[str, Any]:
+    choice, manager = _model_manager(svc)
+    payload: dict[str, Any] = manager.status().as_dict()
+    if choice.local:
+        # A model_path or the app home's model/ folder: nothing to fetch.
+        payload.update(state="ready", path=choice.reference)
+    return payload
+
+
+@router.get("/model")
+def model_status(request: Request) -> dict[str, Any]:
+    """The speech model: on disk, downloading (with bytes), failed or missing."""
+    return _model_payload(services_of(request))
+
+
+@router.post("/model/download")
+def model_download(request: Request) -> dict[str, Any]:
+    svc = services_of(request)
+    choice, manager = _model_manager(svc)
+    if not choice.local:
+        manager.start()
+    return _model_payload(svc)
+
+
+@router.post("/model/cancel")
+def model_cancel(request: Request) -> dict[str, Any]:
+    svc = services_of(request)
+    _choice, manager = _model_manager(svc)
+    manager.cancel()
+    return _model_payload(svc)
+
+
 @router.get("/status")
 def status(request: Request) -> dict[str, Any]:
     svc = services_of(request)
     recorder = svc.recorder
     detector = svc.detector
-    disk = shutil.disk_usage(str(svc.config.data_root.parent))
+    disk = _disk_usage(svc.config.data_root.parent)
     return {
         "profile": svc.config.profile,
         "policy": svc.worker.policy if svc.worker else svc.config.job_policy,
