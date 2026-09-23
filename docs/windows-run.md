@@ -78,10 +78,10 @@ uv sync
 cd frontend
 npm ci
 npm run typecheck
-npm test                       # 17 vitest unit tests
+npm test                       # vitest unit tests
 npm run build                  # FastAPI serves frontend\dist
 npx playwright install chromium
-npm run e2e                    # 15 Playwright tests against the built bundle
+npm run e2e                    # ~110 Playwright specs against the built bundle
 cd ..
 ```
 
@@ -100,9 +100,12 @@ uv run pytest -q
 uv run python -m app.selftest all --report selftest-windows.json
 ```
 
-**Expected:** ruff and mypy clean; `pytest` green with **zero** skips other than
-`live_api` (which needs an Anthropic key) and `gpu` (which needs CUDA);
-`selftest all` prints `all: OK` and exits 0.
+**Expected:** ruff and mypy clean; `pytest` green; `selftest all` prints `all: OK`
+and exits 0. Skips are expected, each with its reason in `pytest -rs`: on a Windows
+developer machine without a local model or frozen build (machine B, job 007) there
+were 38 — POSIX-only fake CLIs (shebang scripts), `chmod` tests that Windows cannot
+express, no `dist\upshot\upshot.exe`, no `sherpa_onnx`, no `asr.model_path`, the
+opt-in soak (`UP_SOAK_HOURS`), `live_api` and `gpu`. Any other skip is a finding.
 
 To run only what this Linux session could not:
 
