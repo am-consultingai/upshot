@@ -41,6 +41,14 @@ projects/upshot/
 
 A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting), the steps, what "pass" means, the time budget, and the evidence wanted. `result.json` is described in `prompt-b.md`. Large files (installers) go with a `.sha256`; B verifies it before use.
 
+## Clean-machine jobs: Windows Sandbox on B (proved by job 001, 2026-09-23)
+
+- B has `WindowsSandbox.exe` but **no `wsb.exe`** CLI, so there is no start/stop/list by id. A job ships a `.wsb` with two mapped folders (`C:\upshot-work\<job>\in` read-only → `C:\in`, `…\out` writable → `C:\out`) and a `LogonCommand` of `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\in\<script>.ps1`.
+- **Start**: `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "Start-Process -FilePath 'C:\Windows\System32\WindowsSandbox.exe' -ArgumentList 'C:\upshot-work\<job>\<x>.wsb' -PassThru"` — no elevation needed. **Wait**: a background `until test -e /mnt/c/upshot-work/<job>/out/<marker>; do sleep 15; done`. **Stop**: the guest script ends with `Stop-Computer -Force`; `Get-Process -Name WindowsSandbox*` empty means closed.
+- Cold start to the logon script ≈ 50 s; closed ≈ 75 s after the script ends. One sandbox at a time. The guest is Windows 24H2 (26100), user `WDAGUtilityAccount`, 4 GB by default, PowerShell 5.1 with PSReadLine 2.0.0, **Defender real-time protection off** (turn it on in the guest when a test is about Defender), no Node, no winget.
+- Only tested with B's screen unlocked. Hyper-V (`Get-VM` works as `Avishay`) is the fallback and the place for the Stage 5 matrix.
+- **Writing a job for B**: B's allowlist refuses compound shell lines (`&&`, `;`, loops) and PowerShell `-Command` strings with `$x = …` assignments or loops. Give single literal commands, or ship a `.ps1` for B to run with `-File`.
+
 ## Rules both agents follow
 
 - **Headless permissions, in practice.** Call Windows programs by their full path — `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`, `/mnt/c/Windows/System32/cmd.exe` — since the Windows folders are not on WSL's PATH on A. A command that touches a folder outside the working folder runs only if that folder is in the allowlist's `additionalDirectories` (A: `~/upshot-agent`, `~/projects/upshot`, `~/.config/clickup`, `/tmp`, `/mnt/c/upshot-build`, `/mnt/c/Users`, `/mnt/c/Windows/System32`; B: the same without ClickUp, with `/mnt/c/upshot-work` instead of `/mnt/c/upshot-build`). Work inside those. Shell variables such as `$X` inside a command can also make it unmatched: prefer literal paths.
