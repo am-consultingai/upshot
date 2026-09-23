@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -44,6 +45,19 @@ def test_selftest_runs_as_a_module(tmp_path: Path) -> None:
         env=env,
     )
     assert proc.returncode == 0, proc.stderr.decode()
+
+
+def test_selftest_prints_to_a_cp1252_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Machine B's pipe was cp1252: printing an arrow crashed the run after the report."""
+    raw = io.BytesIO()
+    console = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", console)
+    monkeypatch.setitem(
+        selftest.REGISTRY, "arrows", lambda args: [selftest.Check("x", True, "a → b, שלום")]
+    )
+    assert selftest.main(["arrows"]) == 0
+    console.flush()
+    assert b"[ok  ] x: a ? b, ????" in raw.getvalue()
 
 
 def test_selftest_unknown_suite_fails() -> None:

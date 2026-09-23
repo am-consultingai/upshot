@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -194,6 +195,9 @@ echo '{"type":"result","is_error":false,"result":"{}"}'
 """
 
 
+posix_stub = pytest.mark.skipif(sys.platform == "win32", reason="the fake CLI is a shebang script")
+
+
 def stub_cli(tmp_path, script: str):  # type: ignore[no-untyped-def]
     tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "claude"
@@ -212,6 +216,7 @@ def test_claude_cli_spawns_outside_the_working_directory() -> None:
     assert Path(where).is_dir()
 
 
+@posix_stub
 def test_claude_cli_reports_sign_in_on_a_modern_build(tmp_path) -> None:  # type: ignore[no-untyped-def]
     client, _ = stub_cli(tmp_path, NEW_CLI)
     status = client.status()
@@ -219,6 +224,7 @@ def test_claude_cli_reports_sign_in_on_a_modern_build(tmp_path) -> None:  # type
     assert "you@example.com" in status.account and "max" in status.account
 
 
+@posix_stub
 def test_claude_cli_old_build_is_unknown_not_signed_out(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """`None` and `False` must not collapse: only one of them is worth nagging about."""
     client, _ = stub_cli(tmp_path, OLD_CLI)
@@ -227,6 +233,7 @@ def test_claude_cli_old_build_is_unknown_not_signed_out(tmp_path) -> None:  # ty
     assert status.signed_in is None, "a build that cannot answer has not answered 'no'"
 
 
+@posix_stub
 def test_claude_cli_login_command_follows_the_build(tmp_path) -> None:  # type: ignore[no-untyped-def]
     modern, modern_path = stub_cli(tmp_path / "new", NEW_CLI)
     assert modern.login_command() == [modern_path, "auth", "login"]

@@ -132,7 +132,10 @@ def register_logon_task(exe: Path | None = None, *, task_name: str = TASK_NAME) 
     except Exception as exc:
         return Step("logon_task", False, f"schtasks failed: {exc}")
     ok = result.returncode == 0
-    return Step("logon_task", ok, result.stdout.decode(errors="replace").strip(), changed=ok)
+    # schtasks explains a refusal ("Access is denied." for a standard user) on stderr only.
+    output = result.stdout if ok else result.stderr or result.stdout
+    detail = output.decode(errors="replace").strip() or f"schtasks exit {result.returncode}"
+    return Step("logon_task", ok, detail, changed=ok)
 
 
 def unregister_logon_task(task_name: str = TASK_NAME) -> bool:  # pragma: no cover - Windows only
