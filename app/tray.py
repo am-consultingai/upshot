@@ -261,3 +261,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         services.close()
         guard.release()
     return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - process entry point
+    # PyInstaller runs this file as the script, as __main__. Without these lines the
+    # frozen upshot.exe defined main() and exited 0 at once: no tray, no server, and
+    # every --selftest "passed" without running (the first freeze, machine A, 2026-09-23).
+    sys.exit(main())
