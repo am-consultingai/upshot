@@ -1,10 +1,12 @@
 """Signal comparison for the T2 loopback echo test.
 
-Pure numpy: this ships, because ``selftest audio`` runs on a user's machine when they
-report "it didn't record me".
+Pure numpy (plus soxr, which the app already ships, to resample a fixture): this ships,
+because ``selftest audio`` runs on a user's machine when they report "it didn't record me".
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 
@@ -37,6 +39,26 @@ def cross_correlation(
         lags = lags[mask]
     index = int(np.argmax(corr))
     return float(corr[index]), int(lags[index])
+
+
+def read_wav_at(path: Path, rate: int) -> np.ndarray:
+    """A 16-bit mono WAV's samples at ``rate``, resampled when the file is at another.
+
+    Tracks are stored at the capture rate (16 kHz), while a fixture is at whatever its
+    source made: Windows SAPI speaks at 22.05 kHz. Comparing the two sample for sample
+    without resampling correlates at about zero however good the capture is.
+    """
+    import wave
+
+    with wave.open(str(path), "rb") as handle:
+        source_rate = handle.getframerate()
+        samples = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
+    audio = samples.astype(np.float64)
+    if source_rate != rate:
+        import soxr
+
+        audio = np.asarray(soxr.resample(audio.astype(np.float32), source_rate, rate), np.float64)
+    return audio
 
 
 def envelope(signal: np.ndarray, rate: int, *, window_ms: int = 50, hop_ms: int = 10) -> np.ndarray:
