@@ -74,17 +74,27 @@ Write-Host "== selftest against the freeze =="
 $exe = Join-Path $root "dist\upshot\upshot.exe"
 $reports = Join-Path $root "dist\selftest"
 New-Item -ItemType Directory -Force -Path $reports | Out-Null
-foreach ($suite in @("imports", "pipeline")) {
-    $report = Join-Path $reports "$suite.json"
-    $p = Start-Process -FilePath $exe -ArgumentList @("--selftest", $suite, "--report", "`"$report`"", "--quiet") -Wait -PassThru
-    if (Test-Path $report) {
+# A home of its own: the build machine may be someone's real Upshot, and the selftest
+# must not write into %LOCALAPPDATA%\upshot. The child inherits this environment.
+$savedHome = $env:UP_HOME
+$env:UP_HOME = Join-Path $reports ("home-" + (Get-Date).ToString("yyyyMMddHHmmss"))
+try {
+    foreach ($suite in @("imports", "pipeline")) {
+        $report = Join-Path $reports "$suite.json"
+        if (Test-Path $report) { Move-Item -Force $report "$report.previous" }
+        $p = Start-Process -FilePath $exe -ArgumentList @("--selftest", $suite, "--report", "`"$report`"", "--quiet") -Wait -PassThru
+        # No report is a failure whatever the exit code: the first freeze exited 0 without
+        # running anything at all.
+        if (-not (Test-Path $report)) { throw "the frozen build wrote no report for --selftest $suite (exit $($p.ExitCode))" }
         $result = Get-Content -Raw -Encoding UTF8 $report | ConvertFrom-Json
         foreach ($check in $result.checks) {
             $mark = if ($check.ok) { "ok  " } else { "FAIL" }
             Write-Host "[$mark] $($check.name): $($check.detail)"
         }
+        if ($p.ExitCode -ne 0 -or -not $result.ok) { throw "the frozen build failed --selftest $suite (exit $($p.ExitCode), report $report)" }
     }
-    if ($p.ExitCode -ne 0) { throw "the frozen build failed --selftest $suite (exit $($p.ExitCode), report $report)" }
+} finally {
+    $env:UP_HOME = $savedHome
 }
 
 $signer = Join-Path $PSScriptRoot "sign.ps1"
