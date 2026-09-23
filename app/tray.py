@@ -221,6 +221,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         print(json.dumps(report.as_dict(), indent=2))
         return 0 if report.ok else 1
     setup()
+    from app.version import build_info
+
+    info = build_info()
+    log.info("Upshot %s (commit %s, built %s)", info.version, info.commit, info.built)
     guard = SingleInstance()
     if not guard.acquire():
         from app.instance import show_running

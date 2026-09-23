@@ -163,16 +163,26 @@ uv run python scripts\make_fixture.py --minutes 10
 ## 5. Frozen build (Phase 13)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1
-dist\upshot\upshot.exe --selftest imports
-dist\upshot\upshot.exe --selftest pipeline
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1 [-Sign] [-SkipInstaller]
 uv run pytest -q tests/e2e/test_phase13_frozen.py
 ```
 
-**Expected:** both `--selftest` runs exit 0, and the frozen tests stop skipping once
-`dist\upshot\upshot.exe` exists. The first is the PyInstaller
-hidden-import tripwire and must never be skipped before shipping a build.
-`build.ps1` runs both itself and fails the build if either does.
+**Expected:** `dist\upshot\upshot.exe`, `dist\Upshot-<version>-Setup.exe` and its
+`.sha256`. The build stamps the version (pyproject) and commit into the freeze
+(`app/build_info.json`, shown in `/api/status` as `build` and on the first line of
+`app.log`), and runs `--selftest imports` and `--selftest pipeline` against the freeze,
+failing if either does. The first is the PyInstaller hidden-import tripwire and must
+never be skipped before shipping a build. `upshot.exe` is windowed, so run a selftest
+by hand with `Start-Process -Wait` and `--report <file>`: it prints nothing.
+
+`-Sign` signs `upshot.exe`, Setup and the uninstaller Inno generates
+(`packaging\sign.ps1`, SHA-256, timestamped) with the code-signing certificate
+`CN=Upshot test signing` in `Cert:\CurrentUser\My`. It is self-signed for now; its
+private key never leaves the build machine, and only the public `.cer` travels.
+
+Keep `build.ps1`, `sign.ps1` and `installer.iss` ASCII: Windows PowerShell 5.1 and
+Inno read a file without a BOM in the ANSI code page, and one em dash made the whole
+build script fail to parse.
 
 First run on a clean profile:
 

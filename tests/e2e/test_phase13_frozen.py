@@ -63,9 +63,11 @@ def test_frozen_resources_present() -> None:
 
 def test_installer_builds() -> None:
     """A sudden size jump means something large was bundled by accident."""
-    setup = Path("dist/Setup.exe")
-    if not setup.exists():
-        pytest.skip("no Setup.exe — Inno Setup was not run")
+    # build.ps1 names it after the version: dist/Upshot-<version>-Setup.exe.
+    found = sorted(Path("dist").glob("Upshot-*-Setup.exe"))
+    if not found:
+        pytest.skip("no Upshot-*-Setup.exe — Inno Setup was not run")
+    setup = found[-1]
     size = setup.stat().st_size
     if not BASELINE.exists():
         BASELINE.write_text(json.dumps({"bytes": size}, indent=2), encoding="utf-8")

@@ -165,8 +165,16 @@ def test_packaging_files_exist() -> None:
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
     assert "PrivilegesRequired=lowest" in installer, "the installer must not need admin"
     assert "{localappdata}" in installer
-    assert "schtasks" in installer, "uninstall removes the logon task"
+    # No logon task since --bootstrap stopped creating one (autostart is the installer's
+    # {userstartup} shortcut), so there is nothing for the uninstaller to remove.
+    assert "schtasks" not in installer
+    assert "AppId=" in installer, "an upgrade finds the installed copy by its AppId"
 
     build = Path("packaging/build.ps1").read_text(encoding="utf-8")
-    assert "--selftest imports" in build, "the build must run the hidden-import tripwire"
+    assert '"--selftest", $suite' in build and '"imports"' in build, (
+        "the build must run the hidden-import tripwire"
+    )
     assert "npm run build" in build and "pyinstaller" in build
+    # Windows PowerShell 5.1 reads a BOM-less script as ANSI: one em dash broke the build.
+    for script in ("build.ps1", "sign.ps1", "installer.iss"):
+        assert Path("packaging", script).read_bytes().isascii(), f"{script} must stay ASCII"
