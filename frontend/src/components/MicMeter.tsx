@@ -149,8 +149,8 @@ export default function MicMeter({
             : level?.clipped
               ? t("settings.micClipped")
               : silent
-                ? t("settings.micSilent")
-                : t("settings.micHint")}
+                ? t(track === "them" ? "settings.loopbackSilent" : "settings.micSilent")
+                : t(track === "them" ? "settings.loopbackHint" : "settings.micHint")}
       </p>
     </div>
   );

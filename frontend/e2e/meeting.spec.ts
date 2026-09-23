@@ -201,6 +201,29 @@ test("settings_shows_both_meters", async ({ page }) => {
   expect((await opens()) - first).toBeLessThanOrEqual(2);
 });
 
+test("two_tabs_share_the_meters_instead_of_fighting_for_them", async ({ page, context }) => {
+  // Job 013 on machine B: three pages on the setup screen reopened the devices about
+  // twenty times a second, and neither meter ever showed a level.
+  const second = await context.newPage();
+  await gotoSettings(page, "audio");
+  await gotoSettings(second, "audio");
+  for (const tab of [page, second]) {
+    await expect(tab.getByTestId("mic-meter-me")).toBeVisible();
+    await expect(tab.getByTestId("mic-meter-them")).toBeVisible();
+  }
+  const opens = async () => {
+    const response = await page.request.get("/api/audio/devices");
+    return (await response.json()).meter_opens as number;
+  };
+  await page.waitForTimeout(1500);
+  const first = await opens();
+  await page.waitForTimeout(5000);
+  expect(await opens()).toBe(first);
+  // The computer-audio meter is silent whenever nothing plays; it must not blame the microphone.
+  await expect(page.getByTestId("mic-meter-hint-them")).not.toContainText(/microphone/i);
+  await second.close();
+});
+
 test("swept_audio_reads_as_deleted_not_missing", async ({ page, seed }) => {
   // A meeting the retention policy stripped must not look like a failed recording.
   await seed([
