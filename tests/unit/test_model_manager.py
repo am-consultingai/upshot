@@ -68,6 +68,7 @@ def test_too_little_space_fails_before_fetching_anything(
     status = manager.wait(5)
     assert status.state == "failed"
     assert "GB free" in status.error
+    assert status.code == "no_space"  # what the setup screen words for itself
     assert fetched == []
 
 

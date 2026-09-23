@@ -61,8 +61,11 @@ export interface SeedEvent {
 }
 
 export interface SeedBody {
-  /** Clear the library, the events and the saved appearance first. */
+  /** Clear the library, the events and the saved appearance first. Also marks
+   * first-run setup done, so no spec lands on /welcome by accident. */
   reset?: boolean;
+  /** First-run setup finished or not; only welcome.spec.ts asks for `false`. */
+  setup_done?: boolean;
   meetings?: SeedMeeting[];
   calendar_events?: SeedEvent[];
   detector_events?: {
@@ -189,7 +192,7 @@ export async function gotoApp(page: Page, path = "/"): Promise<void> {
  */
 export async function gotoSettings(
   page: Page,
-  section: "audio" | "appearance" | "storage" | "summaries" | "prompt" = "audio",
+  section: "audio" | "speech" | "appearance" | "storage" | "summaries" | "prompt" = "audio",
 ): Promise<void> {
   await gotoApp(page, `/settings#${section}`);
   await expect(page.getByTestId(`settings-section-${section}`)).toHaveAttribute(

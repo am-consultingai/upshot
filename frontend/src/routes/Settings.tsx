@@ -6,7 +6,8 @@ import { THEMES, type Theme } from "../theme";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
-import MicMeter from "../components/MicMeter";
+import AudioDeviceSettings from "../components/AudioDeviceSettings";
+import SpeechSettings from "../components/SpeechSettings";
 import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
 import { useSetupWarnings } from "../lib/setup";
@@ -18,7 +19,6 @@ interface ConfigShape {
   data_root?: string | null;
   ui?: { language?: string };
   summary?: { language?: string };
-  audio?: { input_device?: number | null; output_device?: number | null };
   detection?: { mode?: string };
 }
 
@@ -35,6 +35,9 @@ const DETECTION_MODES = [
  */
 const SECTIONS: SettingsSection[] = [
   { id: "audio", label: "settings.groupAudio" },
+  // What first-run setup asks, kept reachable after it: the meeting language, the
+  // speech model and where it runs.
+  { id: "speech", label: "settings.groupSpeech" },
   { id: "appearance", label: "settings.groupAppearance" },
   { id: "storage", label: "settings.groupStorage" },
   { id: "calendar", label: "settings.groupCalendar" },
@@ -49,7 +52,6 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const [dataRoot, setDataRoot] = useState("");
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const audio = useQuery({ queryKey: ["audio-devices"], queryFn: api.audioDevices });
   const save = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
@@ -67,11 +69,6 @@ export default function Settings() {
   // start with nothing on screen to explain it.
   const pinned = settings.data?.pinned ?? {};
   const localWarning = /onedrive|dropbox|google drive/i.test(dataRoot);
-
-  const devices = audio.data?.devices ?? [];
-  const outputs = audio.data?.outputs ?? [];
-  const selectedDevice = config.audio?.input_device ?? null;
-  const selectedOutput = config.audio?.output_device ?? null;
 
   return (
     <PinnedContext.Provider value={pinned}>
@@ -98,97 +95,7 @@ export default function Settings() {
 
       {section === "audio" && (
       <SettingGroup>
-        <SettingRow
-          label={t("settings.microphone")}
-          htmlFor="mic-device"
-          configKey="audio.input_device"
-          description={
-            devices.length === 0 ? (
-              <>
-                {audio.data && audio.data.platform !== "win32"
-                  ? t("settings.micWrongHost")
-                  : t("settings.micUnavailable")}
-                {audio.data?.error && (
-                  <span data-testid="mic-error" className="mt-1 block font-mono">
-                    {audio.data.error}
-                  </span>
-                )}
-                {audio.data && (
-                  <span className="mt-1 block">
-                    host: {audio.data.platform} · capture: {audio.data.capture}
-                  </span>
-                )}
-              </>
-            ) : undefined
-          }
-        >
-          {devices.length === 0 ? (
-            <span data-testid="mic-unavailable" className="text-xs text-tertiary">
-              —
-            </span>
-          ) : (
-            <select
-              id="mic-device"
-              data-testid="mic-device"
-              value={selectedDevice === null ? "" : String(selectedDevice)}
-              onChange={(event) => {
-                const raw = event.target.value;
-                save.mutate({ "audio.input_device": raw === "" ? null : Number(raw) });
-              }}
-              className={SELECT_CLASS}
-            >
-              <option value="">{t("settings.microphoneDefault")}</option>
-              {devices.map((device) => (
-                <option key={device.index} value={device.index}>
-                  {device.name}
-                  {device.is_default ? " ✓" : ""}
-                </option>
-              ))}
-            </select>
-          )}
-          {/*
-           * Not mounted until the saved device is known. The meter opens the device
-           * in an effect keyed on that prop, so rendering it while the setting is
-           * still loading opens the default device and then immediately reopens the
-           * real one — two opens per meter, for nothing.
-           */}
-          {settings.isSuccess && (
-            <div className="w-40">
-              <MicMeter device={selectedDevice} track="me" />
-            </div>
-          )}
-        </SettingRow>
-
-        <SettingRow
-          label={t("settings.systemAudio")}
-          htmlFor="output-device"
-          description={t("settings.systemAudioNote")}
-        >
-          <select
-            id="output-device"
-            data-testid="output-device"
-            value={selectedOutput === null ? "" : String(selectedOutput)}
-            onChange={(event) => {
-              const raw = event.target.value;
-              save.mutate({ "audio.output_device": raw === "" ? null : Number(raw) });
-            }}
-            className={SELECT_CLASS}
-            disabled={outputs.length === 0}
-          >
-            <option value="">{t("settings.outputDefault")}</option>
-            {outputs.map((device) => (
-              <option key={device.index} value={device.index}>
-                {device.name}
-                {device.is_default ? " ✓" : ""}
-              </option>
-            ))}
-          </select>
-          {settings.isSuccess && (
-            <div className="w-40">
-              <MicMeter device={null} track="them" hint={t("settings.systemAudioLevel")} />
-            </div>
-          )}
-        </SettingRow>
+        <AudioDeviceSettings />
 
         <SettingRow
           label={t("settings.detection")}
@@ -353,6 +260,7 @@ export default function Settings() {
       </SettingGroup>
       )}
 
+      {section === "speech" && <SpeechSettings />}
       {section === "calendar" && <CalendarSettings />}
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}

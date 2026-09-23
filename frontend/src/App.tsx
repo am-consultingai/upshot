@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { I18nContext, applyLocale, catalogues, type Locale, type MessageKey } from "./i18n";
@@ -9,6 +9,8 @@ import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
 import Settings from "./routes/Settings";
+import Welcome from "./routes/Welcome";
+import { setupPending } from "./lib/speech";
 import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
 import DetectionNudge, { type Detection } from "./components/DetectionNudge";
@@ -194,26 +196,44 @@ export default function App() {
     [locale, t, theme, tooltips],
   );
 
+  /*
+   * First-run setup comes first until it is done or skipped. Only once the settings
+   * have loaded and say so — never on a guess — so a returning user's library does
+   * not flash past on the way to a screen they have already finished.
+   *
+   * The welcome screen has the window to itself: no rail, no capture question, no
+   * detection nudge. Each of those assumes an app that is already set up.
+   */
+  const { pathname } = useLocation();
+  const welcoming = pathname === "/welcome";
+  const sendToSetup = saved.isSuccess && setupPending(saved.data?.config) && !welcoming;
+
   return (
     <I18nContext.Provider value={value}>
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
         <CommandPalette />
         <Toaster />
         <ConfirmHost />
-        <Sidebar />
+        {!welcoming && <Sidebar />}
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />
           <RecordingBar />
-          <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
+          {!welcoming && (
+            <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
+          )}
           {/*
            * Above the routes, not inside the empty detail pane where this started.
            * How capture works is one decision about the whole application, and in the
            * pane it was invisible to anyone whose saved view was the calendar — which
            * is to say, invisible to exactly the person who uses the calendar most.
            */}
-          <CaptureChoice />
+          {!welcoming && <CaptureChoice />}
           <main className="flex min-h-0 flex-1">
+            {sendToSetup ? (
+              <Navigate to="/welcome" replace />
+            ) : (
             <Routes>
+              <Route path="/welcome" element={<Full wide><Welcome /></Full>} />
               {/*
                * The library owns the list; what you open renders beside it. Search,
                * settings are a whole screen rather than one item from a
@@ -244,6 +264,7 @@ export default function App() {
                 */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
+            )}
           </main>
         </div>
       </div>

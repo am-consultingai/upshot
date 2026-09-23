@@ -96,7 +96,7 @@ local while the Worker may be somewhere else. Same installer, different config.
 
 | Profile | Chosen when | Transcribes | Model | Summary arrives |
 |---|---|---|---|---|
-| `gpu-live` | CUDA present, ≥6 GB VRAM | during the meeting, chunk by chunk | `whisper-large-v3-ct2`, int8 (Pascal) | ~1 min after the call |
+| `gpu-live` | CUDA present, ≥4 GB VRAM on GPU 0 (read with `nvidia-smi`; unreadable → CPU) | during the meeting, chunk by chunk | `whisper-large-v3-ct2`, int8 (Pascal) | ~1 min after the call |
 | `cpu-deferred` | no CUDA | **after** the meeting, on policy | `whisper-large-v3-turbo-ct2`, int8, cores−2 threads | 0.5–2× meeting length later |
 | `remote-worker` | a worker URL is configured and reachable | chunks POSTed to the GPU box as they close | whatever that box runs | ~1 min after the call |
 | `cloud-asr` | opt-in only, never a silent fallback | after the meeting | provider API | minutes |
@@ -361,6 +361,12 @@ chunks are far past that threshold, which is one of the quiet advantages of not 
 
 **Model resolution order** (per profile, all local): configured path → app-home download
 → download. With `model_path` pointed at an existing local model directory, first run downloads nothing.
+
+**The meeting language picks the repo.** Hebrew, and per-meeting detection, use the ivrit-ai
+fine-tunes above. A language pinned to anything else (first-run setup's "English") uses
+stock Whisper of the same size — `Systran/faster-whisper-large-v3` on GPU,
+`mobiuslabsgmbh/faster-whisper-large-v3-turbo` on CPU — because the Hebrew fine-tune's
+detection leans to Hebrew and pinned an English meeting as Hebrew.
 
 ---
 
