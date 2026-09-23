@@ -45,3 +45,14 @@ def test_an_unknown_networking_mode_is_treated_as_nat(
 
     monkeypatch.setattr(subprocess, "run", missing)
     assert e2e.networking_mode() == "nat"
+
+
+def test_only_the_runs_own_faults_fail_it(e2e: ModuleType) -> None:
+    driver = (
+        "00:11:16 Faulting application name: dptf_helper.exe, version: 9.0.11905.54015, "
+        "time stamp: 0x6655d1a8"
+    )
+    app = "00:12:01 Faulting application name: python.exe, version: 3.13.5150.1013"
+    browser = "00:12:30 Faulting application name: chrome.exe, version: 140.0.7339.80"
+    assert e2e.our_faults([driver]) == []
+    assert e2e.our_faults([driver, app, browser]) == [app, browser]

@@ -29,10 +29,11 @@ def test_m1_capture_e2e(tmp_path: Path, app_home: Path) -> None:
     payload = run_gate("capture-e2e", tmp_path, "--seconds", "20")
     checks = {check["name"]: check for check in payload["checks"]}  # type: ignore[union-attr]
     assert payload["ok"] is True
-    assert checks["capture_duration"]["metrics"]["durations_ms"] == {
-        "me": 20_000,
-        "them": 20_000,
-    }
+    # Within the check's own tolerance, not exact: real WASAPI capture on machine B
+    # delivered 20200 / 20100 ms for a 20 s recording (job 008), which is correct.
+    durations = checks["capture_duration"]["metrics"]["durations_ms"]
+    assert set(durations) == {"me", "them"}
+    assert all(abs(ms - 20_000) <= 500 for ms in durations.values()), durations
     assert checks["capture_them_correlates"]["ok"] is True, checks["capture_them_correlates"]
     assert checks["capture_language_pinned"]["metrics"]["language"] == "en"
     assert checks["capture_tray_sequence"]["metrics"]["states"] == [
