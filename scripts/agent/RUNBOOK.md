@@ -17,7 +17,7 @@ A and B only talk through the Google Drive folder **`My Drive/projects/upshot`**
 
 `loop.sh` runs forever (one copy at a time; the scheduled task re-launches it every 15 minutes if it died, and at every sign-in). Before each cycle it copies `scripts/agent/*` from `origin/main`, so an agent fix pushed by A reaches both machines within minutes. A copy that does not compile is not installed. The allowlists are the exception: they change only when the user re-runs `setup.sh`, so no agent can widen its own permissions.
 
-- **A**: each cycle is one **shift**, a headless `claude -p` session with `prompt-a.md`. The shift reads this file, `~/upshot-agent/journal.md`, the epic and Drive, does the next step, writes the journal, and ends. When it has posted a job it writes `~/upshot-agent/wait.json`, and no new shift starts until the job's result arrives (or the wait expires), so waiting costs nothing.
+- **A**: each cycle is one **shift**, a headless `claude -p` session with `prompt-a.md`. The shift reads this file, `~/upshot-agent/scratch/journal.md`, the epic and Drive, does the next step, writes the journal, and ends. When it has posted a job it writes `~/upshot-agent/scratch/wait.json`, and no new shift starts until the job's result arrives (or the wait expires), so waiting costs nothing. A's own files live in `~/upshot-agent/scratch/`, the one folder its allowlist lets it write (the allowlist denies `~/upshot-agent/*.json` and `*.md`).
 - **B**: each cycle takes the lowest-numbered job in `jobs/` that has no `results/<id>/result.json`, and runs a headless `claude -p` session with `prompt-b.md` in `~/upshot-agent/jobs/<id>/`. A job that was interrupted by a restart is resumed.
 - Both write a heartbeat to `status/A.json` / `status/B.json` (`idle`, `working`, `waiting`, `paused`), with the time.
 - A usage-limit error pauses that machine for 45 minutes. A signed-out Claude pauses it for 6 hours and needs the user.
@@ -63,7 +63,7 @@ A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting)
 
 - **Pause both**: create a file named `STOP` in the Drive folder (from any device). Delete it to resume.
 - **Pause one machine**: create `~/upshot-agent/STOP` in that machine's WSL.
-- **What is it doing?** `status/A.json` and `status/B.json` in Drive; the epic's comments; `~/upshot-agent/journal.md` and `~/upshot-agent/logs/` on A.
+- **What is it doing?** `status/A.json` and `status/B.json` in Drive; the epic's comments; `~/upshot-agent/scratch/journal.md` and `~/upshot-agent/logs/` on A.
 - **Stop for good**: Task Scheduler → disable `upshot-agent-a` / `upshot-agent-b`.
 
 ## One-time setup (already done if the tasks exist)

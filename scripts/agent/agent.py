@@ -27,7 +27,10 @@ import drive  # noqa: E402  (copied next to this file by loop.sh)
 LOGS = HOME / "logs"
 JOBS = HOME / "jobs"
 STOP_LOCAL = HOME / "STOP"
-WAIT_FILE = HOME / "wait.json"  # written by A's shift: {"job": "<id>", "until": "<iso>"}
+# Written by A's shift: {"job": "<id>", "until": "<iso>"}. It lives in scratch/, the one folder
+# A's allowlist lets it write: the allowlist denies ~/upshot-agent/*.json and *.md, and a deny
+# beats an allow, so ~/upshot-agent/wait.json can't be written. The old path is still read.
+WAIT_FILES = (HOME / "scratch" / "wait.json", HOME / "wait.json")
 DONE_FILE = HOME / "DONE"  # written by A's shift when the epic is finished
 BACKOFF_FILE = HOME / "backoff.json"
 JOB_TIMEOUT_S = 4 * 3600
@@ -178,15 +181,16 @@ def role_b() -> None:
 
 def waiting() -> str | None:
     """A skips its shift while it waits on a job whose result has not arrived."""
-    try:
-        w = json.loads(WAIT_FILE.read_text())
-    except (OSError, ValueError):
-        return None
-    if datetime.fromisoformat(w["until"]) < datetime.now(UTC):
-        return None  # the wait timed out; the shift will look into it
-    if drive.resolve(f"results/{w['job']}/result.json"):
-        return None
-    return w["job"]
+    for wait_file in WAIT_FILES:
+        try:
+            w = json.loads(wait_file.read_text())
+        except (OSError, ValueError):
+            continue
+        if datetime.fromisoformat(w["until"]) < datetime.now(UTC):
+            continue  # the wait timed out; the shift will look into it
+        if w["job"] == "user" or not drive.resolve(f"results/{w['job']}/result.json"):
+            return w["job"]
+    return None
 
 
 def role_a() -> None:
