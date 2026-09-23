@@ -181,7 +181,15 @@ try {
     Write-Host "  data     $HomeDir"
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
-    if ($root -like "\\wsl*") {
+    # \\wsl.localhost\<distro>\home\... and the older \\wsl$\<distro>\... both split into
+    # the distro that owns the files and the Linux path inside it. Anything that has to
+    # run *on* the files rather than just read them - npm, which cannot work over UNC -
+    # needs both.
+    $wslDistro = ""
+    $wslPath   = ""
+    if ($root -match '^\\\\wsl(?:\.localhost|\$)\\([^\\]+)\\(.*)$') {
+        $wslDistro = $Matches[1]
+        $wslPath   = "/" + ($Matches[2] -replace '\\', '/')
         Write-Good "source is on a WSL path - reading it over the bridge is fine, and"
         Write-Good "the venv and cache go to $WorkDir on local disk, not into WSL."
     }
@@ -246,7 +254,12 @@ try {
         $plan += "Python and the dependencies (~400 MB, one time, into $WorkDir)"
     }
 
-    $modelOk = ($ModelPath -ne "") -and (Test-Path (Join-Path $ModelPath "model.bin"))
+    # [System.IO.Path]::Combine, not Join-Path: Join-Path resolves the drive through the
+    # PowerShell provider, so a path on a drive this machine does not have - the default
+    # here names D: - throws DriveNotFound, and under "Stop" that killed the whole run
+    # before anything started. A model that is not there is a download, not an error.
+    $modelBin = [System.IO.Path]::Combine($ModelPath, "model.bin")
+    $modelOk = ($ModelPath -ne "") -and (Test-Path -LiteralPath $modelBin)
     if (-not $modelOk) {
         if ($ModelPath -ne "") { Write-Warn "no model.bin under: $ModelPath" }
         $plan += "the transcription model (~1.6-3 GB, one time)"
@@ -257,7 +270,36 @@ try {
     if ($needUi -and $haveNpm) { $plan += "the web UI's build packages (~200 MB, one time)" }
 
     # Without CUDA libraries CTranslate2 runs on the CPU, which is several times slower.
-    $haveNvidia = [bool] (Get-Command nvidia-smi -ErrorAction SilentlyContinue)
+    #
+    # "Is there a GPU" is not the same question as "is nvidia-smi installed". That tool
+    # ships with the driver and answers happily on a laptop whose card is far too small
+    # to hold the model, so asking only whether it exists offered a 700 MB download that
+    # could not have paid off. Ask it what the card actually is instead.
+    $gpuName  = ""
+    $gpuMemMB = 0
+    $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+    if ($smi) {
+        # Wrapped: a driver mid-upgrade, or a card the tool cannot reach, must read as
+        # "no usable GPU" rather than end the run.
+        try {
+            $reply = @(& $smi.Source --query-gpu=name,memory.total `
+                --format=csv,noheader,nounits) | Select-Object -First 1
+            if ($reply) {
+                $fields = $reply -split ","
+                $gpuName  = $fields[0].Trim()
+                $gpuMemMB = [int] ($fields[1].Trim())
+            }
+        } catch { }
+    }
+    # large-v3 is around 1.6 GB in int8, before activations and CUDA's own context. Below
+    # this it does not fit, and finding that out costs a 700 MB download and an OOM at the
+    # first transcription - so the question is not worth asking.
+    $gpuMinMB = 4096
+    $haveNvidia = $gpuMemMB -ge $gpuMinMB
+    if ($gpuName -and -not $haveNvidia) {
+        Write-Warn "$gpuName has ${gpuMemMB} MB - under the ${gpuMinMB} MB the model needs,"
+        Write-Warn "so transcription will run on the CPU and CUDA is not offered."
+    }
     $cudaOk = $false
     $cudaWanted = $false
     if ($CudaDir -ne "" -and (Test-Path $CudaDir)) {
@@ -334,10 +376,42 @@ try {
         Write-Warn "files this script puts there."
         if ($haveNpm -and (Ask "  Build the UI?")) {
             Write-Step "Building the web UI"
-            Push-Location frontend
-            if (-not (Test-Path node_modules)) { npm ci }
-            npm run build
-            Pop-Location
+            $built = $false
+            if ($wslDistro) {
+                # Windows npm cannot install into a \\wsl.localhost path. Package install
+                # scripts are run as `cmd /d /s /c ...`, and cmd refuses a UNC working
+                # directory - it falls back to C:\Windows, where esbuild's installer looks
+                # for its own install.js and dies. Nothing on the npm side fixes that, so
+                # the build is handed to the distro that owns the files, where the paths
+                # are ordinary Linux ones and the installed binaries are the right ones
+                # for the platform doing the building.
+                Write-Host "  source is inside WSL - building there, where the paths are native"
+                $build = "cd '$wslPath/frontend' && { [ -d node_modules ] || npm ci; } && npm run build"
+                & wsl.exe -d $wslDistro -- bash -lc $build
+                $built = ($LASTEXITCODE -eq 0)
+                if (-not $built) { Write-Warn "the build inside WSL failed" }
+            } else {
+                Push-Location frontend
+                try {
+                    if (-not (Test-Path node_modules)) {
+                        npm ci
+                        if ($LASTEXITCODE -ne 0) { Write-Bad "npm ci failed" }
+                    }
+                    if ($LASTEXITCODE -eq 0) {
+                        npm run build
+                        $built = ($LASTEXITCODE -eq 0)
+                    }
+                } finally { Pop-Location }
+            }
+            # A failed build used to fall through to a started app serving the "not built
+            # yet" placeholder, with the reason scrolled far off the top of the window.
+            if ($built) { Write-Good "UI built" }
+            else {
+                Write-Bad "the UI was not built - the app will serve a placeholder page."
+                Write-Bad "Build it by hand, then start this script again:"
+                if ($wslDistro) { Write-Bad "  (in WSL)  cd $wslPath/frontend && npm ci && npm run build" }
+                else { Write-Bad "  cd frontend; npm ci; npm run build" }
+            }
         } else {
             Write-Warn "skipped - the UI will be a placeholder page"
         }

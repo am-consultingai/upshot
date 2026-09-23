@@ -313,8 +313,8 @@ def test_install_never_captures_the_installers_streams(monkeypatch) -> None:  # 
     to stderr aborted the install. It downloaded 220 MB, verified the checksum, then left
     a zero-byte version stub and no launcher.
 
-    A spinner is fine, and there is one, but only as a *sibling* process that watches the
-    download folder from outside. The distinction is the whole lesson.
+    Progress, if it ever comes back, belongs in the application's UI — see the next test
+    for why not even a sibling process can paint it.
     """
     from app.llm import claude_cli
 
@@ -325,18 +325,27 @@ def test_install_never_captures_the_installers_streams(monkeypatch) -> None:  # 
         assert forbidden not in script, f"{forbidden} captures the installer's streams"
 
 
-def test_install_spinner_cannot_break_the_install(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """Showing activity is a nicety; installing is the job. Their failure modes differ."""
+def test_install_command_line_nests_no_powershell(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Antivirus reads this command line before anything in it runs.
+
+    A spinner used to run beside the installer as a nested
+    ``Start-Process powershell -Command '...while($true)...'``. Combined with
+    ``irm <url> | iex`` that is the shape of a fileless dropper, and Microsoft Defender
+    scored the whole line as ``Trojan:Win32/Commando.A!ml`` and refused to create the
+    process: ``WinError 5``, surfacing as "could not start the native install". Removing
+    the nesting was enough to make the identical install start.
+
+    Progress belongs in the application's UI, not in a command line something else has to
+    judge.
+    """
     from app.llm import claude_cli
 
     monkeypatch.setattr(claude_cli.sys, "platform", "win32")
     monkeypatch.setattr(claude_cli, "powershell_language_mode", lambda: "FullLanguage")
     script = install_plan().argv[-1]  # type: ignore[union-attr]
-    assert "Start-Process powershell -NoNewWindow" in script, "a sibling, not a wrapper"
-    assert "catch { }" in script, "a spinner that will not start must not stop the install"
-    assert "finally {" in script and "Stop-Process" in script, "and must not outlive it"
-    # The console is shared with the spinner, so the script must not rely on quoting that
-    # a Windows command line would eat.
+    assert "Start-Process powershell" not in script, "a nested shell is what got it blocked"
+    assert "while($true)" not in script and "while ($true)" not in script
+    # Still one flat argument on a Windows command line: no quoting it would eat.
     assert '"' not in script and "`" not in script
 
 
