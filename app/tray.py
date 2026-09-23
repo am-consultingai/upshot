@@ -6,6 +6,7 @@ pystray needs the main thread on Windows, so everything else is spawned from her
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import webbrowser
@@ -192,6 +193,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     is the classic failure.
     """
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if sys.stderr is None:
+        # Windowed: no stderr for the model download's progress bars to write to. Set
+        # before huggingface_hub is imported, which reads it once.
+        os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
     if "--selftest" in arguments:
         from app.selftest import main as selftest_main
 

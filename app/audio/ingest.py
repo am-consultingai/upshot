@@ -35,6 +35,10 @@ class Imported:
     converted: bool
 
 
+#: A conversion of even a day-long recording finishes in minutes; past this, ffmpeg hangs.
+FFMPEG_TIMEOUT_S = 1800
+
+
 def ffmpeg_path(config: Config | None = None) -> str | None:
     configured = config.get("ffmpeg_path") if config else None
     if configured and Path(str(configured)).exists():
@@ -56,11 +60,19 @@ def to_wav(source: Path, target: Path, *, config: Config | None = None, rate: in
             "or set ffmpeg_path"
         )
     target.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        [binary, "-y", "-i", str(source), "-ac", "1", "-ar", str(rate), str(target)],
-        capture_output=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [binary, "-y", "-i", str(source), "-ac", "1", "-ar", str(rate), str(target)],
+            capture_output=True,
+            check=False,
+            timeout=FFMPEG_TIMEOUT_S,
+            # The frozen app has no console, so each child would flash one of its own.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise UnsupportedAudio(
+            f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
+        ) from exc
     if result.returncode != 0 or not target.exists():
         raise UnsupportedAudio(
             f"ffmpeg could not convert {source.name}: "
