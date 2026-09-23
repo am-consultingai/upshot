@@ -458,6 +458,21 @@ def test_the_running_interpreter_counts_as_upshot() -> None:
     assert _exe_key(sys.executable) in own_executables()
 
 
+def test_the_interpreter_behind_a_link_counts_as_upshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """uv's ``cpython-3.14-…`` folder is a junction; Windows names the target (job 014)."""
+    from app.detect.detector import _exe_key, own_executables
+
+    real = tmp_path / "cpython-3.14.7" / "python.exe"
+    real.parent.mkdir()
+    real.write_bytes(b"")
+    (tmp_path / "cpython-3.14").symlink_to(real.parent, target_is_directory=True)
+    monkeypatch.setattr(sys, "_base_executable", str(tmp_path / "cpython-3.14" / "python.exe"))
+
+    assert _exe_key(str(real)) in own_executables()
+
+
 # ------------------------------------------- furniture vs. an app joining a call
 
 VOICEMEETER = r"C:\Program Files (x86)\VB\Voicemeeter\voicemeeter.exe"

@@ -97,6 +97,23 @@ def test_tray_survives_worker_crash(tmp_path: Path, app_home: Path) -> None:
     tray.dispatch(Action.STOP)
 
 
+def test_a_discarded_meeting_says_so_on_disk(tmp_path: Path, app_home: Path) -> None:
+    """Too short to keep: the folder's meta.json agrees with the database (machine B, job 014)."""
+    from app import meta
+
+    harness = build_harness(tmp_path)
+    client = harness.client()
+    meeting_id = client.post("/api/recording/start", json={}).json()["meeting_id"]
+    harness.emit(seconds=1)
+    client.post("/api/recording/stop")
+
+    meeting = harness.services.dao.require_meeting(meeting_id)
+    assert meeting.state == MeetingState.DISCARDED
+    on_disk = meta.read(meeting.path)
+    assert on_disk["state"] == MeetingState.DISCARDED
+    assert on_disk["ended_at"]
+
+
 def test_toast_button_posts_to_api(tmp_path: Path, app_home: Path) -> None:
     """Activating 'Not a meeting' takes the same path the UI does, and discards."""
     harness = build_harness(tmp_path)

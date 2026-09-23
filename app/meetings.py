@@ -263,7 +263,7 @@ class MeetingService:
         self.dao.update_meeting(meeting_id, ended_at=iso(ended), duration_s=seconds)
         if seconds < minimum:
             log.info("meeting %s is %ss (< %ss) — discarding", meeting_id, seconds, minimum)
-            return self.dao.set_state(meeting_id, MeetingState.DISCARDED)
+            return self.discard(meeting_id)
         updated = self.dao.set_state(meeting_id, MeetingState.RECORDED)
         # Now the end is known, which is what tells a late start from the next meeting.
         updated = self.rematch(meeting_id)
@@ -273,7 +273,12 @@ class MeetingService:
         return updated
 
     def discard(self, meeting_id: str) -> Meeting:
-        return self.dao.set_state(meeting_id, MeetingState.DISCARDED)
+        meeting = self.dao.set_state(meeting_id, MeetingState.DISCARDED)
+        # A committed folder keeps its audio; its meta.json must not still say RECORDING
+        # (machine B, job 014). One never committed gets no folder made for it here.
+        if meta.path_for(meeting.path).exists():
+            meta.mirror(meeting)
+        return meeting
 
     def interrupted(self, meeting_id: str) -> Meeting:
         return self.dao.set_state(meeting_id, MeetingState.INTERRUPTED)
