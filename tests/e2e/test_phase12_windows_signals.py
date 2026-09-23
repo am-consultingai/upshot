@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 
@@ -94,9 +95,13 @@ def test_registry_rearm() -> None:
         assert watcher.rearms >= 3
     finally:
         watcher.stop()
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, rf"{MICROPHONE_KEY}\NonPackaged", 0, winreg.KEY_ALL_ACCESS
-        ) as parent:
+        # Only when a write happened: a missing key here would hide the real failure.
+        with (
+            contextlib.suppress(FileNotFoundError),
+            winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, rf"{MICROPHONE_KEY}\NonPackaged", 0, winreg.KEY_ALL_ACCESS
+            ) as parent,
+        ):
             winreg.DeleteKey(parent, "ma#selftest")
 
 
