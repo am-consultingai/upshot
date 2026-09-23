@@ -122,6 +122,36 @@ def test_entry_point_runs_selftest(tmp_path: Path) -> None:
     assert "import_all_modules" in result.stdout
 
 
+def test_the_frozen_entry_script_calls_main(tmp_path: Path) -> None:
+    """PyInstaller runs app/tray.py as __main__, not `from app.tray import main`.
+
+    The first freeze on machine A defined main() and exited 0 without calling it: no
+    tray, no server, and every --selftest in the build "passed" with no report written.
+    """
+    import os
+
+    root = Path(__file__).resolve().parents[2]
+    report = tmp_path / "clock.json"
+    env = {**os.environ, "UP_HOME": str(tmp_path / "home"), "PYTHONPATH": str(root)}
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(root / "app" / "tray.py"),
+            "--selftest",
+            "clock",
+            "--report",
+            str(report),
+        ],
+        capture_output=True,
+        env=env,
+        text=True,
+        timeout=120,
+        cwd=root,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(report.read_text(encoding="utf-8"))["suite"] == "clock"
+
+
 def test_entry_point_runs_bootstrap(tmp_path: Path) -> None:
     import os
 
