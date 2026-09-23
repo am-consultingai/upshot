@@ -36,6 +36,16 @@ for f in agent.py drive.py notify.ps1 loop.sh RUNBOOK.md "prompt-$ROLE.md" "allo
   git -C "$REPO" show "origin/main:scripts/agent/$f" >"$AH/.$f.new" && mv -f "$AH/.$f.new" "$AH/$f"
 done
 chmod +x "$AH/loop.sh"
+# Headless Claude refuses commands that touch folders outside its working folder unless they are
+# listed in additionalDirectories; spell out ~ there, since this machine's home differs from A's.
+python3 - "$AH/allowlist-$ROLE.json" "$HOME" <<'PY'
+import json, sys
+path, home = sys.argv[1], sys.argv[2]
+d = json.load(open(path))
+dirs = d["permissions"].get("additionalDirectories", [])
+d["permissions"]["additionalDirectories"] = [home + x[1:] if x.startswith("~/") else x for x in dirs]
+json.dump(d, open(path, "w"), indent=1)
+PY
 python3 -m py_compile "$AH/agent.py" "$AH/drive.py"
 {
   echo "ROLE=$ROLE"

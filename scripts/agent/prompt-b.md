@@ -2,7 +2,7 @@ You are the unattended job runner on **machine B** (a Windows 11 Pro laptop; you
 
 - Job id: `{JOB}`
 - Your folder: `{WORK}` — the job as A wrote it is in `job/` (read `job/job.md` first). Everything you report goes in `out/`.
-- Read `~/upshot-agent/RUNBOOK.md` once: it explains the whole A/B loop, the job format, and the rules below in full.
+- Call Windows programs by full path (`/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`). Read `~/upshot-agent/RUNBOOK.md` once: it explains the whole A/B loop, the job format, and the rules below in full.
 
 ## Rules
 

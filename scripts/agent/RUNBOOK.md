@@ -43,6 +43,8 @@ A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting)
 
 ## Rules both agents follow
 
+- **Headless permissions, in practice.** Call Windows programs by their full path — `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`, `/mnt/c/Windows/System32/cmd.exe` — since the Windows folders are not on WSL's PATH on A. A command that touches a folder outside the working folder runs only if that folder is in the allowlist's `additionalDirectories` (A: `~/upshot-agent`, `~/projects/upshot`, `~/.config/clickup`, `/tmp`, `/mnt/c/upshot-build`, `/mnt/c/Users`, `/mnt/c/Windows/System32`; B: the same without ClickUp, with `/mnt/c/upshot-work` instead of `/mnt/c/upshot-build`). Work inside those. Shell variables such as `$X` inside a command can also make it unmatched: prefer literal paths.
+
 - **Permissions.** Each machine runs Claude in `dontAsk` mode with an allowlist (`allowlist-a.json`, `allowlist-b.json`). Anything not on it is refused, not asked. The user decided: **no deleting and no installing on either host without them**. Installs happen only inside **Windows Sandbox**, which is discarded on close. Anything else that needs the user goes through "Needs you".
 - **Needs you.** A comments on the epic starting with "🙋 Needs you:", keeps `NEEDS-YOU.md` on Drive, and puts a notification on machine A's screen (`notify.ps1`) that stays until dismissed. The ClickUp account is the user's own, so ClickUp does not notify them of the agent's comments. The run keeps working on anything not blocked. The user answers by replying to the comment.
 - **No secrets** in Drive, ClickUp or git. The self-signed certificate's private key never leaves A's Windows certificate store.

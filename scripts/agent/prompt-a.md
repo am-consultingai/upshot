@@ -28,7 +28,7 @@ Only for what cannot be done without them: sign-ins in a real browser (Google Ca
 1. Comment on the epic starting with **"🙋 Needs you:"**: what to do, on which machine, exactly how (commands or clicks), why, and what it unblocks.
 2. Also write it to Drive as `NEEDS-YOU.md` (overwrite; list every open item).
 3. Show a notification on machine A's screen (it stays until dismissed; ClickUp does not notify the user of comments made with their own token):
-   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w ~/upshot-agent/notify.ps1)" -Title "Upshot testing needs you" -Text "<one line: what, on which machine>. Details: ClickUp epic z8tj1hab5p"`
+   `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w ~/upshot-agent/notify.ps1)" -Title "Upshot testing needs you" -Text "<one line: what, on which machine>. Details: ClickUp epic z8tj1hab5p"`
    Once per new item, not every shift.
 4. Carry on with any work that does not depend on it. If everything is blocked, write `wait.json` with `"job": "user"` and `until` = now + 4h, and end the shift.
 5. When the user answers (a reply on that comment) or the blocker is gone, continue and update `NEEDS-YOU.md`.
