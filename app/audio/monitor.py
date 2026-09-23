@@ -142,6 +142,11 @@ _lock = threading.Lock()
 # the meter and the recorder cannot both hold one — but the microphone and the loopback
 # are different endpoints and can be metered at the same time.
 _active: dict[str, LevelMonitor] = {}
+# Which device each running monitor was opened on, and how many meters are reading it.
+# Every open page is a client: two tabs on the setup screen share one stream per track
+# instead of each closing the other's to open its own.
+_devices: dict[str, int | None] = {}
+_users: dict[str, int] = {}
 # How many preview streams have been opened this run. A healthy Settings page opens one
 # per meter; a UI bug that reopens the device on every render shows up here immediately.
 _acquisitions = 0
@@ -152,35 +157,61 @@ def acquisitions() -> int:
 
 
 def acquire(config: object, device_index: int | None = None, track: str = "me") -> LevelMonitor:
-    """Start a preview monitor for ``track``, replacing any already running for it."""
+    """Join the preview monitor running for ``track`` on this device, or start one,
+    replacing a monitor on another device or one that has failed."""
     global _acquisitions
     from app.audio.factory import make_capture
     from app.config import Config
 
     assert isinstance(config, Config)
     with _lock:
-        previous = _active.pop(track, None)
-        if previous is not None:
-            previous.stop()
+        running = _active.get(track)
+        if (
+            running is not None
+            and _devices.get(track) == device_index
+            and running.read().error is None
+        ):
+            _users[track] = _users.get(track, 0) + 1
+            return running
+        _stop(track)
         _acquisitions += 1
         monitor = LevelMonitor(make_capture(config, track, device_index=device_index))
         monitor.start()
         _active[track] = monitor
+        _devices[track] = device_index
+        _users[track] = 1
         return monitor
 
 
-def release(track: str | None = None) -> None:
-    """Free a track's endpoint, or every one. Called before recording arms — the
-    recorder must win."""
+def release(track: str | None = None, monitor: LevelMonitor | None = None) -> None:
+    """Let go of a track's meter; its stream closes when the last meter reading it does.
+
+    ``monitor`` is the one the caller joined: if it has since been closed or replaced,
+    there is nothing of the caller's left to let go of. With no track, every stream
+    closes at once, whoever is reading it. Called before recording arms — the recorder
+    must win.
+    """
     with _lock:
-        targets = list(_active) if track is None else [track]
-        for name in targets:
-            monitor = _active.pop(name, None)
-            if monitor is not None:
-                monitor.stop()
-                # Debug, not info: this happens every time Settings is closed or hidden.
-                # The one release worth announcing is logged by the recording route.
-                log.debug("released the preview stream for %s", name)
+        if track is None:
+            for name in list(_active):
+                _stop(name)
+            return
+        if monitor is not None and _active.get(track) is not monitor:
+            return
+        _users[track] = _users.get(track, 0) - 1
+        if _users[track] <= 0:
+            _stop(track)
+
+
+def _stop(track: str) -> None:
+    _users.pop(track, None)
+    _devices.pop(track, None)
+    monitor = _active.pop(track, None)
+    if monitor is not None:
+        monitor.stop()
+        # Debug, not info: this happens every time Settings is closed or hidden.
+        # The one release worth announcing is logged by the recording route.
+        log.debug("released the preview stream for %s", track)
 
 
 def active(track: str = "me") -> LevelMonitor | None:
