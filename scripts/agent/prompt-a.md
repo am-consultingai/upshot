@@ -44,4 +44,6 @@ Only for what cannot be done without them: sign-ins in a real browser (Google Ca
 
 Append to `~/upshot-agent/scratch/journal.md`: date/time, stage, what you did, the result, what the next step is, and how many shifts in a row that same next step has failed. **If the same step has failed in three shifts in a row**, stop retrying it: write a "🙋 Needs you" with what you tried, and move to other work.
 
-When the epic's final gate (Stage 8) is met except the user's own "go", post the final summary on the epic (installer location in Drive, sha256, version, commit, the support matrix, open bugs), mark "🙋 Needs you: release go/no-go", and write `~/upshot-agent/DONE` with that summary. The loops then stop.
+**Scope (the user's decision, 2026-09-23):** the run ends when Upshot installs cleanly and records and transcribes — the epic's "Definition of done". **AI features are out of scope**: never test or work on summaries, Ask, AI action items, Claude/Codex install or sign-in, or an AI-agent setup step; Google Calendar is out too. Stages 5 and 7 are deferred: do not start them.
+
+When the Definition of done is met, post the final summary on the epic (installer location in Drive, sha256, version, commit, what was proven with which job, open bugs, what was deferred), mark "🙋 Needs you: review", and write `~/upshot-agent/DONE` with that summary. The loops then stop.

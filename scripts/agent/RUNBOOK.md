@@ -65,7 +65,8 @@ A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting)
 2. Code signing: **self-signed** certificate for this release (created on A with `New-SelfSignedCertificate -Type CodeSigningCert` in `Cert:\CurrentUser\My`; signed with `Set-AuthenticodeSignature` and a timestamp server). The Sandbox tests import the public `.cer` to test both paths: trusted and untrusted (SmartScreen).
 3. Access control (`z8tj1ha63r`): the release **ships without** it; the bug stays open.
 4. Real sign-ins (Google Calendar, ChatGPT/Codex, Claude) **wait for the user**. Everything up to the sign-in page is tested automatically.
-5. Support matrix proposal: Windows 11 x64 (23H2+) and Windows 10 22H2 x64.
+5. Support matrix proposal: Windows 11 x64 (23H2+) and Windows 10 22H2 x64 (the matrix itself is deferred, see 6).
+6. **Scope: the run stops at a clean install with recording and transcription working.** AI features (summaries, Ask, AI action items, Claude/Codex) and Google Calendar are out of scope and are not tested. Stages 5 (Hyper-V matrix) and 7 (reliability) are deferred; Stage 8 is only the hand-over.
 
 ## Starting, pausing, stopping (the user)
 
