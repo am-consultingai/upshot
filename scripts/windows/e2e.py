@@ -232,13 +232,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cdp-port", type=int, default=9222, dest="cdp_port")
     parser.add_argument("--grep", default=None, help="run only specs matching this")
     parser.add_argument("--keep", action="store_true", help="leave the app and browser up")
+    parser.add_argument(
+        "--python",
+        default=None,
+        help="the Windows venv's python.exe (WSL path), when it is not where run-app.ps1 "
+        "puts it by default: a launcher run with -WorkDir, or a test machine's job folder",
+    )
     args = parser.parse_args(argv)
 
     where = windows_paths()
     if not where.get("local") or not where.get("chrome"):
         print("could not find %LOCALAPPDATA% or a Chromium browser on the Windows side")
         return 2
-    venv_python = to_wsl(where["local"]) / VENV_SUFFIX
+    venv_python = Path(args.python) if args.python else to_wsl(where["local"]) / VENV_SUFFIX
     browser_exe = to_wsl(where["chrome"])
     if not venv_python.exists():
         print(f"no Windows venv at {venv_python} — run scripts/windows/run-app.cmd once")
