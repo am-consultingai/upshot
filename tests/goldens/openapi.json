@@ -2155,6 +2155,67 @@
         "summary": "Get Transcript"
       }
     },
+    "/api/model": {
+      "get": {
+        "description": "The speech model: on disk, downloading (with bytes), failed or missing.",
+        "operationId": "model_status_api_model_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Model Status Api Model Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Model Status"
+      }
+    },
+    "/api/model/cancel": {
+      "post": {
+        "operationId": "model_cancel_api_model_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Model Cancel Api Model Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Model Cancel"
+      }
+    },
+    "/api/model/download": {
+      "post": {
+        "operationId": "model_download_api_model_download_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Model Download Api Model Download Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Model Download"
+      }
+    },
     "/api/recording/levels": {
       "get": {
         "description": "Both tracks' levels while a meeting records, for the live waveform.\n\nDeliberately not ``/audio/level``: that one falls back to opening a preview stream the\nmoment the recording ends, so a waveform left on screen would take the microphone.\nThis one only ever reads the recorder, and says it is done when the recording is.",

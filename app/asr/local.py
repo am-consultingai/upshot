@@ -154,6 +154,17 @@ def probe_device(
     return "cuda", compute, registered
 
 
+def planned_device(config: Config) -> str:
+    """The device ``probe_device`` would choose, without its side effects (it registers
+    DLL folders and sets CUDA_VISIBLE_DEVICES): which model to fetch depends on it."""
+    configured = str(config.get("asr.device", "auto"))
+    if configured == "cpu":
+        return "cpu"
+    if configured == "auto" and not cuda_library_dirs(configured=config.get("asr.cuda_dir")):
+        return "cpu"
+    return "cuda"
+
+
 def supported_compute_type() -> str:
     """float16 → int8_float32 → int8. On Pascal (GTX 1080) int8 is the right answer."""
     try:
@@ -211,10 +222,14 @@ class LocalAsr:
         *,
         model_factory: ModelFactory | None = None,
         choice: ModelChoice | None = None,
+        fetch: Callable[[str], Path] | None = None,
     ) -> None:
         self.config = config
         self.model_factory = model_factory or _default_factory
         self.choice = choice
+        # Downloads a repo that is not on disk and returns its folder. Without it the repo
+        # id goes to faster-whisper, which fetches it unseen into the Hugging Face cache.
+        self.fetch = fetch
         self.model: Any = None
         self.device = "cpu"
         self.compute_type = "int8"
@@ -250,6 +265,10 @@ class LocalAsr:
 
     def _build(self, device: str, compute_type: str) -> Any:
         choice = self.choice or resolve(self.config, device=device)
+        if not choice.local and choice.repo_id and self.fetch is not None:
+            folder = self.fetch(choice.repo_id)
+            choice = ModelChoice(str(folder), local=True, repo_id=choice.repo_id)
+            self.choice = choice
         cpu_threads = max(1, (os.cpu_count() or 4) - 2)
         return self.model_factory(
             model_size_or_path=choice.reference,
