@@ -14,7 +14,13 @@ import time
 from typing import Any
 
 from app.audio.capture import AudioFormat, CaptureStats, StreamError
-from app.audio.devices import PORTAUDIO_LOCK, DeviceInfo, resolve_track
+from app.audio.devices import (
+    PORTAUDIO_LOCK,
+    DeviceInfo,
+    NoDeviceError,
+    render_for,
+    resolve_track,
+)
 from app.log import get
 
 log = get(__name__)
@@ -43,6 +49,8 @@ class WasapiCapture:
         self.frames: queue.Queue[bytes] = queue.Queue(maxsize=1)
         self._host: Any = None
         self._stream: Any = None
+        self._keepalive: Any = None
+        self._silence = b""
         # Guards this stream's handle. Held across close, so no other thread can be
         # inside a PortAudio call on a stream that is being freed.
         self._lifecycle = threading.RLock()
@@ -100,6 +108,8 @@ class WasapiCapture:
                 ) from last
             self.running = True
             self._stream.start_stream()
+            if device.is_loopback:
+                self._keepalive = self._open_keepalive(pyaudio, device)
         log.info(
             "opened %s stream: %s @ %d Hz, %d ch",
             self.track,
@@ -108,16 +118,50 @@ class WasapiCapture:
             device.channels,
         )
 
+    def _open_keepalive(self, pyaudio: Any, device: DeviceInfo) -> Any:
+        """Play silence to the endpoint whose loopback this is.
+
+        WASAPI loopback delivers no packets while nothing is playing, so without this the
+        ``them`` track simply stops during a quiet stretch and everything after it lands
+        early on the meeting's timeline (found on a second machine: 0 frames in 60 s).
+        An endpoint with any stream open keeps its engine running, and loopback then
+        delivers the mix — silence included — on the endpoint's own clock.
+        """
+        try:
+            render = render_for(device, self._host)
+            self._silence = bytes(self.block_frames * render.channels * 4)
+            stream = self._host.open(
+                format=pyaudio.paFloat32,
+                channels=render.channels,
+                rate=render.rate,
+                frames_per_buffer=self.block_frames,
+                output=True,
+                output_device_index=render.index,
+                stream_callback=self._silence_callback,
+            )
+            stream.start_stream()
+        except (OSError, NoDeviceError) as exc:
+            log.warning(
+                "no silent keep-alive for %r (%s): the them track pauses while nothing plays",
+                device.name,
+                exc,
+            )
+            return None
+        return stream
+
     def stop(self) -> None:
         with self._lifecycle, PORTAUDIO_LOCK:
             self.running = False
             stream, self._stream = self._stream, None
+            keepalive, self._keepalive = self._keepalive, None
             host, self._host = self._host, None
-            if stream is not None:
+            for handle in (stream, keepalive):
+                if handle is None:
+                    continue
                 with contextlib.suppress(Exception):
-                    stream.stop_stream()
+                    handle.stop_stream()
                 with contextlib.suppress(Exception):
-                    stream.close()
+                    handle.close()
             if host is not None:
                 host.terminate()
 
@@ -139,6 +183,15 @@ class WasapiCapture:
         self.stats.frames += frame_count
         self.stats.blocks += 1
         return (None, pyaudio.paContinue)
+
+    def _silence_callback(
+        self, in_data: bytes | None, frame_count: int, time_info: dict[str, Any], status: int
+    ) -> tuple[bytes, int]:
+        import pyaudiowpatch as pyaudio
+
+        size = frame_count * (len(self._silence) // self.block_frames)
+        payload = self._silence[:size] if size <= len(self._silence) else bytes(size)
+        return (payload, pyaudio.paContinue)
 
     # -- reading -----------------------------------------------------------
 

@@ -194,6 +194,19 @@ def loopback_for(render: DeviceInfo, host: Any | None = None) -> DeviceInfo:
     raise NoDeviceError(f"no loopback companion for {render.name!r}")
 
 
+def render_for(loopback: DeviceInfo, host: Any) -> DeviceInfo:
+    """The WASAPI render endpoint a loopback companion listens to: loopback_for, reversed."""
+    wasapi = int(_wasapi_info(host)["index"])
+    for index in range(host.get_device_count()):
+        raw = dict(host.get_device_info_by_index(index))
+        candidate = DeviceInfo.from_raw(raw)
+        if candidate.is_loopback or candidate.max_output_channels <= 0:
+            continue
+        if int(raw.get("hostApi", -1)) == wasapi and candidate.name in loopback.name:
+            return candidate
+    raise NoDeviceError(f"no render endpoint behind {loopback.name!r}")
+
+
 def resolve_track(
     track: str, host: Any | None = None, *, output_index: int | None = None
 ) -> DeviceInfo:
