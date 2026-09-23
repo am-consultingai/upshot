@@ -37,17 +37,25 @@ whose `app_config.json` predates the flag and already has a model on disk is mar
 on load, so existing users never see the screen. There is deliberately no AI-provider or
 calendar step: both are optional to a transcript and both carry their own "!" in Settings.
 
-Still open: there is no installer, so "first run" means a hand-started build (#2), and
-the screen's Download has only been exercised against a fake hub in tests.
+Still open: the screen's Download has only been exercised against a fake hub in tests
+and, for the model manager behind it, with the tiny model from the frozen build (#2). A
+first run through the screen on a second machine is Windows-testing job 012.
 
-### 2. No frozen build exists
+### 2. The frozen build: built and signed, not yet installed on a clean machine
 
-`dist/` has never been produced and there is no installer. This matters more than it did:
-the packaging spec changed on 2026-09-06 (the `templates/` bundle entry was removed with
-the Jinja renderer), so the spec is now **untested against a real build**. `console=False`
-in `packaging/upshot.spec` also means every subprocess spawn needs
-`CREATE_NO_WINDOW`, which the code does but which has only ever run from source with a
-console attached.
+First produced on 2026-09-23 on machine A (`packaging\build.ps1 -Sign`, commit e55b25c):
+`Upshot-0.1.0-Setup.exe`, 108 MB, a 374 MB one-dir freeze. Getting there found two things
+that had never worked: the build script did not parse on Windows PowerShell 5.1, and the
+frozen `upshot.exe` exited 0 without running at all (`app/tray.py` never called `main()`;
+the build's selftest "passed" because it only read the exit code). Both are fixed and
+tested. On A the freeze passes `--selftest imports` and `pipeline`, serves the UI, falls
+back from a taken port, hands a second launch to the running one, and transcribes an
+imported file under a home path with Hebrew letters and spaces.
+
+Still open: a silent install, run and uninstall on a clean Windows (Windows Sandbox on
+machine B, currently broken on that host), and SmartScreen's view of a self-signed
+installer. The freeze bundles no CUDA libraries, so it transcribes on CPU unless the
+machine has them.
 
 ### 3. The interface is well behind the category
 
