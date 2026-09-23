@@ -28,5 +28,5 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
 # A self-signed certificate that is not in Trusted Root reports UnknownError here even
 # though the file is signed; no signer certificate, or no timestamp, is a real failure.
 if (-not $sig.SignerCertificate) { throw "signing $Path failed: $($sig.StatusMessage)" }
-if (-not $sig.TimeStamperCertificate) { throw "signing $Path: no timestamp from $TimestampServer" }
+if (-not $sig.TimeStamperCertificate) { throw "signing ${Path}: no timestamp from $TimestampServer" }
 Write-Host "signed $Path ($($sig.Status), timestamped by $($sig.TimeStamperCertificate.Subject))"
