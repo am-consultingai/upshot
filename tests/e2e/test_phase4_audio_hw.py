@@ -15,7 +15,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from app.audio.analysis import cross_correlation
+from app.audio.analysis import (
+    ENVELOPE_THRESHOLD,
+    WAVEFORM_THRESHOLD,
+    cross_correlation,
+    envelope_correlation,
+)
 from app.audio.devices import (
     NoDeviceError,
     default_capture,
@@ -115,11 +120,18 @@ def test_loopback_echo(tmp_path: Path, source_wav: Path) -> None:
 
         source = np.asarray(soxr.resample(source.astype(np.float32), source_rate, RATE))
     captured = _read_track(folder, "them")
-    peak, lag = cross_correlation(
-        source.astype(np.float64), captured.astype(np.float64), max_lag=RATE
+    peak, _ = cross_correlation(
+        source.astype(np.float64), captured.astype(np.float64), max_lag=2 * RATE
     )
-    assert peak >= 0.8, f"cross-correlation {peak:.3f}"
-    assert abs(lag) * 1000 / RATE < 500
+    # Enhancement chains keep the envelope and little of the waveform (see
+    # ``envelope_correlation``); either reading proves the fixture came back.
+    shape, lag = envelope_correlation(
+        source.astype(np.float64), captured.astype(np.float64), RATE, max_lag=2 * RATE
+    )
+    assert peak >= WAVEFORM_THRESHOLD or shape >= ENVELOPE_THRESHOLD, (peak, shape)
+    # The fixture starts after the 0.5 s pre-roll; what is left is the output latency.
+    latency_ms = -lag * 1000 / RATE - 500
+    assert -100 <= latency_ms < 500, latency_ms
     # Loopback keeps flowing through the silence either side of the fixture, so the
     # track is as long as the recording, not as the fixture.
     captured_ms = len(captured) * 1000 / RATE

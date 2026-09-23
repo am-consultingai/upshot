@@ -33,7 +33,7 @@ def test_m1_capture_e2e(tmp_path: Path, app_home: Path) -> None:
         "me": 20_000,
         "them": 20_000,
     }
-    assert checks["capture_them_correlates"]["metrics"]["correlation"] >= 0.5
+    assert checks["capture_them_correlates"]["ok"] is True, checks["capture_them_correlates"]
     assert checks["capture_language_pinned"]["metrics"]["language"] == "en"
     assert checks["capture_tray_sequence"]["metrics"]["states"] == [
         "idle",
