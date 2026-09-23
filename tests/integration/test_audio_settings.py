@@ -132,13 +132,34 @@ def test_recording_takes_the_microphone_back_from_the_meter(api) -> None:  # typ
     client.post("/api/recording/stop")
 
 
-def test_a_second_meter_replaces_the_first(api) -> None:  # type: ignore[no-untyped-def]
-    """Two Settings tabs — or one effect that re-runs — must not open two streams."""
+def test_meters_on_one_device_share_one_stream(api) -> None:  # type: ignore[no-untyped-def]
+    """Two tabs on the setup screen must not open two streams — nor close each other's.
+
+    Each used to replace the other's stream as it opened its own, and each SSE client
+    then reopened when it found its stream gone: 477 opens in 22 s on machine B (job
+    013), and no level ever reached either meter.
+    """
+    from app.audio import monitor as meter
+
+    opens = meter.acquisitions()
+    first = meter.acquire(api.services.config, None)
+    second = meter.acquire(api.services.config, None)
+    assert first is second
+    assert meter.acquisitions() == opens + 1
+    meter.release("me", first)
+    assert meter.active() is second, "one tab closing must not close the other's meter"
+    meter.release("me", second)
+    assert meter.active() is None, "the last meter to go closes the stream"
+
+
+def test_a_meter_on_another_device_replaces_the_stream(api) -> None:  # type: ignore[no-untyped-def]
     from app.audio import monitor as meter
 
     first = meter.acquire(api.services.config, None)
-    second = meter.acquire(api.services.config, None)
+    second = meter.acquire(api.services.config, 7)
     assert first is not second
+    assert meter.active() is second
+    meter.release("me", first)  # already replaced: nothing of the first tab's is left
     assert meter.active() is second
     meter.release()
     assert meter.active() is None
@@ -266,6 +287,27 @@ def test_both_tracks_can_be_metered_at_once(tmp_path: Path, app_home: Path) -> N
         events = _read_levels(client, track="them")
         assert events and any(event.get("peak", 0.0) > 0.05 for event in events), events
     meter.release()
+
+
+def test_the_meter_leaves_an_armed_recorder_alone(tmp_path: Path, app_home: Path) -> None:
+    """A woken detector holds both endpoints for the pre-roll before anything records.
+    A meter that reopened them there fought the recorder for them (job 013)."""
+    from app.audio import monitor as meter
+
+    harness = build_harness(
+        tmp_path, audio__synthetic_pattern="tone", audio__synthetic_realtime=False
+    )
+    recorder = harness.services.recorder
+    assert recorder is not None
+    recorder.arm()
+    opens = meter.acquisitions()
+    try:
+        with serve(harness) as client:
+            events = _read_levels(client)
+        assert events and all(event.get("source") == "recorder" for event in events), events
+        assert meter.acquisitions() == opens, "no preview stream while the recorder is armed"
+    finally:
+        recorder.discard()
 
 
 def test_an_unknown_track_is_rejected(api) -> None:  # type: ignore[no-untyped-def]
