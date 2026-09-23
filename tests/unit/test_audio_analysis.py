@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import wave
+from pathlib import Path
+
 import numpy as np
 
 from app.audio.analysis import (
@@ -10,6 +13,7 @@ from app.audio.analysis import (
     cross_correlation,
     envelope,
     envelope_correlation,
+    read_wav_at,
 )
 from app.detect.registry import REG_NOTIFY_CHANGE_LAST_SET
 
@@ -68,6 +72,45 @@ def test_envelope_rejects_the_wrong_signal() -> None:
     other = _speechlike(12, seed=2)
     shape, _ = envelope_correlation(source, other, RATE, max_lag=2 * RATE)
     assert shape < ENVELOPE_THRESHOLD
+
+
+def _write_wav(path: Path, signal: np.ndarray, rate: int) -> None:
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(np.round(signal * 32767).astype("<i2").tobytes())
+
+
+def test_a_sapi_rate_fixture_is_compared_at_the_track_rate(tmp_path: Path) -> None:
+    """Job 007: a 22.05 kHz SAPI fixture against a 16 kHz track correlated at 0.02."""
+    source = _speechlike(5, seed=3) / 2
+    sapi_rate = 22050
+    at_sapi = np.interp(
+        np.arange(int(5 * sapi_rate)) / sapi_rate, np.arange(len(source)) / RATE, source
+    )
+    _write_wav(tmp_path / "speech.wav", at_sapi, sapi_rate)
+    track = np.round(source * 32767)
+
+    raw = _read_raw(tmp_path / "speech.wav")
+    resampled = read_wav_at(tmp_path / "speech.wav", RATE)
+
+    assert abs(len(resampled) - len(track)) <= 2
+    assert envelope_correlation(raw, track, RATE, max_lag=RATE)[0] < ENVELOPE_THRESHOLD
+    shape, lag = envelope_correlation(resampled, track, RATE, max_lag=RATE)
+    assert shape >= 0.95
+    assert abs(lag) <= 160
+
+
+def test_a_fixture_at_the_track_rate_is_read_as_is(tmp_path: Path) -> None:
+    source = _speechlike(2, seed=4) / 2
+    _write_wav(tmp_path / "tone.wav", source, RATE)
+    assert np.array_equal(read_wav_at(tmp_path / "tone.wav", RATE), np.round(source * 32767))
+
+
+def _read_raw(path: Path) -> np.ndarray:
+    with wave.open(str(path), "rb") as handle:
+        return np.frombuffer(handle.readframes(handle.getnframes()), np.int16).astype(np.float64)
 
 
 def test_reg_notify_change_last_set_matches_winnt() -> None:
