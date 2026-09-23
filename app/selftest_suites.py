@@ -184,7 +184,12 @@ def _audio(args: argparse.Namespace) -> list[Check]:
 
     import numpy as np
 
-    from app.audio.analysis import cross_correlation
+    from app.audio.analysis import (
+        ENVELOPE_THRESHOLD,
+        WAVEFORM_THRESHOLD,
+        cross_correlation,
+        envelope_correlation,
+    )
     from app.audio.devices import (
         NoDeviceError,
         default_capture,
@@ -245,11 +250,14 @@ def _audio(args: argparse.Namespace) -> list[Check]:
         recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=SystemClock())
         recorder.start(root / "meeting", "selftest-audio")
         thread = recorder.start_thread()
+        started = time.monotonic()
         time.sleep(0.5)
         player = threading.Thread(target=play_wav, args=(fixture,), daemon=True)
+        preroll_ms = (time.monotonic() - started) * 1000
         player.start()
         player.join(timeout=seconds + 30)
         time.sleep(0.5)
+        elapsed_ms = (time.monotonic() - started) * 1000
         result = recorder.stop()
         assert thread is not None
 
@@ -267,11 +275,20 @@ def _audio(args: argparse.Namespace) -> list[Check]:
             with wave.open(str(Path(result.folder or root) / "audio" / record.file), "rb") as h:
                 captured_parts.append(np.frombuffer(h.readframes(h.getnframes()), dtype=np.int16))
         captured = np.concatenate(captured_parts) if captured_parts else np.zeros(0, dtype=np.int16)
-        peak, lag = cross_correlation(
-            source.astype(np.float64), captured.astype(np.float64), max_lag=cfg.sample_rate
+        # Loopback keeps flowing through the silence either side of the fixture, so the
+        # fixture lands ``preroll_ms`` plus the output latency into the track, and the
+        # track is as long as the recording.
+        peak, _ = cross_correlation(
+            source.astype(np.float64), captured.astype(np.float64), max_lag=2 * cfg.sample_rate
         )
-        offset_ms = abs(lag) * 1000 / cfg.sample_rate
-        ratio = len(captured) / max(1, len(source))
+        shape, lag = envelope_correlation(
+            source.astype(np.float64),
+            captured.astype(np.float64),
+            cfg.sample_rate,
+            max_lag=2 * cfg.sample_rate,
+        )
+        offset_ms = -lag * 1000 / cfg.sample_rate - preroll_ms
+        captured_ms = len(captured) * 1000 / cfg.sample_rate
         records, torn = read_manifest(Path(result.folder or root))
         xruns = result.xruns.get("them", 0)
 
@@ -279,15 +296,25 @@ def _audio(args: argparse.Namespace) -> list[Check]:
         [
             Check(
                 "loopback_echo",
-                peak >= 0.8 and offset_ms < 500,
-                f"correlation {peak:.3f}, offset {offset_ms:.0f} ms",
-                {"correlation": round(peak, 4), "offset_ms": round(offset_ms, 1)},
+                (peak >= WAVEFORM_THRESHOLD or shape >= ENVELOPE_THRESHOLD)
+                and -100 <= offset_ms < 500,
+                f"correlation {peak:.3f} (envelope {shape:.3f}), "
+                f"latency {offset_ms:.0f} ms after the {preroll_ms:.0f} ms pre-roll",
+                {
+                    "correlation": round(peak, 4),
+                    "envelope_correlation": round(shape, 4),
+                    "offset_ms": round(offset_ms, 1),
+                },
             ),
             Check(
                 "loopback_sample_count",
-                abs(ratio - 1.0) <= 0.01,
-                f"captured/source = {ratio:.4f}",
-                {"ratio": round(ratio, 5), "captured": len(captured)},
+                abs(captured_ms - elapsed_ms) <= max(0.01 * elapsed_ms, 300),
+                f"captured {captured_ms:.0f} ms of a {elapsed_ms:.0f} ms recording",
+                {
+                    "captured_ms": round(captured_ms, 1),
+                    "elapsed_ms": round(elapsed_ms, 1),
+                    "captured": len(captured),
+                },
             ),
             Check("loopback_xruns", xruns == 0, f"{xruns} xruns", {"xruns": xruns}),
             Check("loopback_manifest", torn == 0, f"{len(records)} chunks, {torn} torn lines"),
@@ -833,7 +860,7 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
     import numpy as np
 
     from app.api.security import CSRF_HEADER
-    from app.audio.analysis import cross_correlation
+    from app.audio.analysis import ENVELOPE_THRESHOLD, cross_correlation, envelope_correlation
     from app.audio.fake import SyntheticCapture
     from app.audio.recorder import Recorder
     from app.audio.writer import read_manifest, track_files
@@ -1023,9 +1050,17 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
                 )
         captured = np.concatenate(captured_parts) if captured_parts else np.zeros(0, np.int16)
         window = min(len(source), len(captured), 30 * cfg.sample_rate)
-        peak, lag = cross_correlation(
+        peak, _ = cross_correlation(
             source[:window].astype(np.float64),
             captured[:window].astype(np.float64),
+            max_lag=cfg.sample_rate,
+        )
+        # Real loopback passes through the endpoint's enhancements, which keep the
+        # envelope and little of the waveform (``envelope_correlation``).
+        shape, lag = envelope_correlation(
+            source[:window].astype(np.float64),
+            captured[:window].astype(np.float64),
+            cfg.sample_rate,
             max_lag=cfg.sample_rate,
         )
 
@@ -1066,9 +1101,13 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
     checks.append(
         Check(
             "capture_them_correlates",
-            peak >= 0.5,
-            f"cross-correlation {peak:.3f} at lag {lag}",
-            {"correlation": round(peak, 4), "lag_samples": int(lag)},
+            peak >= 0.5 or shape >= ENVELOPE_THRESHOLD,
+            f"cross-correlation {peak:.3f}, envelope {shape:.3f} at lag {lag}",
+            {
+                "correlation": round(peak, 4),
+                "envelope_correlation": round(shape, 4),
+                "lag_samples": int(lag),
+            },
         )
     )
     checks.append(
