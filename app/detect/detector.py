@@ -58,9 +58,11 @@ def own_executables() -> frozenset[str]:
     them, which woke the detector again: about twenty reopens a second, no level ever
     shown, and a manual recording padded with a minute of pre-roll (machine B, job 013).
     Both paths count: under a venv, Windows reports the base interpreter, not the
-    launcher in ``sys.executable``.
+    launcher in ``sys.executable``. And Windows reports the path with links resolved:
+    uv's ``cpython-3.14-…`` folder is a junction to ``cpython-3.14.7-…`` (job 014).
     """
     paths = {sys.executable, getattr(sys, "_base_executable", "")}
+    paths |= {os.path.realpath(path) for path in paths if path}
     return frozenset(_exe_key(path) for path in paths if path)
 
 
