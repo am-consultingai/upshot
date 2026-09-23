@@ -208,7 +208,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         from app.bootstrap import run as bootstrap_run
 
         setup()
-        report = bootstrap_run()
+        # No logon task here: autostart is the installer's opt-in "Start Upshot when I
+        # sign in" shortcut. A task would start the app even when the user unticked that,
+        # and creating an ONLOGON task needs admin, so on a standard account it failed
+        # and took the whole first run down with it (machine B).
+        report = bootstrap_run(register_task=False)
         print(json.dumps(report.as_dict(), indent=2))
         return 0 if report.ok else 1
     setup()

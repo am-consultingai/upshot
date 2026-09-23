@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -247,7 +248,12 @@ def unremovable(api):  # type: ignore[no-untyped-def]
     Found by running the sweep on Windows while a reader held `them.wav`: `rmtree` with
     `ignore_errors=True` removed what it could, said nothing, and the meeting was recorded
     as swept with its audio still on disk.
+
+    POSIX only: this stands in for the open file with a read-only folder, and Windows
+    ignores the mode bits, so there the audio is simply deleted.
     """
+    if sys.platform == "win32":
+        pytest.skip("chmod does not stop a deletion on Windows")
     meeting = recorded(api, days=45)
     audio = meeting.path / "audio"
     audio.chmod(0o500)  # readable and traversable, not writable
