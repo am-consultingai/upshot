@@ -132,6 +132,22 @@ def list_devices() -> list[DeviceInfo]:
         ]
 
 
+def _wasapi_devices(host: Any) -> Iterator[DeviceInfo]:
+    """Every endpoint of the WASAPI host API, the only one Upshot records through.
+
+    PortAudio lists each device once per host API. The MME copies came first, with names
+    cut to 31 characters, next to "Microsoft Sound Mapper" and "Primary Sound Capture
+    Driver"; keeping the first of each name kept those, and none of them was the index
+    WASAPI calls the default, so nothing in the list was marked default (machine B, job
+    013).
+    """
+    wasapi = int(_wasapi_info(host)["index"])
+    for index in range(host.get_device_count()):
+        raw = dict(host.get_device_info_by_index(index))
+        if int(raw.get("hostApi", -1)) == wasapi:
+            yield DeviceInfo.from_raw(raw)
+
+
 def list_inputs(host: Any | None = None) -> list[DeviceInfo]:
     """Real microphones: input endpoints that are not loopback companions.
 
@@ -142,8 +158,7 @@ def list_inputs(host: Any | None = None) -> list[DeviceInfo]:
         with audio_host() as own:
             return list_inputs(own)
     seen: dict[str, DeviceInfo] = {}
-    for index in range(host.get_device_count()):
-        device = DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
+    for device in _wasapi_devices(host):
         if not device.is_input or device.is_loopback:
             continue
         seen.setdefault(device.name, device)
@@ -170,8 +185,7 @@ def list_outputs(host: Any | None = None) -> list[DeviceInfo]:
         with audio_host() as own:
             return list_outputs(own)
     seen: dict[str, DeviceInfo] = {}
-    for index in range(host.get_device_count()):
-        device = DeviceInfo.from_raw(dict(host.get_device_info_by_index(index)))
+    for device in _wasapi_devices(host):
         if device.max_output_channels <= 0 or device.is_loopback:
             continue
         seen.setdefault(device.name, device)
