@@ -525,10 +525,10 @@ def _api(args: argparse.Namespace) -> list[Check]:
             base = f"http://127.0.0.1:{cfg.server_port}"
             bound = server.sockets[0].getsockname()[0]
             with httpx.Client(base_url=base, timeout=5.0) as client:
-                unauthorized = client.get("/api/status")
-                token = services.auth.issue_token()
-                client.get("/", params={"k": token})
+                # No sign-in any more (D57), but a change without the CSRF token must
+                # still be refused — that is what keeps websites out.
                 status = client.get("/api/status")
+                forged = client.post("/api/detector/ignore", json={"process": "x.exe"})
                 rebind = client.get("/api/status", headers={"Host": "evil.com"})
         finally:
             server.stop()
@@ -537,9 +537,9 @@ def _api(args: argparse.Namespace) -> list[Check]:
     return [
         Check("api_bind_address", bound == "127.0.0.1", f"bound to {bound}", {"host": bound}),
         Check(
-            "api_requires_cookie",
-            unauthorized.status_code == 401,
-            f"unauthenticated /api/status → {unauthorized.status_code}",
+            "api_requires_csrf",
+            forged.status_code == 403,
+            f"mutation without a CSRF token → {forged.status_code}",
         ),
         Check(
             "api_status",

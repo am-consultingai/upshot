@@ -12,6 +12,7 @@ import {
   weekdayLabels,
 } from "../lib/calendar";
 import { formatClock } from "../lib/format";
+import { OpenBalloon } from "./TimeGrid";
 
 /** Beyond this a cell stops being readable, so the rest collapse into a count. */
 const MAX_CHIPS = 3;
@@ -50,14 +51,14 @@ export default function MonthGrid({
 
   return (
     <div data-testid="calendar-monthgrid">
-      <div className="grid grid-cols-7 border-b border-line-subtle pb-1">
+      <div className="grid grid-cols-7 gap-1.5 pb-1.5">
         {weekdayLabels(locale).map((label) => (
           <div key={label} className="text-center text-sm text-tertiary">
             {label}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div className="grid grid-cols-7 gap-1.5">
         {days.map((day) => {
           const items = buckets.get(dayKey(day)) ?? [];
           const outside = !isSameMonth(day, anchor);
@@ -67,8 +68,8 @@ export default function MonthGrid({
               data-testid="calendar-daycell"
               data-day={dayKey(day)}
               data-count={items.length}
-              className={`min-h-24 border-b border-s border-line-subtle p-1 ${
-                outside ? "bg-surface-1 text-tertiary" : ""
+              className={`min-h-24 rounded-lg p-1.5 ${
+                outside ? "text-tertiary opacity-50" : "bg-surface-1"
               }`}
             >
               <div
@@ -87,15 +88,18 @@ export default function MonthGrid({
                   data-testid="calendar-event"
                   data-meeting={meeting.id}
                   title={meeting.title ?? meeting.id}
-                  className={`mb-0.5 block truncate rounded border-s-4 px-1 text-xs ${
+                  className={`mb-0.5 flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-xs ${
                     meeting.state === "RECORDING"
-                      ? "border-warning bg-warning-quiet"
+                      ? "bg-[color-mix(in_oklab,var(--base),var(--danger)_12%)] hover:bg-[color-mix(in_oklab,var(--base),var(--danger)_18%)]"
                       : meeting.state === "FAILED"
-                        ? "border-danger bg-danger-quiet"
-                        : "border-success bg-success-quiet"
+                        ? "bg-danger-quiet hover:bg-[color-mix(in_oklab,var(--base),var(--danger)_14%)]"
+                        : "bg-accent-quiet hover:bg-[color-mix(in_oklab,var(--base),var(--accent)_18%)]"
                   }`}
                 >
-                  {formatClock(meeting.started_at)} {meeting.title ?? t("timeline.recording")}
+                  <span className="min-w-0 flex-1 truncate">
+                    {formatClock(meeting.started_at)} {meeting.title ?? t("timeline.recording")}
+                  </span>
+                  <OpenBalloon count={meeting.actions_open} label={t("timeline.actionsOpen")} />
                 </Link>
               ))}
               {(eventsByDay.get(dayKey(day)) ?? [])
@@ -109,9 +113,15 @@ export default function MonthGrid({
                     data-recorded="true"
                     data-meeting={event.meeting_id}
                     title={`${event.title ?? ""} — ${t("calendar.recorded")}`}
-                    className="mb-0.5 block truncate rounded border-s-4 border-success bg-success-quiet px-1 text-xs"
+                    className="mb-0.5 flex items-center gap-1 rounded-xs bg-accent-quiet px-1.5 py-0.5 text-xs shadow-[inset_2px_0_0_0_var(--accent)] hover:bg-[color-mix(in_oklab,var(--base),var(--accent)_18%)]"
                   >
-                    {formatClock(event.start)} {event.title ?? t("calendar.untitled")}
+                    <span className="min-w-0 flex-1 truncate">
+                      {formatClock(event.start)} {event.title ?? t("calendar.untitled")}
+                    </span>
+                    <OpenBalloon
+                      count={meetings.find((meeting) => meeting.id === event.meeting_id)?.actions_open}
+                      label={t("timeline.actionsOpen")}
+                    />
                   </Link>
                 ))}
               {(eventCount.get(dayKey(day)) ?? 0) > 0 && (

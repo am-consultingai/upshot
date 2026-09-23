@@ -7,7 +7,8 @@
  * with an offset, so `new Date(iso)` already lands on the right local instant.
  */
 
-export type CalendarSpan = "day" | "week" | "month";
+/** `list` is the month as an agenda: the same period as `month`, read as rows. */
+export type CalendarSpan = "day" | "week" | "month" | "list";
 
 /** Sunday. Correct for both he-IL and en-US, the two locales this app ships. */
 const WEEK_START = 0;
@@ -45,6 +46,11 @@ export function daysFor(span: CalendarSpan, anchor: Date): Date[] {
     const first = startOfWeek(anchor);
     return Array.from({ length: 7 }, (_, index) => addDays(first, index));
   }
+  if (span === "list") {
+    const first = startOfMonth(anchor);
+    const count = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate();
+    return Array.from({ length: count }, (_, index) => addDays(first, index));
+  }
   const first = startOfWeek(startOfMonth(anchor));
   const monthEnd = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
   const days: Date[] = [];
@@ -64,6 +70,7 @@ export function rangeFor(span: CalendarSpan, anchor: Date): { from: string; to: 
 export function shift(span: CalendarSpan, anchor: Date, delta: number): Date {
   if (span === "day") return addDays(anchor, delta);
   if (span === "week") return addDays(anchor, delta * 7);
+  // Month and list are the same period, read two ways.
   return new Date(anchor.getFullYear(), anchor.getMonth() + delta, 1);
 }
 
@@ -112,11 +119,80 @@ export function weekdayLabels(locale: string, short = true): string[] {
   return Array.from({ length: 7 }, (_, index) => format.format(addDays(sunday, index)));
 }
 
+/**
+ * The ISO-8601 week number of the week that holds `date`.
+ *
+ * Weeks here start on Sunday, ISO's on Monday, so the Sunday that opens a row would
+ * otherwise carry the previous week's number. The row is numbered by its Monday,
+ * which is how an Israeli or American calendar that shows ISO weeks labels it.
+ */
+export function isoWeek(date: Date): number {
+  const monday = addDays(startOfWeek(date), 1);
+  const thursday = addDays(monday, 3);
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+  const firstMonday = addDays(firstThursday, -((firstThursday.getDay() + 6) % 7));
+  return 1 + Math.round((startOfDay(monday).getTime() - firstMonday.getTime()) / (7 * 86_400_000));
+}
+
+/**
+ * The period as two parts: the words that matter, and the year in quieter type.
+ *
+ * "September 2026", "Sep – Oct 2026" for a week across a month boundary, a whole
+ * date for a day. Split rather than one string so the bar can set the month bold
+ * and the year grey, as the mock does.
+ */
+export function periodParts(
+  span: CalendarSpan,
+  anchor: Date,
+  locale: string,
+): { main: string; year: string } {
+  const year = String(anchor.getFullYear());
+  if (span === "day") {
+    return {
+      main: new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "long" }).format(anchor),
+      year,
+    };
+  }
+  if (span === "week") {
+    const first = startOfWeek(anchor);
+    const last = addDays(first, 6);
+    if (first.getMonth() !== last.getMonth()) {
+      const short = new Intl.DateTimeFormat(locale, { month: "short" });
+      return { main: `${short.format(first)} – ${short.format(last)}`, year: String(last.getFullYear()) };
+    }
+    return { main: new Intl.DateTimeFormat(locale, { month: "long" }).format(first), year: String(first.getFullYear()) };
+  }
+  return { main: new Intl.DateTimeFormat(locale, { month: "long" }).format(anchor), year };
+}
+
+/**
+ * The zone the hour gutter is in, as people write it.
+ *
+ * Intl only knows abbreviations CLDR ships, and for Israel that is none: it prints
+ * "GMT+3", where everyone who lives there says IDT. The zones this app is actually
+ * used in get their spoken names; anything else falls back to what Intl says.
+ */
+const SPOKEN_ZONES: Record<string, Record<number, string>> = {
+  "Asia/Jerusalem": { 120: "IST", 180: "IDT" },
+  "Europe/London": { 0: "GMT", 60: "BST" },
+};
+
+export function zoneLabel(at: Date = new Date(), locale = "en"): string {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const spoken = SPOKEN_ZONES[zone]?.[-at.getTimezoneOffset()];
+  if (spoken) return spoken;
+  return (
+    new Intl.DateTimeFormat(locale, { timeZoneName: "short" })
+      .formatToParts(at)
+      .find((part) => part.type === "timeZoneName")?.value ?? ""
+  );
+}
+
 export function periodLabel(span: CalendarSpan, anchor: Date, locale: string): string {
   if (span === "day") {
     return new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(anchor);
   }
-  if (span === "month") {
+  if (span === "month" || span === "list") {
     return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(anchor);
   }
   const first = startOfWeek(anchor);

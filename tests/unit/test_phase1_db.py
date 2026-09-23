@@ -204,3 +204,52 @@ def test_detector_events_roundtrip(dao: Dao) -> None:
     assert len(events) == 1
     assert events[0].outcome == "shadow"
     assert events[0].evidence_list[0]["code"] == "mic.known_app"
+
+
+def test_search_covers_titles_and_action_items(dao: Dao, tmp_path: Path) -> None:
+    """The bug this exists for: a word in a meeting's *name* returned nothing.
+
+    Search read `transcript_turns` and nothing else, so "roadmap" — which the
+    calendar supplied and nobody said out loud — answered "Nothing matched." The
+    engine was fine; it was pointed at one third of the corpus.
+    """
+    m = dao.insert_meeting(meeting_id="r", folder=tmp_path / "r", source="manual")
+    dao.update_meeting(m.id, title="Q4 roadmap working session")
+    dao.index_turns(m.id, [Turn(0, "ME", 0, "activation is down six percent")])
+    dao.replace_action_items(m.id, [("me", "Circulate the one-pager", None, None)])
+
+    titles = dao.search("roadmap")
+    assert [h.kind for h in titles] == ["title"]
+    assert "[roadmap]" in titles[0].snippet
+
+    actions = dao.search("one-pager")
+    assert [h.kind for h in actions] == ["action"]
+
+    # The transcript path still works, and still carries the moment.
+    spoken = dao.search("activation")
+    assert [h.kind for h in spoken] == ["transcript"]
+    assert spoken[0].at_ms == 0
+
+    # A title match outranks a sentence match for the same word.
+    dao.index_turns(m.id, [Turn(0, "ME", 0, "the roadmap is agreed")])
+    both = dao.search("roadmap")
+    assert [h.kind for h in both] == ["title", "transcript"]
+
+
+def test_search_survives_fts_operators_and_punctuation(dao: Dao, db, tmp_path: Path) -> None:
+    """`MATCH` takes a query *language*, not a search term.
+
+    The raw string went straight into it, so "AND", "c++" and a lone apostrophe
+    each raised OperationalError and /api/search answered 500 — typing an
+    ordinary English word broke the search box.
+    """
+    if not capabilities(db).fts:
+        pytest.skip("FTS5 unavailable in this SQLite build")
+    m = dao.insert_meeting(meeting_id="p", folder=tmp_path / "p", source="manual")
+    dao.index_turns(m.id, [Turn(0, "ME", 0, "we shipped C++ and the standup agreed")])
+
+    for hostile in ("AND", "OR", "NOT", "c++", 'don"t', "'", "*", "NEAR(a b)", "-x", "^"):
+        dao.search(hostile)  # must not raise
+
+    assert dao.search("standup"), "a plain word still matches"
+    assert dao.search("stand"), "the last token is a prefix match, as a search box implies"

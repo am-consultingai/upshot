@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CalendarStatus } from "../api";
 import { useI18n } from "../i18n";
@@ -38,6 +38,7 @@ export default function CalendarSettings() {
        */
       const tab = window.open("about:blank", "_blank");
       if (tab) tab.opener = null;
+      consentTab.current = tab;
       try {
         const next = await api.calendarConnect();
         if (tab) tab.location.href = next.auth_url;
@@ -53,6 +54,38 @@ export default function CalendarSettings() {
     },
   });
   const cancel = useMutation({ mutationFn: api.calendarCancel, onSuccess: settle });
+
+  /*
+   * Closing the Google tab cancels the connection.
+   *
+   * Nothing comes back when the consent tab is abandoned, so the backend sat in
+   * `connecting` until CONNECT_TIMEOUT_S (300s) elapsed and this screen showed a
+   * Cancel button for five minutes with nothing left to cancel. The tab is the
+   * only thing that knows the user walked away, and we opened it, so we can watch
+   * it: `closed` is readable on a window handle even after `opener` is cleared.
+   *
+   * Calling cancel after a *successful* sign-in is harmless — there is no pending
+   * connection left to drop, and the endpoint answers with the real status either
+   * way — so the race between "tab closed" and "token arrived" needs no lock.
+   */
+  const consentTab = useRef<Window | null>(null);
+  useEffect(() => {
+    if (status.data?.state !== "connecting") {
+      consentTab.current = null;
+      return undefined;
+    }
+    const tab = consentTab.current;
+    if (!tab) return undefined;
+    const timer = window.setInterval(() => {
+      if (!tab.closed) return;
+      window.clearInterval(timer);
+      consentTab.current = null;
+      cancel.mutate();
+    }, 700);
+    return () => window.clearInterval(timer);
+    // `cancel` is a stable mutation object; re-running on it would restart the poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.data?.state]);
   const disconnect = useMutation({
     mutationFn: api.calendarDisconnect,
     onSuccess: (next) => {
@@ -69,15 +102,6 @@ export default function CalendarSettings() {
       void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
     },
   });
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const prompt = (
-    (settings.data?.config ?? {}) as { calendar?: { prompt_invite?: boolean } }
-  ).calendar;
-  const saveSetting = useMutation({
-    mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
-  });
-
   const data = status.data;
   const error = data?.error ?? (connect.error ? String(connect.error.message) : null);
 
@@ -205,27 +229,6 @@ export default function CalendarSettings() {
         </SettingRow>
       )}
 
-      {/*
-       * The invitation is context for the summary, and it is on by default: a model that
-       * knows what the meeting was for writes about that meeting. Addresses are not part
-       * of it — an attendee is a name long before this switch is read.
-       */}
-      <SettingRow
-        label={t("calendar.promptInvite")}
-        htmlFor="calendar-prompt-invite"
-        description={t("calendar.promptInviteHint")}
-      >
-        <input
-          id="calendar-prompt-invite"
-          data-testid="calendar-prompt-invite"
-          type="checkbox"
-          checked={prompt?.prompt_invite ?? true}
-          onChange={(change) =>
-            saveSetting.mutate({ "calendar.prompt_invite": change.target.checked })
-          }
-          className="size-4"
-        />
-      </SettingRow>
     </SettingGroup>
   );
 }

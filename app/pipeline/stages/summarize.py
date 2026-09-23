@@ -11,6 +11,8 @@ from typing import Any
 
 from app import glossary as glossary_module
 from app import meta
+from app.due import anchor_date, resolve_due
+from app.errors import QuotaExhausted
 from app.llm import schema
 from app.llm.client import LlmClient, LlmResult, make_client, system_blocks
 from app.llm.prompts import load as load_prompt
@@ -34,6 +36,9 @@ LONG_MEETING_S = 20 * 60
 WINDOW_TOKENS_BY_PROVIDER: dict[str, int] = {
     "anthropic": 150_000,
     "claude-subscription": 150_000,
+    # Estimated at 2 chars/token (no token endpoint behind a CLI), so this is ~300k
+    # characters: comfortably inside the Codex models' context.
+    "codex-subscription": 150_000,
     "gemini": 150_000,
     "openai": 100_000,
 }
@@ -174,6 +179,34 @@ def system_text(ctx: StageContext) -> tuple[str, str]:
 
 
 def meeting_context(ctx: StageContext) -> str | None:
+    """What the model is told about the meeting before it reads the transcript.
+
+    Always its date and weekday — the model is asked for ``due_at`` and "by Thursday" is
+    unresolvable without knowing which week it was said in, and a recording made with no
+    calendar invitation is exactly the one that would otherwise carry no date at all.
+    Then, where there is one, the calendar invitation (:func:`calendar_context`).
+    """
+    parts = [calendar_context(ctx), date_context(ctx.meeting.started_at)]
+    joined = "\n\n".join(part for part in parts if part)
+    return joined or None
+
+
+def date_context(started_at: str) -> str | None:
+    """"Date: 2026-09-23 (Wednesday), 14:00 local time." — the anchor for deadlines."""
+    from datetime import datetime
+
+    try:
+        when = datetime.fromisoformat(started_at)
+    except ValueError:
+        return None
+    local = when.astimezone() if when.tzinfo else when
+    return (
+        f"Date: {local.date().isoformat()} ({local:%A}), {local:%H:%M} local time. "
+        "Spoken deadlines such as \"by Thursday\" count from this day."
+    )
+
+
+def calendar_context(ctx: StageContext) -> str | None:
     """What the calendar knows about this meeting, for the model (Calendar 4).
 
     The invitation is read live and in full — title, times, organizer, who was invited,
@@ -222,7 +255,15 @@ def snapshot_context(payload: dict[str, Any]) -> str | None:
     return "Meeting details, from the calendar invitation:\n" + "\n".join(lines)
 
 
-def summarize(ctx: StageContext, transcript: str, *, system: str, system_version: str) -> None:
+def summarize(
+    ctx: StageContext,
+    transcript: str,
+    *,
+    system: str,
+    system_version: str,
+    client: LlmClient | None = None,
+    instead_of: QuotaExhausted | None = None,
+) -> None:
     """Free-form: the prompt writes the summary, and nothing here rewrites it.
 
     Structured mode exists because the rest of the application reads the parts — the
@@ -234,7 +275,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
     makes an answer extractable at all across providers. What is inside ``summary_html``
     is entirely the prompt's: sections, order, wording, layout.
     """
-    client = client_for(ctx)
+    client = client or client_for(ctx)
     counter = CachingCounter(client.count_tokens)
     language = resolve_summary_language(ctx)
     glossary = glossary_block(ctx)
@@ -248,11 +289,18 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
 
     envelope = (
         "Reply with a JSON object holding `summary_html` — the complete summary as HTML — "
-        "and optionally `title` and `action_items`. Everything about that HTML is yours "
-        "to decide. `action_items` is an array of "
-        '{"who", "what", "due"?, "at_ms"?} repeating the commitments already in your '
-        "document; it adds nothing to the document and omitting it costs only the "
-        "cross-meeting list."
+        "and optionally `title`, `action_items` and `chapters`. Everything about that "
+        "HTML is yours to decide. `action_items` is an array of "
+        '{"who", "what", "due"?, "at_ms"?, "detail"?, "due_at"?} and it is where the '
+        "commitments belong: the application renders it as a checkable list directly "
+        "above your document, so a second list of the same commitments inside the HTML "
+        "is shown twice to the reader. Write them here, and let the document say what "
+        "was decided and why rather than repeating who owes what. `detail` is one short "
+        "line: why it matters, what it unblocks, or who is waiting on it. `due_at` is "
+        "the `due` resolved to a calendar date (YYYY-MM-DD) using the meeting date given "
+        "in the details; null when no date was said. `chapters` is an array of 3–7 "
+        '{"title", "start_ms", "end_ms"} topic sections covering the conversation in '
+        "order, with start and end in milliseconds from the transcript's timestamps."
     )
     instruction = language_instruction(language)
     context = meeting_context(ctx)
@@ -269,6 +317,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
     # pieces and a commitment made in the first hour belongs in the list as much as
     # one made in the last.
     items: list[dict[str, Any]] = []
+    chapters: list[dict[str, Any]] = []
     for window in windows:
         ctx.checkpoint()
         result = client.complete_json(
@@ -283,6 +332,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         parts.append(str(result.data.get("summary_html", "")))
         model_title = model_title or str(result.data.get("title", "") or "").strip()
         items.extend(schema.action_items(result.data))
+        chapters.extend(schema.chapters(result.data))
         log.info("window %d/%d done", window.index + 1, len(windows))
 
     if len(parts) > 1:
@@ -301,6 +351,8 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         # It is only trusted where it produced something: a model that merged the
         # documents and dropped the list should not cost the user their action items.
         items = schema.action_items(merged.data) or items
+        # The same rule for chapters: the merge's own, else every window's in time order.
+        chapters = schema.chapters(merged.data) or schema.chapters({"chapters": chapters})
     else:
         notes = {"summary_html": parts[0]}
     # Title precedence (Calendar 4): the user, then the calendar, then the model, then
@@ -310,7 +362,15 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         ctx.dao.update_meeting(meeting.id, title=model_title[:200], title_source="llm")
         meeting = ctx.refresh()
     notes["title"] = str(meeting.title or model_title or "")
+    # A model that said "by Thursday" and left `due_at` out gets it resolved here, against
+    # the day the meeting happened, so the stored row carries a date either way.
+    anchor = anchor_date(meeting.started_at)
+    for item in items:
+        if not item.get("due_at") and item.get("due") and anchor is not None:
+            resolved = resolve_due(item["due"], anchor)
+            item["due_at"] = resolved.isoformat() if resolved else None
     notes["action_items"] = items
+    notes["chapters"] = chapters
 
     notes_path(ctx.folder).write_text(
         json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -318,10 +378,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
     # Into the database as well as notes.json: the file is this meeting's record, the
     # table is what lets the inbox read across all of them. Ticks already made survive
     # this — see Dao.replace_action_items.
-    stored = ctx.dao.replace_action_items(
-        ctx.meeting.id,
-        [(item["who"], item["what"], item["due"], item["at_ms"]) for item in items],
-    )
+    stored = ctx.dao.replace_action_items(ctx.meeting.id, items)
     log.info("stored %d action item(s)", stored)
     ctx.dao.update_meeting(ctx.meeting.id, summary_language=language)
     # No sanity gates: they read action_items and owners, which free-form has no notion
@@ -331,7 +388,7 @@ def summarize(ctx: StageContext, transcript: str, *, system: str, system_version
         prompt_versions={"system": system_version, "format": "free"},
         summary_language=language,
         windows=len(windows),
-        llm={"name": client.name, "usage": _sum_usage(usage)},
+        llm=written_by(client, _sum_usage(usage), instead_of),
     )
     log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
 
@@ -360,7 +417,57 @@ def run(ctx: StageContext) -> None:
         raise FileNotFoundError(f"{transcript_md} is missing — run the assemble stage first")
 
     transcript = transcript_md.read_text(encoding="utf-8")
-    summarize(ctx, transcript, system=system, system_version=system_version)
+    try:
+        summarize(ctx, transcript, system=system, system_version=system_version)
+    except QuotaExhausted as spent:
+        fallback = fallback_client(ctx, spent)
+        if fallback is None:
+            raise  # the worker parks the job until the allowance resets
+        log.warning(
+            "%s allowance used up; summarizing with the configured fallback %s instead",
+            spent.provider,
+            fallback.name,
+        )
+        summarize(
+            ctx,
+            transcript,
+            system=system,
+            system_version=system_version,
+            client=fallback,
+            instead_of=spent,
+        )
+
+
+def fallback_client(ctx: StageContext, spent: QuotaExhausted) -> LlmClient | None:
+    """The provider the user chose for exactly this case, or ``None`` — never a guess.
+
+    Only a spent allowance reaches here (Codex 3). A fallback that is unset, that names
+    the provider which just ran out, or a meeting marked sensitive (which never left the
+    machine to begin with) means the summary waits instead: a transcript going to a
+    provider nobody picked is the surprise this application exists to avoid.
+    """
+    injected = getattr(ctx.services, "fallback_llm", None) if ctx.services is not None else None
+    if injected is not None:
+        return injected  # type: ignore[no-any-return]
+    chosen = str(ctx.config.get("llm.fallback_provider", "") or "")
+    if not chosen or chosen == spent.provider or ctx.meeting.sensitive:
+        return None
+    return make_client(ctx.config, provider=chosen)
+
+
+def written_by(
+    client: LlmClient, usage: dict[str, int], instead_of: QuotaExhausted | None
+) -> dict[str, Any]:
+    """Which provider wrote these notes, for ``meta.json`` and the meeting page.
+
+    When it was the fallback, that is recorded with the reason, so a summary that came
+    from somewhere other than the chosen provider is never mistaken for one that did not.
+    """
+    record: dict[str, Any] = {"name": client.name, "usage": usage}
+    if instead_of is not None:
+        record["fallback_for"] = instead_of.provider
+        record["fallback_reason"] = str(instead_of)
+    return record
 
 
 def _sum_usage(usage: Sequence[dict[str, Any]]) -> dict[str, int]:

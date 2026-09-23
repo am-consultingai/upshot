@@ -263,13 +263,14 @@ test("the_appearance_choice_survives_a_reload", async ({ page }) => {
  * Getting these the same way round is the actual failure mode — a pinned-LTR
  * container with mirrored bubbles inside, or mirrored transport controls.
  */
-test("transcript_sides_mirror_in_hebrew_but_the_transport_does_not", async ({ page, seed }) => {
+test("the_transcript_mirrors_in_hebrew_but_the_transport_does_not", async ({ page, seed }) => {
   await seed([
     {
       id: "e2e-rtl-sides",
       title: "פגישה",
       state: "RENDERED",
       started_at: isoAt(0, 10),
+      language: "he",
       audio_seconds: 4,
       turns: [
         { speaker: "THEM", at_ms: 0, text: "שאלה" },
@@ -281,19 +282,27 @@ test("transcript_sides_mirror_in_hebrew_but_the_transport_does_not", async ({ pa
   await gotoSettings(page, "appearance");
   await page.getByTestId("ui-language").selectOption("he");
   await gotoApp(page, "/m/e2e-rtl-sides");
+  await page.getByTestId("meeting-tab-transcript").click();
 
-  const mine = page.locator('[data-testid="transcript-turn"][data-track="me"]').first();
-  const theirs = page.locator('[data-testid="transcript-turn"][data-track="them"]').first();
-  const mineBox = await mine.boundingBox();
-  const theirsBox = await theirs.boundingBox();
-  expect(mineBox).not.toBeNull();
-  expect(theirsBox).not.toBeNull();
+  /*
+   * This used to assert that the two speakers' bubbles swapped sides. The bubbles
+   * are gone — a transcript is a document, not a chat log, and ragged edges in two
+   * directions made a long one unreadable. What has to mirror now is the block
+   * itself and the timestamp anchoring each paragraph: in Hebrew both start from
+   * the right.
+   */
+  const transcript = page.getByTestId("transcript");
+  expect(await transcript.evaluate((el) => getComputedStyle(el).direction)).toBe("rtl");
 
-  // In Hebrew, my own words sit on the side the reader starts from: the right.
+  const stamp = await page.getByTestId("transcript-turn").first().boundingBox();
+  const block = await transcript.boundingBox();
+  expect(stamp).not.toBeNull();
+  expect(block).not.toBeNull();
+  // The stamp sits on the reader's starting edge, which under RTL is the right half.
   expect(
-    mineBox!.x,
-    "the speaker's own bubbles must mirror with the language",
-  ).toBeGreaterThan(theirsBox!.x);
+    stamp!.x,
+    "the timestamp must anchor the start edge, which mirrors with the language",
+  ).toBeGreaterThan(block!.x + block!.width / 2);
 
   // The transport keeps its direction whatever the interface language is.
   expect(

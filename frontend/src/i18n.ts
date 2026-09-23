@@ -20,6 +20,9 @@ export interface I18n {
   /** Appearance lives here too: one context for what the shell looks like. */
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  /** Whether the explanatory tooltips are shown; Settings can turn them off. */
+  tooltips: boolean;
+  setTooltips: (on: boolean) => void;
 }
 
 export const I18nContext = createContext<I18n>({
@@ -28,6 +31,8 @@ export const I18nContext = createContext<I18n>({
   setLocale: () => undefined,
   theme: "light",
   setTheme: () => undefined,
+  tooltips: true,
+  setTooltips: () => undefined,
 });
 
 export function useI18n(): I18n {

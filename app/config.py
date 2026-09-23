@@ -48,11 +48,15 @@ DEFAULTS: dict[str, Any] = {
     "ui": {
         "language": "en",
         "view": "list",  # list|calendar — the main screen's layout
-        "calendar_span": "week",  # day|week|month
+        "calendar_span": "week",  # day|week|month|list
         # light|dark|system. Defaults to light rather than system on purpose: this is
         # read in daylight, and every comparable product ships light only. "system"
         # is offered, not assumed.
         "theme": "light",
+        # Explanations on hover for the main features. On by default — they are how a
+        # new user finds out what "Up next" or "Ask this meeting" is for — and one
+        # checkbox in Settings turns them off for someone who no longer needs them.
+        "tooltips_off": False,
     },
     # Follow the meeting. This app transcribes Hebrew by default (asr.default_language),
     # so defaulting summaries to English meant an English write-up of a Hebrew meeting
@@ -170,7 +174,7 @@ DEFAULTS: dict[str, Any] = {
         "title_patterns": ["zoom meeting", "microsoft teams", "meet -", "meet –", "webex"],
     },
     "llm": {
-        # anthropic|openai|gemini|claude-subscription|ollama|fake
+        # anthropic|openai|gemini|claude-subscription|codex-subscription|ollama|fake
         # `claude-subscription` runs through the Claude Code CLI on this machine, using
         # the signed-in user's own plan. It is never the default: Anthropic does not
         # permit third-party products to offer claude.ai login (DECISIONS D30).
@@ -196,6 +200,16 @@ DEFAULTS: dict[str, Any] = {
         "claude_cli_disallowed_tools": (
             "Bash,Read,Write,Edit,NotebookEdit,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite"
         ),
+        # `codex-subscription`: the Codex CLI, on the signed-in user's own ChatGPT plan.
+        # Never the default, and OpenAI has not said whether third parties may drive it
+        # on a plan at all (DECISIONS D58).
+        "codex_cli_path": "codex",
+        "codex_cli_timeout_s": 600,
+        "codex_cli_args": [],
+        # Who summarizes when a subscription provider reports its plan allowance used up
+        # (and only then). Empty means nobody: the summary waits for the reset and the
+        # transcript does not leave the machine. A deliberate choice, never a default.
+        "fallback_provider": "",
     },
     "delivery": {
         "mode": "draft",  # draft|auto_send
@@ -232,6 +246,20 @@ DEFAULTS: dict[str, Any] = {
     "schedule": {"hour": 2, "hours": 4},  # the window the `scheduled` job policy runs in
 }
 
+#: Every summarizer this build offers. Removing one is this one line: it drops out of
+#: Settings and of the fallback choices, and a config still naming it falls back to the
+#: default with a warning (``_retire_providers``) rather than refusing to start. That is
+#: the switch D58 asks for, so the day a vendor says no is a release and not a scramble.
+LLM_PROVIDERS: tuple[str, ...] = (
+    "anthropic",
+    "openai",
+    "gemini",
+    "claude-subscription",
+    "codex-subscription",
+    "ollama",
+    "fake",
+)
+
 _ENUMS: dict[str, tuple[str, ...]] = {
     "profile": ("auto", "gpu-live", "cpu-deferred", "remote-worker"),
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),
@@ -242,12 +270,13 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "asr.diarization": ("off", "onnx", "fake"),
     "audio.capture": ("wasapi", "synthetic"),
     "ui.view": ("list", "calendar"),
-    "ui.calendar_span": ("day", "week", "month"),
+    "ui.calendar_span": ("day", "week", "month", "list"),
     "audio.vad": ("two_stage", "energy"),
     "audio.echo_cancel": ("auto", "on", "off"),
     "detection.mode": ("shadow", "on", "off"),
     "detection.sources": ("windows", "fake"),
-    "llm.provider": ("anthropic", "openai", "gemini", "claude-subscription", "ollama", "fake"),
+    "llm.provider": LLM_PROVIDERS,
+    "llm.fallback_provider": ("", *(p for p in LLM_PROVIDERS if p != "fake")),
     "delivery.mode": ("draft", "auto_send"),
     "delivery.notifier": ("windows", "fake"),
     "enrichment.source": ("google", "null", "fake"),
@@ -344,6 +373,39 @@ def _forget_old_defaults(file_layer: dict[str, Any]) -> None:
             continue
         if value == old and not isinstance(value, bool):
             _unset(file_layer, dotted)
+
+
+def _retire_providers(data: dict[str, Any]) -> list[str]:
+    """A summarizer this build no longer offers is replaced, with a message — not a crash.
+
+    Without this, removing a provider from ``LLM_PROVIDERS`` would make every config
+    that names it fail validation at startup, and the application would not open at all
+    for exactly the people who had chosen it. Instead the default takes over and
+    Settings says why; a fallback naming it is simply cleared.
+    """
+    notices: list[str] = []
+    try:
+        chosen = _get(data, "llm.provider")
+    except KeyError:
+        chosen = None
+    if isinstance(chosen, str) and chosen not in LLM_PROVIDERS:
+        default = str(DEFAULTS["llm"]["provider"])
+        _set(data, "llm.provider", default)
+        notices.append(
+            f"The summarizer {chosen!r} is no longer available in this version, so "
+            f"summaries now use {default!r}. Choose another in Settings, AI agents."
+        )
+    try:
+        fallback = _get(data, "llm.fallback_provider")
+    except KeyError:
+        fallback = None
+    if isinstance(fallback, str) and fallback and fallback not in _ENUMS["llm.fallback_provider"]:
+        _set(data, "llm.fallback_provider", "")
+        notices.append(
+            f"The fallback summarizer {fallback!r} is no longer available in this version, "
+            "so there is no fallback now. Choose one in Settings, AI agents."
+        )
+    return notices
 
 
 def _merge(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[str, Any]:
@@ -477,6 +539,8 @@ class Config:
         #: above — a provider chosen in Settings is a choice, whatever the environment
         #: happened to say at startup.
         self._explicit: set[str] = set()
+        #: Things the loader changed on the user's behalf, said once in ``warnings``.
+        self._notices: list[str] = []
 
     # -- construction
 
@@ -506,7 +570,9 @@ class Config:
             for dotted, value in overrides.items():
                 _set(data, dotted, value)
                 cfg_from_env.pop(dotted, None)  # an explicit override is not the env
+        notices = _retire_providers(data)
         cfg = cls(data, source_file=path, from_env=cfg_from_env)
+        cfg._notices.extend(notices)
         cfg.validate()
         return cfg
 
@@ -694,9 +760,24 @@ class Config:
         if not (1 <= port <= 65535):
             raise ConfigError(f"server.port out of range: {port}")
 
+    def env_pinned(self) -> dict[str, str]:
+        """Keys the environment is holding, and the variable holding each one.
+
+        The environment is the top layer, so a launcher that exports ``UP_DETECTION__MODE``
+        wins over ``app_config.json`` on every start — for ever, and in silence. Saving
+        the setting worked, the file recorded it, and the next launch overrode it again,
+        so the screen looked like it was forgetting the choice. Nothing said why, because
+        nothing had any way to.
+
+        This is what says why. The settings API hands it to the screen, so a control the
+        environment has pinned admits it instead of quietly reverting, and the log names
+        them once at startup.
+        """
+        return {dotted: env_var_for(dotted) for dotted in sorted(self._from_env)}
+
     def warnings(self) -> list[str]:
         """Non-fatal configuration problems. It is the user's machine — warn, never block."""
-        out: list[str] = []
+        out: list[str] = list(self._notices)
         root = str(self.data_root).replace("\\", "/").lower()
         for marker in SYNCED_FOLDER_MARKERS:
             if marker in root:

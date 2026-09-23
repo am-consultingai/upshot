@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, type SearchHit } from "../api";
 import { useI18n } from "../i18n";
 import { boost, score } from "../lib/score";
 import { applyTheme, type Theme } from "../theme";
 import type { MessageKey } from "../locales/en";
+import { formatOffset } from "../lib/format";
+import { splitSnippet } from "../routes/Search";
+import { rememberSearch } from "../lib/recents";
 
 interface Command {
   id: string;
   group: MessageKey;
   label: string;
+  /** A second, quieter line: where a hit came from, or who said it. */
+  sub?: string;
+  /** A search hit's matched line, with the term marked. */
+  snippet?: string;
   hint?: string;
   keys?: string;
   run: () => void;
@@ -44,26 +51,36 @@ function recordUse(id: string): void {
   }
 }
 
+/** The order groups are drawn in. A meeting name is a stronger answer than a sentence. */
+const GROUP_ORDER: MessageKey[] = [
+  "palette.recent",
+  "palette.open",
+  "palette.actionItems",
+  "palette.transcript",
+  "palette.navigate",
+  "palette.do",
+];
+
 /**
- * Everything the application can do, in one list, reachable with Ctrl+K.
+ * Everything the application can do, and everything it has recorded, in one list —
+ * reachable with Ctrl+K or the sidebar's search button.
  *
- * Every comparable product ships one — Linear, Raycast, Reflect, Obsidian,
- * Todoist and the late Height all bind Cmd/Ctrl+K — and none of them ships a
- * right-click menu to speak of. It is the answer to "where is that setting",
- * "open that meeting" and "what is this app called again" all at once.
+ * It used to be a command list beside a `/search` screen that shared nothing with it:
+ * typing a word from a meeting here found the meeting's *name* or nothing, while the
+ * sentence you actually remembered was one screen away. Now the palette searches the
+ * same index the Search screen does and groups what it finds — meetings, action
+ * items, the lines of transcript — above the commands, with a key-hint footer that
+ * stays put. The Search screen is the long form of the same results.
  *
  * It also teaches. Each row shows the key that would have got you there without
- * opening this, which is how Superhuman turns a palette into a tutor: you find a
- * thing by typing its name twenty times and learn its shortcut on the way.
+ * opening this, which is how Superhuman turns a palette into a tutor.
  *
- * Numbers are from the shipped implementations rather than invented: a 640px
- * root, anchored near the top rather than centred vertically, a list capped
- * around 400px, group headings at 12px, and "No results found." when nothing
- * matches — which is the literal copy in every one of cmdk's three reference
- * palettes.
+ * Numbers are from the shipped implementations rather than invented: a 640px root,
+ * anchored near the top rather than centred vertically, a list capped around 400px,
+ * group headings at 12px, and "No results found." when nothing matches.
  */
 export default function CommandPalette() {
-  const { t, setTheme } = useI18n();
+  const { t, setTheme, locale } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -76,8 +93,16 @@ export default function CommandPalette() {
 
   const meetings = useQuery({ queryKey: ["meetings"], queryFn: () => api.meetings(), enabled: open });
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, enabled: open });
+  const term = query.trim();
+  const searching = open && term.length > 1;
+  const found = useQuery({
+    queryKey: ["search", term],
+    queryFn: () => api.search(term),
+    enabled: searching,
+    placeholderData: (previous) => previous,
+  });
   const start = useMutation({
-    mutationFn: api.startRecording,
+    mutationFn: () => api.startRecording(),
     onSuccess: () => queryClient.invalidateQueries(),
   });
   const stop = useMutation({
@@ -90,22 +115,16 @@ export default function CommandPalette() {
   const commands = useMemo<Command[]>(() => {
     const go = (to: string) => () => navigate(to);
     const list: Command[] = [
-      {
-        id: "nav.timeline",
-        group: "palette.navigate",
-        label: t("nav.timeline"),
-        keys: "G T",
-        run: go("/"),
-      },
-      { id: "nav.search", group: "palette.navigate", label: t("nav.search"), keys: "G S", run: go("/search") },
-      { id: "nav.detector", group: "palette.navigate", label: t("nav.detector"), keys: "G D", run: go("/detector") },
+      { id: "nav.timeline", group: "palette.navigate", label: t("nav.timeline"), keys: "G L", run: go("/") },
+      { id: "nav.actions", group: "palette.navigate", label: t("nav.actions"), keys: "G A", run: go("/actions") },
+      { id: "nav.search", group: "palette.navigate", label: t("nav.search"), keys: "/", run: go("/search") },
       { id: "nav.settings", group: "palette.navigate", label: t("nav.settings"), keys: "G ,", run: go("/settings") },
     ];
 
     list.push(
       recording
         ? { id: "rec.stop", group: "palette.do", label: t("timeline.stop"), run: () => stop.mutate() }
-        : { id: "rec.start", group: "palette.do", label: t("timeline.start"), run: () => start.mutate() },
+        : { id: "rec.start", group: "palette.do", label: t("timeline.start"), keys: "Ctrl R", run: () => start.mutate() },
     );
 
     for (const option of ["light", "dark", "system"] as const) {
@@ -135,18 +154,55 @@ export default function CommandPalette() {
         id: `meeting.${meeting.id}`,
         group: "palette.open",
         label: meeting.title ?? meeting.id,
+        sub: new Date(meeting.started_at).toLocaleDateString(locale, { day: "numeric", month: "short" }),
         run: go(`/m/${meeting.id}`),
       });
     }
     return list;
-  }, [t, navigate, recording, meetings.data, start, stop, setTheme]);
+  }, [t, navigate, recording, meetings.data, start, stop, setTheme, locale]);
+
+  /** Server hits for what was typed: action items and transcript lines. */
+  const hits = useMemo<Command[]>(() => {
+    if (!searching) return [];
+    const byMeeting = new Map((meetings.data?.meetings ?? []).map((m) => [m.id, m]));
+    return (found.data?.hits ?? [])
+      .filter((hit: SearchHit) => hit.kind !== "title")
+      .slice(0, 12)
+      .map((hit, index) => {
+        const title = hit.meeting_title ?? byMeeting.get(hit.meeting_id)?.title ?? hit.meeting_id;
+        return {
+          id: `hit.${hit.kind}.${hit.meeting_id}.${hit.at_ms}.${index}`,
+          group: hit.kind === "action" ? "palette.actionItems" : "palette.transcript",
+          label: hit.text,
+          snippet: hit.snippet,
+          sub:
+            hit.kind === "transcript"
+              ? `${title} · ${
+                  hit.speaker === "ME" ? t("meeting.you") : (hit.speaker_name ?? t("meeting.themSaid"))
+                } · ${formatOffset(hit.at_ms / 1000)}`
+              : title,
+          run: () => {
+            rememberSearch(term);
+            navigate(hit.kind === "transcript" ? `/m/${hit.meeting_id}?at=${hit.at_ms}` : `/m/${hit.meeting_id}`);
+          },
+        } satisfies Command;
+      });
+  }, [searching, found.data, meetings.data, navigate, t, term]);
 
   const results = useMemo(() => {
+    if (!term) {
+      // Before anything is typed: the few most recent meetings, then everything to do.
+      const recent = commands
+        .filter((command) => command.group === "palette.open")
+        .slice(0, 5)
+        .map((command) => ({ ...command, group: "palette.recent" as MessageKey }));
+      return [...recent, ...commands.filter((command) => command.group !== "palette.open")];
+    }
     const now = Date.now();
     const frecency = readFrecency();
-    return commands
+    const ranked = commands
       .map((command) => {
-        const base = score(`${command.label} ${command.hint ?? ""}`.trim(), query);
+        const base = score(`${command.label} ${command.hint ?? ""}`.trim(), term);
         if (base === 0) return null;
         const seen = frecency[command.id];
         return { command, rank: base * boost(seen?.hits ?? 0, seen?.last ?? 0, now) };
@@ -155,10 +211,11 @@ export default function CommandPalette() {
       .sort((a, b) => b.rank - a.rank)
       .slice(0, 40)
       .map((row) => row.command);
-  }, [commands, query]);
+    const all = [...ranked, ...hits];
+    // Grouped in a fixed order, and the keyboard walks the same order it is drawn in.
+    return GROUP_ORDER.flatMap((group) => all.filter((command) => command.group === group));
+  }, [commands, hits, term]);
 
-  // Grouped for display, but the keyboard walks the flat list: a group is a label,
-  // not a level of navigation.
   const groups = useMemo(() => {
     const byGroup = new Map<MessageKey, Command[]>();
     for (const command of results) {
@@ -181,8 +238,16 @@ export default function CommandPalette() {
         });
       }
     };
+    const onOpen = () => {
+      restoreTo.current = document.activeElement;
+      setOpen(true);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("upshot:palette", onOpen);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("upshot:palette", onOpen);
+    };
   }, []);
 
   useEffect(() => {
@@ -243,22 +308,27 @@ export default function CommandPalette() {
         role="dialog"
         aria-modal="true"
         aria-label={t("palette.title")}
-        className="w-full max-w-[640px] overflow-hidden rounded-xl bg-raised shadow-lg"
+        className="flex w-full max-w-[640px] flex-col overflow-hidden rounded-xl bg-raised shadow-lg"
         onKeyDown={onKeyDown}
       >
-        <input
-          ref={inputRef}
-          data-testid="palette-input"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("palette.placeholder")}
-          aria-label={t("palette.placeholder")}
-          role="combobox"
-          aria-expanded="true"
-          aria-controls="palette-list"
-          aria-activedescendant={results[active] ? `palette-${active}` : undefined}
-          className="no-focus-ring w-full border-b border-line-subtle bg-transparent px-5 py-4 text-lg placeholder:text-tertiary"
-        />
+        <div className="flex items-center gap-3 border-b border-line-subtle px-5">
+          <svg viewBox="0 0 16 16" className="size-4 shrink-0 fill-none stroke-current stroke-[1.5] text-tertiary">
+            <path d="M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
+          </svg>
+          <input
+            ref={inputRef}
+            data-testid="palette-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("palette.placeholder")}
+            aria-label={t("palette.placeholder")}
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="palette-list"
+            aria-activedescendant={results[active] ? `palette-${active}` : undefined}
+            className="no-focus-ring min-w-0 flex-1 bg-transparent py-4 text-lg outline-none placeholder:text-tertiary"
+          />
+        </div>
 
         <div
           id="palette-list"
@@ -267,14 +337,14 @@ export default function CommandPalette() {
           aria-label={t("palette.title")}
           className="max-h-[400px] overflow-y-auto overscroll-contain p-2"
         >
-          {results.length === 0 && (
+          {results.length === 0 && !(searching && found.isFetching) && (
             <p data-testid="palette-empty" className="grid h-16 place-items-center text-sm text-tertiary">
               {t("palette.empty")}
             </p>
           )}
 
           {groups.map(([group, items]) => (
-            <div key={group}>
+            <div key={group} data-testid="palette-group" data-group={group}>
               <p className="px-2 pt-2 pb-1 text-xs text-tertiary">{t(group)}</p>
               {items.map((command) => {
                 flat += 1;
@@ -290,11 +360,31 @@ export default function CommandPalette() {
                     type="button"
                     onMouseMove={() => setActive(index)}
                     onClick={() => choose(command)}
-                    className={`flex h-11 w-full items-center gap-3 rounded-md px-3 text-start text-sm ${
-                      index === active ? "bg-surface-2 text-primary" : "text-secondary"
-                    }`}
+                    className={`flex w-full items-center gap-3 rounded-md px-3 text-start text-sm ${
+                      command.snippet ? "min-h-11 py-1.5" : "h-10"
+                    } ${index === active ? "bg-surface-2 text-primary" : "text-secondary"}`}
                   >
-                    <span className="min-w-0 flex-1 truncate">{command.label}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        {command.snippet
+                          ? splitSnippet(command.snippet).map((part, at) =>
+                              part.hit ? (
+                                <mark key={at} className="rounded-xs bg-accent-quiet px-0.5 text-primary">
+                                  {part.text}
+                                </mark>
+                              ) : (
+                                <span key={at}>{part.text}</span>
+                              ),
+                            )
+                          : command.label}
+                      </span>
+                      {command.snippet && command.sub && (
+                        <span className="block truncate text-2xs text-tertiary">{command.sub}</span>
+                      )}
+                    </span>
+                    {!command.snippet && command.sub && (
+                      <span className="shrink-0 text-xs text-tertiary tabular-nums">{command.sub}</span>
+                    )}
                     {command.hint && <span className="shrink-0 text-xs text-tertiary">{command.hint}</span>}
                     {/* The binding that would have skipped this palette entirely. */}
                     {command.keys && (
@@ -307,6 +397,36 @@ export default function CommandPalette() {
               })}
             </div>
           ))}
+        </div>
+
+        {/* The keys that work here, always in the same place — cmdk's footer. */}
+        <div
+          data-testid="palette-footer"
+          className="flex items-center gap-3 border-t border-line-subtle px-4 py-2 text-2xs text-tertiary"
+        >
+          <span className="flex items-center gap-1">
+            <kbd className="rounded-xs bg-surface-3 px-1 py-px">↑↓</kbd> {t("palette.move")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded-xs bg-surface-3 px-1 py-px">↵</kbd> {t("palette.choose")}
+          </span>
+          <span className="flex items-center gap-1">
+            <kbd className="rounded-xs bg-surface-3 px-1 py-px">{"esc"}</kbd> {t("palette.close")}
+          </span>
+          {term.length > 1 && (
+            <button
+              type="button"
+              data-testid="palette-all-results"
+              onClick={() => {
+                rememberSearch(term);
+                setOpen(false);
+                navigate(`/search?q=${encodeURIComponent(term)}`);
+              }}
+              className="ms-auto rounded-sm px-1.5 py-0.5 text-secondary hover:bg-a-200 hover:text-primary"
+            >
+              {t("palette.allResults")}
+            </button>
+          )}
         </div>
       </div>
     </div>

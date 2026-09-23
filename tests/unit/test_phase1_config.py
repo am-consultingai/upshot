@@ -137,6 +137,71 @@ def test_a_deliberate_choice_outranks_the_environment(tmp_path) -> None:  # type
     assert json.loads(path.read_text())["llm"]["provider"] == "claude-subscription"
 
 
+def test_a_saved_choice_is_still_overridden_on_the_next_start_and_says_so(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The other half of the bug above, and the one that kept coming back.
+
+    Saving works, and `test_a_deliberate_choice_outranks_the_environment` proves the file
+    records the choice. But the environment is the top layer, so the launcher overrides it
+    again on the *next* start — for ever, and in silence. The screen read the resolved
+    value, showed the launcher's, and looked exactly like a screen that forgets.
+
+    Nothing here changes the precedence: an override is meant to win. What changes is that
+    the application can now name what is holding a key, so the screen and the log say so
+    instead of the user guessing for a week.
+    """
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({}), encoding="utf-8")
+    env = {"UP_DETECTION__MODE": '"off"'}
+
+    first = Config.load(file=path, environ=env)
+    first.set("detection.mode", "on")  # the user chooses, on the Settings screen
+    first.save()
+    assert json.loads(path.read_text())["detection"]["mode"] == "on", "the choice is kept"
+
+    again = Config.load(file=path, environ=env)
+    assert again.get("detection.mode") == "off", "and the environment overrides it again"
+    assert again.env_pinned() == {"detection.mode": "UP_DETECTION__MODE"}, "and now it says so"
+
+    assert Config.load(file=path, environ={}).get("detection.mode") == "on", "without it, it holds"
+    assert Config.load(file=path, environ={}).env_pinned() == {}
+
+
+def test_nothing_pinned_is_reported(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    assert Config.load(file=tmp_path / "x.json", environ={}).env_pinned() == {}
+
+
+def test_no_launcher_pins_a_setting_the_user_owns() -> None:
+    """A launcher may fix what the *machine* is — no microphone, no model, which port.
+
+    It may not fix what the user decides. `scripts/demo.sh` exported UP_DETECTION__MODE,
+    so "Detecting meetings" could be set, saved and read back, and came back off on every
+    restart with nothing anywhere to say why. These are the keys a launcher must leave
+    alone; if a new one is genuinely needed, the screen has to say it is pinned.
+    """
+    import re
+
+    owned = {
+        "UP_DETECTION__MODE",
+        "UP_DETECTION__DECIDED",
+        "UP_UI__LANGUAGE",
+        "UP_UI__THEME",
+        "UP_SUMMARY__LANGUAGE",
+        "UP_RETENTION__AUDIO_DAYS",
+        "UP_DELIVERY__MODE",
+    }
+    root = Path(__file__).resolve().parents[2]
+    launchers = [
+        root / "scripts" / "demo.sh",
+        root / "scripts" / "windows" / "run-app.ps1",
+    ]
+    for launcher in launchers:
+        text = launcher.read_text(encoding="utf-8")
+        # `export UP_X=...` in sh, `$env:UP_X = ...` in PowerShell.
+        exported = set(re.findall(r"(?:export\s+|\$env:)(UP_[A-Z0-9_]+)\s*=", text))
+        clashes = sorted(exported & owned)
+        assert not clashes, f"{launcher.name} pins a user setting: {clashes}"
+
+
 def test_an_env_key_absent_from_disk_is_dropped_not_frozen(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """With nothing on disk to restore, the key goes and the default applies again."""
     path = tmp_path / "app_config.json"

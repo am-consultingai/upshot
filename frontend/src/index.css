@@ -3,6 +3,19 @@
 @import "./tokens.css";
 
 /*
+ * Hover means hover, whatever the device says its primary pointer is.
+ *
+ * Tailwind v4 wraps every `hover:` utility in `@media (hover: hover)`, so a device whose
+ * *primary* input is touch gets no hover styles at all — even while a mouse or touchpad
+ * is moving over the page. Touchscreen Windows laptops report exactly that, and on one
+ * every hover fill in the app (rows, chips, links, the revealed `⋯`) silently did
+ * nothing while working in every test browser. The mock uses plain `:hover`, which is
+ * what this restores. On a pure touch screen `:hover` sticks after a tap, which is
+ * harmless here: the fills are one alpha step.
+ */
+@custom-variant hover (&:hover);
+
+/*
  * Base. Everything here resolves to a token; no literal colour or size belongs
  * in this file or in a component.
  */
@@ -75,6 +88,50 @@ body :dir(rtl) {
       opacity var(--duration-base) var(--ease-out-quad),
       transform var(--duration-fast) var(--ease-out-quad);
   }
+
+  /*
+   * Hover arrives faster than it leaves.
+   *
+   * Clerk ships exactly this asymmetry — .15s at rest, .1s while hovered — and
+   * Linear goes further and makes hover instant. Arriving quickly reads as
+   * responsive; leaving slowly reads as calm rather than twitchy. Vercel's
+   * *written* guidance says the reverse, and its shipped code disagrees with it.
+   */
+  button:hover,
+  a:hover,
+  [role="button"]:hover {
+    transition-duration: var(--duration-fast);
+  }
+}
+
+/*
+ * Under a reduced-motion preference the rule above simply never applies, which
+ * is the right default. The two keyframe animations in the application are not
+ * covered by it, so they are stopped here by name rather than with a blanket
+ * `* { animation: none }` that would also kill a future loading shimmer's
+ * fallback.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-ping {
+    animation: none;
+  }
+}
+
+/*
+ * Keyboard hints are Latin regardless of the interface language.
+ *
+ * `G ,` renders as `, G` under Hebrew: the element inherits `direction: rtl`,
+ * and a trailing comma is a *neutral* bidi character, so it takes the paragraph
+ * direction and moves to the other end. Photographed before the fix; the same
+ * bug is visible in shadcn's Arabic command palette, which shows `⌘P` as `P⌘`.
+ *
+ * Isolating the element is what `<bdi>` does, applied here by element so every
+ * present and future keycap gets it without anyone having to remember.
+ */
+kbd {
+  unicode-bidi: isolate;
+  direction: ltr;
 }
 
 /* One focus treatment for the whole app, on the accent, never removed. */
@@ -152,6 +209,20 @@ body :dir(rtl) {
 
 .summary-prose > :first-child {
   margin-block-start: 0;
+}
+
+/*
+ * --- lead sentence ---
+ * The opening paragraph carries the meeting, so it is set larger and tighter than
+ * the body. Arc and Dia both do this instead of a heading: the sentence says what a
+ * heading would, and the document starts with a fact rather than the word "Overview".
+ */
+.summary-prose > p:first-child {
+  font-size: var(--text-xl);
+  font-weight: 450;
+  line-height: 1.45;
+  letter-spacing: var(--tracking-snug);
+  color: var(--text-primary);
 }
 
 .summary-prose > :last-child {
@@ -290,4 +361,221 @@ body :dir(rtl) {
 .summary-prose th {
   background: var(--surface-2);
   font-weight: 600;
+}
+
+
+/*
+ * Tooltip and menu surfaces.
+ *
+ * Written here rather than as utilities because `@starting-style` and
+ * `transition-behavior: allow-discrete` have no Tailwind equivalent, and because
+ * both overlays should share one enter curve: Radix's exponential-out, which is
+ * what everything in this field pops with.
+ */
+.ma-tip {
+  display: none;
+  background: var(--text-primary);
+  color: var(--surface-0);
+  letter-spacing: 0;
+  opacity: 0;
+  transform: translateY(2px) scale(0.98);
+  transition:
+    opacity 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    display 0.14s allow-discrete;
+}
+
+.ma-tip[data-open] {
+  display: block;
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+}
+
+@starting-style {
+  .ma-tip[data-open] {
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+  }
+}
+
+.ma-menu {
+  display: none;
+  opacity: 0;
+  transform: scale(0.97) translateY(4px);
+  transform-origin: var(--menu-origin, top right);
+  transition:
+    opacity 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    display 0.14s allow-discrete;
+}
+
+.ma-menu[data-open] {
+  display: block;
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .ma-menu[data-open] {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ma-tip,
+  .ma-menu {
+    transition: none;
+  }
+}
+
+/*
+ * The toast deck. Collapsed, the cards behind the newest step back and hide their
+ * contents, so three toasts read as one object; hovering the deck fans them out.
+ * Sonner's numbers: 8px and 5% per step collapsed, a full card height expanded.
+ */
+.ma-toast {
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@starting-style {
+  .ma-toast[data-index="0"] {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.ma-toast[data-index="1"] {
+  transform: translateY(-8px) scale(0.95);
+}
+
+.ma-toast[data-index="2"] {
+  transform: translateY(-16px) scale(0.9);
+}
+
+.ma-toast[data-index="1"] > *,
+.ma-toast[data-index="2"] > * {
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ma-toaster[data-expanded] .ma-toast[data-index="1"] {
+  transform: translateY(calc(-100% - 8px));
+}
+
+.ma-toaster[data-expanded] .ma-toast[data-index="2"] {
+  transform: translateY(calc(-200% - 16px));
+}
+
+.ma-toaster[data-expanded] .ma-toast > * {
+  opacity: 1;
+}
+
+/* A dialog arrives the way a menu does, a little slower: it is a bigger thing. */
+.ma-dialog {
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@starting-style {
+  .ma-dialog {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/*
+ * A row's reserved slot. Controls are revealed into space the row already keeps,
+ * never inserted into the flow — and every hover reveal has a focus twin, so the
+ * keyboard reaches the same controls the pointer does.
+ */
+.ma-slot {
+  opacity: 0;
+  transition: opacity 0.1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ma-row:hover .ma-slot,
+.ma-row:focus-within .ma-slot,
+.ma-slot:focus-within,
+.ma-slot[data-pinned] {
+  opacity: 1;
+}
+
+/* Selection is a mark, hover is a fill: two kinds of signal that cannot collide. */
+.ma-row[aria-selected="true"]::before {
+  content: "";
+  position: absolute;
+  inset-block: 6px;
+  inset-inline-start: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+/* The recording pulse, on a chip's badge and in the rail. */
+@keyframes ma-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.ma-pulse {
+  animation: ma-pulse 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ma-toast,
+  .ma-dialog,
+  .ma-slot {
+    transition: none;
+  }
+
+  .ma-pulse {
+    animation: none;
+  }
+}
+
+/*
+ * A next step written under a decision: indented, a rule on its leading edge, set in
+ * the accent with an arrow. The prompt asks the model to write it as
+ * `<p class="next">`; the page makes it a control that files it as an action item.
+ */
+.summary-prose .next {
+  margin-block: -0.25em 0.9em;
+  margin-inline-start: 1.25em;
+  padding-inline-start: 0.8em;
+  border-inline-start: 2px solid var(--border-strong);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.summary-prose .next::after {
+  content: " →";
+}
+
+.summary-prose .next:dir(rtl)::after {
+  content: " ←";
+}
+
+.summary-prose .next:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The lead sentence is the document's opening; the rule below spaces the next block. */
+.summary-prose > p:first-child + p {
+  color: var(--text-secondary);
+}
+
+/* Headings sit further from what came before than from what follows: they belong below. */
+.summary-prose > h2 {
+  margin-block: 2.2em 0.6em;
 }

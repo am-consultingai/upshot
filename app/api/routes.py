@@ -8,7 +8,7 @@ import os
 import shutil
 import sys
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,8 @@ from pydantic import BaseModel, Field
 
 from app import meta
 from app.clock import iso
-from app.db.dao import GlossaryTerm, capabilities
+from app.config import LLM_PROVIDERS
+from app.db.dao import GlossaryTerm, Meeting, capabilities
 from app.log import get
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
 from app.services import Services
@@ -64,10 +65,36 @@ class MeetingPatch(BaseModel):
     title: str | None = None
     sensitive: bool | None = None
     discard: bool | None = None
+    #: Merged into the stored map: a slot set to null or "" is removed, others are kept.
+    speaker_names: dict[str, str | None] | None = None
 
 
 class ActionItemPatch(BaseModel):
-    done: bool
+    """Every field optional. An absent field is left alone; an explicit null clears it —
+    which is why the handler reads ``model_fields_set`` rather than testing for None."""
+
+    done: bool | None = None
+    due_at: str | None = None
+    snoozed_until: str | None = None
+    who: str | None = None
+    what: str | None = None
+    detail: str | None = None
+
+
+class ActionItemPost(BaseModel):
+    what: str
+    who: str = "ME"
+    due_at: str | None = None
+    detail: str | None = None
+
+
+class TagsPut(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+
+
+class AskPost(BaseModel):
+    question: str
+    scope: str = "meeting"
 
 
 class SettingsPut(BaseModel):
@@ -92,6 +119,10 @@ class IgnorePost(BaseModel):
 
 class StartPost(BaseModel):
     title: str | None = None
+    #: "Record this one" on an upcoming calendar event: the recording starts already
+    #: matched to it, the way the user would have matched it by hand afterwards.
+    calendar_id: str | None = None
+    event_id: str | None = None
 
 
 # --------------------------------------------------------------------------- status
@@ -128,9 +159,72 @@ def status(request: Request) -> dict[str, Any]:
         "queue": svc.queue.counts(),
         "queue_depth": svc.queue.depth(),
         "disk_free_bytes": disk.free,
+        "storage_bytes": storage_bytes(svc),
         "fts": capabilities(svc.conn).fts,
         "now": iso(svc.clock.now()),
     }
+
+
+@router.get("/attention")
+def attention(request: Request) -> dict[str, Any]:
+    """Everything the pipeline is stuck on, in words: failed stages and waiting ones.
+
+    A waiting stage is one the queue parked on purpose — a plan's allowance used up until
+    a stated time, a CLI waiting to be signed in — with ``retry_at`` saying when it will
+    try again by itself. Nothing here is lost: the audio and transcript are on disk.
+    """
+    svc = services_of(request)
+    items: list[dict[str, Any]] = []
+    for job in svc.queue.needing_attention():
+        meeting = svc.dao.get_meeting(job.meeting_id)
+        items.append(
+            {
+                "meeting_id": job.meeting_id,
+                "title": meeting.title if meeting else None,
+                "stage": job.stage,
+                "state": "failed" if job.state == "failed" else "waiting",
+                "message": job.last_error,
+                "retry_at": job.not_before if job.state != "failed" else None,
+            }
+        )
+    return {"items": items}
+
+
+#: How long a measured library size is reused. The status endpoint is polled every five
+#: seconds, and walking every chunk file of every meeting that often is wasted work for a
+#: number that moves by a meeting at a time.
+STORAGE_TTL_S = 60.0
+
+
+def _tree_bytes(root: Path) -> int:
+    total = 0
+    stack = [root]
+    while stack:
+        try:
+            entries = list(os.scandir(stack.pop()))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat(follow_symlinks=False).st_size
+            except OSError:
+                continue  # removed while walking: a retention sweep, a discard
+    return total
+
+
+def storage_bytes(svc: Services) -> int:
+    """What the library occupies on disk: audio, transcripts, notes. 0 if it is absent."""
+    now = svc.clock.monotonic()
+    cached = svc.extras.get("storage_bytes")
+    if cached is not None and now - cached[0] < STORAGE_TTL_S:
+        return int(cached[1])
+    root = Path(svc.config.data_root)
+    value = _tree_bytes(root) if root.is_dir() else 0
+    svc.extras["storage_bytes"] = (now, value)
+    return value
 
 
 # --------------------------------------------------------------------------- recording
@@ -150,8 +244,30 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
     held = [name for name in ("me", "them") if meter.active(name) is not None]
     if held:
         log.info("taking %s back from the settings meters", " and ".join(held))
+    event = None
+    if body is not None and (body.calendar_id or body.event_id):
+        if not body.calendar_id or not body.event_id:
+            raise HTTPException(400, "name the event with both calendar_id and event_id")
+        event = _event_store(svc).get(body.calendar_id, body.event_id)
+        if event is None:
+            raise HTTPException(404, "that event is not in the calendar cache")
     meter.release()  # every track: the recorder needs both endpoints
-    meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
+    if event is not None:
+        from app.gcal.source import snapshot
+
+        # Created under the event's name, then matched as the user would match it by
+        # hand — source "user", so neither the end-of-recording rematch nor a later sync
+        # second-guesses a choice that was made by pressing "Record this one".
+        meeting = svc.meetings.create(
+            source="manual",
+            title=(body.title if body and body.title else event.title) or None,
+            title_source="user" if body and body.title else "calendar",
+        )
+        meeting = svc.meetings.choose_event(
+            meeting.id, snapshot(event, state="matched", source="user", confidence=1.0)
+        )
+    else:
+        meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
     svc.recorder.start(meeting.path, meeting.id)
     svc.recorder.start_thread()
     svc.meetings.committed(meeting, meeting.path)
@@ -197,6 +313,67 @@ def recording_pause(request: Request) -> dict[str, Any]:
 # --------------------------------------------------------------------------- meetings
 
 
+def _instant(text: str) -> datetime:
+    """A stored timestamp as an instant. A value written without an offset is read as
+    local time, which is what it was."""
+    when = datetime.fromisoformat(text)
+    return when if when.tzinfo else when.astimezone()
+
+
+def _inferred_calendar(
+    svc: Services, meeting: Meeting, events: list[Any] | None = None
+) -> dict[str, Any]:
+    """The event a recording belongs to when nothing was ever stored on it.
+
+    A recording made before the calendar was connected carries no snapshot, and nothing
+    ever goes back to give it one. So it drew a second block of its own beside its own
+    event in the calendar view — the same meeting, twice, under two names — and its page
+    knew nothing about the meeting it had been. The matcher that runs at record time is
+    asked again here, against the cache, and only a *matched* verdict is used: a guess is
+    not worth drawing as a fact.
+
+    Nothing is written. The snapshot belongs to the moment of recording, and a meeting
+    the user has already ruled on is never second-guessed, because that one is not empty.
+    """
+    from app.gcal.match import MATCHED, match
+    from app.gcal.source import SEARCH_MARGIN, snapshot
+
+    try:
+        started = _instant(meeting.started_at)
+        ended = _instant(meeting.ended_at) if meeting.ended_at else None
+    except ValueError:
+        return {}
+    nearby = (
+        events
+        if events is not None
+        else _event_store(svc).between(started - SEARCH_MARGIN, (ended or started) + SEARCH_MARGIN)
+    )
+    verdict = match(nearby, started, ended)
+    if verdict.state != MATCHED or verdict.best is None:
+        return {}
+    return snapshot(
+        verdict.best.event,
+        state=MATCHED,
+        source="auto",
+        confidence=verdict.confidence,
+        reason="matched against the calendar cache when this page was read",
+    )
+
+
+def _calendar_of(
+    svc: Services, meeting: Meeting, events: list[Any] | None = None
+) -> dict[str, Any]:
+    """What event this recording was: the stored snapshot, else one worked out now."""
+    from app.meetings import calendar_payload
+
+    return calendar_payload(meeting) or _inferred_calendar(svc, meeting, events)
+
+
+def _action_counts(pair: tuple[int, int] | None) -> dict[str, int]:
+    total, still_open = pair or (0, 0)
+    return {"actions_total": total, "actions_open": still_open}
+
+
 def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     meeting = svc.dao.get_meeting(meeting_id)
     if meeting is None:
@@ -214,14 +391,25 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
         for job in svc.queue.for_meeting(meeting_id)
     ]
     payload["evidence"] = meeting.evidence
-    from app.meetings import calendar_payload
-
     # Parsed for the page; the stored string stays as it was for anything that reads it.
-    payload["calendar"] = calendar_payload(meeting) or None
+    payload["calendar"] = _calendar_of(svc, meeting) or None
     mirrored = meta.read(meeting.path)
     # A meeting whose audio the retention policy removed is not a meeting that failed to
     # record, and the page must not say so.
     payload["audio_deleted_at"] = mirrored.get("audio_deleted_at")
+    # Which provider wrote the notes, and — when it was the fallback — for whom and why
+    # (Codex 3). A summary from a provider other than the chosen one must say so.
+    recorded = mirrored.get("llm")
+    llm: dict[str, Any] = recorded if isinstance(recorded, dict) else {}
+    payload["summarized_by"] = (
+        {
+            "provider": llm.get("name"),
+            "fallback_for": llm.get("fallback_for"),
+            "fallback_reason": llm.get("fallback_reason"),
+        }
+        if llm.get("name")
+        else None
+    )
     # Which tracks exist and whether either actually has anything on it. The player used
     # to be hardwired to "them", so a meeting where nobody else spoke played silence and
     # looked broken.
@@ -229,10 +417,26 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
 
     payload["audio_tracks"] = track_summary(meeting.path)
     # Rendered as checkboxes beside the summary, and the same rows the inbox reads.
-    payload["action_items"] = [
-        item.as_dict() for item in svc.dao.action_items(meeting_id=meeting.id)
-    ]
+    items = svc.dao.action_items(meeting_id=meeting.id)
+    payload["action_items"] = [item.as_dict() for item in items]
+    payload.update(_action_counts((len(items), sum(1 for item in items if not item.done))))
+    payload["tags"] = svc.dao.tags(meeting.id)
+    payload["chapters"] = _chapters_of(meeting)
+    payload["failed_stage"] = svc.dao.failed_stages().get(meeting.id)
     return payload
+
+
+def _chapters_of(meeting: Meeting) -> list[dict[str, Any]]:
+    """The summarizer's chapters from notes.json; [] for a meeting summarized before them."""
+    from app.llm.schema import chapters
+
+    path = meeting.path / "notes.json"
+    if not path.exists():
+        return []
+    try:
+        return chapters(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return []
 
 
 @router.get("/meetings")
@@ -246,7 +450,25 @@ def list_meetings(
 ) -> dict[str, Any]:
     svc = services_of(request)
     meetings = svc.dao.list_meetings(frm=from_, to=to, q=q, state=state, limit=limit)
-    return {"meetings": [meeting.as_dict() for meeting in meetings], "count": len(meetings)}
+    # What each meeting still owes, so the list can say it without opening anything: one
+    # grouped query for the whole page rather than one per row.
+    counts = svc.dao.action_item_counts()
+    tags = svc.dao.tags_by_meeting()
+    failed = svc.dao.failed_stages()
+    return {
+        "meetings": [
+            {
+                **meeting.as_dict(),
+                **_action_counts(counts.get(meeting.id)),
+                "tags": tags.get(meeting.id, []),
+                # Which stage stopped, so a card can say "transcription failed" without
+                # opening the meeting. Null when nothing has failed.
+                "failed_stage": failed.get(meeting.id),
+            }
+            for meeting in meetings
+        ],
+        "count": len(meetings),
+    }
 
 
 @router.get("/search")
@@ -259,10 +481,11 @@ def search(request: Request, q: str = "", limit: int = 50) -> dict[str, Any]:
     """
     svc = services_of(request)
     hits = svc.dao.search(q, limit=limit)
-    titles = {
-        meeting.id: (meeting.title, meeting.started_at)
-        for meeting in svc.dao.list_meetings(limit=10_000)
-    }
+    meetings = svc.dao.list_meetings(limit=10_000)
+    titles = {meeting.id: (meeting.title, meeting.started_at) for meeting in meetings}
+    # The name the user gave the hit's speaker slot (D52). ME stays null: the page says
+    # "You" in the interface language rather than whatever was typed here.
+    speakers = {meeting.id: meeting.speakers for meeting in meetings}
     return {
         "q": q,
         "hits": [
@@ -271,9 +494,15 @@ def search(request: Request, q: str = "", limit: int = 50) -> dict[str, Any]:
                 "meeting_title": titles.get(hit.meeting_id, (None, None))[0],
                 "meeting_started_at": titles.get(hit.meeting_id, (None, None))[1],
                 "speaker": hit.speaker,
+                "speaker_name": (
+                    None
+                    if not hit.speaker or hit.speaker == "ME"
+                    else speakers.get(hit.meeting_id, {}).get(hit.speaker)
+                ),
                 "at_ms": hit.at_ms,
                 "text": hit.text,
                 "snippet": hit.snippet,
+                "kind": hit.kind,
             }
             for hit in hits
         ],
@@ -302,14 +531,139 @@ def list_action_items(
     }
 
 
+def _checked_date(value: str | None, field: str) -> str | None:
+    """None, or a real YYYY-MM-DD; anything else is the caller's mistake (422)."""
+    from app.due import parse_iso_date
+
+    if value is None:
+        return None
+    parsed = parse_iso_date(value)
+    if parsed is None:
+        raise HTTPException(422, f"{field} must be a date as YYYY-MM-DD, or null")
+    return parsed.isoformat()
+
+
 @router.patch("/action-items/{item_id}")
 def patch_action_item(request: Request, item_id: int, body: ActionItemPatch) -> dict[str, Any]:
+    """Tick, reschedule, snooze, reassign or reword one item.
+
+    Only the fields sent are touched, and a field sent as null is cleared: ``{"due_at":
+    null}`` removes a date, where leaving ``due_at`` out keeps it.
+    """
     svc = services_of(request)
-    item = svc.dao.set_action_done(item_id, done=body.done)
+    sent = body.model_fields_set
+    fields: dict[str, Any] = {}
+    if "done" in sent and body.done is not None:
+        fields["done"] = body.done
+    for key in ("due_at", "snoozed_until"):
+        if key in sent:
+            fields[key] = _checked_date(getattr(body, key), key)
+    if "detail" in sent:
+        fields["detail"] = body.detail
+    for key in ("who", "what"):
+        if key in sent and getattr(body, key) is not None:
+            fields[key] = getattr(body, key)
+    if svc.dao.action_item(item_id) is None:
+        raise HTTPException(404, "no such action item")
+    try:
+        item = svc.dao.update_action_item(item_id, **fields)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if item is None:
         raise HTTPException(404, "no such action item")
     svc.events.publish("action-item", item_id=item_id, done=item.done)
     return item.as_dict()
+
+
+@router.delete("/action-items/{item_id}")
+def delete_action_item(request: Request, item_id: int) -> dict[str, Any]:
+    """Remove one item, the model's or the user's. A model item comes back if a later
+    re-summarize finds it again — deleting is "not this", not "never"."""
+    svc = services_of(request)
+    item = svc.dao.action_item(item_id)
+    if item is None or not svc.dao.delete_action_item(item_id):
+        raise HTTPException(404, "no such action item")
+    svc.events.publish("action-item", item_id=item_id, deleted=True)
+    return {"deleted": item_id}
+
+
+@router.post("/meetings/{meeting_id}/action-items", status_code=201)
+def add_action_item(request: Request, meeting_id: str, body: ActionItemPost) -> dict[str, Any]:
+    """An item the user typed in. It is theirs: no re-summarize removes or rewrites it."""
+    svc = services_of(request)
+    if svc.dao.get_meeting(meeting_id) is None:
+        raise HTTPException(404, "no such meeting")
+    if not body.what.strip():
+        raise HTTPException(422, "an action item needs something to do")
+    item = svc.dao.add_action_item(
+        meeting_id,
+        what=body.what,
+        who=body.who,
+        due_at=_checked_date(body.due_at, "due_at"),
+        detail=body.detail,
+    )
+    svc.events.publish("action-item", item_id=item.id, done=item.done)
+    return item.as_dict()
+
+
+# --------------------------------------------------------------------------- tags
+
+
+@router.get("/tags")
+def list_tags(request: Request) -> dict[str, Any]:
+    """Every tag in use, most used first: what the filter and the tag picker offer."""
+    svc = services_of(request)
+    return {"tags": [{"tag": tag, "count": count} for tag, count in svc.dao.tag_counts()]}
+
+
+@router.put("/meetings/{meeting_id}/tags")
+def put_meeting_tags(request: Request, meeting_id: str, body: TagsPut) -> dict[str, Any]:
+    """Replace this meeting's tags. Deduplicated case-insensitively; see Dao.set_tags."""
+    svc = services_of(request)
+    if svc.dao.get_meeting(meeting_id) is None:
+        raise HTTPException(404, "no such meeting")
+    try:
+        tags = svc.dao.set_tags(meeting_id, body.tags)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    svc.events.publish("meeting", meeting_id=meeting_id, action="tags")
+    return {"tags": tags}
+
+
+# --------------------------------------------------------------------------- threads
+
+
+@router.get("/meetings/{meeting_id}/related")
+def related_meetings(request: Request, meeting_id: str) -> dict[str, Any]:
+    """Up to five meetings this one is a thread with, best first, each with its reasons."""
+    from app.related import related
+
+    svc = services_of(request)
+    if svc.dao.get_meeting(meeting_id) is None:
+        raise HTTPException(404, "no such meeting")
+    return {"related": [found.as_api() for found in related(svc.dao, meeting_id)]}
+
+
+@router.post("/meetings/{meeting_id}/ask")
+def ask_meeting(request: Request, meeting_id: str, body: AskPost) -> dict[str, Any]:
+    """A question answered from the transcript, with the moments it rests on."""
+    from app.ask import AskError, ask
+
+    svc = services_of(request)
+    meeting = svc.dao.get_meeting(meeting_id)
+    if meeting is None:
+        raise HTTPException(404, "no such meeting")
+    if not body.question.strip():
+        raise HTTPException(422, "ask a question")
+    if body.scope not in ("meeting", "related"):
+        raise HTTPException(422, 'scope is "meeting" or "related"')
+    try:
+        answer = ask(
+            svc.dao, svc.config, meeting, body.question, scope=body.scope, client=svc.llm
+        )
+    except AskError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return answer.as_api()
 
 
 @router.get("/meetings/{meeting_id}")
@@ -327,6 +681,22 @@ def patch_meeting(request: Request, meeting_id: str, body: MeetingPatch) -> dict
         svc.dao.update_meeting(meeting_id, title=body.title, title_source="user")
     if body.sensitive is not None:
         svc.dao.update_meeting(meeting_id, sensitive=int(body.sensitive))
+    if body.speaker_names is not None:
+        names = dict(meeting.speakers)
+        for slot, name in body.speaker_names.items():
+            slot = slot.strip()
+            if not slot or len(slot) > 40:
+                raise HTTPException(422, "a speaker slot is a short label such as THEM_1")
+            cleaned = " ".join((name or "").split())
+            if len(cleaned) > 80:
+                raise HTTPException(422, "a speaker name is at most 80 characters")
+            if cleaned:
+                names[slot] = cleaned
+            else:
+                names.pop(slot, None)
+        svc.dao.update_meeting(
+            meeting_id, speaker_names=json.dumps(names, ensure_ascii=False) if names else None
+        )
     if body.discard:
         svc.meetings.discard(meeting_id)
     svc.events.publish("meeting", meeting_id=meeting_id, action="patched")
@@ -771,28 +1141,39 @@ async def recording_levels(request: Request) -> StreamingResponse:
 
 @router.get("/settings")
 def get_settings(request: Request) -> dict[str, Any]:
-    """Only ever the redacted dump — no secret ever reaches the DOM."""
+    """Only ever the redacted dump — no secret ever reaches the DOM.
+
+    ``pinned`` names the keys the environment is holding down. Without it a control the
+    launcher has overridden looks like any other: it saves, it reads back, and it is
+    quietly replaced again on the next start.
+    """
     svc = services_of(request)
-    return {"config": svc.config.redacted_dump(), "warnings": svc.config.warnings()}
+    return {
+        "config": svc.config.redacted_dump(),
+        "warnings": svc.config.warnings(),
+        "pinned": svc.config.env_pinned(),
+    }
 
 
 def refuse_unusable_provider(svc: Services, values: dict[str, Any]) -> None:
-    """The subscription provider without its CLI fails hours later, not now.
+    """A subscription provider without its CLI fails hours later, not now.
 
-    Nothing rejects the selection today, so the failure surfaces in the summarize stage
-    — permanently, at the end of a meeting already recorded and transcribed. Refusing
-    the selection costs a click; refusing it later costs the summary.
+    Nothing else rejects the selection, so the failure would surface in the summarize
+    stage — at the end of a meeting already recorded and transcribed. Refusing the
+    selection costs a click; refusing it later costs the summary. A fallback naming one
+    is held to the same test: a fallback that cannot run is no fallback.
     """
-    if values.get("llm.provider") != "claude-subscription":
-        return
-    from app.llm.claude_cli import ClaudeCliClient
-
-    if not ClaudeCliClient(svc.config).status().installed:
-        raise HTTPException(
-            409,
-            "Claude Code is not installed on this machine. Install it first — the app "
-            "never handles your credentials.",
-        )
+    for key in ("llm.provider", "llm.fallback_provider"):
+        chosen = values.get(key)
+        if chosen not in CLI_PROVIDERS:
+            continue
+        if not cli_client(svc, str(chosen)).status().installed:
+            product = CLI_PROVIDERS[str(chosen)]
+            raise HTTPException(
+                409,
+                f"{product} is not installed on this machine. Install it first from "
+                "Settings, AI agents — the app never handles your credentials.",
+            )
 
 
 @router.put("/settings")
@@ -816,6 +1197,50 @@ PROBE_SCHEMA: dict[str, Any] = {
     "required": ["ok"],
     "properties": {"ok": {"type": "boolean"}},
 }
+
+#: The providers that run a CLI the user installs and signs into, and the product each
+#: one needs installed — named as the software it is, because that is what gets
+#: installed. Removing Codex from ``LLM_PROVIDERS`` removes it here too.
+CLI_PROVIDERS: dict[str, str] = {
+    provider: product
+    for provider, product in (
+        ("claude-subscription", "Claude Code"),
+        ("codex-subscription", "Codex"),
+    )
+    if provider in LLM_PROVIDERS
+}
+
+
+def cli_client(svc: Services, provider: str) -> Any:
+    """The CLI-backed client for ``provider``: Claude Code's or Codex's."""
+    if provider == "codex-subscription":
+        from app.llm.codex_cli import CodexCliClient
+
+        return CodexCliClient(svc.config)
+    from app.llm.claude_cli import ClaudeCliClient
+
+    return ClaudeCliClient(svc.config)
+
+
+def cli_module(provider: str) -> Any:
+    """The module holding the install, sign-in and update helpers for ``provider``."""
+    if provider == "codex-subscription":
+        from app.llm import codex_cli
+
+        return codex_cli
+    from app.llm import claude_cli
+
+    return claude_cli
+
+
+def chosen_cli(body: ProviderPost | None) -> str:
+    """Which CLI a sign-in, install or update is for. Claude when unsaid, as it always was."""
+    provider = (body.provider if body else None) or "claude-subscription"
+    if provider not in CLI_PROVIDERS:
+        raise HTTPException(
+            400, f"{provider!r} is not a provider this app installs or signs in to"
+        )
+    return provider
 
 
 @router.put("/settings/secrets")
@@ -901,7 +1326,7 @@ def calendar_events(
     from datetime import datetime as dt
 
     from app.gcal.events import iso_utc
-    from app.meetings import calendar_payload
+    from app.gcal.source import SEARCH_MARGIN
 
     svc = services_of(request)
 
@@ -910,10 +1335,14 @@ def calendar_events(
         return parsed if parsed.tzinfo else parsed.astimezone()  # a date: local midnight
 
     start, end = instant(frm), instant(to)
-    events = _event_store(svc).between(start, end)
+    store = _event_store(svc)
+    events = store.between(start, end)
+    # Matching a recording needs the events around it, not only the ones in view: a
+    # recording that began before midnight belongs to an event that began before it too.
+    nearby = list(store.between(start - SEARCH_MARGIN, end + SEARCH_MARGIN))
     matched: dict[tuple[str, str], str] = {}
     for meeting in svc.dao.list_meetings(frm=iso_utc(start - timedelta(days=1)), limit=2000):
-        payload = calendar_payload(meeting)
+        payload = _calendar_of(svc, meeting, nearby)
         ref = payload.get("event") or {}
         if (payload.get("match") or {}).get("state") == "matched" and ref:
             matched[(str(ref.get("calendar_id")), str(ref.get("event_id")))] = meeting.id
@@ -941,18 +1370,15 @@ def calendar_forget(request: Request) -> dict[str, Any]:
 @router.get("/meetings/{meeting_id}/calendar")
 def meeting_calendar(request: Request, meeting_id: str) -> dict[str, Any]:
     """What this recording is matched to, and the events it could be matched to instead."""
-    from app.clock import parse_iso
-    from app.meetings import calendar_payload
-
     svc = services_of(request)
     meeting = svc.dao.get_meeting(meeting_id)
     if meeting is None:
         raise HTTPException(404, "no such meeting")
-    started = parse_iso(meeting.started_at)
-    ended = parse_iso(meeting.ended_at) if meeting.ended_at else started + timedelta(hours=1)
+    started = _instant(meeting.started_at)
+    ended = _instant(meeting.ended_at) if meeting.ended_at else started + timedelta(hours=1)
     nearby = _event_store(svc).between(started - timedelta(hours=2), ended + timedelta(hours=2))
     return {
-        "calendar": calendar_payload(meeting) or None,
+        "calendar": _calendar_of(svc, meeting) or None,
         "candidates": [e.as_api() for e in nearby if not e.all_day and not e.declined],
     }
 
@@ -966,13 +1392,12 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
     it takes it away.
     """
     from app.gcal.oauth import CalendarAuthError, CalendarUnavailable
-    from app.meetings import calendar_payload
 
     svc = services_of(request)
     meeting = svc.dao.get_meeting(meeting_id)
     if meeting is None:
         raise HTTPException(404, "no such meeting")
-    payload = calendar_payload(meeting)
+    payload = _calendar_of(svc, meeting)
     ref = payload.get("event") or {}
     if (payload.get("match") or {}).get("state") != "matched" or not ref:
         # Not an error. A manually started recording normally has no invitation, and
@@ -985,6 +1410,15 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
             "available": False,
             "code": "no_connection",
             "reason": "no calendar connection in this process",
+        }
+    if svc.calendar is not None and not svc.calendar.connected():
+        # Asked and answered before Google is: never having connected an account is not
+        # a fault to report on every meeting, and it reads as one. A connection that has
+        # *stopped* working still comes back below, as "auth", because that one is news.
+        return {
+            "available": False,
+            "code": "no_connection",
+            "reason": "no Google account is connected",
         }
     try:
         invite = svc.calendar_invites.fetch(str(ref["calendar_id"]), str(ref["event_id"]))
@@ -1058,20 +1492,12 @@ def calendar_disconnect(request: Request) -> dict[str, Any]:
 @router.get("/llm/status")
 def llm_status(request: Request) -> dict[str, Any]:
     """What each summarization provider needs, and whether it has it."""
-    from app.llm.claude_cli import ClaudeCliClient
-
     svc = services_of(request)
 
     def has(name: str, env: str) -> bool:
         return bool(svc.config.secret(name, env=env))
 
-    from app.llm.claude_cli import INSTALL_DOCS_URL, install_plan, update_command
-
-    cli = ClaudeCliClient(svc.config).status()
-    # Only probed when there is something to install: winget's own start-up is slow
-    # enough to be felt on every settings load otherwise.
-    plan = install_plan() if not cli.installed else None
-    providers = [
+    providers: list[dict[str, Any]] = [
         {
             "id": "anthropic",
             "label": "Claude (API key)",
@@ -1093,41 +1519,75 @@ def llm_status(request: Request) -> dict[str, Any]:
             "ready": has("openai", "OPENAI_API_KEY"),
             "console": "https://platform.openai.com/api-keys",
         },
-        {
-            "id": "claude-subscription",
-            # Not "Claude Code": Anthropic's Agent SDK branding guidance permits
-            # "Claude Agent" and "Claude" but not the product name, and asks that a
-            # third-party product not appear to be Claude Code. The install and sign-in
-            # copy still names Claude Code, because that is the thing to install.
-            "label": "Claude Agent (your own subscription)",
-            "needs": "cli",
-            "ready": cli.installed,
-            # Three-valued on purpose: `None` means the build is too old to be asked,
-            # which is a different thing from being signed out and reads differently.
-            "signed_in": cli.signed_in,
-            "account": cli.account,
-            # The binary actually resolved, so the hint below can be pinned to it.
-            "path": cli.path,
-            "detail": cli.version or cli.detail,
-            "can_install": plan is not None,
-            # Shown beside the button, so the command is disclosed before it is clicked.
-            "install_command": plan.display if plan else "",
-            "install_method": plan.method if plan else "",
-            "install_docs": INSTALL_DOCS_URL,
-            "update_hint": update_command(cli.path) if cli.installed else "",
-        },
+    ]
+    if "claude-subscription" in CLI_PROVIDERS:
+        # Not "Claude Code": Anthropic's Agent SDK branding guidance permits "Claude
+        # Agent" and "Claude" but not the product name, and asks that a third-party
+        # product not appear to be Claude Code. The install and sign-in copy still names
+        # Claude Code, because that is the thing to install.
+        providers.append(
+            cli_row(svc, "claude-subscription", "Claude Agent (your own subscription)")
+        )
+    if "codex-subscription" in CLI_PROVIDERS:
+        # OpenAI's brand page lets a developer "truthfully identify the OpenAI technology
+        # you use" but keeps OpenAI's brands out of the app's own name (D58). This names
+        # the program actually run, Codex CLI, and the plan it spends — the way D46 names
+        # "Claude Agent" rather than presenting the row as Claude Code itself.
+        providers.append(
+            cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)")
+        )
+    providers.append(
         {
             "id": "ollama",
             "label": "Local (Ollama)",
             "needs": "ollama",
             "ready": True,
             "detail": str(svc.config.get("llm.ollama_url")),
-        },
-    ]
-    return {"active": str(svc.config.get("llm.provider")), "providers": providers}
+        }
+    )
+    return {
+        "active": str(svc.config.get("llm.provider")),
+        # Used only when a subscription reports its allowance spent; "" is none.
+        "fallback": str(svc.config.get("llm.fallback_provider", "") or ""),
+        "providers": providers,
+    }
 
 
-def launch_console(command: list[str], failure: str) -> dict[str, Any]:
+def cli_row(svc: Services, provider: str, label: str) -> dict[str, Any]:
+    """One CLI-backed provider's Settings row: installed, signed in, and how to fix it."""
+    module = cli_module(provider)
+    cli = cli_client(svc, provider).status()
+    # Only probed when there is something to install: winget's own start-up is slow
+    # enough to be felt on every settings load otherwise.
+    plan = module.install_plan() if not cli.installed else None
+    return {
+        "id": provider,
+        "label": label,
+        "needs": "cli",
+        "ready": cli.installed,
+        # Three-valued on purpose: `None` means the build is too old to be asked,
+        # which is a different thing from being signed out and reads differently.
+        "signed_in": cli.signed_in,
+        "account": cli.account,
+        # The binary actually resolved, so the hint below can be pinned to it.
+        "path": cli.path,
+        "detail": cli.version or cli.detail,
+        "can_install": plan is not None,
+        # Shown beside the button, so the command is disclosed before it is clicked.
+        "install_command": plan.display if plan else "",
+        "install_method": plan.method if plan else "",
+        "install_docs": module.INSTALL_DOCS_URL,
+        "update_hint": module.update_command(cli.path) if cli.installed else "",
+        # Neither CLI reports its remaining allowance without an interactive session
+        # (Codex shows it only inside its TUI's /status), and polling it would spend
+        # what it measures. Null until one can say so cheaply.
+        "quota": None,
+    }
+
+
+def launch_console(
+    command: list[str], failure: str, *, provider: str = "claude-subscription"
+) -> dict[str, Any]:
     r"""Run an interactive command in a console of its own, and report what ran.
 
     The working directory is the point. Inheriting this process's own means, under the
@@ -1146,8 +1606,10 @@ def launch_console(command: list[str], failure: str) -> dict[str, Any]:
     """
     import subprocess
 
-    from app.llm.claude_cli import child_env, creation_flags, workdir
+    from app.llm.claude_cli import creation_flags
 
+    module = cli_module(provider)
+    child_env, workdir = module.child_env, module.workdir
     if sys.platform != "win32":
         # No assumption about which terminal emulator exists; the UI shows the command.
         return {"launched": False, "command": " ".join(command)}
@@ -1204,60 +1666,75 @@ def llm_prompt(request: Request) -> dict[str, Any]:
     }
 
 
-@router.post("/llm/signin")
-def llm_signin(request: Request) -> dict[str, Any]:
-    """Launch Anthropic's own login. We never see the credential it creates."""
-    from app.llm.claude_cli import ClaudeCliClient, login_console
+def console_log(provider: str, action: str) -> str:
+    """Where the install or sign-in window for ``provider`` is recorded (console_log.py)."""
+    from app.llm.console_log import log_path
 
-    svc = services_of(request)
-    client = ClaudeCliClient(svc.config)
+    return str(log_path(f"{provider.removesuffix('-subscription')}-{action}"))
+
+
+@router.post("/llm/signin")
+def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
+    """Launch the vendor's own login. We never see the credential it creates."""
+    provider = chosen_cli(body)
+    module = cli_module(provider)
+    product = CLI_PROVIDERS[provider]
+    client = cli_client(services_of(request), provider)
     if client.resolve() is None:
         raise HTTPException(
             409,
-            "Claude Code is not installed. Install it, then sign in — the app never "
+            f"{product} is not installed. Install it, then sign in — the app never "
             "handles your credentials.",
         )
-    return launch_console(login_console(client.login_command()), "could not launch Claude Code")
+    return launch_console(
+        module.login_console(client.login_command()),
+        f"could not launch {product}",
+        provider=provider,
+    ) | {"log": console_log(provider, "signin")}
 
 
 @router.post("/llm/install")
-def llm_install(request: Request) -> dict[str, Any]:
-    """Install Claude Code in a console the user can watch.
+def llm_install(body: ProviderPost | None = None) -> dict[str, Any]:
+    """Install Claude Code or Codex in a console the user can watch.
 
-    Two tiers, chosen in ``install_plan``: winget where it genuinely runs, and Anthropic's
-    own installer where it does not. Neither is run blind — the exact command is rendered
-    beside the button before it is pressed.
+    Each module's ``install_plan`` chooses: the vendor's own installer where PowerShell
+    can run it, and a native fallback where it cannot (winget for Claude Code; npm, then
+    winget, for Codex). Neither is run blind — the exact command is rendered beside the button
+    before it is pressed.
     """
-    from app.llm.claude_cli import INSTALL_DOCS_URL, install_plan
-
-    plan = install_plan()
+    provider = chosen_cli(body)
+    module = cli_module(provider)
+    plan = module.install_plan()
     if plan is None:
-        return {"launched": False, "command": "", "docs": INSTALL_DOCS_URL}
-    result = launch_console(plan.argv, f"could not start the {plan.method} install")
+        return {"launched": False, "command": "", "docs": module.INSTALL_DOCS_URL}
+    result = launch_console(
+        plan.argv, f"could not start the {plan.method} install", provider=provider
+    )
     result["command"] = plan.display  # the line the user was shown, not the wrapper
-    result["docs"] = INSTALL_DOCS_URL
+    result["docs"] = module.INSTALL_DOCS_URL
+    result["log"] = console_log(provider, "install")
     return result
 
 
 @router.post("/llm/update")
-def llm_update(request: Request) -> dict[str, Any]:
-    """Update the Claude Code this application resolved — not whichever one PATH favours.
+def llm_update(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
+    """Update the CLI this application resolved — not whichever one PATH favours.
 
     Offered only where the app is already reporting a problem it cannot otherwise fix:
-    a build too old to say whether it is signed in. Installs that update themselves never
-    reach that state, so this is the resolution to a complaint rather than a standing
-    feature.
+    a build too old to say whether it is signed in, or to take the options sent to it.
+    Installs that update themselves never reach that state, so this is the resolution
+    to a complaint rather than a standing feature.
     """
-    from app.llm.claude_cli import ClaudeCliClient, update_command
-
-    svc = services_of(request)
-    path = ClaudeCliClient(svc.config).resolve()
+    provider = chosen_cli(body)
+    product = CLI_PROVIDERS[provider]
+    path = cli_client(services_of(request), provider).resolve()
     if path is None:
-        raise HTTPException(409, "Claude Code is not installed, so there is nothing to update.")
-    command = update_command(path)
+        raise HTTPException(409, f"{product} is not installed, so there is nothing to update.")
+    command = cli_module(provider).update_command(path)
     return launch_console(
         ["powershell.exe", "-NoProfile", "-NoExit", "-Command", f"{command}"],
         "could not start the update",
+        provider=provider,
     ) | {"command": command}
 
 
@@ -1268,11 +1745,13 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
 
     svc = services_of(request)
     provider = (body.provider if body else None) or str(svc.config.get("llm.provider"))
-    config = svc.config
-    previous = config.get("llm.provider")
-    config.set("llm.provider", provider)
+    # The provider is named to the factory, never written into the shared config for the
+    # length of the probe. It used to be: set, call, then put back what it saw at the
+    # start — so a Test pressed straight after choosing a provider (both requests in
+    # flight at once) restored the *old* choice over the new one, and the next save
+    # persisted it. Found by the Codex browser spec; see D59.
     try:
-        client = make_client(config)
+        client = make_client(svc.config, provider=provider)
         result = client.complete_json(
             system_blocks=system_blocks("You answer with JSON only.", None),
             user='Reply with exactly {"ok": true}',
@@ -1282,8 +1761,6 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
         return {"provider": provider, "ok": bool(result.data.get("ok")), "model": result.model}
     except Exception as exc:
         return {"provider": provider, "ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
-    finally:
-        config.set("llm.provider", previous)
 
 
 # --------------------------------------------------------------------------- detector
@@ -1372,6 +1849,19 @@ def test_router() -> APIRouter:
     """Mounted **only** when UP_TEST_MODE=1; its absence is itself asserted."""
     seed = APIRouter(prefix="/api/test")
 
+    @seed.post("/run-jobs")
+    def run_jobs(request: Request) -> dict[str, int]:
+        """Run whatever the queue has that is runnable now, in this request.
+
+        The e2e server builds the worker but does not start its thread: specs seed jobs
+        in chosen states ("running", "failed") and a live worker would move them on under
+        the assertion. A spec that wants the pipeline to actually run — re-summarizing
+        with the Codex provider, say — asks for it here, and gets the jobs run
+        deterministically rather than on a timer.
+        """
+        worker = services_of(request).worker
+        return {"ran": worker.drain(limit=50) if worker is not None else 0}
+
     @seed.post("/seed")
     def seed_db(request: Request, body: dict[str, Any]) -> JSONResponse:
         svc = services_of(request)
@@ -1381,7 +1871,12 @@ def test_router() -> APIRouter:
             for meeting in svc.dao.list_meetings(limit=10_000):
                 svc.dao.clear_turns(meeting.id)
             svc.conn.execute("DELETE FROM jobs")
+            # Cascades from meetings too; said here so the reset does not depend on
+            # PRAGMA foreign_keys being on for whichever connection runs it.
+            svc.conn.execute("DELETE FROM meeting_tags")
+            svc.conn.execute("DELETE FROM action_items")
             svc.conn.execute("DELETE FROM meetings")
+            svc.extras.pop("storage_bytes", None)
             svc.conn.execute("DELETE FROM detector_events")
             # And from the default appearance. These are saved settings, so a spec
             # that switches the interface to Hebrew, or to dark, used to leave the
@@ -1391,7 +1886,7 @@ def test_router() -> APIRouter:
             # cannot silently make the reset wrong.
             from app.config import DEFAULTS
 
-            for key in ("language", "theme", "view", "calendar_span"):
+            for key in ("language", "theme", "view", "calendar_span", "tooltips_off"):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
             svc.config.save()
         if body.get("reset"):
@@ -1456,7 +1951,28 @@ def test_router() -> APIRouter:
                 started_at=item.get("started_at"),
                 title=item.get("title"),
                 profile="cpu-deferred",
+                sensitive=bool(item.get("sensitive")),
             )
+            row_fields = {
+                key: item[key] for key in ("duration_s", "ended_at") if item.get(key) is not None
+            }
+            if item.get("speaker_names"):
+                row_fields["speaker_names"] = json.dumps(item["speaker_names"], ensure_ascii=False)
+            if row_fields:
+                meeting = svc.dao.update_meeting(meeting.id, **row_fields)
+            if item.get("tags"):
+                svc.dao.set_tags(meeting.id, [str(tag) for tag in item["tags"]])
+            # The transcript file below is written with a language, and the real ASR
+            # stage puts the same value on the row. The seed did not, so the meeting
+            # page — which reads the row to pick the transcript's direction — rendered
+            # a Hebrew transcript left-to-right. "Looks exactly like a processed one"
+            # has to include this or RTL cannot be tested from a seed at all.
+            if item.get("turns"):
+                svc.dao.update_meeting(
+                    meeting.id,
+                    language=item.get("language", "he"),
+                    language_conf=0.95,
+                )
             created.append(meeting.id)
             for stage, state in (item.get("jobs") or {}).items():
                 job = svc.queue.enqueue(meeting.id, stage)
@@ -1486,12 +2002,28 @@ def test_router() -> APIRouter:
                             track="me" if turn.get("speaker", "ME") == "ME" else "them",
                             speaker=turn.get("speaker", "ME"),
                             start=turn.get("at_ms", 0) / 1000,
-                            end=turn.get("at_ms", 0) / 1000 + 4.0,
+                            end=(
+                                turn["end_ms"] / 1000
+                                if turn.get("end_ms") is not None
+                                else turn.get("at_ms", 0) / 1000 + 4.0
+                            ),
                             text=turn["text"],
                         )
                         for index, turn in enumerate(turns)
                     ],
                 ).write(meeting.path / "transcript.json")
+                # And the assembled transcript.md, the same way the assemble stage writes
+                # it — summarize reads that file, so without it a seeded meeting could be
+                # shown but never re-summarized.
+                from app.pipeline.stages.assemble import coalesce, render_markdown
+
+                (meeting.path / "transcript.md").write_text(
+                    render_markdown(
+                        coalesce(TranscriptFile.read(meeting.path / "transcript.json").segments),
+                        title=item.get("title"),
+                    ),
+                    encoding="utf-8",
+                )
             folder = meeting.path
             folder.mkdir(parents=True, exist_ok=True)
             if item.get("evidence"):
@@ -1503,51 +2035,84 @@ def test_router() -> APIRouter:
                     meeting_id=meeting.id,
                 )
             if item.get("calendar"):
-                # A meeting already matched to a seeded event, as the matcher leaves it.
+                # A meeting already matched to a seeded event, as the matcher leaves it —
+                # which means the matcher's own snapshot when the event is in the cache,
+                # so the meeting link and the participant names come from the event
+                # rather than from a shorter hand-written copy of it.
+                from app.gcal.source import snapshot as event_snapshot
+
                 ref = dict(item["calendar"])
+                seeded = _event_store(svc).get(
+                    str(ref.get("calendar_id", "primary")), str(ref.get("event_id"))
+                )
+                if seeded is not None:
+                    payload = event_snapshot(seeded, state="matched", source="auto", confidence=1.0)
+                else:
+                    payload = {
+                        "event": {k: v for k, v in ref.items() if k != "participants"},
+                        "title": item.get("title"),
+                        "participants": ref.get("participants", []),
+                        "match": {"state": "matched", "source": "auto", "confidence": 1.0},
+                    }
                 svc.dao.update_meeting(
                     meeting.id,
-                    calendar_json=json.dumps(
-                        {
-                            "event": ref,
-                            "title": item.get("title"),
-                            "participants": ref.pop("participants", []),
-                            "match": {"state": "matched", "source": "auto", "confidence": 1.0},
-                        }
-                    ),
+                    calendar_json=json.dumps(payload),
                     title_source="calendar",
                 )
             if item.get("action_items"):
                 # As a summary would have left them, so the inbox can be exercised
-                # without running a model.
+                # without running a model — and then the user's own state on top: ticks,
+                # snoozes, and items typed in by hand.
+                entries = list(item["action_items"])
+                model = [e for e in entries if e.get("source", "model") != "user"]
                 svc.dao.replace_action_items(
                     meeting.id,
                     [
-                        (
-                            str(entry.get("who", "ME")),
-                            str(entry["what"]),
-                            entry.get("due"),
-                            entry.get("at_ms"),
-                        )
-                        for entry in item["action_items"]
+                        {
+                            "who": str(entry.get("who", "ME")),
+                            "what": str(entry["what"]),
+                            "due": entry.get("due"),
+                            "at_ms": entry.get("at_ms"),
+                            "detail": entry.get("detail"),
+                            "due_at": entry.get("due_at"),
+                        }
+                        for entry in model
                     ],
                 )
-                for entry, row in zip(
-                    item["action_items"],
-                    svc.dao.action_items(meeting_id=meeting.id),
-                    strict=False,
-                ):
+                # By seq, which is the order they were given in — not the inbox's order,
+                # which puts mine first.
+                stored = sorted(svc.dao.action_items(meeting_id=meeting.id), key=lambda a: a.seq)
+                pairs = list(zip(model, stored, strict=False))
+                for entry in entries:
+                    if entry.get("source") == "user":
+                        added = svc.dao.add_action_item(
+                            meeting.id,
+                            what=str(entry["what"]),
+                            who=str(entry.get("who", "ME")),
+                            due_at=entry.get("due_at"),
+                            detail=entry.get("detail"),
+                        )
+                        pairs.append((entry, added))
+                for entry, row in pairs:
+                    changes: dict[str, Any] = {}
                     if entry.get("done"):
-                        svc.dao.set_action_done(row.id, done=True)
+                        changes["done"] = True
+                    if entry.get("snoozed_until"):
+                        changes["snoozed_until"] = entry["snoozed_until"]
+                    if changes:
+                        svc.dao.update_action_item(row.id, **changes)
             if item.get("audio_seconds"):
                 _seed_audio(svc, folder, float(item["audio_seconds"]))
             if item.get("audio_deleted_at"):
                 meta.update(folder, audio_deleted_at=item["audio_deleted_at"])
             if item.get("summary_html"):
                 (folder / "summary.html").write_text(item["summary_html"], encoding="utf-8")
-            if item.get("notes"):
+            if item.get("notes") or item.get("chapters"):
+                notes = dict(item.get("notes") or {})
+                if item.get("chapters"):
+                    notes["chapters"] = item["chapters"]
                 (folder / "notes.json").write_text(
-                    json.dumps(item["notes"], ensure_ascii=False), encoding="utf-8"
+                    json.dumps(notes, ensure_ascii=False), encoding="utf-8"
                 )
         return JSONResponse({"created": created})
 

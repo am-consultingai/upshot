@@ -18,21 +18,25 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
 from app import paths
 from app.config import Config
-from app.errors import PermanentError, RecoverableError
+from app.errors import PermanentError, QuotaExhausted, RecoverableError
 from app.llm.client import LlmResult
+from app.llm.console_log import transcribed
 from app.llm.repair import complete_with_repair, schema_instruction
 from app.llm.schema import FREE_SCHEMA
+from app.llm.tokens import estimate_tokens
 from app.log import get
 
 log = get(__name__)
@@ -43,6 +47,18 @@ DISALLOWED_TOOLS = "Bash,Read,Write,Edit,NotebookEdit,Glob,Grep,WebSearch,WebFet
 
 NOT_SIGNED_IN = ("not logged in", "please run /login", "invalid api key", "authentication")
 RATE_LIMITED = ("rate limit", "usage limit", "quota", "429", "overloaded")
+#: The plan's allowance, not a transient 429: "Claude AI usage limit reached|<epoch>" from
+#: older builds, "5-hour limit reached ∙ resets 3pm" and "You've hit your limit · resets
+#: 3pm" from newer ones. Checked before RATE_LIMITED, which would also match the first.
+QUOTA_SPENT = (
+    "usage limit reached",
+    "limit reached ∙ resets",
+    "limit reached · resets",
+    "hit your limit",
+    "weekly limit reached",
+)
+_EPOCH = re.compile(r"limit reached\|(\d{9,11})")
+_RESETS = re.compile(r"resets ([^\n.]{1,40})", re.IGNORECASE)
 #: A build too old for the arguments we send says so on stderr. Retrying cannot help.
 NEEDS_UPDATE = ("unknown option", "unknown command", "error: unknown", "unknown argument")
 
@@ -53,6 +69,30 @@ INSTALL_DOCS_URL = "https://code.claude.com/docs/en/setup"
 
 CREATE_NEW_CONSOLE = 0x00000010
 CREATE_NO_WINDOW = 0x08000000
+
+
+def quota_exhausted(text: str) -> QuotaExhausted:
+    """The plan's allowance is spent: say so in plain words, and when it comes back.
+
+    The raw CLI text is not what the user reads — "usage limit reached|1760000000" means
+    nothing to someone who has never opened a terminal.
+    """
+    retry_at = None
+    when = ""
+    epoch = _EPOCH.search(text)
+    if epoch:
+        retry_at = datetime.fromtimestamp(int(epoch.group(1)), tz=UTC)
+        when = f"; it resets at {retry_at.astimezone():%H:%M on %a %d %b}"
+    else:
+        resets = _RESETS.search(text)
+        if resets:
+            when = f"; it resets {resets.group(1).strip()}"
+    return QuotaExhausted(
+        f"Your Claude plan's usage allowance is used up{when}. The summary will be written "
+        "when it resets, or by the fallback provider if one is set in Settings.",
+        provider="claude-subscription",
+        retry_at=retry_at,
+    )
 
 
 def creation_flags(*, visible: bool) -> int:
@@ -287,7 +327,13 @@ def login_console(argv: Sequence[str]) -> list[str]:
         f"{_LOGIN_GUIDANCE}"
         f"& {quoted}"
     )
-    return ["powershell.exe", "-NoProfile", "-NoExit", "-Command", script]
+    return [
+        "powershell.exe",
+        "-NoProfile",
+        "-NoExit",
+        "-Command",
+        transcribed(script, "claude-signin"),
+    ]
 
 
 def _console(command: str, note: str = "", *, spinner: bool = False) -> list[str]:
@@ -328,7 +374,14 @@ def _console(command: str, note: str = "", *, spinner: bool = False) -> list[str
         "& $c auth login } else { Write-Host 'Claude Code was not found after "
         "installing. Open Settings and use Sign in.' -ForegroundColor Yellow }"
     )
-    return ["powershell.exe", "-NoProfile", "-NoExit", "-Command", script]
+    # Recorded, like every install and sign-in window: see app/llm/console_log.py.
+    return [
+        "powershell.exe",
+        "-NoProfile",
+        "-NoExit",
+        "-Command",
+        transcribed(script, "claude-install"),
+    ]
 
 
 def update_command(path: str) -> str:
@@ -593,6 +646,8 @@ class ClaudeCliClient:
                 "try again.",
                 category="auth",
             )
+        if any(marker in lowered.replace("\u2019", "'") for marker in QUOTA_SPENT):
+            raise quota_exhausted(text)
         if any(marker in lowered for marker in RATE_LIMITED):
             raise RecoverableError(f"Claude Code is rate limited: {text[:200]}")
         raise RecoverableError(f"Claude Code exited {code}: {text[:300]}")
@@ -622,4 +677,4 @@ class ClaudeCliClient:
         DESIGN.md §9.1 warns that a character heuristic silently blows the window on
         Hebrew, so this errs high: fewer tokens claimed per character means more windows.
         """
-        return int(len(text) / 2.0) + 1
+        return estimate_tokens(text)

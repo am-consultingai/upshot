@@ -9,7 +9,10 @@ prompt's to decide.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import Any
+
+from app.due import parse_iso_date
 
 #: One item of the only list the application reads out of a summary. Everything here
 #: is optional except the two fields that make it actionable, and nothing in it
@@ -27,6 +30,26 @@ ACTION_ITEM_SCHEMA: dict[str, Any] = {
         # — and notes.json is validated against this same schema.
         "due": {"type": ["string", "null"]},
         "at_ms": {"type": ["integer", "null"], "minimum": 0},
+        # One short line under the commitment: why it matters, what it unblocks, who is
+        # waiting on it. The inbox shows it lighter, beneath `what`.
+        "detail": {"type": ["string", "null"]},
+        # `due` resolved to a calendar date against the meeting's date. Not constrained
+        # to a pattern here, because one malformed date must cost that date and not the
+        # whole summary: `action_items()` below drops anything that is not YYYY-MM-DD.
+        "due_at": {"type": ["string", "null"]},
+    },
+}
+
+#: A topic section of the conversation, so the meeting page can show where the talk went
+#: and seek to it. Optional in every respect: a summary without chapters is still whole.
+CHAPTER_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["title", "start_ms"],
+    "properties": {
+        "title": {"type": "string", "minLength": 1},
+        "start_ms": {"type": "integer", "minimum": 0},
+        "end_ms": {"type": ["integer", "null"], "minimum": 0},
     },
 }
 
@@ -41,6 +64,8 @@ FREE_SCHEMA: dict[str, Any] = {
         # must keep opening, and a model that ignores the request must still produce
         # a usable document. See D47.
         "action_items": {"type": "array", "items": ACTION_ITEM_SCHEMA},
+        # Likewise additive (D55): where the conversation went, in order.
+        "chapters": {"type": "array", "items": CHAPTER_SCHEMA},
     },
 }
 
@@ -67,15 +92,52 @@ def action_items(payload: Any) -> list[dict[str, Any]]:
         if not what:
             continue
         at_ms = item.get("at_ms")
+        due_at = parse_iso_date(item.get("due_at"))
         out.append(
             {
                 "who": who or "?",
                 "what": what,
                 "due": str(item.get("due") or "").strip() or None,
                 "at_ms": int(at_ms) if isinstance(at_ms, int | float) else None,
+                "detail": str(item.get("detail") or "").strip() or None,
+                # A date the model got wrong in form is dropped, never repaired: the
+                # stage falls back to resolving `due` itself, which is at least ours.
+                "due_at": due_at.isoformat() if due_at else None,
             }
         )
     return out
+
+
+def chapters(payload: Any) -> list[dict[str, Any]]:
+    """The chapters out of a validated envelope, defensively, in time order.
+
+    Sorted by start, and an open end filled from the next chapter's start, so the page
+    can draw them as contiguous sections without second-guessing the model. The last
+    chapter may still end at None: nothing here knows how long the meeting was.
+    """
+    if not isinstance(payload, dict):
+        return []
+    raw = payload.get("chapters")
+    if not isinstance(raw, list):
+        return []
+    found: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        start = item.get("start_ms")
+        if not title or isinstance(start, bool) or not isinstance(start, int | float):
+            continue
+        end = item.get("end_ms")
+        end_ms = int(end) if isinstance(end, int | float) and not isinstance(end, bool) else None
+        found.append({"title": title, "start_ms": max(0, int(start)), "end_ms": end_ms})
+    found.sort(key=lambda chapter: chapter["start_ms"])
+    for current, following in pairwise(found):
+        if current["end_ms"] is None or current["end_ms"] <= current["start_ms"]:
+            current["end_ms"] = following["start_ms"]
+    if found and found[-1]["end_ms"] is not None and found[-1]["end_ms"] <= found[-1]["start_ms"]:
+        found[-1]["end_ms"] = None
+    return found
 
 
 class ValidationError(ValueError):

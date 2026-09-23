@@ -138,6 +138,16 @@ def create_app(services: Services | None = None, *, config: Config | None = None
 
 def start_background(services: Services) -> None:
     """The worker and the detector. Without these the app records and then sits there."""
+    # Said once, by name. A launcher that exports UP_DETECTION__MODE beats app_config.json
+    # on every start, so a setting saved from the screen came back changed and the log
+    # gave no hint why. Now the log names every key the environment is holding.
+    pinned = services.config.env_pinned()
+    if pinned:
+        log.info(
+            "the environment is holding %s — settings changed in the app will not "
+            "survive a restart while it does",
+            ", ".join(f"{key} ({var})" for key, var in pinned.items()),
+        )
     if services.worker is not None:
         services.worker.start()
         log.info("worker started (policy %s)", services.worker.policy)

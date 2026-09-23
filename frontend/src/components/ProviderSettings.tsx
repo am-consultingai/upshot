@@ -1,9 +1,29 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LlmProvider } from "../api";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 import BusyButton from "./BusyButton";
+import { PinnedContext } from "./SettingRow";
+import Tooltip from "./Tooltip";
+
+/**
+ * The words that differ between the two subscription CLIs. The flow is one flow —
+ * install, sign in in a console of its own, watch for it to finish, test — and only
+ * what it is called, whose sign-in page opens and what plan it needs are different.
+ */
+const CLI_COPY: Record<string, { missing: MessageKey; signIn: MessageKey; plan: MessageKey }> = {
+  "claude-subscription": {
+    missing: "settings.cliMissing",
+    signIn: "settings.signInHint",
+    plan: "settings.cliPlanNote",
+  },
+  "codex-subscription": {
+    missing: "settings.codexMissing",
+    signIn: "settings.codexSignInHint",
+    plan: "settings.codexPlanNote",
+  },
+};
 
 /** Which secret name each provider reads. `undefined` means it needs no key. */
 const SECRET_FOR: Record<string, string | undefined> = {
@@ -31,6 +51,39 @@ function readyTone(provider: LlmProvider): string {
   return good ? "bg-success-quiet text-success" : "bg-surface-3 text-secondary";
 }
 
+/**
+ * How the providers are grouped on screen, in the order they appear.
+ *
+ * A subscription you already pay for costs nothing extra to use, so it goes first;
+ * a key you have to create and fund goes second; a model on this machine is neither
+ * and gets its own frame rather than being filed under one of them.
+ */
+const GROUPS = [
+  {
+    id: "subscription",
+    label: "settings.groupSubscription",
+    hint: "settings.groupSubscriptionHint",
+    holds: (provider: LlmProvider) => provider.needs === "cli",
+  },
+  {
+    id: "keys",
+    label: "settings.groupApiKeys",
+    hint: "settings.groupApiKeysHint",
+    holds: (provider: LlmProvider) => provider.needs === "key",
+  },
+  {
+    id: "local",
+    label: "settings.groupLocalModel",
+    hint: "settings.groupLocalModelHint",
+    holds: (provider: LlmProvider) => provider.needs !== "cli" && provider.needs !== "key",
+  },
+] as const satisfies readonly {
+  id: string;
+  label: MessageKey;
+  hint: MessageKey;
+  holds: (provider: LlmProvider) => boolean;
+}[];
+
 export default function ProviderSettings() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -43,7 +96,8 @@ export default function ProviderSettings() {
   // request that launched them returns. Invalidating on that response asks the server
   // before anything has happened; the answer only changes later, so the row has to keep
   // looking until it does.
-  const [watching, setWatching] = useState(false);
+  // Which CLI's console is being waited on, or null.
+  const [watching, setWatching] = useState<string | null>(null);
 
   const status = useQuery({
     queryKey: ["llm-status"],
@@ -71,53 +125,110 @@ export default function ProviderSettings() {
       })),
   });
   const signin = useMutation({
-    mutationFn: api.llmSignin,
-    onSuccess: (result) => {
-      if (result.launched) setWatching(true);
+    mutationFn: (provider: string) => api.llmSignin(provider),
+    onSuccess: (result, provider) => {
+      if (result.launched) setWatching(provider);
       invalidate();
     },
   });
-  const update = useMutation({ mutationFn: api.llmUpdate, onSuccess: invalidate });
+  const update = useMutation({
+    mutationFn: (provider: string) => api.llmUpdate(provider),
+    onSuccess: invalidate,
+  });
   const install = useMutation({
-    mutationFn: api.llmInstall,
-    onSuccess: (result) => {
-      // Nothing was launched only when winget is missing; then the guide is the answer.
+    mutationFn: (provider: string) => api.llmInstall(provider),
+    onSuccess: (result, provider) => {
+      // Nothing was launched only when no installer can run; then the guide is the answer.
       if (!result.launched && result.docs) window.open(result.docs, "_blank", "noreferrer");
-      if (result.launched) setWatching(true);
+      if (result.launched) setWatching(provider);
       invalidate();
     },
+  });
+  const fallback = useMutation({
+    mutationFn: (provider: string) => api.putSettings({ "llm.fallback_provider": provider }),
+    onSuccess: invalidate,
   });
 
   // Any of the three console-launching actions can fail server-side; silence would read
-  // as an unresponsive button, which is precisely how the last one was reported.
-  const cliFailure = install.error ?? signin.error ?? update.error;
+  // as an unresponsive button, which is precisely how the last one was reported. Each
+  // row shows only the failure of its own CLI.
 
   // Signed in is the finish line, not installed. The Install button carries straight on
   // into the login, so stopping at "the binary exists" would stop watching in the middle
   // of the very step the user is still completing.
-  const cli = (status.data?.providers ?? []).find((provider) => provider.needs === "cli");
+  const cli = (status.data?.providers ?? []).find((provider) => provider.id === watching);
   const signedIn = cli?.signed_in === true;
   useEffect(() => {
     if (!watching) return undefined;
     if (signedIn) {
-      setWatching(false);
+      setWatching(null);
       return undefined;
     }
     // Give up rather than poll for the rest of the session: the login may be abandoned,
     // and an old build can never report success however long we wait.
-    const timer = window.setTimeout(() => setWatching(false), 180_000);
+    const timer = window.setTimeout(() => setWatching(null), 180_000);
     return () => window.clearTimeout(timer);
   }, [watching, signedIn]);
 
   const active = pendingProvider ?? status.data?.active;
+  /*
+   * `llm.provider` can hold a value that is not one of the rows — "fake", which the
+   * demo launcher pins, or a provider that has since been removed. Every radio then
+   * renders unchecked and the screen silently claims nothing is selected, which is
+   * the one thing it must not do: summaries *are* being produced by something.
+   */
+  const pinnedBy = useContext(PinnedContext)["llm.provider"];
+  const unlisted =
+    active && !(status.data?.providers ?? []).some((provider) => provider.id === active)
+      ? active
+      : null;
 
   return (
     <section data-testid="provider-settings" className="mt-6">
       <h2 className="mb-2 text-sm font-semibold text-tertiary">{t("settings.summaries")}</h2>
-      <div className="grid gap-2">
-        {(status.data?.providers ?? []).map((provider: LlmProvider) => {
+      {/* `data-unlisted-provider`, not `data-provider`: the specs select rows with
+          `[data-provider="..."]` and a banner answering that selector would be a trap. */}
+      {unlisted && (
+        <p
+          data-testid="provider-unlisted"
+          data-unlisted-provider={unlisted}
+          className="mb-2 max-w-prose rounded-md bg-warning-quiet px-3 py-2 text-xs leading-relaxed text-warning"
+        >
+          {t("settings.providerUnlisted").replace("{provider}", unlisted)}
+          {pinnedBy && ` ${t("settings.pinnedByEnv").replace("{var}", pinnedBy)}`}
+        </p>
+      )}
+      <div className="grid gap-4">
+        {GROUPS.map((group) => {
+          const members = (status.data?.providers ?? []).filter(group.holds);
+          if (members.length === 0) return null;
+          return (
+            <fieldset
+              key={group.id}
+              data-testid="provider-group"
+              data-group={group.id}
+              className="rounded-lg border border-line px-3 pb-3"
+            >
+              {/* The group's explanation is a sentence, on the tooltip primitive. */}
+              <Tooltip label={t(group.label)} hint={t(group.hint)}>
+                <legend
+                  data-testid="provider-group-label"
+                  className="cursor-help px-1 text-xs font-medium text-secondary"
+                >
+                  {t(group.label)}
+                </legend>
+              </Tooltip>
+              <div className="grid gap-2">
+        {members.map((provider: LlmProvider) => {
           const secret = SECRET_FOR[provider.id];
           const result = tested[provider.id];
+          const copy = CLI_COPY[provider.id] ?? CLI_COPY["claude-subscription"];
+          const mine = watching === provider.id;
+          const failure =
+            (install.variables === provider.id && install.error) ||
+            (signin.variables === provider.id && signin.error) ||
+            (update.variables === provider.id && update.error) ||
+            null;
           return (
             <article
               key={provider.id}
@@ -190,8 +301,8 @@ export default function ProviderSettings() {
                     {!provider.ready && (
                       <BusyButton
                         data-testid="provider-install"
-                        busy={install.isPending || watching}
-                        onClick={() => install.mutate()}
+                        busy={(install.isPending && install.variables === provider.id) || mine}
+                        onClick={() => install.mutate(provider.id)}
                         className="rounded border border-line px-2 py-1 text-sm"
                       >
                         {t("settings.install")}
@@ -200,9 +311,9 @@ export default function ProviderSettings() {
                     {provider.signed_in !== true && (
                       <BusyButton
                         data-testid="provider-signin"
-                        busy={signin.isPending || (watching && provider.ready)}
+                        busy={(signin.isPending && signin.variables === provider.id) || (mine && provider.ready)}
                         disabled={!provider.ready}
-                        onClick={() => signin.mutate()}
+                        onClick={() => signin.mutate(provider.id)}
                         className="rounded border border-line px-2 py-1 text-sm disabled:opacity-40"
                       >
                         {t("settings.signIn")}
@@ -210,10 +321,10 @@ export default function ProviderSettings() {
                     )}
                     <span className="text-xs text-secondary" data-testid="provider-hint">
                       {!provider.ready
-                        ? t("settings.cliMissing")
+                        ? t(copy.missing)
                         : provider.signed_in === true
                           ? t("settings.signedInHint")
-                          : t("settings.signInHint")}
+                          : t(copy.signIn)}
                     </span>
                   </div>
 
@@ -227,22 +338,40 @@ export default function ProviderSettings() {
                       {provider.install_command && <code>{provider.install_command}</code>}
                     </span>
                   )}
-                  {install.isPending && (
+                  {install.isPending && install.variables === provider.id && (
                     <span className="text-xs text-secondary" data-testid="provider-starting">
                       {t("settings.starting")}
                     </span>
                   )}
-                  {watching && !install.isPending && (
+                  {mine && !install.isPending && (
                     <span className="text-xs text-secondary" data-testid="provider-watching">
                       {t("settings.watching")}
                     </span>
                   )}
-                  {cliFailure && (
+                  {/* Where the window just opened is recorded, for when it goes wrong. */}
+                  {(() => {
+                    const log =
+                      (install.variables === provider.id && install.data?.log) ||
+                      (signin.variables === provider.id && signin.data?.log);
+                    return log ? (
+                      <span className="text-xs text-tertiary" data-testid="provider-console-log">
+                        {t("settings.consoleLog")} <code className="select-all">{log}</code>
+                      </span>
+                    ) : null;
+                  })()}
+                  {failure && (
                     <span className="text-xs text-danger" data-testid="provider-error">
-                      {cliFailure instanceof Error ? cliFailure.message : String(cliFailure)}
+                      {failure instanceof Error ? failure.message : String(failure)}
                     </span>
                   )}
-                  <span className="text-xs text-tertiary">{t("settings.cliPlanNote")}</span>
+                  <span className="text-xs text-tertiary" data-testid="provider-plan">
+                    {t(copy.plan)}
+                  </span>
+                  {provider.quota && (
+                    <span className="text-xs text-secondary" data-testid="provider-quota">
+                      {provider.quota}
+                    </span>
+                  )}
 
                   {/* Pinned to the resolved binary: a bare `claude update` would upgrade
                       whichever install the user's PATH happens to favour. */}
@@ -261,8 +390,8 @@ export default function ProviderSettings() {
                       {t("settings.cliUnknownSignin")}
                       <BusyButton
                         data-testid="provider-update"
-                        busy={update.isPending}
-                        onClick={() => update.mutate()}
+                        busy={update.isPending && update.variables === provider.id}
+                        onClick={() => update.mutate(provider.id)}
                         className="rounded border border-line px-2 py-0.5 text-xs"
                       >
                         {t("settings.update")}
@@ -305,7 +434,40 @@ export default function ProviderSettings() {
             </article>
           );
         })}
+              </div>
+            </fieldset>
+          );
+        })}
       </div>
+
+      {/*
+       * What happens when a plan's allowance runs out mid-week. Waiting is the default
+       * and sends nothing anywhere; another provider is a deliberate choice, made here,
+       * never a silent substitution — a transcript leaving the machine for a provider
+       * nobody picked is exactly the surprise this app exists to avoid.
+       */}
+      {status.data &&
+        (status.data.providers ?? []).some((provider) => provider.id === active && provider.needs === "cli") && (
+          <label className="mt-4 flex flex-wrap items-center gap-2 text-sm" htmlFor="llm-fallback">
+            <span className="text-secondary">{t("settings.fallbackLabel")}</span>
+            <select
+              id="llm-fallback"
+              data-testid="provider-fallback"
+              value={status.data.fallback ?? ""}
+              onChange={(event) => fallback.mutate(event.target.value)}
+              className="rounded-md border border-line bg-raised px-2 py-1 text-sm"
+            >
+              <option value="">{t("settings.fallbackNone")}</option>
+              {(status.data.providers ?? [])
+                .filter((provider) => provider.id !== active)
+                .map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
     </section>
   );
 }

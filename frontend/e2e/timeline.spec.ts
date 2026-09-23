@@ -24,7 +24,11 @@ test("recording_card_live", async ({ page, seed }) => {
   await gotoApp(page);
   const card = page.getByTestId("meeting-card").filter({ has: page.getByTestId("elapsed") });
   await expect(card).toHaveAttribute("data-state", "RECORDING");
-  await expect(card.getByTestId("stop-recording")).toBeVisible();
+  // Stop is in the row's menu (and in the recording bar), not a red button on the row.
+  await card.hover();
+  await card.getByTestId("meeting-menu").click();
+  await expect(page.locator("[data-testid=overflow-menu-item][data-item=stop]")).toBeVisible();
+  await page.keyboard.press("Escape");
   const first = await card.getByTestId("elapsed").textContent();
   await page.waitForTimeout(1200);
   expect(await card.getByTestId("elapsed").textContent()).not.toBe(first);
@@ -42,13 +46,13 @@ test("queue_card_shows_eta", async ({ page, seed }) => {
   ]);
   await gotoApp(page);
   const card = page.getByTestId("meeting-card").filter({ hasText: "Being transcribed" });
-  await expect(card.getByTestId("meeting-state")).toHaveText("Transcribing");
+  await expect(card.getByTestId("meeting-state")).toHaveText("transcribing");
   await expect(card.getByTestId("eta")).not.toHaveText("");
 });
 
 test("default_locale_is_english", async ({ page }) => {
   await gotoApp(page);
-  await expect(page.getByTestId("nav-timeline")).toHaveAttribute("aria-label", "Timeline");
+  await expect(page.getByTestId("nav-timeline")).toHaveAccessibleName("Library");
   expect(await page.evaluate(() => document.dir)).toBe("ltr");
 });
 
@@ -58,7 +62,7 @@ test("locale_switch_no_reload", async ({ page }) => {
     (window as unknown as { __marker: number }).__marker = 42;
   });
   await page.getByTestId("ui-language").selectOption("he");
-  await expect(page.getByTestId("nav-timeline")).toHaveAttribute("aria-label", "ציר זמן");
+  await expect(page.getByTestId("nav-timeline")).toHaveAccessibleName("ספרייה");
   expect(await page.evaluate(() => document.dir)).toBe("rtl");
   expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(42);
 });
@@ -77,14 +81,18 @@ test("rtl_direction", async ({ page, seed }) => {
   expect(box!.x + box!.width).toBeGreaterThan(container!.x + container!.width / 2);
 });
 
-test("calendar_toggle_and_spans", async ({ page }) => {
+/**
+ * The calendar holds the detail side from the moment the screen opens. There used to be a
+ * List/Calendar toggle above the meeting list, which chose between the column and the
+ * pane beside it — two views of one collection with a switch insisting only one could be
+ * shown. The list is the column; the calendar is the pane.
+ */
+test("the_calendar_is_the_detail_side_and_the_spans_work", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("timeline")).toBeVisible();
 
-  // List is the default and the calendar is not mounted.
-  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
-
-  await page.getByTestId("view-calendar").click();
+  // No toggle, and the calendar is already there.
+  await expect(page.getByTestId("view-toggle")).toHaveCount(0);
   await expect(page.getByTestId("calendar-controls")).toBeVisible();
   // Week is the default span, so the time grid renders seven day columns.
   await expect(page.getByTestId("calendar-timegrid")).toBeVisible();
@@ -105,23 +113,18 @@ test("calendar_toggle_and_spans", async ({ page }) => {
   await expect(page.getByTestId("calendar-period")).not.toHaveText(period ?? "");
   await page.getByTestId("calendar-today").click();
   await expect(page.getByTestId("calendar-period")).toHaveText(period ?? "");
-
-  // And back to the list.
-  await page.getByTestId("view-list").click();
-  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
 });
 
-test("calendar_choice_survives_a_reload", async ({ page }) => {
+test("calendar_span_survives_a_reload", async ({ page }) => {
   await page.goto("/");
-  await page.getByTestId("view-calendar").click();
   await page.getByTestId("span-month").click();
   await expect(page.getByTestId("calendar-monthgrid")).toBeVisible();
 
   await page.reload();
   await expect(page.getByTestId("calendar-monthgrid")).toBeVisible();
 
-  await page.getByTestId("view-list").click(); // leave the default as it was
-  await expect(page.getByTestId("calendar-controls")).toHaveCount(0);
+  await page.getByTestId("span-week").click(); // leave the default as it was
+  await expect(page.getByTestId("calendar-timegrid")).toBeVisible();
 });
 
 test("recording_shows_a_live_waveform_on_every_page", async ({ page, seed }) => {
@@ -175,7 +178,7 @@ test("clicking_a_meeting_opens_it", async ({ page, seed }) => {
     { id: "click-1", title: "Openable", state: "RENDERED", started_at: isoAt(0, 20) },
   ]);
   await gotoApp(page, "/");
-  await expect(page.getByTestId("no-meeting-open")).toBeVisible();
+  await expect(page.getByTestId("calendar-controls")).toBeVisible();
 
   await page.getByTestId("meeting-link").first().click();
   await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "click-1");
@@ -192,7 +195,6 @@ test("clicking_a_meeting_opens_it_from_the_calendar_too", async ({ page, seed })
     { id: "click-2", title: "Openable from calendar", state: "RENDERED", started_at: isoAt(0, 20) },
   ]);
   await gotoApp(page, "/");
-  await page.getByTestId("view-calendar").click();
   await expect(page.getByTestId("calendar-controls")).toBeVisible();
 
   await page.getByTestId("meeting-link").first().click();

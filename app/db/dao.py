@@ -41,6 +41,7 @@ MEETING_COLUMNS = (
     "error",
     "created_at",
     "updated_at",
+    "speaker_names",
 )
 
 
@@ -65,6 +66,8 @@ class Meeting:
     evidence_json: str | None = None
     calendar_json: str | None = None
     error: str | None = None
+    #: JSON: transcript speaker slot -> the name the user gave it. See :attr:`speakers`.
+    speaker_names: str | None = None
 
     @property
     def path(self) -> Path:
@@ -81,8 +84,28 @@ class Meeting:
         loaded = json.loads(self.evidence_json)
         return list(loaded) if isinstance(loaded, list) else []
 
+    @property
+    def speakers(self) -> dict[str, str]:
+        """Who the user says is behind each speaker slot ("THEM_1" -> "Dana").
+
+        A mapping laid over the transcript at read time rather than a rewrite of it: the
+        slots are the recorder's and the diariser's, and a name typed against the wrong
+        slot has to be correctable without re-transcribing anything.
+        """
+        if not self.speaker_names:
+            return {}
+        try:
+            loaded = json.loads(self.speaker_names)
+        except ValueError:
+            return {}
+        if not isinstance(loaded, dict):
+            return {}
+        return {str(k): str(v) for k, v in loaded.items() if isinstance(v, str) and v.strip()}
+
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # Parsed, so meta.json and the API both carry an object rather than a JSON string
+        # inside a JSON document.
+        return {**asdict(self), "speaker_names": self.speakers}
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +123,53 @@ class SearchHit:
     at_ms: int
     text: str
     snippet: str
+    #: Where the match came from: ``title``, ``action`` or ``transcript``. The
+    #: screen renders each differently — a title hit has no speaker and no
+    #: timestamp, so it cannot be labelled "they said" or seeked to.
+    kind: str = "transcript"
+
+
+
+def _fts_query(raw: str) -> str:
+    """Turn what someone typed into an FTS5 expression that cannot be a syntax error.
+
+    The user's string used to go straight into ``MATCH``, where it is not a search
+    term but a *query language*. So ``AND``, ``c++``, ``don"t`` and a lone
+    apostrophe each raised ``OperationalError`` and the endpoint answered 500 —
+    typing an ordinary English word broke the search box.
+
+    Every token is quoted (which makes operators and punctuation literal) and the
+    last one gets a prefix star, because the last word in a search box is usually
+    still being typed.
+    """
+    tokens = [token for token in raw.split() if token]
+    if not tokens:
+        return ""
+    quoted = ['"' + token.replace('"', '""') + '"' for token in tokens]
+    quoted[-1] += "*"
+    return " ".join(quoted)
+
+
+def _mark(text: str, query: str, *, context: int = 40) -> str:
+    """A snippet in the same bracket convention SQLite's ``snippet()`` produces.
+
+    The screen splits on ``[`` and ``]`` to highlight, so a hit found by LIKE has
+    to arrive looking like a hit found by FTS.
+    """
+    index = text.lower().find(query.lower())
+    if index < 0:
+        return text
+    start = max(0, index - context)
+    end = min(len(text), index + len(query) + context)
+    return (
+        ("…" if start else "")
+        + text[start:index]
+        + "["
+        + text[index : index + len(query)]
+        + "]"
+        + text[index + len(query) : end]
+        + ("…" if end < len(text) else "")
+    )
 
 
 #: Owners the prompt is allowed to use when it cannot name a person. ``ME`` is the
@@ -121,6 +191,14 @@ class ActionItem:
     #: Filled in by :meth:`Dao.action_items`; the row itself does not carry it.
     meeting_title: str | None = None
     meeting_started_at: str | None = None
+    #: The lighter second line: why it matters, what it unblocks, who is waiting.
+    detail: str | None = None
+    #: YYYY-MM-DD. The stored value, or — for a row that has none — ``due`` resolved
+    #: against the meeting's own date. See :func:`_row_to_action`.
+    due_at: str | None = None
+    snoozed_until: str | None = None
+    #: ``model`` (re-summarizing replaces it) or ``user`` (typed in; nothing replaces it).
+    source: str = "model"
 
     @property
     def done(self) -> bool:
@@ -128,6 +206,10 @@ class ActionItem:
 
     def as_dict(self) -> dict[str, Any]:
         return {**asdict(self), "done": self.done}
+
+
+#: Fields an action item accepts from the summarizer, the seed and the API alike.
+ActionInput = dict[str, Any] | tuple[Any, ...]
 
 
 def normalize_action(what: str) -> str:
@@ -258,6 +340,25 @@ def capabilities(conn: sqlite3.Connection) -> Capabilities:
     return Capabilities(fts=False)
 
 
+def _resolved_due_at(stored: str | None, due: str | None, started_at: str | None) -> str | None:
+    """The stored date, or what ``due`` meant on the day the meeting happened.
+
+    Lazy on purpose: every row written before ``due_at`` existed gets a date the moment
+    it is read, with no backfill, and a better resolver improves old rows for free.
+    """
+    if stored:
+        return stored
+    if not due or not started_at:
+        return None
+    from app.due import anchor_date, resolve_due
+
+    anchor = anchor_date(started_at)
+    if anchor is None:
+        return None
+    resolved = resolve_due(due, anchor)
+    return resolved.isoformat() if resolved else None
+
+
 def _row_to_action(row: sqlite3.Row) -> ActionItem:
     return ActionItem(
         id=row["id"],
@@ -271,7 +372,34 @@ def _row_to_action(row: sqlite3.Row) -> ActionItem:
         done_at=row["done_at"],
         meeting_title=row["meeting_title"],
         meeting_started_at=row["meeting_started_at"],
+        detail=row["detail"],
+        due_at=_resolved_due_at(row["due_at"], row["due"], row["meeting_started_at"]),
+        snoozed_until=row["snoozed_until"],
+        source=row["source"] or "model",
     )
+
+
+def _action_fields(item: ActionInput) -> dict[str, Any]:
+    """One item as a dict, whichever shape the caller had it in.
+
+    The tuple ``(who, what, due, at_ms)`` is the shape this took before ``detail`` and
+    ``due_at`` existed; it is still accepted so a caller holding one does not have to be
+    rewritten to say nothing new.
+    """
+    if isinstance(item, dict):
+        return item
+    who, what, due, at_ms = item
+    return {"who": who, "what": what, "due": due, "at_ms": at_ms}
+
+
+#: A tag is a label, not a note.
+MAX_TAGS = 12
+MAX_TAG_CHARS = 40
+
+
+def normalize_tag(tag: str) -> str:
+    """Stripped and whitespace-squeezed; the casing is the user's."""
+    return " ".join(str(tag).split())
 
 
 def _row_to_meeting(row: sqlite3.Row) -> Meeting:
@@ -454,19 +582,73 @@ class Dao:
         return [Turn(r["seq"], r["speaker"], r["at_ms"], r["text"]) for r in rows]
 
     def search(self, query: str, *, limit: int = 50) -> list[SearchHit]:
-        """FTS5 when available, LIKE over ``transcript_turns`` when it is not."""
+        """Titles, action items and transcripts — in that order of confidence.
+
+        It searched transcripts *only* until 2026-09-22, which meant a word that
+        appears in a meeting's name and nowhere in the speech — "roadmap", a
+        customer's name, anything the calendar supplied — returned nothing at all.
+        The engine was working; it was pointed at one third of the corpus.
+
+        Ordering is by kind rather than by date. A title match is the strongest
+        signal there is ("the meeting I mean is called this"), an action item is
+        next, and the sentence hits follow. Within a kind, newest first.
+
+        Not covered: the summary. It is written to ``summary.html`` in the meeting
+        folder rather than to a column, so searching it means reading and stripping
+        a file per meeting on every keystroke. The right fix is a plain-text copy in
+        the database at render time, which is a migration, not a query.
+        """
         query = query.strip()
         if not query:
             return []
+        hits: list[SearchHit] = []
+        like = f"%{query}%"
+
+        for row in self.conn.execute(
+            "SELECT id, title FROM meetings "
+            "WHERE title IS NOT NULL AND lower(title) LIKE lower(?) "
+            "ORDER BY started_at DESC LIMIT ?",
+            (like, limit),
+        ).fetchall():
+            hits.append(
+                SearchHit(row["id"], "", 0, row["title"], _mark(row["title"], query), "title")
+            )
+
+        for row in self.conn.execute(
+            "SELECT meeting_id, what, at_ms FROM action_items "
+            "WHERE lower(what) LIKE lower(?) ORDER BY created_at DESC LIMIT ?",
+            (like, limit),
+        ).fetchall():
+            hits.append(
+                SearchHit(
+                    row["meeting_id"],
+                    "",
+                    row["at_ms"] or 0,
+                    row["what"],
+                    _mark(row["what"], query),
+                    "action",
+                )
+            )
+
+        hits.extend(self._search_turns(query, limit=limit))
+        return hits[:limit]
+
+    def _search_turns(self, query: str, *, limit: int) -> list[SearchHit]:
+        """FTS5 when available, LIKE over ``transcript_turns`` when it is not."""
         if capabilities(self.conn).fts:
+            match = _fts_query(query)
+            if not match:
+                return []
             rows = self.conn.execute(
                 "SELECT meeting_id, speaker, at_ms, text, "
                 "snippet(transcripts_fts, 3, '[', ']', '…', 12) AS snip "
                 "FROM transcripts_fts WHERE transcripts_fts MATCH ? LIMIT ?",
-                (query, limit),
+                (match, limit),
             ).fetchall()
             return [
-                SearchHit(r["meeting_id"], r["speaker"], r["at_ms"], r["text"], r["snip"])
+                SearchHit(
+                    r["meeting_id"], r["speaker"], r["at_ms"], r["text"], r["snip"], "transcript"
+                )
                 for r in rows
             ]
         rows = self.conn.execute(
@@ -474,63 +656,174 @@ class Dao:
             "WHERE text LIKE ? ORDER BY meeting_id, seq LIMIT ?",
             (f"%{query}%", limit),
         ).fetchall()
-        hits = []
-        for row in rows:
-            text = row["text"]
-            idx = text.lower().find(query.lower())
-            start = max(0, idx - 30)
-            snippet = ("…" if start else "") + text[start : idx + len(query) + 30]
-            hits.append(SearchHit(row["meeting_id"], row["speaker"], row["at_ms"], text, snippet))
-        return hits
+        return [
+            SearchHit(
+                r["meeting_id"], r["speaker"], r["at_ms"], r["text"], _mark(r["text"], query),
+                "transcript",
+            )
+            for r in rows
+        ]
 
     # -- action items ------------------------------------------------------
 
-    def replace_action_items(
-        self, meeting_id: str, items: Sequence[tuple[str, str, str | None, int | None]]
-    ) -> int:
-        """Replace this meeting's action items, carrying the done state forward.
+    def replace_action_items(self, meeting_id: str, items: Sequence[ActionInput]) -> int:
+        """Replace the model's action items for this meeting, keeping what is the user's.
 
-        Each item is ``(who, what, due, at_ms)``. Re-summarizing is a routine act —
-        the prompt is editable and pressing Summarize redoes the work with no
-        staleness check — so it must not cost the user the ticks they have made.
-        What is ticked is theirs; what the list says is the model's.
+        Each item is a dict of ``who, what, due, at_ms, detail, due_at`` (the old
+        ``(who, what, due, at_ms)`` tuple is still accepted). Re-summarizing is a routine
+        act — the prompt is editable and pressing Summarize redoes the work with no
+        staleness check — so it must not cost the user anything they did:
+
+        - ``done_at`` and ``snoozed_until`` are carried forward by the normalised text.
+        - Rows with ``source = 'user'`` are not the model's and are never deleted. They
+          are renumbered to follow the model's list, and a model item that repeats one of
+          them word for word is dropped rather than shown twice.
+
+        What is ticked, snoozed or typed in is theirs; what the list says is the model's.
         """
-        done = {
-            row["norm"]: row["done_at"]
+        kept = {
+            row["norm"]: (row["done_at"], row["snoozed_until"])
             for row in self.conn.execute(
-                "SELECT norm, done_at FROM action_items "
-                "WHERE meeting_id = ? AND done_at IS NOT NULL",
+                "SELECT norm, done_at, snoozed_until FROM action_items "
+                "WHERE meeting_id = ? AND source = 'model' "
+                "AND (done_at IS NOT NULL OR snoozed_until IS NOT NULL)",
                 (meeting_id,),
             ).fetchall()
         }
-        self.conn.execute("DELETE FROM action_items WHERE meeting_id = ?", (meeting_id,))
+        users = self.conn.execute(
+            "SELECT id, norm FROM action_items WHERE meeting_id = ? AND source = 'user' "
+            "ORDER BY seq",
+            (meeting_id,),
+        ).fetchall()
+        user_norms = {row["norm"] for row in users}
+        self.conn.execute(
+            "DELETE FROM action_items WHERE meeting_id = ? AND source = 'model'", (meeting_id,)
+        )
+        # Out of the way of UNIQUE(meeting_id, seq) while the model's rows go in at 0..n.
+        self.conn.execute(
+            "UPDATE action_items SET seq = seq + 1000000 WHERE meeting_id = ?", (meeting_id,)
+        )
         now = iso(self.clock.now())
         count = 0
-        for who, what, due, at_ms in items:
-            what = what.strip()
-            who = who.strip()
+        for raw in items:
+            fields = _action_fields(raw)
+            what = str(fields.get("what") or "").strip()
+            who = str(fields.get("who") or "").strip()
             if not what:
                 continue
             norm = normalize_action(what)
+            if norm in user_norms:
+                continue
+            done_at, snoozed = kept.get(norm, (None, None))
+            at_ms = fields.get("at_ms")
             self.conn.execute(
                 "INSERT INTO action_items"
-                "(meeting_id, seq, who, what, norm, due, at_ms, mine, done_at, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "(meeting_id, seq, who, what, norm, due, at_ms, mine, done_at, created_at, "
+                "detail, due_at, snoozed_until, source) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'model')",
                 (
                     meeting_id,
                     count,
                     who or "?",
                     what,
                     norm,
-                    (due or None),
-                    at_ms,
+                    (str(fields.get("due") or "").strip() or None),
+                    int(at_ms) if isinstance(at_ms, int | float) else None,
                     int(who.casefold() in MINE),
-                    done.get(norm),
+                    done_at,
                     now,
+                    (str(fields.get("detail") or "").strip() or None),
+                    fields.get("due_at") or None,
+                    snoozed,
                 ),
             )
             count += 1
+        for offset, row in enumerate(users):
+            self.conn.execute(
+                "UPDATE action_items SET seq = ? WHERE id = ?", (count + offset, row["id"])
+            )
         return count
+
+    def add_action_item(
+        self,
+        meeting_id: str,
+        *,
+        what: str,
+        who: str = "ME",
+        due_at: str | None = None,
+        detail: str | None = None,
+    ) -> ActionItem:
+        """An item the user typed in. ``source = 'user'``, so no re-summarize removes it."""
+        what = what.strip()
+        who = who.strip() or "ME"
+        if not what:
+            raise ValueError("an action item needs something to do")
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(seq), -1) + 1 AS next FROM action_items WHERE meeting_id = ?",
+            (meeting_id,),
+        ).fetchone()
+        cursor = self.conn.execute(
+            "INSERT INTO action_items"
+            "(meeting_id, seq, who, what, norm, due, at_ms, mine, done_at, created_at, "
+            "detail, due_at, snoozed_until, source) "
+            "VALUES (?,?,?,?,?,NULL,NULL,?,NULL,?,?,?,NULL,'user')",
+            (
+                meeting_id,
+                int(row["next"]),
+                who,
+                what,
+                normalize_action(what),
+                int(who.casefold() in MINE),
+                iso(self.clock.now()),
+                (detail or "").strip() or None,
+                due_at or None,
+            ),
+        )
+        item = self.action_item(int(cursor.lastrowid or 0))
+        assert item is not None
+        return item
+
+    def update_action_item(self, item_id: int, **fields: Any) -> ActionItem | None:
+        """Change what the user may change: done, dates, owner, wording, detail.
+
+        ``done`` is a boolean, stamped with the clock; everything else is a column value,
+        where None clears it. Rewording keeps ``norm`` in step, or the next re-summarize
+        would carry the tick by the old wording; changing the owner keeps ``mine`` in step.
+        """
+        allowed = {"done", "due_at", "snoozed_until", "who", "what", "detail"}
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"unknown action item fields: {sorted(unknown)}")
+        columns: dict[str, Any] = {}
+        if "done" in fields:
+            columns["done_at"] = iso(self.clock.now()) if fields["done"] else None
+        for key in ("due_at", "snoozed_until"):
+            if key in fields:
+                columns[key] = fields[key] or None
+        if "detail" in fields:
+            columns["detail"] = (fields["detail"] or "").strip() or None
+        if fields.get("what") is not None:
+            what = str(fields["what"]).strip()
+            if not what:
+                raise ValueError("an action item needs something to do")
+            columns["what"] = what
+            columns["norm"] = normalize_action(what)
+        if fields.get("who") is not None:
+            who = str(fields["who"]).strip() or "?"
+            columns["who"] = who
+            columns["mine"] = int(who.casefold() in MINE)
+        if columns:
+            assignments = ",".join(f"{key} = ?" for key in columns)
+            self.conn.execute(
+                f"UPDATE action_items SET {assignments} WHERE id = ?",
+                [*columns.values(), item_id],
+            )
+        return self.action_item(item_id)
+
+    def delete_action_item(self, item_id: int) -> bool:
+        return bool(
+            self.conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,)).rowcount
+        )
 
     def action_items(
         self,
@@ -556,6 +849,19 @@ class Dao:
         ).fetchall()
         return [_row_to_action(row) for row in rows]
 
+    def action_item_counts(self) -> dict[str, tuple[int, int]]:
+        """Per meeting: how many commitments it recorded, and how many are still open.
+
+        One grouped query rather than one per row: the timeline asks about every meeting
+        it draws, and a library of two hundred meetings is not two hundred queries.
+        """
+        rows = self.conn.execute(
+            "SELECT meeting_id, COUNT(*) AS total, "
+            "SUM(CASE WHEN done_at IS NULL THEN 1 ELSE 0 END) AS still_open "
+            "FROM action_items GROUP BY meeting_id"
+        ).fetchall()
+        return {row["meeting_id"]: (int(row["total"]), int(row["still_open"])) for row in rows}
+
     def action_item(self, item_id: int) -> ActionItem | None:
         row = self.conn.execute(
             "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at "
@@ -565,11 +871,104 @@ class Dao:
         return _row_to_action(row) if row else None
 
     def set_action_done(self, item_id: int, *, done: bool) -> ActionItem | None:
-        self.conn.execute(
-            "UPDATE action_items SET done_at = ? WHERE id = ?",
-            (iso(self.clock.now()) if done else None, item_id),
-        )
-        return self.action_item(item_id)
+        return self.update_action_item(item_id, done=done)
+
+    # -- failures ------------------------------------------------------------
+
+    def failed_stages(self) -> dict[str, str]:
+        """Per meeting, the earliest pipeline stage whose job has failed.
+
+        One query for the whole list. "Earliest" is pipeline order, not time: a failed
+        transcribe is the reason a failed summarize never had anything to work on.
+        """
+        from app.pipeline.states import STAGE_ORDER
+
+        order = {str(stage): index for index, stage in enumerate(STAGE_ORDER)}
+        out: dict[str, str] = {}
+        for row in self.conn.execute(
+            "SELECT meeting_id, stage FROM jobs WHERE state = 'failed'"
+        ).fetchall():
+            stage = str(row["stage"])
+            current = out.get(row["meeting_id"])
+            if current is None or order.get(stage, 99) < order.get(current, 99):
+                out[row["meeting_id"]] = stage
+        return out
+
+    # -- tags ----------------------------------------------------------------
+
+    def tags(self, meeting_id: str) -> list[str]:
+        rows = self.conn.execute(
+            # Insertion order, which set_tags makes the order the user gave them in.
+            "SELECT tag FROM meeting_tags WHERE meeting_id = ? ORDER BY rowid",
+            (meeting_id,),
+        ).fetchall()
+        return [row["tag"] for row in rows]
+
+    def tags_by_meeting(self) -> dict[str, list[str]]:
+        """Every meeting's tags from one query, for the list: two hundred rows are not
+        two hundred queries."""
+        out: dict[str, list[str]] = {}
+        for row in self.conn.execute(
+            "SELECT meeting_id, tag FROM meeting_tags ORDER BY rowid"
+        ).fetchall():
+            out.setdefault(row["meeting_id"], []).append(row["tag"])
+        return out
+
+    def tag_counts(self) -> list[tuple[str, int]]:
+        """Each tag in use and how many meetings carry it: most used first, then by name."""
+        counts: dict[str, int] = {}
+        spelling: dict[str, str] = {}
+        for row in self.conn.execute(
+            "SELECT tag FROM meeting_tags ORDER BY created_at, rowid"
+        ).fetchall():
+            key = row["tag"].casefold()
+            spelling.setdefault(key, row["tag"])
+            counts[key] = counts.get(key, 0) + 1
+        ordered = sorted(counts, key=lambda key: (-counts[key], spelling[key].casefold()))
+        return [(spelling[key], counts[key]) for key in ordered]
+
+    def set_tags(self, meeting_id: str, tags: Sequence[str]) -> list[str]:
+        """Replace this meeting's tags; returns them as stored.
+
+        Normalised (stripped, whitespace squeezed) and deduplicated case-insensitively.
+        The spelling kept is the first one ever used anywhere in the library — so typing
+        "roadmap" on one meeting and "Roadmap" on the next is one tag, not two, and the
+        tag list does not fill with case variants.
+        """
+        wanted: list[str] = []
+        seen: set[str] = set()
+        for raw in tags:
+            tag = normalize_tag(raw)
+            if not tag or tag.casefold() in seen:
+                continue
+            if len(tag) > MAX_TAG_CHARS:
+                raise ValueError(f"a tag is at most {MAX_TAG_CHARS} characters")
+            seen.add(tag.casefold())
+            wanted.append(tag)
+        if len(wanted) > MAX_TAGS:
+            raise ValueError(f"a meeting has at most {MAX_TAGS} tags")
+        # Spellings on *other* meetings only: on its own meeting a tag can be re-cased,
+        # which is how someone fixes "roadmap" to "Roadmap" in the first place.
+        existing: dict[str, str] = {}
+        for row in self.conn.execute(
+            "SELECT tag FROM meeting_tags WHERE meeting_id != ? ORDER BY created_at, rowid",
+            (meeting_id,),
+        ).fetchall():
+            existing.setdefault(row["tag"].casefold(), row["tag"])
+        mine = {
+            row["tag"].casefold(): row["created_at"]
+            for row in self.conn.execute(
+                "SELECT tag, created_at FROM meeting_tags WHERE meeting_id = ?", (meeting_id,)
+            ).fetchall()
+        }
+        now = iso(self.clock.now())
+        self.conn.execute("DELETE FROM meeting_tags WHERE meeting_id = ?", (meeting_id,))
+        for tag in wanted:
+            self.conn.execute(
+                "INSERT INTO meeting_tags(meeting_id, tag, created_at) VALUES (?,?,?)",
+                (meeting_id, existing.get(tag.casefold(), tag), mine.get(tag.casefold(), now)),
+            )
+        return self.tags(meeting_id)
 
     # -- glossary ----------------------------------------------------------
 

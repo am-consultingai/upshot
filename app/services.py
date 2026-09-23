@@ -37,6 +37,8 @@ class Services:
     notifier: Any = None
     asr: Any = None  # overridden in tests via config-selected fakes
     llm: Any = None
+    #: Injected in tests; otherwise built from ``llm.fallback_provider`` when needed.
+    fallback_llm: Any = None
     detector: Any = None
     calendar: Any = None  # app.gcal.oauth.CalendarAuth
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
