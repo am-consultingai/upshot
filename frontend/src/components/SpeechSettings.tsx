@@ -152,7 +152,12 @@ export function SpeechModelRow() {
                 {status.repo}
               </bdi>
               {" · "}
-              <span data-testid="model-size">{t("speech.modelSize").replace("{size}", size)}</span>
+              <span data-testid="model-size">
+                {t(status.state === "ready" ? "speech.modelSizeReady" : "speech.modelSize").replace(
+                  "{size}",
+                  size,
+                )}
+              </span>
               {" · "}
               <span data-testid="model-free">{t("speech.freeSpace").replace("{size}", free)}</span>
             </span>
