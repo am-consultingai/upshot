@@ -189,6 +189,7 @@ def _audio(args: argparse.Namespace) -> list[Check]:
         WAVEFORM_THRESHOLD,
         cross_correlation,
         envelope_correlation,
+        read_wav_at,
     )
     from app.audio.devices import (
         NoDeviceError,
@@ -261,15 +262,7 @@ def _audio(args: argparse.Namespace) -> list[Check]:
         result = recorder.stop()
         assert thread is not None
 
-        with wave.open(str(fixture), "rb") as handle:
-            source_rate = handle.getframerate()
-            source = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
-        if source_rate != cfg.sample_rate:
-            import soxr
-
-            source = np.asarray(
-                soxr.resample(source.astype(np.float32), source_rate, cfg.sample_rate)
-            )
+        source = read_wav_at(fixture, cfg.sample_rate)
         captured_parts = []
         for record in sorted((r for r in result.records if r.track == "them"), key=lambda r: r.seq):
             with wave.open(str(Path(result.folder or root) / "audio" / record.file), "rb") as h:
@@ -860,7 +853,12 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
     import numpy as np
 
     from app.api.security import CSRF_HEADER
-    from app.audio.analysis import ENVELOPE_THRESHOLD, cross_correlation, envelope_correlation
+    from app.audio.analysis import (
+        ENVELOPE_THRESHOLD,
+        cross_correlation,
+        envelope_correlation,
+        read_wav_at,
+    )
     from app.audio.fake import SyntheticCapture
     from app.audio.recorder import Recorder
     from app.audio.writer import read_manifest, track_files
@@ -1039,9 +1037,9 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
         tray_states.append(tray_label())
         final = dao.require_meeting(meeting_id)
 
-        # the loopback (or synthetic) `them` track must carry the fixture
-        with wave.open(str(fixture), "rb") as handle:
-            source = np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
+        # the loopback (or synthetic) `them` track must carry the fixture, compared at the
+        # track's rate (SAPI speaks at 22.05 kHz)
+        source = read_wav_at(fixture, cfg.sample_rate)
         captured_parts = []
         for record in sorted((r for r in records if r.track == "them"), key=lambda r: r.seq):
             with wave.open(str(folder / "audio" / record.file), "rb") as handle:
@@ -1049,19 +1047,21 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
                     np.frombuffer(handle.readframes(handle.getnframes()), dtype=np.int16)
                 )
         captured = np.concatenate(captured_parts) if captured_parts else np.zeros(0, np.int16)
-        window = min(len(source), len(captured), 30 * cfg.sample_rate)
+        # The player starts after the API has started the recording, so the fixture lands
+        # up to a few seconds into the track: compare the fixture's first 30 s against
+        # the track's first 30 s plus that slack.
+        window = min(len(source), 30 * cfg.sample_rate)
+        slack = 3 * cfg.sample_rate
         peak, _ = cross_correlation(
-            source[:window].astype(np.float64),
-            captured[:window].astype(np.float64),
-            max_lag=cfg.sample_rate,
+            source[:window], captured[: window + slack].astype(np.float64), max_lag=slack
         )
         # Real loopback passes through the endpoint's enhancements, which keep the
         # envelope and little of the waveform (``envelope_correlation``).
         shape, lag = envelope_correlation(
-            source[:window].astype(np.float64),
-            captured[:window].astype(np.float64),
+            source[:window],
+            captured[: window + slack].astype(np.float64),
             cfg.sample_rate,
-            max_lag=cfg.sample_rate,
+            max_lag=slack,
         )
 
         transcript_text = ""
@@ -1136,7 +1136,8 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
             {"states": tray_states},
         )
     )
-    if spoken_words and str(Config.load().get("asr.backend", "local")) != "fake":
+    # The suite's own cfg, not a fresh Config.load(): the suite wires the fake ASR above.
+    if spoken_words and str(cfg.get("asr.backend", "local")) != "fake":
         hits = sum(1 for word in spoken_words if word.lower() in transcript_text)
         checks.append(
             Check(
