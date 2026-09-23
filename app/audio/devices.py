@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import threading
 import wave
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,37 @@ log = get(__name__)
 # inside _portaudiowpatch with 0xc0000005 — a native access violation, so no Python
 # `except` can catch it and nothing reaches the log. Every open/close goes through this.
 PORTAUDIO_LOCK = threading.RLock()
+
+# PortAudio's WASAPI host binds itself to the thread that initialised it: an input stream
+# opened on any other thread while that host is alive fails with -9999 ("Unanticipated
+# host error"). Pa_Initialize is reference-counted, so the thread that happens to create
+# the *first* PyAudio instance decides — a Settings device listing on one server thread
+# and a level meter on another was enough (found on machine B, job 012: both setup
+# meters failed, then recording opened the same devices fine). So every host is created,
+# every input opened and every host terminated on this one thread. Output streams and
+# device enumeration work from any thread and stay with their callers.
+_audio_thread_ident: int | None = None
+
+
+def _mark_audio_thread() -> None:
+    global _audio_thread_ident
+    _audio_thread_ident = threading.get_ident()
+
+
+# The worker starts on the first submit; the initializer runs before any task.
+_AUDIO_THREAD = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="portaudio", initializer=_mark_audio_thread
+)
+
+
+def on_audio_thread[T](fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run ``fn`` on the PortAudio thread and return its result (or raise its error).
+
+    Re-entrant: called from the PortAudio thread itself, it runs ``fn`` directly.
+    """
+    if threading.get_ident() == _audio_thread_ident:
+        return fn(*args, **kwargs)
+    return _AUDIO_THREAD.submit(fn, *args, **kwargs).result()
 
 
 class NoDeviceError(RuntimeError):
@@ -71,13 +103,16 @@ def _pyaudio_module() -> Any:
 def audio_host() -> Iterator[Any]:
     """A PyAudio instance that is always terminated."""
     pyaudio = _pyaudio_module()
-    with PORTAUDIO_LOCK:
-        host = pyaudio.PyAudio()
+    host = on_audio_thread(_locked, pyaudio.PyAudio)
     try:
         yield host
     finally:
-        with PORTAUDIO_LOCK:
-            host.terminate()
+        on_audio_thread(_locked, host.terminate)
+
+
+def _locked[T](fn: Callable[[], T]) -> T:
+    with PORTAUDIO_LOCK:
+        return fn()
 
 
 def _wasapi_info(host: Any) -> dict[str, Any]:

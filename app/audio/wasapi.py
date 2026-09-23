@@ -18,6 +18,7 @@ from app.audio.devices import (
     PORTAUDIO_LOCK,
     DeviceInfo,
     NoDeviceError,
+    on_audio_thread,
     render_for,
     resolve_track,
 )
@@ -59,6 +60,10 @@ class WasapiCapture:
     # -- lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
+        # On the PortAudio thread, like every open and close: see devices.on_audio_thread.
+        on_audio_thread(self._start)
+
+    def _start(self) -> None:
         import pyaudiowpatch as pyaudio
 
         device = self.device or resolve_track(self.track)
@@ -150,6 +155,9 @@ class WasapiCapture:
         return stream
 
     def stop(self) -> None:
+        on_audio_thread(self._stop)
+
+    def _stop(self) -> None:
         with self._lifecycle, PORTAUDIO_LOCK:
             self.running = False
             stream, self._stream = self._stream, None

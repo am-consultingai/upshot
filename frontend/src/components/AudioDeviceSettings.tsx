@@ -39,9 +39,13 @@ export default function AudioDeviceSettings() {
         description={
           devices.length === 0 ? (
             <>
-              {audio.data && audio.data.platform !== "win32"
-                ? t("settings.micWrongHost")
-                : t("settings.micUnavailable")}
+              {/* Still asking is not "none found": the list takes a moment on Windows,
+                  and a stranger reads "No microphone" as "my microphone is broken". */}
+              {!audio.data && !audio.isError
+                ? t("settings.micLooking")
+                : audio.data && audio.data.platform !== "win32"
+                  ? t("settings.micWrongHost")
+                  : t("settings.micUnavailable")}
               {audio.data?.error && (
                 <span data-testid="mic-error" className="mt-1 block font-mono">
                   {audio.data.error}
