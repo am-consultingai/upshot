@@ -42,14 +42,21 @@ datas = [
     (str(ROOT / "app" / "db" / "schema.sql"), "app/db"),
     (str(ROOT / "app" / "db" / "migrations"), "app/db/migrations"),
 ]
-if (ROOT / "frontend" / "dist").exists():
-    datas.append((str(ROOT / "frontend" / "dist"), "frontend/dist"))
+# The version and commit, stamped by build.ps1 (app/version.py).
+if (ROOT / "app" / "build_info.json").exists():
+    datas.append((str(ROOT / "app" / "build_info.json"), "app"))
+# The interface and ffmpeg are not optional. Without the first the app serves a page that
+# says "run npm run build"; without the second no audio file can be imported. Both used
+# to be skipped quietly when missing, and the build still "succeeded".
+for required in (ROOT / "frontend" / "dist" / "index.html", ROOT / "vendor" / "ffmpeg.exe"):
+    if not required.exists():
+        raise SystemExit(f"upshot.spec: {required} is missing; run packaging/build.ps1")
+datas.append((str(ROOT / "frontend" / "dist"), "frontend/dist"))
 # Baked in, never committed (app/gcal/client.py). A build without it runs, and says in
 # Settings that it cannot connect a calendar.
 if (ROOT / "app" / "gcal" / "google_oauth_client.json").exists():
     datas.append((str(ROOT / "app" / "gcal" / "google_oauth_client.json"), "app/gcal"))
-if (ROOT / "vendor" / "ffmpeg.exe").exists():
-    datas.append((str(ROOT / "vendor" / "ffmpeg.exe"), "."))
+datas.append((str(ROOT / "vendor" / "ffmpeg.exe"), "."))
 datas += collect_data_files("faster_whisper")  # the bundled Silero VAD model
 
 binaries = collect_dynamic_libs("onnxruntime") + collect_dynamic_libs("ctranslate2")
