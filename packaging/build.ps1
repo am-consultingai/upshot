@@ -39,11 +39,15 @@ if ($LASTEXITCODE -ne 0) { throw "the frozen build failed --selftest imports" }
 if ($LASTEXITCODE -ne 0) { throw "the frozen build failed --selftest pipeline" }
 
 Write-Host "== installer =="
-$iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-if (Test-Path $iscc) {
+# A machine-wide install lands in Program Files (x86); winget's default per-user one in LOCALAPPDATA.
+$iscc = @(
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($iscc) {
     & $iscc packaging\installer.iss
 } else {
-    Write-Warning "Inno Setup 6 not found at $iscc — skipping the installer"
+    Write-Warning "Inno Setup 6 not found (Program Files (x86) or LOCALAPPDATA\Programs) — skipping the installer"
 }
 
 Write-Host "== done =="
