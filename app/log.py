@@ -67,15 +67,24 @@ def setup(level: int = logging.INFO, *, to_file: bool = True) -> None:
         return
     filt = _MeetingIdFilter()
     quiet = DropClientDisconnects()
-    stream = logging.StreamHandler()
-    stream.setFormatter(logging.Formatter(FORMAT))
-    stream.addFilter(filt)
-    stream.addFilter(quiet)
-    root.addHandler(stream)
+    import sys
+
+    # The frozen build is windowed: it has no stderr, and a handler on None fails every
+    # record in silence.
+    if sys.stderr is not None:
+        stream = logging.StreamHandler()
+        stream.setFormatter(logging.Formatter(FORMAT))
+        stream.addFilter(filt)
+        stream.addFilter(quiet)
+        root.addHandler(stream)
     if to_file:
         d = paths.log_dir()
         d.mkdir(parents=True, exist_ok=True)
-        fh = RotatingFileHandler(d / "app.log", maxBytes=10 * 1024 * 1024, backupCount=5)
+        # UTF-8, not the Windows code page: every line carries the meeting id, whose slug
+        # holds the title, so in cp1252 each line of a Hebrew-titled meeting was dropped.
+        fh = RotatingFileHandler(
+            d / "app.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        )
         fh.setFormatter(logging.Formatter(FORMAT))
         fh.addFilter(filt)
         fh.addFilter(quiet)
