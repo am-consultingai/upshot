@@ -37,23 +37,21 @@ def _quoted(path: Path) -> str:
     return "'" + str(path).replace("'", "''") + "'"
 
 
-#: What the console is, stated at the top of every transcript. The architecture line is
-#: asked the way OpenAI's installer asks it — under strict mode — so a failure there shows
-#: up here first, with the exception's own words.
+#: What the console is, stated at the top of every transcript. The architecture is asked
+#: for by its assembly-qualified name (``…, mscorlib``): in an interactive window the bare
+#: name resolves to PSReadLine 2.0.0's internal copy of the type, which has no
+#: ``OSArchitecture`` — the cause of the Codex installer failure (see
+#: ``codex_cli.isolated``) — so the PSReadLine version is reported alongside.
 _FACTS = (
     "Write-Host ('PowerShell ' + $PSVersionTable.PSVersion + '; 64-bit process: ' + "
     "[Environment]::Is64BitProcess + '; ' + [Environment]::OSVersion.VersionString + "
     "'; .NET ' + [Environment]::Version) -ForegroundColor DarkGray; "
-    "& { Set-StrictMode -Version Latest; "
-    "try { Write-Host ('OS architecture: ' + "
-    "[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) "
-    "-ForegroundColor DarkGray } "
-    "catch { Write-Host ('OS architecture: unavailable - ' + $_.Exception.Message) "
-    "-ForegroundColor DarkGray; "
-    "$t = [System.Runtime.InteropServices.RuntimeInformation]; "
-    "Write-Host ('  RuntimeInformation from ' + $t.Assembly.Location + '; its properties: ' + "
-    "(($t.GetProperties() | ForEach-Object { $_.Name }) -join ', ')) "
-    "-ForegroundColor DarkGray } }; "
+    "& { try { "
+    "$a = [System.Runtime.InteropServices.RuntimeInformation, mscorlib]::OSArchitecture } "
+    "catch { $a = 'unknown - ' + $_.Exception.Message }; "
+    "$r = Get-Module PSReadLine; "
+    "Write-Host ('OS architecture: ' + $a + '; PSReadLine loaded: ' + "
+    "$(if ($r) { [string]$r.Version } else { 'no' })) -ForegroundColor DarkGray }; "
 )
 
 

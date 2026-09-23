@@ -25,6 +25,7 @@ What is different from the Claude provider, and why (D58):
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 import os
@@ -231,7 +232,11 @@ def install_plan() -> InstallPlan | None:
         return None
     if powershell_language_mode() != "ConstrainedLanguage":
         return InstallPlan(
-            "native", NATIVE_INSTALL, install_console(NATIVE_INSTALL, fallback=_NATIVE_FALLBACK)
+            "native",
+            NATIVE_INSTALL,
+            install_console(
+                isolated(NATIVE_INSTALL), shown=NATIVE_INSTALL, fallback=_NATIVE_FALLBACK
+            ),
         )
     if shutil.which("npm") is not None:
         # `npm.cmd`, not `npm`: under Constrained Language Mode PowerShell would resolve
@@ -263,6 +268,37 @@ _LOGIN_GUIDANCE = (
 )
 
 
+def isolated(command: str) -> str:
+    r"""Run ``command`` in a non-interactive PowerShell of its own, inside this console.
+
+    **Why this exists.** The install window is an *interactive* console — it has to stay
+    open for the sign-in that follows — and an interactive Windows PowerShell 5.1 loads
+    PSReadLine. The PSReadLine that ships inside Windows 10 and 11 (2.0.0) carries its own
+    internal copy of ``System.Runtime.InteropServices.RuntimeInformation`` with only
+    ``OSDescription``, and once it is loaded that copy is what the type name resolves to.
+    OpenAI's ``install.ps1`` asks ``RuntimeInformation::OSArchitecture`` under
+    ``Set-StrictMode -Version Latest``, so on a stock Windows machine it died with
+    ``The property 'OSArchitecture' cannot be found on this object`` (found 2026-09-23 by
+    logging the type's assembly from inside the failing window: it was
+    ``PSReadLine\2.0.0\Microsoft.PowerShell.PSReadLine.dll``). A non-interactive
+    PowerShell never loads PSReadLine, and there the same line answers ``X64``.
+
+    The child writes to the same window, so the user still watches it; its output is
+    piped through ``Write-Host`` so the transcript (console_log.py) records it too. Piping
+    the *outer* side does not change how the installer treats its own native commands'
+    stderr, which is the thing ``claude_cli._console`` warns about. The command travels
+    ``-EncodedCommand`` (UTF-16LE, base64): no quoting to go wrong on the way. A non-zero
+    exit becomes an exception, so ``install_console``'s fallback still takes over.
+    """
+    encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
+    return (
+        "& (Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe') "
+        f"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded} 2>&1 "
+        "| ForEach-Object { Write-Host $_ }; "
+        "if ($LASTEXITCODE -ne 0) { throw ('The installer exited with code ' + $LASTEXITCODE) }"
+    )
+
+
 #: What to try when OpenAI's own installer fails, in the same window: npm, then winget —
 #: each detected at run time on whatever machine this is, and only used if present.
 #: (Seen in development on 2026-09-23: the installer stopped with ``The property
@@ -281,7 +317,9 @@ _NATIVE_FALLBACK = (
 )
 
 
-def install_console(command: str, *, fallback: str | None = None) -> list[str]:
+def install_console(
+    command: str, *, shown: str | None = None, fallback: str | None = None
+) -> list[str]:
     """Install, then sign in, in one visible window — recorded to ``logs/codex-install.log``.
 
     The installer runs in the foreground, for the reason ``claude_cli._console`` records
@@ -305,7 +343,7 @@ def install_console(command: str, *, fallback: str | None = None) -> list[str]:
             f"{fallback} }}; "
         )
     script = (
-        f"Write-Host 'Running: {command}' -ForegroundColor Cyan; "
+        f"Write-Host 'Running: {shown or command}' -ForegroundColor Cyan; "
         f"{run}"
         f"{_FIND_CODEX}; "
         "if ($c) { Write-Host ''; Write-Host 'Now signing in...' -ForegroundColor Cyan; "
