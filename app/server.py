@@ -14,6 +14,44 @@ log = get(__name__)
 # cannot keep the process alive.
 GRACEFUL_SHUTDOWN_S = 3
 
+#: Tried in order when the configured port is taken: the range the developer launcher
+#: has always fallen back to.
+FALLBACK_PORTS = range(8010, 8041)
+
+
+def port_is_free(host: str, port: int) -> bool:
+    import socket
+    import sys
+
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as probe:
+        if sys.platform != "win32":
+            # As uvicorn binds on POSIX, so a port our own last run left in TIME_WAIT
+            # reads as free. On Windows the same flag would mean "share a bound port".
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def choose_port(host: str, preferred: int) -> int:
+    """The configured port if it is free, else the first free one in the fallback range.
+
+    Chosen before the app is built, because the auth link, the host-header check and the
+    tray's Open all read the port from the config. uvicorn on a taken port raises
+    SystemExit inside its thread, where nobody sees it: the windowed build just vanished.
+    """
+    candidates: list[int] = [preferred, *FALLBACK_PORTS]
+    for port in candidates:
+        if port_is_free(host, port):
+            if port != preferred:
+                log.warning("port %d is in use; using %d", preferred, port)
+            return port
+    last = FALLBACK_PORTS[-1]
+    raise OSError(f"no free port: {preferred} and {FALLBACK_PORTS[0]}-{last} are all in use")
+
 
 class LocalServer:
     def __init__(self, app: Any, *, host: str = "127.0.0.1", port: int = 8000) -> None:

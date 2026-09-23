@@ -171,9 +171,12 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     installer runs. Use this one on a machine with no desktop, or to see the log.
     """
     setup()
-    services = build()
+    from app.server import LocalServer, choose_port
+
+    config = Config.load()
+    config.set("server.port", choose_port(config.server_host, config.server_port))
+    services = build(config)
     app = create_app(services)
-    from app.server import LocalServer
 
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
     start_background(services)

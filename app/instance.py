@@ -1,6 +1,7 @@
 """Single instance: a named mutex on Windows, an exclusive lock file elsewhere.
 
-A second launch exits 3 and asks the first to show itself.
+A second launch exits 3 after opening the first one's page in the browser: the running
+instance records its port in the app home for exactly this.
 """
 
 from __future__ import annotations
@@ -16,8 +17,40 @@ from app.log import get
 
 log = get(__name__)
 
-MUTEX_NAME = r"Global\upshot"
+# Local\, not Global\: one instance per signed-in user. A Global\ name let one user's
+# Upshot stop every other user's on the same PC, each with their own app home.
+MUTEX_NAME = r"Local\upshot"
 ALREADY_RUNNING = 3
+PORT_FILE = "server.port"
+
+
+def record_port(port: int, home: Path | None = None) -> Path:
+    """Where a second launch finds the running instance (the port may be a fallback)."""
+    target = (home or paths.app_home()) / PORT_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(str(port), encoding="utf-8")
+    return target
+
+
+def recorded_port(home: Path | None = None) -> int | None:
+    try:
+        port = int((home or paths.app_home()).joinpath(PORT_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return port if 0 < port < 65536 else None
+
+
+def show_running(home: Path | None = None, *, opener: Any = None) -> bool:
+    """Open the running instance's page, as a double-click on the icon is asking for."""
+    port = recorded_port(home)
+    if port is None:
+        return False
+    if opener is None:
+        import webbrowser
+
+        opener = webbrowser.open
+    opener(f"http://127.0.0.1:{port}/")
+    return True
 
 
 class SingleInstance:
