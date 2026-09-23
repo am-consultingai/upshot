@@ -256,6 +256,21 @@ def windows_events(since: float) -> list[str]:
     return [line.strip() for line in found.stdout.splitlines() if line.strip()]
 
 
+#: The processes a run starts: the app (from source or frozen), the test runner and the
+#: browser. A fault in anything else happened beside the run, not in it.
+OURS = ("python", "upshot", "node", "chrome", "msedge", "uv.exe")
+
+
+def our_faults(lines: list[str]) -> list[str]:
+    """The faults that are the run's own.
+
+    Any crash on the machine used to fail the run. On machine B an Intel thermal-driver
+    helper (`dptf_helper.exe`) crashed during job 008 with every spec green, and the run
+    reported failure for it. Those are still printed, but only ours count.
+    """
+    return [line for line in lines if any(name in line.lower() for name in OURS)]
+
+
 class Phases:
     """Wall-clock per phase, printed at the end.
 
@@ -411,15 +426,18 @@ def main(argv: list[str] | None = None) -> int:
     faults = windows_events(started)
     phases.mark("events")
     if faults:
-        # A fault during the run is a failure even if every spec passed: something died.
         print("\nWindows recorded a fault during this run:")
         for line in faults:
             print("  " + line)
+    if our_faults(faults):
+        # A fault in the run's own processes is a failure even if every spec passed:
+        # something died.
         code = code or 1
     summary = {
         "port": port,
         "ok": code == 0,
         "faults": faults,
+        "our_faults": our_faults(faults),
         "seconds": round(time.time() - started),
     }
     print("phases: " + phases.report())
