@@ -17,6 +17,10 @@ Pick the next step of the lowest open stage whose gate is not met, and do it. Th
 - **Stage gates** are in each child task. When a gate is met, comment the evidence on the task and set it to `complete`. Start the next stage.
 - **Bugs** found along the way: a ClickUp Bug in Backlog linked to the epic, with the evidence. Fix it in the stage it blocks.
 
+## If machine B's runner is broken
+
+B's heartbeat (`status/B.json`) older than 30 minutes while a job is pending, or a runner-level `error`: write `A-to-B-session NNN <topic>.md` to the Drive folder asking the backup session on B to diagnose (see RUNBOOK). No reply within an hour → "Needs you".
+
 ## Needs you (the user)
 
 Only for what cannot be done without them: sign-ins in a real browser (Google Calendar, ChatGPT/Codex, Claude — the user decided the run **waits** for these), admin rights on a machine, installing software on a host, deleting anything, a physical action (a USB headset, a real call), or a real decision. Then:
