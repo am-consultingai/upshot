@@ -1,8 +1,9 @@
 """Model resolution and download (DESIGN.md §11, §20.2).
 
-Order: configured ``model_path`` → the app home's ``model/`` directory → the repo id for
-the profile. With ``model_path`` pointed at an existing CTranslate2 directory, first run
-downloads nothing.
+Order: configured ``model_path`` → the app home's ``model/`` directory → the profile's
+repo, downloaded by ``app.asr.model_manager`` into ``models/asr/`` → the bare repo id.
+With ``model_path`` pointed at an existing CTranslate2 directory, first run downloads
+nothing.
 """
 
 from __future__ import annotations
@@ -66,6 +67,11 @@ def resolve(config: Config, *, device: str = "cpu") -> ModelChoice:
     repo = str(config.get("asr.model_repo") or "") or repo_for_profile(
         "gpu-live" if device == "cuda" else "cpu-deferred"
     )
+    from app.asr.model_manager import VERIFIED, target_for
+
+    managed = target_for(repo)
+    if looks_like_model_dir(managed) and (managed / VERIFIED).is_file():
+        return ModelChoice(str(managed), local=True, repo_id=repo)
     return ModelChoice(repo, local=False, repo_id=repo)
 
 
