@@ -237,7 +237,7 @@ def install_plan() -> InstallPlan | None:
         return None
     if powershell_language_mode() != "ConstrainedLanguage":
         command = "irm https://claude.ai/install.ps1 | iex"
-        return InstallPlan("native", command, _console(command, _QUIET_NOTE, spinner=True))
+        return InstallPlan("native", command, _console(command, _QUIET_NOTE))
     if winget_works():
         command = (
             f"winget install --id {WINGET_PACKAGE} "
@@ -263,36 +263,9 @@ _FIND_CLAUDE = (
 )
 
 
-#: A spinner, in a process of its own, painting into the same console.
-#:
-#: It watches the folder the installer downloads into and reports megabytes as they
-#: land. Crucially it never touches the installer: it is a sibling process, not a
-#: wrapper, so the installer's streams stay attached to the real console — which is the
-#: condition that has to hold (see ``_console``).
-_SPINNER = (
-    "$sp=$null; "
-    "try { $sp = Start-Process powershell -NoNewWindow -PassThru -ArgumentList "
-    "'-NoProfile','-NoLogo','-Command','"
-    "$ErrorActionPreference=''SilentlyContinue'';$f=''.  '',''.. '',''...'',''   "
-    "'';$i=0;$d=Join-Path $env:USERPROFILE "
-    "''.claude\\downloads'';while($true){$g=Get-ChildItem $d -Filter *.exe | Sort-Object "
-    "Length -Descending | Select-Object -First 1;$m=0; "
-    "if($g){$m=[math]::Round($g.Length/1MB)};$t=''  working'' + $f[$i%4];if($m -gt "
-    "0){$t=''  downloading '' + $m + '' MB of about 220'' + "
-    "$f[$i%4]};[Console]::Write([char]13 + $t.PadRight(48));$i++;Start-Sleep "
-    "-Milliseconds 200}"
-    "' } catch { }; "
-)
-
-
-#: Stop it however the install ended, and wipe its line.
-_SPINNER_STOP = (
-    "finally { if ($sp) { Stop-Process -Id $sp.Id -Force -ErrorAction SilentlyContinue }; "
-    "[Console]::Write([char]13 + (' ' * 48) + [char]13) } "
-)
-
 #: Anthropic's installer prints nothing until it has fetched a manifest, downloaded
-#: ~220 MB and hashed it. The spinner covers the wait; this says how long it will be.
+#: ~220 MB and hashed it. Nothing can be shown during that wait (see ``_console``), so
+#: this says up front how long it will be.
 _QUIET_NOTE = (
     "Write-Host 'Downloading Claude Code (about 220 MB). This takes a minute.' "
     "-ForegroundColor DarkGray; "
@@ -336,7 +309,7 @@ def login_console(argv: Sequence[str]) -> list[str]:
     ]
 
 
-def _console(command: str, note: str = "", *, spinner: bool = False) -> list[str]:
+def _console(command: str, note: str = "") -> list[str]:
     r"""Install and then sign in, in one visible window.
 
     **The installer runs in the foreground, and must.** A previous version ran it under
@@ -348,11 +321,21 @@ def _console(command: str, note: str = "", *, spinner: bool = False) -> list[str
     step aborted, and it left a zero-byte stub in ``.local\share\claude\versions\`` with
     no launcher: an install that reported success and produced nothing.
 
-    Activity is shown instead by a **sibling** process (``_SPINNER``) writing to the same
-    console. It observes the download folder from outside and never handles the
-    installer's output, so the condition that broke things cannot recur. Starting it is
-    wrapped in ``try``/``catch`` and stopping it in ``finally``: a spinner that fails to
-    start must not stop the install, and one that starts must not outlive it.
+    **Nothing may show progress during the download, either.** A sibling process used to
+    paint a spinner into this console — it watched the download folder from outside and
+    never touched the installer's streams, so it was safe by the rule above. Microsoft
+    Defender disagreed. ``irm <url> | iex`` together with a nested
+    ``Start-Process powershell -Command '<one-liner with escaped quotes and a while
+    loop>'`` is the shape of a fileless dropper, and Defender's classifier scored the
+    whole command line as ``Trojan:Win32/Commando.A!ml`` and refused to create the
+    process at all: ``CreateProcess`` returned ``WinError 5``, which reached the settings
+    page as "could not start the native install". Measured, not guessed — the same
+    command line with the spinner removed starts normally on the machine that blocked it
+    (machine B, 2026-09).
+
+    So the progress note is static, and this script must stay a single flat command with
+    no nested PowerShell in it. A future spinner belongs in the application's own UI,
+    where it is not part of a command line an antivirus has to judge.
 
     The login runs in the same window afterwards, because installing alone would send the
     user back to the application to discover there is a second step.
@@ -362,12 +345,10 @@ def _console(command: str, note: str = "", *, spinner: bool = False) -> list[str
     ``-ExecutionPolicy Bypass`` either — that governs script files, and this is
     ``-Command``.
     """
-    run = f"try {{ {command} }} {_SPINNER_STOP}" if spinner else f"{command}; "
     script = (
         f"Write-Host 'Running: {command}' -ForegroundColor Cyan; "
         f"{note}"
-        f"{_SPINNER if spinner else ''}"
-        f"{run}"
+        f"{command}; "
         f"{_FIND_CLAUDE}; "
         "if ($c) { Write-Host ''; Write-Host 'Now signing in...' -ForegroundColor Cyan; "
         f"{_LOGIN_GUIDANCE}"
