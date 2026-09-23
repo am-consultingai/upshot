@@ -1505,3 +1505,18 @@ is set up. The id in the URL stays `#summaries`, so existing links keep working.
 - A stage that is waiting on purpose — a spent Codex allowance, a sign-in — says why on
   the meeting page, from `/api/attention`, instead of looking stalled.
 
+**Addendum to D58, 2026-09-23 — why OpenAI's installer failed on stock Windows.** Inside the
+app's install window, `install.ps1` stopped at `RuntimeInformation::OSArchitecture` with
+"The property 'OSArchitecture' cannot be found on this object". The window is an
+*interactive* Windows PowerShell 5.1 (it stays open for the sign-in), so it loads PSReadLine;
+the PSReadLine 2.0.0 that ships inside Windows 10 and 11 carries its own internal
+`System.Runtime.InteropServices.RuntimeInformation` with only `OSDescription`, and once loaded
+that is what the bare type name resolves to. Found by logging the type's assembly from inside
+the failing window. Every probe run non-interactively had answered `X64`, which is why it
+took that. The installer now runs in a non-interactive PowerShell of its own inside the same
+window (`codex_cli.isolated`), where PSReadLine is never loaded; the window's own diagnostics
+ask for the type by its `mscorlib`-qualified name and report the PSReadLine version. The
+npm → winget fallback stays for any other failure. Verified on Windows 11 with the real
+installer up to the failing line; the full install on a clean machine is the Windows
+testing epic's job, because on a developer machine it would rewrite the user's PATH.
+
