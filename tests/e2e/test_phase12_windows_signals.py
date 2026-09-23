@@ -74,15 +74,22 @@ def test_registry_rearm() -> None:
 
     wakes: list[float] = []
     watcher = ConsentStoreWatcher(lambda: wakes.append(time.monotonic()), key=MICROPHONE_KEY)
-    watcher.start()
+    thread = watcher.start()
     try:
-        time.sleep(0.5)
+        # Armed first: on a cold machine loading pywin32 in the thread took longer than a
+        # fixed half second, and writes made before the first arm are never seen (B).
+        deadline = time.monotonic() + 15
+        while watcher.rearms == 0 and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert watcher.rearms > 0, f"the watcher never armed (thread alive: {thread.is_alive()})"
         for index in range(3):
             with winreg.CreateKey(
                 winreg.HKEY_CURRENT_USER, rf"{MICROPHONE_KEY}\NonPackaged\ma#selftest"
             ) as key:
                 winreg.SetValueEx(key, "LastUsedTimeStop", 0, winreg.REG_QWORD, index + 1)
-            time.sleep(0.6)
+            deadline = time.monotonic() + 3
+            while len(wakes) <= index and time.monotonic() < deadline:
+                time.sleep(0.05)
         assert len(wakes) >= 3, f"the one-shot notification was not re-armed: {wakes}"
         assert watcher.rearms >= 3
     finally:

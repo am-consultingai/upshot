@@ -142,6 +142,10 @@ def test_entry_point_runs_bootstrap(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
     assert (tmp_path / "home" / "index.db").exists()
+    # The installer's startup shortcut is the autostart; first run registers no task,
+    # which on Windows would also be a real one this test left behind.
+    steps = {step["name"]: step for step in payload["steps"]}
+    assert steps["logon_task"]["detail"] == "skipped: not requested"
 
 
 def test_packaging_files_exist() -> None:

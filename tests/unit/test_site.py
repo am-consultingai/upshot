@@ -137,7 +137,7 @@ def test_examples_are_marked_as_demo(page: Path) -> None:
     flow draws where a meeting goes. Neither puts words in anyone's mouth.
     """
     html, _ = _parse(page)
-    label = DEMO_LABEL[str(page.relative_to(SITE))]
+    label = DEMO_LABEL[page.relative_to(SITE).as_posix()]
     diagrams = ('class="wer"', 'class="flow"')
     figures = [
         f

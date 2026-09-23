@@ -137,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(text, encoding="utf-8")
     if not args.quiet:
+        # Details carry arrows and Hebrew; a Windows console or pipe on cp1252 cannot
+        # encode them, and the report is already written, so a character is not worth a crash.
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
         for check in report["checks"]:
             mark = "ok  " if check["ok"] else "FAIL"
             print(f"[{mark}] {check['name']}: {check['detail']}")

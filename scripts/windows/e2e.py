@@ -12,6 +12,11 @@ What it owns, and tears down again: a scratch app instance with its own data fol
 fixed auth secrets, a headless Chrome with its own profile, and the artifacts both leave
 behind. It never touches the app the user is running — different port, different
 `UP_HOME`, and deliberately not `run-app.ps1`, which stops every `app.main` it finds.
+
+WSL's default NAT networking has no shared loopback: this side cannot reach the app at
+all (machine B). There the harness stays on the Windows side for everything that talks
+to the app — the probes go through PowerShell and Playwright runs on Windows' own Node —
+which needs the checkout on a Windows drive (`/mnt/c/...`) with `npm ci` run there.
 """
 
 from __future__ import annotations
@@ -85,6 +90,52 @@ def to_windows(path: Path) -> str:
     return subprocess.run(
         ["wslpath", "-w", str(path)], capture_output=True, text=True, check=True
     ).stdout.strip()
+
+
+def networking_mode() -> str:
+    """``mirrored`` or ``nat`` (WSL's default), from ``wslinfo``; ``nat`` when unsure."""
+    try:
+        done = subprocess.run(
+            ["wslinfo", "--networking-mode"], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "nat"
+    return done.stdout.strip().lower() or "nat"
+
+
+def windows_listening_ports() -> set[int]:
+    found = powershell(
+        "(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue).LocalPort "
+        "| Sort-Object -Unique"
+    )
+    return {int(line) for line in found.split() if line.strip().isdigit()}
+
+
+def free_windows_port(start: int, busy: set[int]) -> int:
+    for candidate in range(start, start + 40):
+        if candidate not in busy:
+            return candidate
+    raise RuntimeError("no free port in range")
+
+
+def wait_for_windows(url: str, timeout: float) -> bool:
+    """`wait_for`, asked from the Windows side: under NAT only Windows sees its loopback."""
+    script = (
+        f"$deadline = (Get-Date).AddSeconds({int(timeout)}); "
+        "while ((Get-Date) -lt $deadline) { "
+        f"try {{ Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 '{url}' > $null; 'up'; exit }} "
+        "catch { Start-Sleep -Milliseconds 500 } }; 'down'"
+    )
+    return powershell(script, timeout=timeout + 30).endswith("up")
+
+
+def playwright_command(grep: str | None, *, windows_node: bool) -> list[str]:
+    command = ["npx", "playwright", "test", "--config", "playwright.windows.config.ts"]
+    if grep:
+        command += ["--grep", grep]
+    if windows_node:
+        return ["/mnt/c/Windows/System32/cmd.exe", "/c", *command]
+    return command
 
 
 def free_port(start: int) -> int:
@@ -250,9 +301,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no Windows venv at {venv_python} — run scripts/windows/run-app.cmd once")
         return 2
 
+    windows_node = networking_mode() != "mirrored"
+    if windows_node and not str(ROOT).startswith("/mnt/"):
+        print(
+            "WSL is in NAT mode, so the specs must run on Windows' Node, which cannot "
+            f"work in {ROOT}: use a checkout on a Windows drive, or mirrored networking"
+        )
+        return 2
+
     phases = Phases()
-    port = free_port(args.port)
-    cdp = free_port(args.cdp_port)
+    if windows_node:
+        busy = windows_listening_ports()
+        port = free_windows_port(args.port, busy)
+        cdp = free_windows_port(args.cdp_port, busy)
+        reachable = wait_for_windows
+    else:
+        port = free_port(args.port)
+        cdp = free_port(args.cdp_port)
+        reachable = wait_for
+    print(f"networking: {'NAT, specs on Windows Node' if windows_node else 'mirrored'}")
     home = to_wsl(where["local"]) / f"ma-e2e-{port}"
     profile = f"{where['temp']}\\ma-e2e-chrome-{port}"
     artifacts = ROOT / "artifacts"
@@ -266,8 +333,9 @@ def main(argv: list[str] | None = None) -> int:
         UP_E2E_CSRF=CSRF,
         UP_TEST_MODE="1",
         UP_HOME=to_windows(home),
+        UP_E2E_CDP=f"http://127.0.0.1:{cdp}",
         # Variables do not cross into a Windows process unless they are named here.
-        WSLENV="UP_E2E_PORT:UP_E2E_SESSION:UP_E2E_CSRF:UP_TEST_MODE:UP_HOME",
+        WSLENV="UP_E2E_PORT:UP_E2E_SESSION:UP_E2E_CSRF:UP_TEST_MODE:UP_HOME:UP_E2E_CDP",
     )
 
     phases.mark("discover")
@@ -297,26 +365,23 @@ def main(argv: list[str] | None = None) -> int:
 
     code = 1
     try:
-        if not wait_for(f"http://127.0.0.1:{port}/api/health", 90):
+        # A failed start falls through to teardown and the summary, so even that run
+        # leaves e2e-windows-summary.json behind.
+        if not reachable(f"http://127.0.0.1:{port}/api/health", 90):
             print(f"the app never came up on {port}; see artifacts/windows-app.log")
-            return 1
-        if not wait_for(f"http://127.0.0.1:{cdp}/json/version", 60):
+        elif not reachable(f"http://127.0.0.1:{cdp}/json/version", 60):
             print(f"no CDP endpoint on {cdp}")
-            return 1
-        phases.mark("startup")
-        print(f"app on 127.0.0.1:{port}, browser on 127.0.0.1:{cdp}")
-
-        command = ["npx", "playwright", "test", "--config", "playwright.windows.config.ts"]
-        if args.grep:
-            command += ["--grep", args.grep]
-        run = subprocess.run(
-            command,
-            cwd=ROOT / "frontend",
-            env={**environment, "UP_E2E_CDP": f"http://127.0.0.1:{cdp}"},
-            check=False,
-        )
-        code = run.returncode
-        phases.mark("tests")
+        else:
+            phases.mark("startup")
+            print(f"app on 127.0.0.1:{port}, browser on 127.0.0.1:{cdp}")
+            run = subprocess.run(
+                playwright_command(args.grep, windows_node=windows_node),
+                cwd=ROOT / "frontend",
+                env=environment,
+                check=False,
+            )
+            code = run.returncode
+            phases.mark("tests")
     finally:
         if not args.keep:
             # By the profile directory and the port: both are unique to this run, so a
