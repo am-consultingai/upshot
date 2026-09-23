@@ -23,6 +23,7 @@ from app.db.dao import GlossaryTerm, Meeting, capabilities
 from app.log import get
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
 from app.services import Services
+from app.version import build_info
 
 log = get(__name__)
 
@@ -234,6 +235,8 @@ def status(request: Request) -> dict[str, Any]:
         "storage_bytes": storage_bytes(svc),
         "fts": capabilities(svc.conn).fts,
         "now": iso(svc.clock.now()),
+        # Which build answered: a report from a tester's machine names its commit.
+        "build": build_info().as_dict(),
     }
 
 

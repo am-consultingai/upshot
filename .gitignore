@@ -31,6 +31,13 @@ tests/transcripts/
 artifacts/
 frontend/tsconfig.tsbuildinfo
 
+# Written by packaging/build.ps1 for the freeze: ffmpeg, the version/commit stamp, and
+# the public half of the test signing certificate.
+vendor/
+app/build_info.json
+*.cer
+build-*.log
+
 # The Google OAuth client ships inside the application but never in git: this repository
 # is public, and a client posted here gets picked up by leak scanners and disabled
 # (app/gcal/client.py).
