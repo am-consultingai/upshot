@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import sys
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -19,6 +20,7 @@ from app.detect.sources import (
     FakeSessionSource,
     FakeTitleSource,
     FakeVadSource,
+    MicHolder,
     Sources,
 )
 from app.meetings import MeetingService
@@ -417,6 +419,43 @@ def test_waking_takes_the_endpoints_back_from_the_settings_meters(tmp_path: Path
         assert meter.active("me") is None, "the preview stream was not released"
     finally:
         meter.release()
+
+
+def test_upshot_holding_the_microphone_is_not_a_meeting(tmp_path: Path) -> None:
+    """The meters and the armed recorder hold the microphone from Upshot's own process.
+
+    On machine B (job 013) the detector woke on its own python.exe, took the endpoints
+    back from the meters, which reopened them and woke it again: 477 opens in 22 s, and
+    a manual 3 s recording kept 13 s of pre-roll.
+    """
+    from app.audio import monitor as meter
+    from app.detect.detector import _exe_key
+
+    h = build(tmp_path, detection__mode="shadow")
+    own = r"C:\upshot-work\win\python\cpython-3.14.7-windows-x86_64-none\python.exe"
+    h.detector.own = h.detector.own | {_exe_key(own)}
+    meter.acquire(h.detector.config, None, "me")
+    try:
+        h.mic.hold(own)
+        h.vad.set(me=True, them=True)
+        h.seconds(3)
+        assert h.detector.state is DetectorState.IDLE
+        assert h.recorder.armed is False
+        assert meter.active("me") is not None, "the meter kept its stream"
+        assert h.dao.detector_events() == []
+        # A real meeting app alongside it still wakes the detector.
+        h.mic.holders = [MicHolder(process=own), MicHolder(process="Zoom.exe")]
+        h.seconds(1)
+        assert h.detector.state is DetectorState.AWAKE
+        assert h.detector.wake is not None and h.detector.wake.process == "Zoom.exe"
+    finally:
+        meter.release()
+
+
+def test_the_running_interpreter_counts_as_upshot() -> None:
+    from app.detect.detector import _exe_key, own_executables
+
+    assert _exe_key(sys.executable) in own_executables()
 
 
 # ------------------------------------------- furniture vs. an app joining a call

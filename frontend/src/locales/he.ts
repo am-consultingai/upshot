@@ -116,6 +116,8 @@ export const he: Record<MessageKey, string> = {
   "settings.micLevel": "עוצמת קלט",
   "settings.micHint": "דברו — הפס אמור לזוז.",
   "settings.micSilent": "אין אות. בדקו שנבחר המיקרופון הנכון ושהוא אינו מושתק.",
+  "settings.loopbackHint": "השמיעו משהו במחשב — הפס אמור לזוז.",
+  "settings.loopbackSilent": "שום דבר לא מתנגן. זה תקין עד ששיחה או סרטון משמיעים קול.",
   "settings.micClipped": "חזק מדי — האות נחתך.",
   "settings.micRecording": "מוצגת עוצמת ההקלטה החיה.",
   "settings.micUnavailable": "לא נמצא מיקרופון במחשב הזה.",

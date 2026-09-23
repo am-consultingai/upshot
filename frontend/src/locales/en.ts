@@ -125,6 +125,9 @@ export const en = {
   "settings.micHint": "Speak — the bar should move.",
   "settings.micSilent":
     "No signal. Check that the right microphone is selected and not muted.",
+  "settings.loopbackHint": "Play something on this computer — the bar should move.",
+  "settings.loopbackSilent":
+    "Nothing is playing. That is normal until a call or a video makes a sound.",
   "settings.micClipped": "Too loud — the signal is clipping.",
   "settings.micRecording": "Showing the live recording level.",
   "settings.micUnavailable": "No microphone found on this machine.",

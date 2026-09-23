@@ -9,6 +9,8 @@ Windows APIs and no real time.
 from __future__ import annotations
 
 import json
+import os
+import sys
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -41,6 +43,25 @@ class DetectorState(StrEnum):
 
 #: A calendar meeting counts as *starting* for this long after its start time.
 STARTING_WINDOW_S = 300.0
+
+
+def _exe_key(path: str) -> str:
+    return os.path.normcase(os.path.normpath(path)) if path else ""
+
+
+def own_executables() -> frozenset[str]:
+    """The executables Upshot itself runs as, in ConsentStore spelling.
+
+    The settings meters and an armed recorder hold the microphone from this very
+    process, and Windows lists it like any other holder. Taken for a meeting app, it
+    armed the recorder, which took the endpoints back from the meters, which reopened
+    them, which woke the detector again: about twenty reopens a second, no level ever
+    shown, and a manual recording padded with a minute of pre-roll (machine B, job 013).
+    Both paths count: under a venv, Windows reports the base interpreter, not the
+    launcher in ``sys.executable``.
+    """
+    paths = {sys.executable, getattr(sys, "_base_executable", "")}
+    return frozenset(_exe_key(path) for path in paths if path)
 
 
 class Outcome(StrEnum):
@@ -86,6 +107,8 @@ class Detector:
         self.calendar = calendar
         #: Events already announced as starting, so each is said once.
         self.announced: set[tuple[str, str]] = set()
+        #: Holders that are Upshot itself, never a meeting (see ``own_executables``).
+        self.own = own_executables()
         self.state = DetectorState.IDLE
         self.wake: Wake | None = None
         self.meeting_id: str | None = None
@@ -222,7 +245,11 @@ class Detector:
                 self.wake = None
                 self.state = DetectorState.IDLE
             return self.state
-        holders = self.sources.mic.current_holders()
+        holders = [
+            holder
+            for holder in self.sources.mic.current_holders()
+            if _exe_key(holder.process) not in self.own
+        ]
         names = {holder.process for holder in holders}
         self._note_acquisitions(holders)
         if self.state is DetectorState.IDLE:

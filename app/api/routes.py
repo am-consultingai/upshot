@@ -1127,35 +1127,39 @@ async def audio_level(
     async def stream() -> Any:
         from app.audio import monitor as meter
 
-        holding = False
+        holding: Any = None  # the monitor this client joined
         deadline = time.monotonic() + LEVEL_MAX_S
         try:
             while time.monotonic() < deadline:
-                recording = recorder is not None and recorder.is_active()
+                # Armed counts, not only recording: a woken detector holds both endpoints
+                # for the pre-roll, and a meter reopening them would fight it (job 013).
+                recording = recorder is not None and recorder.armed
                 if recording:
                     # The recorder owns the endpoint now. Drop the preview stream rather
                     # than hold a second one open, and report the level being recorded.
-                    if holding:
-                        await asyncio.to_thread(meter.release, track)
-                        holding = False
+                    if holding is not None:
+                        await asyncio.to_thread(meter.release, track, holding)
+                        holding = None
                     assert recorder is not None
                     level = float(recorder.levels().get(track, 0.0))
                     yield _level_event(level, level, source="recorder")
                 else:
-                    if not holding:
+                    if holding is None:
                         try:
-                            await asyncio.to_thread(
+                            holding = await asyncio.to_thread(
                                 meter.acquire, svc.config, device if track == "me" else None, track
                             )
                         except Exception as exc:
                             yield _sse({"error": str(exc)})
                             return
-                        holding = True
                     current = meter.active(track)
-                    reading = current.read() if current is not None else None
-                    if reading is None:
-                        holding = False
+                    if current is None or current is not holding:
+                        # Closed for the recorder, or replaced for another device: join
+                        # whatever runs now rather than read a stream this client left.
+                        holding = None
+                        await asyncio.sleep(LEVEL_INTERVAL_S)
                         continue
+                    reading = current.read()
                     if reading.error:
                         yield _sse({"error": reading.error})
                         return
@@ -1166,13 +1170,13 @@ async def audio_level(
             # Tell the client this was deliberate, so it closes instead of reconnecting.
             yield _sse({"done": True})
         finally:
-            if holding:
+            if holding is not None:
                 # Synchronously, NOT via `await asyncio.to_thread`: a browser closing the
                 # tab cancels this task, and awaiting anything in a cancelled task raises
                 # CancelledError at the await — so the release never ran and the
                 # microphone stayed open until the backstop fired. The monitor thread
                 # polls its stop flag every 50 ms, so this returns promptly.
-                meter.release(track)
+                meter.release(track, holding)
 
     return StreamingResponse(
         stream(),
