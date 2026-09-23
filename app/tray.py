@@ -223,13 +223,19 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     setup()
     guard = SingleInstance()
     if not guard.acquire():
-        log.error("Upshot is already running")
+        from app.instance import show_running
+
+        opened = show_running()
+        log.info("Upshot is already running%s", "; opened its page" if opened else "")
         return ALREADY_RUNNING
+    from app.config import Config
     from app.main import create_app, start_background
-    from app.server import LocalServer
+    from app.server import LocalServer, choose_port
     from app.services import build
 
-    services = build()
+    config = Config.load()
+    config.set("server.port", choose_port(config.server_host, config.server_port))
+    services = build(config)
     app = create_app(services)
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
     server.start()
@@ -239,8 +245,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     start_background(services)
     from app import paths
     from app.api.security import write_launcher_key
+    from app.instance import record_port
 
     write_launcher_key(services.auth, paths.app_home())
+    record_port(server.bound_port)
     tray = TrayApp(services)
     try:
         tray.run()
