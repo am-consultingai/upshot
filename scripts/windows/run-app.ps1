@@ -262,7 +262,7 @@ try {
     $modelOk = ($ModelPath -ne "") -and (Test-Path -LiteralPath $modelBin)
     if (-not $modelOk) {
         if ($ModelPath -ne "") { Write-Warn "no model.bin under: $ModelPath" }
-        $plan += "the transcription model (~1.6-3 GB, one time)"
+        $plan += "the transcription model (~1.6-3 GB, one time, during the first transcription)"
     }
 
     $needUi = -not (Test-Path "frontend\dist\index.html")
@@ -510,9 +510,7 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
     $script:started = $true
     Write-Good "opening your default browser - no need to click the link below"
     Write-Host "  $url"
-    Write-Host "  (the ?k= part authorizes the browser once; afterwards just use"
-    Write-Host "   http://127.0.0.1:$Port/. Another browser, or another browser profile,"
-    Write-Host "   needs its own link: press N in this window for a fresh one.)"
+    Write-Host "  (any browser on this computer can open http://127.0.0.1:$Port/ directly)"
     Start-Process $url
 
     Write-Host ""
@@ -526,7 +524,14 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
     Write-Host "    Start recording, speak into your mic, play audio through your speakers,"
     Write-Host "    wait 15+ seconds, then Stop. ME is your microphone, THEM is system audio."
     Write-Host ""
-    Write-Host "    First transcription loads the model and may take a minute."
+    if ($modelOk) {
+        Write-Host "    First transcription loads the model and may take a minute."
+    } else {
+        # Job 007 on machine B: 1.6 GB arrived inside the first meeting's TRANSCRIBING,
+        # about three minutes with nothing on screen, which reads as a hang.
+        Write-Host "    First transcription downloads the model first (~1.6 GB, no progress"
+        Write-Host "    is shown): on a slow line the first meeting takes several minutes."
+    }
     Write-Host "    Recordings: $HomeDir\meetings"
     Write-Host ""
     Write-Host "    Logs (plain Windows paths - send these when something goes wrong):"
@@ -536,7 +541,7 @@ print('  %-18s %s / %s' % ('asr device', device, compute))
         Write-Host "    Summaries are placeholders for this run (-Provider was set to fake)."
     }
     Write-Host ""
-    Write-Host "  N prints a fresh link for another browser. Ctrl+C stops the app." -ForegroundColor White
+    Write-Host "  Ctrl+C stops the app." -ForegroundColor White
     Write-Host ""
 
     # Tail the log while watching the process. `Get-Content -Wait` on its own waits

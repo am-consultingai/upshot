@@ -5,6 +5,7 @@ UP_E2E_PORT=8123 UP_E2E_SESSION=... uv run python scripts/e2e_server.py
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -13,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import default_config
+from app.gcal.client import CLIENT_ENV
 from app.log import setup
 from app.main import create_app
 from app.server import LocalServer
@@ -24,6 +26,16 @@ def main() -> int:
     home = Path(os.environ.get("UP_HOME") or tempfile.mkdtemp(prefix="ma-e2e-"))
     home.mkdir(parents=True, exist_ok=True)
     os.environ["UP_HOME"] = str(home)
+    # The specs assume a build that can connect a calendar. The real client file is
+    # gitignored, so a fresh clone has none (job 007 on machine B): give every run the
+    # same stand-in, which no spec ever sends to Google.
+    if not os.environ.get(CLIENT_ENV):
+        stand_in = home / "e2e_google_oauth_client.json"
+        stand_in.write_text(
+            json.dumps({"installed": {"client_id": "e2e-client", "client_secret": "e2e-secret"}}),
+            encoding="utf-8",
+        )
+        os.environ[CLIENT_ENV] = str(stand_in)
     setup(to_file=False)
 
     # argv wins over the environment, and the harness always passes it. Not for
