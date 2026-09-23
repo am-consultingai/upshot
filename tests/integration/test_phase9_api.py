@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.api.security import CSRF_HEADER, SESSION_COOKIE
+from app.api.security import CSRF_COOKIE, CSRF_HEADER
 from app.pipeline.states import MeetingState
 from tests.fixtures.api import build_harness, serve
 
@@ -47,29 +47,22 @@ def test_host_header_allowed(api) -> None:  # type: ignore[no-untyped-def]
         assert client.get("/api/status", headers={"Host": host}).status_code == 200
 
 
-def test_requires_cookie(api) -> None:  # type: ignore[no-untyped-def]
+def test_any_browser_is_let_in_and_handed_the_csrf_cookie(api) -> None:  # type: ignore[no-untyped-def]
+    """The sign-in gate is gone (D57): a browser with no cookie gets the app, not a 401.
+
+    What it also gets is the CSRF cookie, because the UI has to echo it on every change —
+    and without the header a change is still refused, which is what keeps websites out.
+    """
     client = api.client(authorized=False)
     response = client.get("/api/status")
-    assert response.status_code == 401
-    assert "tray" in response.json()["detail"]
-    assert "location" not in {key.lower() for key in response.headers}
-
-
-def test_token_exchange_once(api) -> None:  # type: ignore[no-untyped-def]
-    from fastapi.testclient import TestClient
-
-    token = api.services.auth.issue_token()
-    client = TestClient(api.app, base_url=api.base_url)
-    first = client.get(f"/?k={token}")
-    assert first.status_code == 200
-    assert SESSION_COOKIE in first.cookies or SESSION_COOKIE in client.cookies
-
-    other = TestClient(api.app, base_url=api.base_url)
-    second = other.get(f"/?k={token}")
-    assert second.status_code == 401
-    assert "already been used" in second.json()["detail"]
-    assert "press N" in second.json()["detail"], "and it says where the next one comes from"
-
+    assert response.status_code == 200
+    assert CSRF_COOKIE in response.cookies
+    csrf = response.cookies[CSRF_COOKIE]
+    assert client.post("/api/detector/ignore", json={"process": "x.exe"}).status_code == 403
+    ok = client.post(
+        "/api/detector/ignore", json={"process": "x.exe"}, headers={"X-CSRF-Token": csrf}
+    )
+    assert ok.status_code == 200
 
 def test_the_launcher_gets_a_fresh_link_with_its_key(api, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """A second browser profile needs its own link. The launcher asks for one with the
@@ -91,16 +84,6 @@ def test_the_launcher_gets_a_fresh_link_with_its_key(api, tmp_path) -> None:  # 
     browser = TestClient(api.app, base_url=api.base_url)
     assert browser.get(first.removeprefix(f"http://127.0.0.1:{port}")).status_code == 200
     assert browser.get("/api/status").status_code == 200, "the link authorized that browser"
-
-
-def test_an_unauthorized_browser_gets_a_page_that_says_what_to_do(api) -> None:  # type: ignore[no-untyped-def]
-    client = api.client(authorized=False)
-    page = client.get("/settings", headers={"Accept": "text/html,application/xhtml+xml"})
-    assert page.status_code == 401
-    assert page.headers["content-type"].startswith("text/html")
-    assert "Open dashboard" in page.text and "press <b>N</b>" in page.text
-    # The UI's own fetches still get JSON they can read.
-    assert client.get("/api/status", headers={"Accept": "text/html"}).json()["detail"]
 
 
 def test_spent_token_does_not_lock_out_an_authorized_browser(api) -> None:  # type: ignore[no-untyped-def]
@@ -399,19 +382,6 @@ def test_import_rejects_a_file_it_cannot_decode(api, tmp_path: Path) -> None:  #
         response = api.client().post("/api/import", files={"file": ("broken.wav", handle)})
     assert response.status_code in (415, 500)
     assert api.services.dao.list_meetings(state="DISCARDED") or response.status_code == 500
-
-
-def test_foreign_token_names_the_real_cause(api) -> None:  # type: ignore[no-untyped-def]
-    """A token this process never minted means another instance owns the port. Saying
-    "already used" sent us hunting the wrong problem for an afternoon."""
-    from fastapi.testclient import TestClient
-
-    client = TestClient(api.app, base_url=api.base_url)
-    response = client.get("/?k=aToKenFromSomeOtherProcess")
-    assert response.status_code == 401
-    detail = response.json()["detail"]
-    assert "not issued by the app answering on this port" in detail
-    assert "already been used" not in detail
 
 
 def test_every_endpoint_the_ui_calls_exists() -> None:

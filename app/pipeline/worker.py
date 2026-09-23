@@ -10,13 +10,14 @@ import logging
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
-from app.errors import PermanentError, Preempted
+from app.errors import Deferred, PermanentError, Preempted
 from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
 from app.pipeline.context import StageContext
@@ -153,6 +154,9 @@ class Worker:
                 self.stats.preempted += 1
                 log.info("stage %s preempted by the recorder", job.stage)
                 return
+            except Deferred as exc:
+                self._on_deferred(job, exc)
+                return
             except PermanentError as exc:
                 self._on_failure(job, exc, permanent=True)
                 return
@@ -197,6 +201,24 @@ class Worker:
             if current != target and is_legal(current, target):
                 self.dao.set_state(job.meeting_id, target)
         self.queue.enqueue_next_stage(job)
+
+    def _on_deferred(self, job: Job, exc: Deferred) -> None:
+        """Park the job until the provider says it can try again. The meeting stays put.
+
+        A stated reset time is trusted up to a week — the longest cap a plan announces —
+        and one that has already passed, or none at all, means the class's default wait.
+        """
+        now = self.clock.now()
+        until = exc.retry_at
+        if until is not None and until.tzinfo is None:
+            until = until.astimezone()
+        if until is None or until <= now:
+            until = now + timedelta(seconds=exc.default_wait_s)
+        # In the clock's own offset: `not_before` is compared as a string, and a
+        # timestamp written in another offset sorts wrongly against every other one.
+        until = min(until, now + timedelta(days=7)).astimezone(now.tzinfo)
+        self.queue.defer(job, str(exc), until=until)
+        log.warning("stage %s deferred until %s: %s", job.stage, until.isoformat(), exc)
 
     def _on_failure(self, job: Job, exc: BaseException, *, permanent: bool) -> None:
         updated = self.queue.fail(job, exc, permanent=permanent)

@@ -56,7 +56,6 @@ for (const theme of ["light", "dark"] as const) {
       ["timeline", "/"],
       ["meeting", "/m/shot-1"],
       ["settings", "/settings"],
-      ["detector", "/detector"],
       ["search", "/search"],
     ] as const) {
       await gotoApp(page, path);

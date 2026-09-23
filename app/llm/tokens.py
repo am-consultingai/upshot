@@ -57,3 +57,14 @@ def tokens_per_word(text: str, counter: TokenCounter) -> float:
     if words == 0:
         return 0.0
     return counter.count(text) / words
+
+
+def estimate_tokens(text: str) -> int:
+    """For a provider with no token endpoint (the subscription CLIs): an estimate, erring high.
+
+    DESIGN.md §9.1 warns that a character heuristic silently blows the window on Hebrew,
+    so this claims fewer characters per token than any real tokenizer does — more tokens
+    per text means smaller windows, never over-full ones. Window sizing is approximate
+    wherever this is used.
+    """
+    return int(len(text) / 2.0) + 1

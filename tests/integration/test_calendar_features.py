@@ -492,6 +492,26 @@ def test_no_address_reaches_the_prompt_or_a_log_line(
         assert "@example.com" not in text and "@gmail.com" not in text
 
 
+def test_the_page_gets_the_addresses_and_nothing_else_does(world: World) -> None:
+    """D46: the meeting page names people *and* their addresses, because "which Dana"
+    is a question a display name cannot answer and replying to one of them is the next
+    thing anyone does. The address goes no further than that response — `as_prompt`
+    still names people only, and nothing writes a `Person` anywhere."""
+    from app.gcal.invite import parse
+
+    invite = parse(g_event("standup", NOW))
+    people = {person["name"]: person for person in invite.as_api()["people"]}
+    assert people["Dana Levi"]["email"] == "dana.levi@example.com"
+    assert people["יוסי כהן"]["email"] == "yossi@example.com"
+    # The user is on the list — their own line is how they check they are reading the
+    # right invitation — and is marked as themselves and as the organizer.
+    assert people["Me"]["self"] is True and people["Me"]["organizer"] is True
+    # ...but still not an attendee of their own meeting, and not in the prompt.
+    assert "me@example.com" not in invite.as_prompt()
+    assert "dana.levi@example.com" not in invite.as_prompt()
+    assert "Invited: Dana Levi, יוסי כהן" in invite.as_prompt()
+
+
 def test_the_invitation_is_never_stored(world: World, tmp_path: Path) -> None:
     """It is read when wanted and not kept: the agenda lives in the calendar, and the
     recordings database stays a database of recordings."""
@@ -521,7 +541,9 @@ def test_the_switch_turns_the_invitation_off(world: World, tmp_path: Path) -> No
     prompt = _summarize_prompt(world, tmp_path, **{"calendar.prompt_invite": False})
     assert "from the calendar invitation" not in prompt
     assert "Q4 salaries" not in prompt and "the-plan.pdf" not in prompt
-    assert "Transcript:" not in prompt, "with no context the transcript is the whole message"
+    # The meeting's own date is not the calendar's and always goes (D50): "by Thursday"
+    # cannot be resolved without it.
+    assert prompt.startswith("Date: "), "the date leads, whatever the calendar switch says"
 
 
 def test_the_shipped_prompt_knows_what_the_invitation_is() -> None:
