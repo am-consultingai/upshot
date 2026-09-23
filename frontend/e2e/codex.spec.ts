@@ -21,6 +21,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const FOLDER = join(tmpdir(), `upshot-fake-codex-${process.pid}`);
 const PATHS: Record<string, string> = {};
 
+// The fake is a shebang script with sh wrappers, as in the Python tests, which skip it
+// on Windows for the same reason.
+test.skip(process.platform === "win32", "the fake Codex CLI is a shebang script");
+
 test.beforeAll(() => {
   mkdirSync(FOLDER, { recursive: true });
   execFileSync(
