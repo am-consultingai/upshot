@@ -743,7 +743,8 @@ Three layers, later overriding earlier:
 - **CSRF:** double-submit token on all mutating routes; `SameSite=Strict` is the primary defense.
 - **CORS:** no `Access-Control-Allow-Origin` header at all.
 - **Audio streaming** is range-request only, gated by the same cookie.
-- **Single instance:** named mutex `Global\upshot`; second launch focuses the first.
+- **Single instance:** named mutex `Local\upshot` (one per signed-in user); a second launch
+  opens the first one's page, from the port it recorded in `<home>\server.port`.
 
 ---
 
