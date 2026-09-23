@@ -467,7 +467,10 @@ def test_the_interpreter_behind_a_link_counts_as_upshot(
     real = tmp_path / "cpython-3.14.7" / "python.exe"
     real.parent.mkdir()
     real.write_bytes(b"")
-    (tmp_path / "cpython-3.14").symlink_to(real.parent, target_is_directory=True)
+    try:
+        (tmp_path / "cpython-3.14").symlink_to(real.parent, target_is_directory=True)
+    except OSError:
+        pytest.skip("this Windows account may not create symlinks (no Developer Mode)")
     monkeypatch.setattr(sys, "_base_executable", str(tmp_path / "cpython-3.14" / "python.exe"))
 
     assert _exe_key(str(real)) in own_executables()
