@@ -466,7 +466,12 @@ def test_configured_cuda_dir_selects_the_gpu(tmp_path: Path) -> None:
     config.set("asr.compute_type", "int8")  # Pascal: DESIGN.md §20.5
     env: dict[str, str] = {}
     device, compute, registered = probe_device(
-        config, app_home=tmp_path / "home", search_path=[], system_dirs=(), environ=env
+        config,
+        app_home=tmp_path / "home",
+        search_path=[],
+        system_dirs=(),
+        environ=env,
+        vram=lambda: 8192,  # a GTX 1080; the gate itself is test_first_run_setup's
     )
     assert device == "cuda"
     assert compute == "int8"
