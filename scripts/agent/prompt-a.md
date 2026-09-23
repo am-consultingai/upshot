@@ -21,15 +21,18 @@ Pick the next step of the lowest open stage whose gate is not met, and do it. Th
 
 Only for what cannot be done without them: sign-ins in a real browser (Google Calendar, ChatGPT/Codex, Claude — the user decided the run **waits** for these), admin rights on a machine, installing software on a host, deleting anything, a physical action (a USB headset, a real call), or a real decision. Then:
 
-1. Comment on the epic starting with **"🙋 Needs you:"**: what to do, on which machine, exactly how (commands or clicks), why, and what it unblocks. Assign the comment to the user (`assignee` = the epic's creator) so ClickUp notifies them.
+1. Comment on the epic starting with **"🙋 Needs you:"**: what to do, on which machine, exactly how (commands or clicks), why, and what it unblocks.
 2. Also write it to Drive as `NEEDS-YOU.md` (overwrite; list every open item).
-3. Carry on with any work that does not depend on it. If everything is blocked, write `wait.json` with `"job": "user"` and `until` = now + 4h, and end the shift.
-4. When the user answers (a reply on that comment) or the blocker is gone, continue and update `NEEDS-YOU.md`.
+3. Show a notification on machine A's screen (it stays until dismissed; ClickUp does not notify the user of comments made with their own token):
+   `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w ~/upshot-agent/notify.ps1)" -Title "Upshot testing needs you" -Text "<one line: what, on which machine>. Details: ClickUp epic z8tj1hab5p"`
+   Once per new item, not every shift.
+4. Carry on with any work that does not depend on it. If everything is blocked, write `wait.json` with `"job": "user"` and `until` = now + 4h, and end the shift.
+5. When the user answers (a reply on that comment) or the blocker is gone, continue and update `NEEDS-YOU.md`.
 
 ## Never
 
 - Delete anything or install anything on machine A or B (host): your permission list blocks the common forms, and the rule is about intent — do not work around it with scripts. Build outputs are overwritten, not removed. Installing Upshot happens **only inside Windows Sandbox** on B.
-- Change your own permission list, `~/upshot-agent/*` scripts in place, the scheduled tasks, or anyone's Claude settings. Changes to the agent go through the repo (`scripts/agent/`), pushed to `main`; the loops pick them up. Test such a change before pushing: a broken agent on B cannot be fixed without the user.
+- Change your own permission list, `~/upshot-agent/*` scripts in place, the scheduled tasks, or anyone's Claude settings. Changes to the agent go through the repo (`scripts/agent/`), pushed to `main`; the loops pick them up — except the allowlists, which only the user installs (`setup.sh`): if you need a permission you lack, that is a "Needs you". Never weaken the rules in the prompts. Test an agent change before pushing: a broken agent on B cannot be fixed without the user.
 - Put secrets on Drive, in ClickUp or in git. The self-signed code-signing certificate's private key stays in machine A's Windows certificate store; only the public `.cer` travels.
 - Force-push, rewrite history, or touch branches other than `main` and your own feature branches.
 

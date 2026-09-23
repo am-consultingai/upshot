@@ -12,7 +12,9 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:$PAT
 exec 9>"$HOME_DIR/loop.lock"
 flock -n 9 || exit 0   # already running; the task's 15-minute repeat is only a watchdog
 
-FILES="agent.py drive.py loop.sh prompt-$ROLE.md allowlist-$ROLE.json RUNBOOK.md"
+# The allowlist is NOT refreshed: it is what the user installed with setup.sh, and an agent
+# must not be able to widen its own permissions by pushing to main.
+FILES="agent.py drive.py notify.ps1 loop.sh prompt-$ROLE.md RUNBOOK.md"
 
 refresh() {
   git -C "$REPO" fetch -q origin main 2>>"$HOME_DIR/logs/agent.log" || return 0
@@ -21,7 +23,7 @@ refresh() {
     git -C "$REPO" show "origin/main:scripts/agent/$f" >"$tmp/$f" 2>/dev/null || return 0
   done
   # Never install a broken agent: keep the last good copy if this one does not compile.
-  if python3 -m py_compile "$tmp/agent.py" "$tmp/drive.py" && python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$tmp/allowlist-$ROLE.json"; then
+  if python3 -m py_compile "$tmp/agent.py" "$tmp/drive.py"; then
     # cp then mv: a new inode, so the bash running this very file keeps reading the old one.
     for f in $FILES; do cp "$tmp/$f" "$HOME_DIR/.$f.new" && mv -f "$HOME_DIR/.$f.new" "$HOME_DIR/$f"; done
     chmod +x "$HOME_DIR/loop.sh"

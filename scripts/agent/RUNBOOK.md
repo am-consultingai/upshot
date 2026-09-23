@@ -15,7 +15,7 @@ A and B only talk through the Google Drive folder **`My Drive/projects/upshot`**
 
 ## How each loop works
 
-`loop.sh` runs forever (one copy at a time; the scheduled task re-launches it every 15 minutes if it died, and at every sign-in). Before each cycle it copies `scripts/agent/*` from `origin/main`, so an agent fix pushed by A reaches both machines within minutes. A copy that does not compile is not installed.
+`loop.sh` runs forever (one copy at a time; the scheduled task re-launches it every 15 minutes if it died, and at every sign-in). Before each cycle it copies `scripts/agent/*` from `origin/main`, so an agent fix pushed by A reaches both machines within minutes. A copy that does not compile is not installed. The allowlists are the exception: they change only when the user re-runs `setup.sh`, so no agent can widen its own permissions.
 
 - **A**: each cycle is one **shift**, a headless `claude -p` session with `prompt-a.md`. The shift reads this file, `~/upshot-agent/journal.md`, the epic and Drive, does the next step, writes the journal, and ends. When it has posted a job it writes `~/upshot-agent/wait.json`, and no new shift starts until the job's result arrives (or the wait expires), so waiting costs nothing.
 - **B**: each cycle takes the lowest-numbered job in `jobs/` that has no `results/<id>/result.json`, and runs a headless `claude -p` session with `prompt-b.md` in `~/upshot-agent/jobs/<id>/`. A job that was interrupted by a restart is resumed.
@@ -44,7 +44,7 @@ A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting)
 ## Rules both agents follow
 
 - **Permissions.** Each machine runs Claude in `dontAsk` mode with an allowlist (`allowlist-a.json`, `allowlist-b.json`). Anything not on it is refused, not asked. The user decided: **no deleting and no installing on either host without them**. Installs happen only inside **Windows Sandbox**, which is discarded on close. Anything else that needs the user goes through "Needs you".
-- **Needs you.** A comments on the epic starting with "🙋 Needs you:" and assigns the comment to the user, so ClickUp notifies them, and keeps `NEEDS-YOU.md` on Drive. The run keeps working on anything not blocked. The user answers by replying to the comment.
+- **Needs you.** A comments on the epic starting with "🙋 Needs you:", keeps `NEEDS-YOU.md` on Drive, and puts a notification on machine A's screen (`notify.ps1`) that stays until dismissed. The ClickUp account is the user's own, so ClickUp does not notify them of the agent's comments. The run keeps working on anything not blocked. The user answers by replying to the comment.
 - **No secrets** in Drive, ClickUp or git. The self-signed certificate's private key never leaves A's Windows certificate store.
 - **Three strikes.** A step that has failed in three shifts in a row becomes a "Needs you" instead of a fourth try.
 
