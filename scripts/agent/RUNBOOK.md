@@ -71,6 +71,7 @@ A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting)
 
 - **Pause both**: create a file named `STOP` in the Drive folder (from any device). Delete it to resume.
 - **Pause one machine**: create `~/upshot-agent/STOP` in that machine's WSL.
+- **Watch it live**: `python3 ~/upshot-agent/watch.py` in a WSL terminal on either machine prints what that machine's agent is doing as it happens, plus the other machine's heartbeat. Ctrl+C stops the watching, never the loop.
 - **What is it doing?** `status/A.json` and `status/B.json` in Drive; the epic's comments; `~/upshot-agent/scratch/journal.md` and `~/upshot-agent/logs/` on A.
 - **Stop for good**: Task Scheduler → disable `upshot-agent-a` / `upshot-agent-b`.
 

@@ -32,7 +32,7 @@ echo "repo $(git -C "$REPO" rev-parse --short origin/main) · claude $("$CLAUDE"
 
 say "Copying the agent into $AH"
 mkdir -p "$AH/logs" "$AH/jobs"
-for f in agent.py drive.py notify.ps1 loop.sh RUNBOOK.md "prompt-$ROLE.md" "allowlist-$ROLE.json"; do
+for f in agent.py drive.py notify.ps1 watch.py loop.sh RUNBOOK.md "prompt-$ROLE.md" "allowlist-$ROLE.json"; do
   git -C "$REPO" show "origin/main:scripts/agent/$f" >"$AH/.$f.new" && mv -f "$AH/.$f.new" "$AH/$f"
 done
 chmod +x "$AH/loop.sh"

@@ -14,7 +14,7 @@ flock -n 9 || exit 0   # already running; the task's 15-minute repeat is only a 
 
 # The allowlist is NOT refreshed: it is what the user installed with setup.sh, and an agent
 # must not be able to widen its own permissions by pushing to main.
-FILES="agent.py drive.py notify.ps1 loop.sh prompt-$ROLE.md RUNBOOK.md"
+FILES="agent.py drive.py notify.ps1 watch.py loop.sh prompt-$ROLE.md RUNBOOK.md"
 
 refresh() {
   git -C "$REPO" fetch -q origin main 2>>"$HOME_DIR/logs/agent.log" || return 0
