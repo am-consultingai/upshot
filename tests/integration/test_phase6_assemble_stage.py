@@ -40,6 +40,22 @@ def test_assemble_writes_both_artifacts(tmp_path: Path) -> None:
     assert "echo_suppressed" in meta.read(meeting.path)
 
 
+def test_a_quiet_ending_keeps_the_recorded_length(tmp_path: Path) -> None:
+    """The last words are not the end of the recording.
+
+    Machine B, job 013: a 13 s meeting with nobody speaking was stored as 0 s once
+    assembled, because the length was taken from the last transcribed segment.
+    """
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=20)
+    h.dao.update_meeting(meeting.id, duration_s=300)  # what the recorder measured
+    transcribe.run(h.context(meeting, services=Services(FakeAsr())))
+    assemble.run(h.context(meeting, JobStage.ASSEMBLE))
+    assert h.dao.require_meeting(meeting.id).duration_s == 300
+    assert meta.read(meeting.path)["duration_s"] == 300
+
+
 def test_fts_roundtrip(tmp_path: Path) -> None:
     h, meeting = prepared(tmp_path)
     assemble.run(h.context(meeting, JobStage.ASSEMBLE))
