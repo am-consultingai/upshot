@@ -128,6 +128,7 @@ export const en = {
   "settings.micClipped": "Too loud — the signal is clipping.",
   "settings.micRecording": "Showing the live recording level.",
   "settings.micUnavailable": "No microphone found on this machine.",
+  "settings.micLooking": "Looking for microphones…",
   "settings.micWrongHost":
     "This page is served by a Linux instance, which has no Windows audio. Start the app with run-app.cmd on Windows.",
   "settings.micStreamEnded":
@@ -481,6 +482,7 @@ export const en = {
   "speech.model": "Speech model",
   "speech.modelHint": "Transcription happens on this computer, so the model is downloaded once and nothing is sent anywhere.",
   "speech.modelSize": "{size} to download",
+  "speech.modelSizeReady": "{size} on this computer",
   "speech.freeSpace": "{size} free on this drive",
   "speech.download": "Download",
   "speech.cancel": "Cancel",
@@ -500,7 +502,7 @@ export const en = {
   "speech.willUseCpu": "Will use the processor (CPU).",
   "speech.willUseGpu": "Will use the graphics card (GPU).",
   "speech.reasonGpu": "An NVIDIA graphics card with {vram} of memory was found.",
-  "speech.reasonNoCuda": "No NVIDIA graphics card was found.",
+  "speech.reasonNoCuda": "A graphics card is used only with NVIDIA's CUDA libraries, and they are not on this computer.",
   "speech.reasonLowVram": "The graphics card has {vram} of memory, and the model needs at least {min}.",
   "speech.reasonVramUnknown": "The graphics card's memory could not be read, so the processor is used to be safe.",
   "speech.reasonConfigured": "Chosen by hand.",
