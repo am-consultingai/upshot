@@ -160,11 +160,25 @@ def _model_manager(svc: Services) -> Any:
 
 
 def _model_payload(svc: Services) -> dict[str, Any]:
+    from app.asr.local import MIN_VRAM_MB, device_plan
+    from app.asr.models import REPO_BYTES, wants_hebrew_model
+
     choice, manager = _model_manager(svc)
     payload: dict[str, Any] = manager.status().as_dict()
     if choice.local:
         # A model_path or the app home's model/ folder: nothing to fetch.
         payload.update(state="ready", path=choice.reference)
+    plan = device_plan(svc.config)
+    payload.update(
+        # The size before the download starts, when the hub has not been asked yet.
+        expected_bytes=payload["total_bytes"] or REPO_BYTES.get(payload["repo"], 0),
+        hebrew=wants_hebrew_model(svc.config),
+        # Where it will run and why, for the setup screen's "CPU or GPU".
+        device=plan.device,
+        device_reason=plan.reason,
+        vram_mb=plan.vram_mb,
+        min_vram_mb=MIN_VRAM_MB,
+    )
     return payload
 
 
@@ -1946,6 +1960,15 @@ def test_router() -> APIRouter:
 
             for key in ("language", "theme", "view", "calendar_span", "tooltips_off"):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
+            # Setup counts as done for every spec except the one about setup, which
+            # asks for the opposite below: a spec that died on /welcome must not send
+            # every spec after it there too.
+            svc.config.set("setup.done", True)
+            for key in ("language_mode", "default_language"):
+                svc.config.set(f"asr.{key}", DEFAULTS["asr"][key])
+            svc.config.save()
+        if "setup_done" in body:
+            svc.config.set("setup.done", bool(body["setup_done"]))
             svc.config.save()
         if body.get("reset"):
             svc.conn.execute("DELETE FROM calendar_events")

@@ -11,11 +11,14 @@ The two details that decide whether this works on Windows at all:
 
 from __future__ import annotations
 
+import functools
 import gc
 import os
+import subprocess
 import sys
 import wave
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -127,6 +130,100 @@ def register_cuda_dirs(dirs: Sequence[Path]) -> list[str]:
     return registered
 
 
+#: The least GPU memory the automatic choice will run Whisper on (ClickUp z8tj1had07).
+#: large-v3 holds ~1.6 GB of weights at int8 and ~3 GB at float16, plus activations and
+#: whatever the desktop and the meeting app already keep on the card; a 2-3 GB laptop GPU
+#: ran out mid-meeting instead of failing at load, where the CPU fallback would catch it.
+MIN_VRAM_MB = 4096
+
+NVIDIA_SMI = ("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits")
+
+#: ``subprocess.run``'s shape, so the VRAM query can be tested without a GPU.
+Runner = Callable[..., Any]
+#: GPU memory in MB, or None when it cannot be read.
+VramQuery = Callable[[], "int | None"]
+
+
+def gpu_memory_mb(runner: Runner | None = None, *, timeout: float = 5.0) -> int | None:
+    """Total memory of the first GPU, in MB, as ``nvidia-smi`` reports it.
+
+    CTranslate2 exposes a device count but not memory, and the driver's own tool is on
+    ``PATH`` wherever an NVIDIA driver is. The first line is the one that counts: that
+    is device 0, which is the one faster-whisper loads onto. Any failure — no tool, a
+    hung driver, output that is not a number — is None, which the caller reads as "not
+    enough": the CPU is slow, but a GPU that runs out of memory halfway through a
+    meeting loses the meeting.
+    """
+    run = runner or subprocess.run
+    try:
+        result = run(
+            list(NVIDIA_SMI),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            # The windowed build has no console, so without this every probe would
+            # flash one up (the same reason ffmpeg runs hidden, see audio/ingest.py).
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        log.info("could not read the GPU's memory (%s); treating it as too small", exc)
+        return None
+    if getattr(result, "returncode", 1) != 0:
+        log.info("nvidia-smi exited %s; treating the GPU as too small", result.returncode)
+        return None
+    for line in str(result.stdout or "").splitlines():
+        if line.strip():
+            try:
+                return int(float(line.strip()))
+            except ValueError:
+                log.info("nvidia-smi said %r, not a memory size", line.strip())
+                return None
+    return None
+
+
+@functools.cache
+def cached_gpu_memory_mb() -> int | None:
+    """Asked once per run: the setup screen polls the device plan every second while
+    the model downloads, and a card does not grow memory in the meantime."""
+    return gpu_memory_mb()
+
+
+@dataclass(frozen=True)
+class DevicePlan:
+    """Where Whisper will run, and why — the setup screen says both."""
+
+    device: str  # cpu|cuda
+    #: configured: asr.device says so · no_cuda: no CUDA libraries anywhere ·
+    #: low_vram: the GPU is under MIN_VRAM_MB · vram_unknown: its memory could not be
+    #: read · gpu: CUDA libraries and enough memory
+    reason: str
+    vram_mb: int | None = None
+
+
+def plan_device(
+    config: Config | None, dirs: Sequence[Path], *, vram: VramQuery | None = None
+) -> DevicePlan:
+    """The one decision ``probe_device`` and ``planned_device`` share.
+
+    Only the automatic choice is gated on memory. ``asr.device = "cuda"`` is the user
+    insisting, and the load-time fallback still catches a card that cannot cope.
+    """
+    configured = str(config.get("asr.device", "auto")) if config else "auto"
+    if configured == "cpu":
+        return DevicePlan("cpu", "configured")
+    if configured != "auto":
+        return DevicePlan("cuda", "configured")
+    if not dirs:
+        return DevicePlan("cpu", "no_cuda")
+    memory = (vram or cached_gpu_memory_mb)()
+    if memory is None:
+        return DevicePlan("cpu", "vram_unknown")
+    if memory < MIN_VRAM_MB:
+        return DevicePlan("cpu", "low_vram", memory)
+    return DevicePlan("cuda", "gpu", memory)
+
+
 def probe_device(
     config: Config | None = None,
     *,
@@ -134,10 +231,10 @@ def probe_device(
     search_path: Sequence[str] | None = None,
     system_dirs: Sequence[str] = SYSTEM_CUDA_DIRS,
     environ: dict[str, str] | None = None,
+    vram: VramQuery | None = None,
 ) -> tuple[str, str, list[str]]:
     """(device, compute_type, registered dirs). No CUDA anywhere → CPU, int8."""
     env = environ if environ is not None else os.environ
-    configured_device = str(config.get("asr.device", "auto")) if config else "auto"
     configured_compute = str(config.get("asr.compute_type", "auto")) if config else "auto"
     dirs = cuda_library_dirs(
         configured=config.get("asr.cuda_dir") if config else None,
@@ -145,7 +242,7 @@ def probe_device(
         search_path=search_path,
         system_dirs=system_dirs,
     )
-    if configured_device == "cpu" or (configured_device == "auto" and not dirs):
+    if plan_device(config, dirs, vram=vram).device == "cpu":
         env["CUDA_VISIBLE_DEVICES"] = ""
         compute = configured_compute if configured_compute != "auto" else "int8"
         return "cpu", compute, []
@@ -154,15 +251,15 @@ def probe_device(
     return "cuda", compute, registered
 
 
-def planned_device(config: Config) -> str:
-    """The device ``probe_device`` would choose, without its side effects (it registers
-    DLL folders and sets CUDA_VISIBLE_DEVICES): which model to fetch depends on it."""
-    configured = str(config.get("asr.device", "auto"))
-    if configured == "cpu":
-        return "cpu"
-    if configured == "auto" and not cuda_library_dirs(configured=config.get("asr.cuda_dir")):
-        return "cpu"
-    return "cuda"
+def device_plan(config: Config, *, vram: VramQuery | None = None) -> DevicePlan:
+    """What ``probe_device`` would choose, without its side effects (it registers DLL
+    folders and sets CUDA_VISIBLE_DEVICES): which model to fetch depends on it."""
+    dirs = cuda_library_dirs(configured=config.get("asr.cuda_dir"))
+    return plan_device(config, dirs, vram=vram)
+
+
+def planned_device(config: Config, *, vram: VramQuery | None = None) -> str:
+    return device_plan(config, vram=vram).device
 
 
 def supported_compute_type() -> str:
@@ -227,6 +324,9 @@ class LocalAsr:
         self.config = config
         self.model_factory = model_factory or _default_factory
         self.choice = choice
+        #: A choice the caller made is kept whatever the device; one resolved here was
+        #: resolved *for* a device, and is resolved again if the device changes.
+        self._given_choice = choice
         # Downloads a repo that is not on disk and returns its folder. Without it the repo
         # id goes to faster-whisper, which fetches it unseen into the Hugging Face cache.
         self.fetch = fetch
@@ -248,7 +348,7 @@ class LocalAsr:
             return self.model
         device, compute, registered = probe_device(self.config)
         self.registered_dll_dirs = registered
-        self.choice = self.choice or resolve(self.config, device=device)
+        self.choice = self._given_choice or resolve(self.config, device=device)
         try:
             self.model = self._build(device, compute)
             self.device, self.compute_type = device, compute
@@ -258,6 +358,10 @@ class LocalAsr:
                 raise
             log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
             self.fell_back = True
+            # The GPU's model is large-v3, 3 GB and several times slower than turbo on a
+            # CPU. Keeping it after the fallback made a meeting take hours instead of
+            # minutes; the CPU gets the CPU's model, fetched first if it is not here.
+            self.choice = self._given_choice or resolve(self.config, device="cpu")
             self.model = self._build("cpu", "int8")
             self.device, self.compute_type = "cpu", "int8"
             self._warmup()

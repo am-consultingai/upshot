@@ -293,6 +293,33 @@ export interface AudioLevel {
   done?: boolean;
 }
 
+/**
+ * The speech model, and where it will run: `/api/model`.
+ *
+ * `repo` follows the meeting language — the Hebrew fine-tune, or stock Whisper for a
+ * language pinned to something else — and the device, so changing either changes
+ * which model this describes.
+ */
+export interface ModelStatus {
+  repo: string;
+  path: string;
+  state: "missing" | "downloading" | "ready" | "failed" | "cancelled";
+  done_bytes: number;
+  total_bytes: number;
+  /** The size before the download has started, when the hub has not been asked yet. */
+  expected_bytes: number;
+  free_bytes: number;
+  /** Why a download failed, in the backend's words ("needs 2.6 GB free…"). */
+  error: string;
+  /** "no_space" when the drive is too full, so the screen words it itself. */
+  code: "" | "no_space";
+  hebrew: boolean;
+  device: "cpu" | "cuda";
+  device_reason: "configured" | "no_cuda" | "low_vram" | "vram_unknown" | "gpu";
+  vram_mb: number | null;
+  min_vram_mb: number;
+}
+
 export interface DetectorEvent {
   id: number;
   at: string;
@@ -336,6 +363,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   status: () => request<Status>("/api/status"),
   audioDevices: () => request<AudioDevices>("/api/audio/devices"),
+  model: () => request<ModelStatus>("/api/model"),
+  /** Starts the download in the background; a second call while one runs joins it. */
+  modelDownload: () => request<ModelStatus>("/api/model/download", { method: "POST" }),
+  modelCancel: () => request<ModelStatus>("/api/model/cancel", { method: "POST" }),
   deleteMeeting: (id: string) =>
     request<{ deleted: string }>(`/api/meetings/${id}`, { method: "DELETE" }),
   meetings: (params: Record<string, string> = {}) =>
