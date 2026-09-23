@@ -66,6 +66,9 @@ class FakeHost:
                 pa.owner = threading.get_ident()
             pa.refs += 1
 
+    def get_host_api_info_by_type(self, kind: int) -> dict[str, Any]:
+        return {"index": 2}
+
     def get_device_count(self) -> int:
         return 1
 
