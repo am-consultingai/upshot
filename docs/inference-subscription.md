@@ -8,6 +8,13 @@
 > driving Codex on a plan. Anthropic's policy has moved three times in 2026 (4 April,
 > 13 May, 15 June) — D46 has the dates.
 
+> **Codex built, 2026-09-23 — see `DECISIONS.md` D58.** `codex-subscription` exists now, and
+> it is built like the Claude provider. OpenAI's terms are no longer unread. They were read
+> on 2026-09-23 and say nothing about third parties driving `codex exec` on a ChatGPT plan.
+> The request for that permission, `openai/codex#10974`, was closed as not planned on
+> 2026-03-20 and now returns 404. OpenAI's docs recommend API keys for automation. Re-read
+> the position before release. §7 below is kept as it was written on 2026-08-29; D58 is newer.
+
 Findings as of **2026-08-29**, verified against each vendor's own documentation rather
 than recalled. The short version:
 
@@ -111,7 +118,7 @@ irm https://claude.ai/install.ps1 | iex     # native Windows 10 1809+; WSL not r
 claude                                      # /login — Anthropic's own browser flow
 ```
 
-Then in Settings pick **Claude Code (your own subscription)** and press **Test**. The row
+Then in Settings pick **Claude Agent (your own subscription)** and press **Test**. The row
 shows *Installed* / *Not installed* and the CLI version; Sign in is disabled when it is
 missing. Claude Code requires a Pro, Max, Team, Enterprise or Console account — the free
 Claude.ai plan does not include it.
@@ -135,6 +142,33 @@ applies — your machine, your account, the vendor's own login, no credential in
 Also unverified: whether `codex exec` can emit a machine-readable envelope. The whole
 design depends on parsing one, so `codex exec --help` is the first thing to check.
 
+### 7a. OpenAI Codex, as built (2026-09-23)
+
+```
+summarize stage ──spawn──► codex exec - --sandbox read-only --ephemeral --ignore-user-config
+                           --output-schema <ours> --output-last-message <ours> ──► OpenAI
+                ◄──answer file──
+```
+
+* **Headless: verified.** `codex-cli 0.156.1 exec --help` lists `--output-schema`,
+  `-o/--output-last-message`, `--json`, `--ephemeral`, `--ignore-user-config` and
+  `--skip-git-repo-check`, and reads the prompt from stdin with `-`. The schema is
+  enforced on the CLI's side, which the Claude CLI cannot do. It still runs through the
+  repair loop, after nulls from strict mode are stripped (`strict_schema` / `drop_nulls`).
+* **Sign-in.** `codex login` is OpenAI's browser flow, launched in a visible console.
+  `codex login status` gives the state: "Logged in using ChatGPT", "…using an API key",
+  or "Not logged in" (exit 1). It has no JSON output, and a build that gives none of these
+  answers is shown as *unknown*.
+* **Install on Windows.** `$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex`,
+  OpenAI's own installer. It puts the binary at
+  `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` and does not need WSL. Where Constrained
+  Language Mode stops that, the button runs `npm install -g @openai/codex`, or failing that
+  `winget install --id OpenAI.Codex`. That package is in winget-pkgs but not in OpenAI's docs.
+* **Limits.** A spent allowance leaves the summary waiting until the reset, or hands it to
+  `llm.fallback_provider` if the user set one. It never fails the meeting (D58).
+* **Remaining allowance** is only shown inside the CLI's interactive `/status`, so the
+  Settings row reports `quota: null` rather than polling.
+
 ## 8. Recommendation
 
 - **Default: an API key.** It is the only path with server-side schema enforcement, cache
@@ -145,6 +179,9 @@ design depends on parsing one, so `codex exec --help` is the first thing to chec
   regardless of the configured provider.
 - **`claude-subscription` when you would rather spend plan credit than API credit**, on a
   machine you own, accepting the trade in §5.
+- **`codex-subscription`** is the same idea for a ChatGPT plan. It spends that plan's Codex
+  allowance, which is shared with the account's other Codex use. Its permission is less
+  settled than Claude's (D58).
 
 Cost, for scale: `DESIGN.md` puts a meeting at **~$0.13 on Opus 5, ~$0.05 on Sonnet 5**.
 Twenty meetings a month is about $2.60, or $1 on Sonnet — the subscription question may

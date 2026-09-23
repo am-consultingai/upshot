@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatElapsed, formatClock, formatEventTime } from "../src/lib/format";
+import {
+  formatDuration,
+  formatElapsed,
+  formatClock,
+  formatEventTime,
+  formatWhen,
+} from "../src/lib/format";
 import { en } from "../src/locales/en";
 import type { MessageKey } from "../src/locales/en";
 
@@ -62,5 +68,29 @@ describe("detector event times", () => {
 
   it("gives back anything it cannot parse, rather than NaN", () => {
     expect(formatEventTime("not a date", "en")).toBe("not a date");
+  });
+});
+
+describe("when a meeting was", () => {
+  const isoAt = (hour: number, minute = 0) => {
+    const date = new Date();
+    date.setHours(hour, minute, 0, 0);
+    return date.toISOString();
+  };
+
+  it("names the day and spans the clock", () => {
+    const line = formatWhen(isoAt(9, 30), isoAt(10, 15), "en");
+    expect(line).toContain("09:30\u201310:15");
+    expect(line).toMatch(/[A-Za-z]{4,}/); // a weekday and a month...
+    expect(line).not.toMatch(/\d{4}-\d{2}-\d{2}/); // ...not an ISO date
+  });
+
+  it("shows the start alone when nothing says when it ended", () => {
+    expect(formatWhen(isoAt(9, 30), null, "en")).toContain("09:30");
+    expect(formatWhen(isoAt(9, 30), null, "en")).not.toContain("\u2013");
+  });
+
+  it("gives back anything it cannot parse, rather than NaN", () => {
+    expect(formatWhen("not a date", null, "en")).toBe("not a date");
   });
 });

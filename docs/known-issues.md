@@ -175,6 +175,15 @@ confined to the test harness — no shipped code path spawns a thread that can r
 
 ---
 
+### 16. The local UI has no access control — **opened 2026-09-23**
+
+The one-time-link sign-in was removed (D57) because it signed every browser out on every
+restart and was hard to use with several browser profiles. Anything that can reach
+`127.0.0.1:<port>` — another Windows account on the same machine, or any local program —
+can now read every transcript and summary, use the AI provider and drive the recorder.
+Websites are still kept out by the Host check and CSRF. Research for a fix that is both
+secure and friendly is tracked in ClickUp: https://app.clickup.com/t/z8tj1ha63r
+
 ## Fixed on 2026-09-06, recorded because the pattern matters
 
 Every one of these presented as *silence* rather than as an error, which is why the first

@@ -15,6 +15,41 @@ export interface Meeting {
   error: string | null;
   /** Present on the detail endpoint. A failed stage lives here, not in `error`. */
   jobs?: Job[];
+  /** Commitments this meeting recorded, and how many are still open. */
+  actions_total?: number;
+  actions_open?: number;
+  /** Free labels the user gave it. */
+  tags?: string[];
+  /** The stage that failed, so a row can say "summary failed" rather than "failed". */
+  failed_stage?: string | null;
+}
+
+/** A stretch of the conversation about one thing, as the summarizer divided it. */
+export interface Chapter {
+  title: string;
+  start_ms: number;
+  end_ms: number | null;
+}
+
+/** Why another meeting is related to this one. */
+export type RelatedReason =
+  | { code: "shared_actions"; count: number }
+  | { code: "same_people"; names: string[] }
+  | { code: "same_series" }
+  | { code: "mentions"; term: string };
+
+export interface RelatedMeeting {
+  id: string;
+  title: string | null;
+  started_at: string;
+  duration_s: number | null;
+  reasons: RelatedReason[];
+}
+
+export interface AskAnswer {
+  answer: string;
+  citations: { meeting_id: string; at_ms: number; text?: string }[];
+  scope: "meeting" | "related";
 }
 
 export interface Job {
@@ -47,6 +82,14 @@ export interface ActionItem {
   who: string;
   what: string;
   due: string | null;
+  /** The due date as a calendar date, resolved from `due` against the meeting's own date. */
+  due_at: string | null;
+  /** The lighter second line: why it matters, or what it blocks. */
+  detail: string | null;
+  /** Hidden from the inbox until this date. */
+  snoozed_until: string | null;
+  /** "user" for one added by hand, which a re-summarize keeps. */
+  source: "model" | "user";
   at_ms: number | null;
   /** The owner resolved to the person running this recorder. */
   mine: boolean;
@@ -62,10 +105,14 @@ export interface SearchHit {
   meeting_title: string | null;
   meeting_started_at: string | null;
   speaker: string;
+  /** The name the user gave that speaker slot on its meeting, when there is one. */
+  speaker_name?: string | null;
   at_ms: number;
   text: string;
   /** The match with `[` `]` around the term, from SQLite's own snippet(). */
   snippet: string;
+  /** Where it matched. A title or action hit has no speaker and no timestamp. */
+  kind: "title" | "action" | "transcript";
 }
 
 export interface MeetingDetail extends Meeting {
@@ -76,6 +123,9 @@ export interface MeetingDetail extends Meeting {
   audio_deleted_at?: string | null;
   calendar?: MeetingCalendar | null;
   action_items?: ActionItem[];
+  /** A name for each transcript speaker slot ("THEM", "THEM_1"…) the user has named. */
+  speaker_names?: Record<string, string>;
+  chapters?: Chapter[];
 }
 
 /** The Google Calendar connection. Never carries a token. */
@@ -110,6 +160,17 @@ export interface CalendarEvent {
   meeting_id?: string | null;
 }
 
+/** One person on the invitation. The only place an address appears in this app. */
+export interface InvitePerson {
+  name: string;
+  email: string;
+  optional: boolean;
+  declined: boolean;
+  organizer: boolean;
+  self: boolean;
+  response: string;
+}
+
 /** The live invitation behind a recording. Read from Google when shown; never stored. */
 export interface Invite {
   title: string | null;
@@ -127,6 +188,8 @@ export interface Invite {
   conference_url: string | null;
   /** The event in Google Calendar. */
   html_link: string | null;
+  /** Everyone invited, with their addresses. Shown on the meeting page and nowhere else. */
+  people: InvitePerson[];
 }
 
 /** What a recording knows about its calendar event (a snapshot taken when matched). */
@@ -139,6 +202,21 @@ export interface MeetingCalendar {
   private?: boolean;
   match?: { state: "matched" | "proposed" | "none"; source: "auto" | "user"; reason?: string };
   candidates?: { calendar_id: string; event_id: string; title: string | null; start: string }[];
+}
+
+/**
+ * The settings screen's whole payload.
+ *
+ * `pinned` maps a dotted config key to the environment variable holding it down. The
+ * environment is the top configuration layer, so a launcher that exports one of these
+ * beats `app_config.json` on every start: the control saves, reads back correctly, and is
+ * overridden again the next time the app opens. Without this the screen had no way to
+ * say so, and simply looked like it was forgetting the choice.
+ */
+export interface Settings {
+  config: Record<string, unknown>;
+  warnings: string[];
+  pinned: Record<string, string>;
 }
 
 export interface Status {
@@ -155,6 +233,8 @@ export interface Status {
   queue: Record<string, number>;
   queue_depth: number;
   disk_free_bytes: number;
+  /** Everything under the data folder: recordings, transcripts, summaries. */
+  storage_bytes?: number;
   fts: boolean;
   now: string;
 }
@@ -177,6 +257,8 @@ export interface LlmProvider {
   install_method?: string;
   install_docs?: string;
   update_hint?: string;
+  /** What is left of a plan's allowance, when the CLI can say so cheaply. */
+  quota?: string | null;
 }
 
 export interface AudioDevice {
@@ -264,7 +346,7 @@ export const api = {
   summaryHtml: (id: string) =>
     request<string>(`/api/meetings/${id}/summary.html`),
   transcript: (id: string) =>
-    request<{ segments: { start: number; speaker: string; text: string }[] }>(
+    request<{ segments: { start: number; end?: number; speaker: string; text: string }[] }>(
       `/api/meetings/${id}/transcript`,
     ),
   /** Undo a discard: transcribe this recording after all. */
@@ -279,27 +361,22 @@ export const api = {
     request<Job>(`/api/meetings/${id}/jobs/${stage}/retry?force=${force}`, {
       method: "POST",
     }),
-  startRecording: () =>
+  /** With an event, the recording starts already matched to it ("Record this one"). */
+  startRecording: (event?: { calendar_id: string; event_id: string }) =>
     request<{ meeting_id: string }>("/api/recording/start", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(event ?? {}),
     }),
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
-  settings: () =>
-    request<{ config: Record<string, unknown>; warnings: string[] }>(
-      "/api/settings",
-    ),
+  settings: () => request<Settings>("/api/settings"),
   putSettings: (values: Record<string, unknown>) =>
-    request<{ config: Record<string, unknown>; warnings: string[] }>(
-      "/api/settings",
-      {
-        method: "PUT",
-        body: JSON.stringify({ values }),
-      },
-    ),
+    request<Settings>("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({ values }),
+    }),
   llmStatus: () =>
-    request<{ active: string; providers: LlmProvider[] }>("/api/llm/status"),
+    request<{ active: string; providers: LlmProvider[]; fallback?: string }>("/api/llm/status"),
   secretStatus: () =>
     request<{ secrets: Record<string, boolean> }>("/api/settings/secrets"),
   putSecrets: (values: Record<string, string>) =>
@@ -315,24 +392,26 @@ export const api = {
         body: JSON.stringify({ provider }),
       },
     ),
-  llmSignin: () =>
-    request<{ launched: boolean; command: string }>("/api/llm/signin", {
+  /** Which subscription CLI; the server defaults to Claude for callers that do not say. */
+  llmSignin: (provider = "claude-subscription") =>
+    request<{ launched: boolean; command: string; log?: string }>("/api/llm/signin", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ provider }),
     }),
   llmPrompt: () =>
     request<{ text: string; default: string; custom: boolean; version: string }>(
       "/api/llm/prompt",
     ),
-  llmUpdate: () =>
+  /** Which subscription CLI; the server defaults to Claude for callers that do not say. */
+  llmUpdate: (provider = "claude-subscription") =>
     request<{ launched: boolean; command: string }>("/api/llm/update", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ provider }),
     }),
-  llmInstall: () =>
-    request<{ launched: boolean; command: string; docs: string }>("/api/llm/install", {
+  llmInstall: (provider = "claude-subscription") =>
+    request<{ launched: boolean; command: string; docs: string; log?: string }>("/api/llm/install", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ provider }),
     }),
   calendarStatus: () => request<CalendarStatus>("/api/calendar/status"),
   calendarConnect: () =>
@@ -382,12 +461,60 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ done }),
     }),
+  patchActionItem: (
+    id: number,
+    body: Partial<{
+      done: boolean;
+      due_at: string | null;
+      snoozed_until: string | null;
+      who: string;
+      what: string;
+      detail: string | null;
+    }>,
+  ) =>
+    request<ActionItem>(`/api/action-items/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  addActionItem: (
+    meetingId: string,
+    body: { what: string; who?: string; due_at?: string | null; detail?: string | null },
+  ) =>
+    request<ActionItem>(`/api/meetings/${meetingId}/action-items`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteActionItem: (id: number) =>
+    request<{ deleted: number }>(`/api/action-items/${id}`, { method: "DELETE" }),
+  tags: () => request<{ tags: { tag: string; count: number }[] }>("/api/tags"),
+  putTags: (meetingId: string, tags: string[]) =>
+    request<{ tags: string[] }>(`/api/meetings/${meetingId}/tags`, {
+      method: "PUT",
+      body: JSON.stringify({ tags }),
+    }),
+  related: (meetingId: string) =>
+    request<{ related: RelatedMeeting[] }>(`/api/meetings/${meetingId}/related`),
+  ask: (meetingId: string, question: string, scope: "meeting" | "related") =>
+    request<AskAnswer>(`/api/meetings/${meetingId}/ask`, {
+      method: "POST",
+      body: JSON.stringify({ question, scope }),
+    }),
   search: (q: string) =>
     request<{ q: string; hits: SearchHit[]; count: number }>(
       `/api/search?${new URLSearchParams({ q }).toString()}`,
     ),
-  detectorEvents: () =>
-    request<{ events: DetectorEvent[] }>("/api/detector/events?limit=50"),
+  /** Stages that failed or are deliberately waiting (an allowance, a sign-in), in words. */
+  attention: () =>
+    request<{
+      items: {
+        meeting_id: string;
+        title: string | null;
+        stage: string;
+        state: "failed" | "waiting";
+        message: string;
+        retry_at: string | null;
+      }[];
+    }>("/api/attention"),
   audioUrl: (id: string, track: string) =>
     `/api/meetings/${id}/audio?track=${track}`,
 };

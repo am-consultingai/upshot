@@ -98,6 +98,33 @@ def test_the_meeting_payload_carries_its_items(api) -> None:  # type: ignore[no-
     assert [item["what"] for item in payload["action_items"]] == ["write the spec"]
 
 
+def test_the_list_says_what_each_meeting_still_owes(api) -> None:  # type: ignore[no-untyped-def]
+    """The timeline answers "what is outstanding" without opening anything.
+
+    Zero open is deliberately not the same answer as none recorded: one meeting has
+    discharged its commitments and the other never made any.
+    """
+    _meeting(api, "m-open", "Two still open", "2026-09-20T09:00:00Z")
+    _meeting(api, "m-clear", "All done", "2026-09-20T10:00:00Z")
+    _meeting(api, "m-silent", "Nothing promised", "2026-09-20T11:00:00Z")
+    dao = api.services.dao
+    dao.replace_action_items(
+        "m-open",
+        [("ME", "take the rollback to review", None, None), ("Dana", "write the spec", None, None)],
+    )
+    dao.replace_action_items("m-clear", [("ME", "send the deck", None, None)])
+    dao.set_action_done(dao.action_items(meeting_id="m-clear")[0].id, done=True)
+
+    rows = {row["id"]: row for row in api.client().get("/api/meetings").json()["meetings"]}
+    assert (rows["m-open"]["actions_total"], rows["m-open"]["actions_open"]) == (2, 2)
+    assert (rows["m-clear"]["actions_total"], rows["m-clear"]["actions_open"]) == (1, 0)
+    assert (rows["m-silent"]["actions_total"], rows["m-silent"]["actions_open"]) == (0, 0)
+
+    # And the detail endpoint agrees with the list it was opened from.
+    detail = api.client().get("/api/meetings/m-open").json()
+    assert (detail["actions_total"], detail["actions_open"]) == (2, 2)
+
+
 # ------------------------------------------------------------------ search
 
 

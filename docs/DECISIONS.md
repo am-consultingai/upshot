@@ -1120,3 +1120,388 @@ checkbox is worse than no checkbox.
 owner still produces a valid envelope, and now the invention is a row in a table rather than
 a sentence in a paragraph — more visible, not more true. Attribution on imported transcripts
 remains unreliable by construction, because every imported turn is labelled `THEM`.
+
+## D48 — One meeting is one row: the calendar merges, the page collects, and the list counts
+
+Four changes that are one change. A meeting existed in this application as three separate
+objects that happened to be about the same hour — a calendar event, a recording, and a set
+of commitments — and each screen showed whichever of them it happened to own.
+
+**The calendar view is the only view, and the rail says so.** There was a List/Calendar
+toggle above the meeting list, choosing between the column and the pane beside it: two
+views of one collection, side by side, with a switch insisting that only one of them could
+be true. The column *is* the list. The calendar now holds the detail side from the moment
+the screen opens, the toggle is gone, and the rail icon is a calendar rather than three
+stacked lines that promised a list.
+
+**A recording with no stored match is matched again when the page is read.** A recording
+made before the calendar was connected carries no snapshot, and nothing ever went back to
+give it one — so it drew a second block of its own beside its own event: the same meeting
+twice, at two times, under two names, one block holding the joining link and the other the
+transcript. `_inferred_calendar` asks the matcher that runs at record time (`app/gcal/match.py`)
+against the cache, and uses **only** a `matched` verdict: a proposal is a guess, and a guess
+drawn as a fact is worse than a duplicate. Nothing is written — the snapshot still belongs
+to the moment of recording — and a meeting the user has already ruled on is never
+second-guessed, because that meeting's `calendar_json` is not empty.
+
+**The meeting page is where everything about the meeting lives.** The match card and the
+invitation card were two cards stacked on each other, and the joining link was on neither:
+it was reachable only from the calendar block the merge above has just removed. They are
+one card now — event, times, people, link, agenda, attachments — because the alternative to
+collecting it is losing it.
+
+**Addresses reach that card, and nothing else.** This narrows D44 and D45 at the product
+owner's request. An attendee is still a display name in the cache, in the snapshot on a
+recording, in every prompt and in every log line; `Invite.people` carries the address as
+well, is assembled from the live Google response, and dies with it. "Which Dana" is a
+question a display name cannot answer, and replying to one of them is the next thing anyone
+does. The tests that matter are unchanged and still pass: no address in the database, none
+in a prompt, none in a log.
+
+**The list says what each meeting still owes.** A library of well-written summaries answers
+"what was said" and says nothing about what is outstanding, which is the only question
+anyone scans a list of past meetings to answer. `/api/meetings` carries `actions_open` and
+`actions_total` from one grouped query, and the card shows the open count — green, with the
+total, once they are all discharged. Zero open is deliberately not the same news as none
+recorded: a meeting that never made a commitment says nothing at all.
+
+## D49 — A launcher may fix what the machine is, never what the user decided
+
+"Detecting meetings" would not stay where it was put. It was set to automatic, it saved,
+`app_config.json` recorded it, the screen read it back — and the next launch had it off
+again. Repeatedly, over several sittings.
+
+**The cause.** `scripts/demo.sh` exported `UP_DETECTION__MODE='"off"'`. The environment is
+the top configuration layer (D-era layering: defaults, then the file, then the
+environment), so it beat the saved choice on every start, for ever, and in silence. The
+Settings screen reads the *resolved* value, so it showed "Off" and looked like a screen
+that forgets what it is told.
+
+This is the second time this shape of bug has been found. The first was
+`UP_LLM__PROVIDER` on the Windows launcher, and the fix then was at **save** time: an
+environment value is no longer written back to disk by an unrelated save
+(`Config.save`, `_from_env` / `_explicit`). That fixed the file. It could not fix the
+**load**, where the environment legitimately wins again the next morning.
+
+**The rule.** A launcher may pin what the *machine* is — which port, no microphone, no
+3 GB model, where the app home is. It may not pin what the *user* decided. A test now
+reads both launchers and fails if either exports one of the keys that belong to the user
+(`tests/unit/test_phase1_config.py::test_no_launcher_pins_a_setting_the_user_owns`).
+
+**And the silence is gone.** Precedence is unchanged, because an operator override is
+supposed to win. What changed is that the application can now name what is holding a key:
+`Config.env_pinned()` maps each pinned dotted key to the variable holding it,
+`/api/settings` returns it as `pinned`, the affected control on the Settings screen says
+so in its own row rather than quietly reverting, and `start_background` writes one line
+naming every pinned key. Any future launcher that pins something has to admit it on
+screen; none of this can be silent again.
+
+**What it is not.** Not a licence to reach for the environment. `detection.mode` is not
+pinned anywhere now: the shipped default is `shadow`, which watches and logs and never
+records on its own, and off Windows there is nothing for it to watch — so there was never
+anything to pin it for.
+
+## D50 — A deadline is a date, resolved by us when the model does not
+
+**2026-09-23.** The inbox could say *who* owed *what* but not *when*: `due` was the words
+someone said ("by Thursday", "עד סוף השבוע"), and words cannot be sorted, flagged overdue or
+put on a calendar. The redesign needs all three.
+
+**The model is asked first.** The envelope's action item grows `due_at` (YYYY-MM-DD) and
+`detail` (one short line: why it matters, what it unblocks, who is waiting). A capable model
+resolves "Thursday" better than a table can, because it heard the sentence around it. For
+that it needs to know which week it was said in, so **the meeting's date and weekday now
+lead every summarize request**, invitation or not (`summarize.date_context`). Before this,
+a manually started recording carried no date at all into the prompt.
+
+**`app/due.py` is the fallback, and it is ours.** Used when the model gave the words and no
+date, and — lazily, at read time — for every row stored before `due_at` existed, against the
+local day of the meeting it came from. No backfill: a better resolver improves old rows for
+free, and the migration stays SQL. A malformed `due_at` from the model costs that date, not
+the summary; the fallback then gets its turn.
+
+**Why not a library.** chrono-node is JavaScript and reads no Hebrew. `dateparser` is large,
+resolves a bare weekday to the *previous* one by default, and does not know "ביום חמישי",
+"עד חמישי" or "מחרתיים". The phrases a deadline comes in are few; a table of them is easier
+to test (a hundred cases in `tests/unit/test_due.py`) than a general parser is to configure.
+
+**Conventions are Israeli, because the user is.** Weeks start on Sunday and "end of week"
+is Friday. Numeric dates are day-first. A weekday is its next occurrence strictly after the
+meeting day — "Thursday" said on a Thursday is a week later. "Next Thursday" is read the same
+way as "Thursday"; "Thursday next week" is the Thursday of the following week.
+
+**Never guess.** Anything unrecognised is None, and so is anything naming two different days
+("Tuesday or Wednesday"). "Next month" is None too: its last day would be a guess presented
+as a deadline. A wrong date is worse than none, because the inbox flags by it and the reader
+believes the flag.
+
+**User-added items.** `action_items.source` is `model` or `user`. Re-summarizing replaces
+only the model's rows and renumbers the user's after them; a model item that repeats a
+user's word for word is dropped rather than shown twice. `snoozed_until` is carried forward
+by the normalised text exactly like `done_at` (D47). What is *not* carried: an edit to a model
+row's wording, owner or date — the next re-summarize rewrites it, as it rewrites everything
+else the model said. Deleting a model row is "not this", not "never": it returns if the
+model finds it again.
+
+## D51 — Tags are the user's words, one spelling per library
+
+Meetings can be tagged (`meeting_tags`, `GET /api/tags`, `PUT /api/meetings/{id}/tags`). A
+tag is stripped and whitespace-squeezed, deduplicated case-insensitively, and **takes the
+spelling already used elsewhere in the library**: "roadmap" typed on Tuesday's meeting
+becomes the "Roadmap" typed on Monday's, so the filter does not fill with case variants. On
+its own meeting a tag can be re-cased, which is how the first spelling gets fixed. Twelve
+tags of forty characters at most — a label, not a note. The list endpoint carries each
+meeting's tags from one grouped query.
+
+## D52 — Speaker names are a mapping laid over the transcript, not a rewrite of it
+
+The transcript says `ME`, `THEM`, `THEM_1` — the recorder's tracks and the diariser's slots.
+`meetings.speaker_names` is a JSON object from slot to the name the user gave it, merged by
+`PATCH /api/meetings/{id}` (`null` or `""` removes a slot) and applied wherever the
+transcript is shown or sent (the page; `ask`). Nothing in `transcript.json` is rewritten,
+because a name typed against the wrong slot must be correctable without re-transcribing, and
+because diarisation that reassigns slots on a re-run should not silently move names onto
+the wrong voices. The summarizer does not use it yet: it already turns slots into names from
+the conversation and the invitation, and the summary is not re-run when a name changes.
+
+## D53 — Related meetings, from four signals that can each be said in words
+
+`GET /api/meetings/{id}/related` returns up to five meetings, each with the reasons it was
+chosen: a **shared action item** (identical once normalised, or word-set Jaccard ≥ 0.5 — a
+commitment carried from one meeting to the next is the strongest thread there is), the
+**same series** (same calendar title), the **same people** (two or more shared invitees, or
+the one person in a one-on-one), and a **mention** — the single rarest shared word of five
+or more letters that is not an English or Hebrew stopword and appears in at most a quarter
+of the library. Scored in that order of strength, ties broken by nearness in time.
+
+Computed on request from what is stored; there is no index to fall out of step. A reason
+is an object with a `code`, so the page words it in either language without matching prose.
+Meetings still recording or discarded are never offered. People come only from the calendar
+snapshot: nothing is inferred from voices.
+
+## D54 — Ask this meeting: the transcript and the question, and the moments it rests on
+
+`POST /api/meetings/{id}/ask` sends the transcript (as `[mm:ss] SPEAKER: text`, with the
+user's speaker names) and the question to the provider the summary came from, and asks for
+an answer plus citations. `scope: "related"` adds up to three related meetings (D53), each
+under its own labelled header. No embeddings and no retrieval: one meeting fits a hosted
+model's request, and where the context does not fit it is cut to a character budget — the
+meeting asked about gets half — because an answer from a visibly truncated transcript is
+better than a confident one from a badly retrieved chunk.
+
+Citations are checked against what the model was shown: one naming a meeting outside the
+context is dropped, one between turns snaps to the turn it falls in and carries that turn's
+text. **Sensitivity is contagious:** if any meeting in the context is sensitive, the request
+goes to the local model, even when it is only related to the one being asked about. A
+provider error is a 502 with the provider's reason, not a 500.
+
+## D55 — The summarizer also returns chapters, and the document opens with its outcome
+
+The envelope grows optional `chapters: [{title, start_ms, end_ms?}]` — three to seven topic
+sections covering the conversation in order — kept in `notes.json` and served on the meeting
+payload, so the page can show where the talk went and seek to it. Parsed defensively and
+sorted, with an open end filled from the next start. Windowed runs take the merge's chapters
+if it produced any, else every window's in time order.
+
+The shipped prompt (version 6) adds two rules to the document that stays otherwise the
+model's (D47): it **opens with a single lead sentence** in a plain `<p>` stating the most
+important outcome — no "Overview" or "Summary" heading above it — and a decision with a
+concrete next step gets it **directly beneath**, as `<p class="next">`. Both are things the
+page's design depends on and a reader wants regardless; neither fixes a section list.
+
+## D56 — The redesign's front end: what moved, and the few calls the mock did not make
+
+The mock (`.ui-research/mocks/redesign.html`) is now the app, screen for screen; the gap
+list in the ClickUp ticket "Close the remaining UI gaps against the redesign mock" is
+checked item by item by `frontend/e2e/redesign.spec.ts`, seeded with the mock's own library
+(`e2e/parity-data.ts`). The calls the mock left open:
+
+- **The calendar strip went behind the people chip.** A settled match has no strip: the
+  invitation, the addresses and "Not this event" open in a dialog from the chip and from the
+  `⋯` menu. A *proposed* match still shows inline, because it is a question only the user can
+  answer.
+- **The palette and Search are one index.** The palette searches the same `/api/search` and
+  groups hits (meetings, action items, transcript lines) above its commands, with a fixed
+  key-hint footer; `/search` is the long form with recents and scopes.
+- **"Overview" is dropped on display, not on disk.** Prompt v6 (D55) fixes new summaries;
+  for the existing library `lib/summary.ts` hides a first heading that is a generic label or
+  repeats the title, and only when a paragraph follows for the lead. The file, and the
+  Markdown export, keep the document as written.
+- **A next step in the summary files itself.** Clicking a `<p class="next">` opens the
+  action-item add row with its words, one Enter from the list — the mock drew it as a link
+  and gave it nowhere to go.
+- **Menus are portalled.** One surface serves `⋯` and right-click, so every row's menu and
+  its context menu are the same list and neither is clipped by a scroller. Delete asks in a
+  real dialog that names the meeting; `window.confirm` is gone. Toasts are kept for undo
+  and for things that finish elsewhere.
+- **A person's colour follows their name** across the rail, the transcript, the waveform
+  bands and action-item avatars; only a collision within one meeting moves it.
+- **The advertised keys work**: `/`, `G L|A|S|,`, `Ctrl R`, `T` and `D W M L` on the
+  calendar, `J K X H` and `Ctrl F` in the inbox. A hint for a key that does nothing teaches
+  that the hints are decoration.
+- **The List view** is the month as an agenda — the question a library is opened with.
+
+## D57 — The browser sign-in is removed; any session on this machine gets the app
+
+The one-time link (`?k=`) and the session cookie it set gated every request (§9 of
+`SECURITY-AND-AUTH.md`). In use it failed on experience: each browser profile needed its own
+link, the launcher opened links in whichever profile last had focus, and because
+`AuthState.session_secret` is generated at start every restart signed every browser out
+again — "Authorize this browser" was the most frequent screen in the app.
+
+`AuthMiddleware` now refuses nothing. It still answers the launcher's `POST /api/auth/link`
+(the Windows launcher waits for a `?k=` link in the log, so links keep that shape; the token
+is ignored) and it hands any request without the `up_csrf` cookie the cookies the UI needs.
+The Host check and the CSRF double-submit are unchanged, so websites are still kept out; the
+CSRF cookie is `SameSite=Strict`, so a cross-site page cannot read or send it. The selftest
+check `api_requires_cookie` became `api_requires_csrf`.
+
+What this gives up: another Windows account or any local program can use the app, and
+through it the owner's calendar, AI provider and recorder. Accepted for now and recorded as
+known issue #16 and the ClickUp bug https://app.clickup.com/t/z8tj1ha63r, which asks for
+research into a fix that is secure *and* friendly — persisting the session secret, opening
+links in a chosen browser profile, or identifying the Windows user behind a loopback
+connection.
+
+Alongside it, Settings now marks what still needs setting up: a "!" on the sidebar's
+Settings item and on the Calendar and Summaries sections when this build can connect a
+calendar and none is connected, or the chosen summarizer has no key or sign-in.
+
+
+## D58 — Codex on the user's own ChatGPT plan: built like D30, with half the permission
+
+**Choice.** `llm.provider` gains `codex-subscription` (`app/llm/codex_cli.py`), and a new
+`llm.fallback_provider` (default `""`, none). It is never the default and never will be.
+
+**What it does.** It spawns the `codex` CLI the machine's owner installed and signed into
+themselves: `codex exec - --sandbox read-only --skip-git-repo-check --ephemeral
+--ignore-user-config --color never --cd <our folder> --output-schema <file>
+--output-last-message <file>`, with the whole prompt on stdin. It runs in a folder the app
+owns (`<app home>/codex-cli`), never a project and never the recordings. `OPENAI_API_KEY`,
+`CODEX_API_KEY`, `CODEX_ACCESS_TOKEN` and `OPENAI_BASE_URL` are stripped from the child's
+environment, because with a key set the CLI can bill the API instead of the plan, silently.
+**The app never reads, writes or passes the CLI's credential store** (`~/.codex/auth.json` or
+the OS keychain). `test_codex_cli_never_sees_a_credential` checks this in the module's
+source: `keyring`, `api_key`, `Authorization`, `auth.json`, `session_token` and
+`.credentials` must not appear. Sign-in state comes from `codex login status` and nothing else.
+Only the method is kept ("ChatGPT account", or "an API key, billed to the API rather than
+your plan"); the key fragment the CLI prints is never read.
+
+**What OpenAI has published, checked 2026-09-23.** The dates matter, so the next reader
+can tell how old this is.
+
+* **The mechanism is documented.** `codex exec` is OpenAI's documented non-interactive
+  mode (learn.chatgpt.com/docs/non-interactive-mode; developers.openai.com/codex now
+  redirects there), and it *"reuses saved CLI authentication by default."* Flags were checked against the real
+  `codex-cli 0.156.1` `--help`, installed into a scratch prefix and never signed in.
+* **Permission for third parties is not published.** Nothing OpenAI has published says
+  whether a third-party application may drive `codex exec` on someone's ChatGPT plan.
+  An OpenAI engineer, asked directly, declined to answer and pointed at the Terms of Use.
+  The App Developer Terms forbid anything that suggests an app is "created, supported,
+  certified or endorsed by OpenAI". They do not cover running a user's own CLI.
+* **`openai/codex#10974`** ("'Sign in with ChatGPT' for third-party apps so users can
+  bring their own plan…", opened 2026-02-07) was the request for exactly this. An archived
+  copy (Wayback, 2026-05-05) shows an OpenAI maintainer asking for the use case and then
+  **closing it as "not planned" on 2026-03-20**: "This feature request hasn't received
+  enough upvotes, so closing." On 2026-09-23 the issue itself returns 404. That closes
+  the *feature* request; it is not a ruling on whether driving the CLI is allowed.
+  A similar question, `openai/codex#36886` (2026-08-04, "Is there a documented auth
+  contract for third-party clients using a ChatGPT subscription…"), is open with no reply.
+* **The comparison.** Anthropic published both halves (D30, D46) and still changed its
+  position three times in 2026: 4 April, 13 May and 15 June. OpenAI has published one half.
+
+* **What the docs lean toward.** OpenAI's auth docs recommend API keys for "programmatic
+  Codex CLI workflows", and the ChatGPT-auth CI section says to use a plan sign-in "only if
+  you specifically need to run as your Codex account". The Terms of Use (effective
+  2026-01-01) forbid sharing account credentials — which this never does — and
+  "automatically or programmatically" extracting Output, whose reach here is unclear.
+
+So this is **an unanswered question, not a refusal** — but a leaning one, and the
+recommendation to use an API key for anything programmatic should weigh on release. We build it exactly as the Claude
+provider is built and **re-read OpenAI's position immediately before release**, not only
+now. If the answer is no, removal is one line (below).
+
+**Naming (Codex 5).** openai.com/brand (Wayback 2026-09-21; the live page refuses
+automated fetches) says: *"you may truthfully identify the OpenAI technology you use.
+However, everything about your app, product or company (including name, logo,
+description…) should be your own and should be free of OpenAI's brands"*. It also says:
+*"We do not permit the use of OpenAI models or "GPT" in product or app names"*. It gives
+no Codex-specific rule and does not require "powered by". So the row truthfully names the
+program being run and the plan it spends: **"Codex CLI (your own ChatGPT plan)"**. There is
+no logo and no partnership wording, and it is a label on one option, not a product name.
+This is the same line D46 drew for Claude Code: naming a prerequisite is not branding
+ourselves as it.
+
+**What it spends.** It spends the ChatGPT plan's Codex allowance, which is shared with
+everything else that account does in Codex: a 5-hour rolling window plus a weekly cap.
+Settings should say that in one sentence. A product aimed at non-technical users bills its
+own API key instead.
+
+**Limits (Codex 3).** "You've hit your usage limit … try again at <time>" is recognised
+specifically and raises `QuotaExhausted`, a `Deferred` → `RecoverableError`. Its message is
+in plain words: "Your ChatGPT plan's Codex allowance is used up; it resets at …". The
+worker parks the job until the reset (`JobQueue.defer`). The reset time can be written three ways ("5:47 AM", "Sep 24th, 2026
+5:47 AM", "Aug 20, 2026, 7:38 AM"), and all three are parsed. This uses no attempt, is capped at
+a week and waits an hour when no time is given, so the meeting never fails because a window
+closed. A signed-out CLI does the same (`SignInRequired`, 15 minutes at a time), because it
+is a Settings problem and not a failed meeting. Parked jobs keep their reason in
+`last_error` and are listed by `GET /api/attention`. The Claude provider's "usage limit
+reached" now raises `QuotaExhausted` as well.
+
+`llm.fallback_provider` is used **only** for `QuotaExhausted`, and never for a sensitive
+meeting. It is never used silently: the user has to set it, and the notes record who wrote
+them. `meta.json` gets `llm.fallback_for` and `llm.fallback_reason`, and the meeting API
+gets `summarized_by`. With no fallback set, the transcript does not leave the machine.
+
+**Removal is one line.** `LLM_PROVIDERS` in `app/config.py` builds both the `llm.provider`
+and the `llm.fallback_provider` enums. The Settings rows and the CLI routes are filtered by
+it. `_retire_providers` resets a saved config that names a provider no longer listed: the
+provider goes back to the default and a fallback naming it is cleared, each with a
+`warnings()` message instead of a refusal to start.
+`test_removing_codex_is_one_line_and_its_users_fall_back` proves this, so the day OpenAI
+says no is a release and not a scramble.
+
+**Install.** Where PowerShell can run it, the app uses OpenAI's installer (`install.ps1`
+with `CODEX_NON_INTERACTIVE=1`, as `codex update` itself runs it). Under Constrained
+Language Mode it falls back to npm, then to winget `OpenAI.Codex`. That package exists in
+microsoft/winget-pkgs (0.156.1) but is not in OpenAI's docs, and where a portable install
+lands has not been verified on a real machine.
+
+**What is not proved here.** Everything that only Windows can show (Codex 4) is in
+`manual-checks.md`: SmartScreen, elevation and firewall prompts, Constrained Language Mode,
+stray child processes and timings. No `windows`-marked test exists yet.
+
+## D59 — Hover means :hover; tooltips explain features and can be turned off; smaller fixes found on the way
+
+**Hover.** Tailwind v4 wraps every `hover:` utility in `@media (hover: hover)`. A device
+whose *primary* pointer is touch answers "no" — touchscreen Windows laptops do — so on the
+machine the redesign was reviewed on no row, chip or link highlighted, while every test
+browser (a mouse-first desktop Chrome) saw it work. `@custom-variant hover (&:hover)` in
+`index.css` restores plain `:hover`, which is what the mock uses. `e2e/polish.spec.ts`
+checks it in a `hasTouch` browser, where `(hover: hover)` is false; with the line removed,
+that spec fails.
+
+**Tooltips.** `Tooltip` is portalled and positioned from the control it is attached to (no
+wrapper element, so it fits rows, links and flex children), and takes a one-line `hint`
+saying what a feature is *for*. About thirty key features carry one. Settings → Appearance
+has "Turn off tooltips" (`ui.tooltips_off`, default false — the explanations are how a new
+user learns the app); with it on, controls keep their accessible names.
+
+**"AI agents".** The Settings section that was "Summaries" is "AI agents", with a hover
+explanation: it is where the AI that summarizes, extracts action items and answers questions
+is set up. The id in the URL stays `#summaries`, so existing links keep working.
+
+**Found while testing Codex:**
+- `POST /api/llm/test` wrote the provider under test into the shared config and restored
+  the value it saw at the start. Pressing Test right after choosing a provider put the old
+  choice back over the new one, and the next save persisted it. It now names the provider
+  to `make_client` and touches nothing shared.
+- The e2e server builds the worker but never starts it (specs seed jobs in chosen states).
+  `POST /api/test/run-jobs` (test mode only) drains the queue on request, so a spec can run
+  a real summarize.
+- The seed wrote `transcript.json` but not `transcript.md`, so a seeded meeting could be
+  shown but never re-summarized. It now writes both, through the assemble stage's own
+  `coalesce` and `render_markdown`.
+- A stage that is waiting on purpose — a spent Codex allowance, a sign-in — says why on
+  the meeting page, from `/api/attention`, instead of looking stalled.
+

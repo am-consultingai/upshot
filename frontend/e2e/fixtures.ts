@@ -12,11 +12,33 @@ export interface SeedMeeting {
   state?: string;
   started_at?: string;
   jobs?: Record<string, string>;
-  turns?: { speaker: string; at_ms: number; text: string }[];
+  turns?: { speaker: string; at_ms: number; end_ms?: number; text: string }[];
+  /** How long it ran, so a row and a chip can say "42m". */
+  duration_s?: number;
+  ended_at?: string;
+  tags?: string[];
+  /** A name for a transcript speaker slot: { THEM_1: "Dana Levi" }. */
+  speaker_names?: Record<string, string>;
+  /** Topic sections, as the summarizer would have divided the conversation. */
+  chapters?: { title: string; start_ms: number; end_ms?: number | null }[];
+  sensitive?: boolean;
   summary_html?: string;
   notes?: Record<string, unknown>;
   /** Action items, as a summary would have left them. `done` ticks one off. */
-  action_items?: { who?: string; what: string; due?: string; at_ms?: number; done?: boolean }[];
+  action_items?: {
+    who?: string;
+    what: string;
+    due?: string;
+    /** YYYY-MM-DD, as the summarizer resolves it. */
+    due_at?: string | null;
+    detail?: string;
+    snoozed_until?: string;
+    source?: "model" | "user";
+    at_ms?: number;
+    done?: boolean;
+  }[];
+  /** The transcript's language, which decides the transcript block's direction. */
+  language?: string;
   /** Write this many seconds of real two-track audio, so the page shows a player. */
   audio_seconds?: number;
   /** Pretend the retention sweep already removed this meeting's audio. */
@@ -28,6 +50,7 @@ export interface SeedMeeting {
 /** A Google Calendar event, as a sync would have left it in the cache. */
 export interface SeedEvent {
   id: string;
+  calendar_id?: string;
   start: string;
   end: string;
   title?: string;
@@ -192,4 +215,17 @@ export function isoAt(dayOffset: number, hour: number, minute = 0): string {
     `T${pad(date.getHours())}:${pad(date.getMinutes())}:00` +
     `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
   );
+}
+
+/** A timestamp `minutes` from now (negative for the past), for events around the present. */
+export function minutesFromNow(minutes: number): string {
+  return minutesAgo(-minutes);
+}
+
+/** A local calendar date `days` from today (negative for the past), as YYYY-MM-DD. */
+export function dateFromToday(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }

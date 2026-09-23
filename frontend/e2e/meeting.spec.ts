@@ -19,7 +19,9 @@ test("meeting_page_loads", async ({ page, seed }) => {
   ]);
   await gotoApp(page, "/m/e2e-page");
   await expect(page.getByTestId("meeting-title")).toHaveText("Weekly sync");
-  await expect(page.getByTestId("summary-html")).toContainText("סיכום");
+  // The body is shown; its generic "סיכום" heading is not, so the first paragraph leads.
+  await expect(page.getByTestId("summary-html")).toContainText("הועבר ל-Kubernetes");
+  await expect(page.getByTestId("summary-html").locator("h1")).toHaveCount(0);
   await expect(page.getByTestId("state-badge")).toHaveText("Ready");
 });
 
@@ -29,14 +31,15 @@ test("rename_edits_the_title_in_place", async ({ page, seed }) => {
   ]);
   await gotoApp(page, "/m/e2e-rename");
 
-  // Escape leaves the name as it was.
-  await page.getByTestId("rename").click();
+  // Escape leaves the name as it was. The title itself is the control: double-click it.
+  await page.getByTestId("meeting-title").dblclick();
   await page.getByTestId("meeting-title-input").fill("Not this");
   await page.getByTestId("meeting-title-input").press("Escape");
   await expect(page.getByTestId("meeting-title")).toHaveText("Weekly sync");
 
-  // Enter saves exactly what was typed — nothing appended.
-  await page.getByTestId("rename").click();
+  // Enter saves exactly what was typed — nothing appended. Rename is in the ⋯ menu too.
+  await page.getByTestId("overflow-menu-trigger").click();
+  await page.locator("[data-testid=overflow-menu-item][data-item=rename]").click();
   await expect(page.getByTestId("meeting-title-input")).toHaveValue("Weekly sync");
   await page.getByTestId("meeting-title-input").fill("Budget review with Dana");
   await page.getByTestId("meeting-title-input").press("Enter");
@@ -62,6 +65,8 @@ test("click_transcript_seeks", async ({ page, seed }) => {
       audioRequests.push(request.headers()["range"] ?? "full");
   });
   await gotoApp(page, "/m/e2e-seek");
+  // The transcript and its transport live on the second pill.
+  await page.getByTestId("meeting-tab-transcript").click();
   // One stream, mixed on read (D35): the page does not offer a track picker.
   await expect(page.getByTestId("audio")).toHaveAttribute(
     "src",
@@ -86,6 +91,8 @@ test("content_dir_independent_of_chrome", async ({ page, seed }) => {
     },
   ]);
   await gotoApp(page, "/m/e2e-dir");
+  // The transcript and its transport live on the second pill.
+  await page.getByTestId("meeting-tab-transcript").click();
   expect(await page.evaluate(() => document.dir)).toBe("ltr");
   const transcriptDir = await page
     .getByTestId("transcript")
@@ -126,24 +133,6 @@ test("search_finds_a_transcript", async ({ page, seed }) => {
   await expect(page.getByTestId("search-result")).toHaveCount(1);
 });
 
-test("detector_page_lists_events", async ({ page, seedBody }) => {
-  await seedBody({
-    detector_events: [
-      {
-        process: "Zoom.exe",
-        window_title: "Zoom Meeting",
-        peak_score: 9,
-        outcome: "shadow",
-        evidence: [{ code: "mic.known_app", weight: 3, detail: "Zoom.exe" }],
-      },
-    ],
-  });
-  await gotoApp(page, "/detector");
-  const row = page.getByTestId("detector-event");
-  await expect(row).toHaveCount(1);
-  await expect(row.getByTestId("detector-score")).toHaveText("9");
-  await expect(row.getByTestId("detector-outcome")).toHaveText("shadow");
-});
 
 test("seed_route_is_not_open", async ({ request }) => {
   // The launcher sets UP_TEST_MODE=1, so the route exists here; the *absence* case is
@@ -225,6 +214,8 @@ test("swept_audio_reads_as_deleted_not_missing", async ({ page, seed }) => {
     },
   ]);
   await gotoApp(page, "/m/e2e-swept");
+  // Audio is the transcript's business; the notice sits where the player would.
+  await page.getByTestId("meeting-tab-transcript").click();
   await expect(page.getByTestId("audio-deleted")).toContainText(
     "retention policy",
   );
@@ -248,8 +239,6 @@ test("a_running_stage_shows_a_spinner_and_says_what_it_is_doing", async ({ page,
   const status = page.getByTestId("stage-running");
   await expect(status).toHaveText(/Summarizing/);
   await expect(status.getByTestId("spinner")).toBeVisible();
-  await expect(page.getByTestId("summarize")).toHaveAttribute("data-busy", "true");
-  await expect(page.getByTestId("summarize").getByTestId("spinner")).toBeVisible();
 });
 
 test("view_prompt_opens_the_prompt_in_settings", async ({ page, seed }) => {
@@ -263,7 +252,8 @@ test("view_prompt_opens_the_prompt_in_settings", async ({ page, seed }) => {
     },
   ]);
   await gotoApp(page, "/m/e2e-prompt");
-  await page.getByTestId("view-prompt").click();
+  await page.getByTestId("overflow-menu-trigger").click();
+  await page.getByTestId("overflow-menu").getByText("View prompt").click();
   await expect(page).toHaveURL(/\/settings#prompt$/);
   await expect(page.getByTestId("prompt-text")).toBeInViewport();
 });
@@ -319,47 +309,12 @@ test("needs_attention_and_glossary_are_gone", async ({ page }) => {
   await expect(page.getByTestId("nav-glossary")).toHaveCount(0);
 });
 
-test("detector_page_explains_itself", async ({ page, seedBody }) => {
-  await seedBody({});
-  await gotoApp(page, "/detector");
-  await expect(page.getByTestId("detector-about")).toContainText("microphone");
-  await expect(page.getByTestId("detector-mode")).toBeVisible();
-  await expect(page.getByTestId("detector-empty")).toBeVisible();
-});
 
-test("a_detection_reaches_the_screen_without_a_reload", async ({ page, seedBody, seedMore }) => {
-  // The Detector page used to refresh only when something else happened, so a real call
-  // took about a minute to appear while the detector had decided in ten seconds.
-  await seedBody({});
-  await gotoApp(page, "/detector");
-  await expect(page.getByTestId("detector-empty")).toBeVisible();
 
-  await seedMore({
-    detector_events: [
-      { process: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", peak_score: 6, outcome: "shadow" },
-    ],
-  });
-
-  const row = page.getByTestId("detector-event");
-  await expect(row).toHaveCount(1, { timeout: 10_000 });
-  await expect(row.getByTestId("detector-score")).toHaveText("6");
-});
-
-test("detector_times_read_like_times", async ({ page, seedBody }) => {
-  await seedBody({
-    detector_events: [{ process: "Zoom.exe", peak_score: 7, outcome: "shadow" }],
-  });
-  await gotoApp(page, "/detector");
-  const when = page.getByTestId("detector-when");
-  await expect(when).toBeVisible();
-  const text = (await when.textContent()) ?? "";
-  expect(text).not.toContain("T");        // not the stored ISO string
-  expect(text).toMatch(/\d{1,2}:\d{2}/);  // a time someone would say
-});
 
 test("a_detected_meeting_nudges_on_any_screen", async ({ page, seedBody, seedMore }) => {
   await seedBody({});
-  await gotoApp(page, "/settings"); // deliberately not the Detector page
+  await gotoApp(page, "/settings"); // the nudge must reach any screen, not one of its own
   await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
 
   await seedMore({
@@ -413,6 +368,8 @@ test("transcript_seeks_the_audio_and_playback_marks_the_line", async ({ page, se
     },
   ]);
   await gotoApp(page, "/m/e2e-loop");
+  // The transcript and its transport live on the second pill.
+  await page.getByTestId("meeting-tab-transcript").click();
 
   // Present and driving playback, but never shown: the transport is the UI.
   const audio = page.getByTestId("audio");
@@ -463,6 +420,8 @@ test("the_transport_replaces_the_native_player", async ({ page, seed }) => {
   ]);
 
   await gotoApp(page, "/m/e2e-wave");
+  // The transcript and its transport live on the second pill.
+  await page.getByTestId("meeting-tab-transcript").click();
 
   // Our own controls, not the browser's.
   await expect(page.getByTestId("play-pause")).toBeVisible();

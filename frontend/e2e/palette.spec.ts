@@ -45,13 +45,13 @@ test("it_finds_a_meeting_by_name_and_opens_it", async ({ page, seed }) => {
 test("arrow_keys_move_the_selection_and_enter_runs_it", async ({ page }) => {
   await gotoApp(page);
   await page.keyboard.press("Control+k");
-  await page.getByTestId("palette-input").fill("detector");
+  await page.getByTestId("palette-input").fill("settings");
 
   const items = page.getByTestId("palette-item");
   await expect(items.first()).toHaveAttribute("aria-selected", "true");
 
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/detector$/);
+  await expect(page).toHaveURL(/\/settings$/);
 });
 
 test("it_says_so_when_nothing_matches", async ({ page }) => {

@@ -224,6 +224,11 @@ class CalendarAuth:
             pending, self._pending = self._pending, None
         if pending is not None:
             pending.server.finished = True  # type: ignore[attr-defined]
+            # Announce it, as start(), complete() and the timeout all do. Without
+            # this a cancel was invisible to every view except the one that asked
+            # for it: a second window kept offering to cancel a connection that had
+            # already been dropped.
+            self._announce()
 
     def _serve(self, pending: _Pending) -> None:
         server = pending.server

@@ -11,8 +11,11 @@ where the user maintains it, and the recordings database stays a database of rec
 An event edited after the meeting reads correctly here, and deleting the event deletes
 what Upshot can show.
 
-Email addresses are dropped at this boundary, as they are everywhere else: an attendee is
-a display name, or a name made from the local part of their address.
+Email addresses are dropped everywhere they could persist: an attendee is a display name,
+or a name made from the local part of their address, in the cache, in the snapshot on a
+recording, in every prompt and in every log line. The one exception is ``Invite.people``,
+which the meeting page shows and nothing else reads — it is assembled from the live
+response and dies with it. See D46 in ``docs/DECISIONS.md``.
 """
 
 from __future__ import annotations
@@ -33,8 +36,9 @@ log = get(__name__)
 #: second.
 CACHE_S = 60.0
 
-#: Only the fields that are shown or summarized. `attendees` carries addresses, which are
-#: reduced to names below and never leave this module.
+#: Only the fields that are shown or summarized. `attendees` carries addresses: they reach
+#: the meeting page through `Invite.people` and go nowhere else — not to a model, not to a
+#: store, not to a log.
 FIELDS = (
     "summary,description,location,start,end,htmlLink,hangoutLink,conferenceData,"
     "attendees(displayName,email,resource,optional,responseStatus,self),"
@@ -100,6 +104,35 @@ def plain_text(html: str) -> tuple[str, list[str]]:
 
 
 @dataclass(frozen=True)
+class Person:
+    """One person on the invitation, as the meeting page lists them.
+
+    The only place in this application where an address survives past the boundary, and
+    it survives exactly as long as the response does: `as_prompt` never mentions it, and
+    nothing writes a `Person` anywhere.
+    """
+
+    name: str
+    email: str = ""
+    optional: bool = False
+    declined: bool = False
+    organizer: bool = False
+    is_self: bool = False
+    response: str = ""
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "email": self.email,
+            "optional": self.optional,
+            "declined": self.declined,
+            "organizer": self.organizer,
+            "self": self.is_self,
+            "response": self.response,
+        }
+
+
+@dataclass(frozen=True)
 class Invite:
     """One invitation, as it is right now in Google Calendar. Never persisted."""
 
@@ -116,6 +149,8 @@ class Invite:
     attachments: tuple[dict[str, str], ...] = ()
     conference_url: str | None = None
     html_link: str | None = None
+    #: Everyone on the invitation, addresses included. Shown; never stored, never sent.
+    people: tuple[Person, ...] = ()
 
     def as_api(self) -> dict[str, Any]:
         return {
@@ -132,6 +167,7 @@ class Invite:
             "attachments": [dict(a) for a in self.attachments],
             "conference_url": self.conference_url,
             "html_link": self.html_link,
+            "people": [person.as_dict() for person in self.people],
         }
 
     def as_prompt(self) -> str:
@@ -177,22 +213,54 @@ def parse(item: dict[str, Any]) -> Invite:
     attendees: list[str] = []
     declined: list[str] = []
     optional: list[str] = []
+    people: list[Person] = []
+    organizer = item.get("organizer") or {}
+    organizer_address = str(organizer.get("email", ""))
     for raw in item.get("attendees") or []:
-        if raw.get("resource") or raw.get("self"):
-            continue  # a meeting room is not a person; the user is ME in the transcript
-        name = str(raw.get("displayName") or name_from_email(str(raw.get("email", ""))))
-        if raw.get("responseStatus") == "declined":
+        if raw.get("resource"):
+            continue  # a meeting room is not a person
+        address = str(raw.get("email", ""))
+        name = str(raw.get("displayName") or name_from_email(address))
+        was_declined = raw.get("responseStatus") == "declined"
+        # The list the page shows keeps everyone, including the user: "who was in this
+        # meeting" is a question about the room, and their own line is how they check
+        # they are reading the right invitation.
+        people.append(
+            Person(
+                name=name,
+                email=address,
+                optional=bool(raw.get("optional")),
+                declined=was_declined,
+                organizer=bool(address) and address == organizer_address,
+                is_self=bool(raw.get("self")),
+                response=str(raw.get("responseStatus") or ""),
+            )
+        )
+        if raw.get("self"):
+            continue  # the user is ME in the transcript
+        if was_declined:
             declined.append(name)
             continue
         attendees.append(name)
         if raw.get("optional"):
             optional.append(name)
-    organizer = item.get("organizer") or {}
     organizer_name = (
-        str(organizer.get("displayName") or name_from_email(str(organizer.get("email", ""))))
+        str(organizer.get("displayName") or name_from_email(organizer_address))
         if organizer
         else None
     )
+    # An organizer who did not put themselves on the attendee list is still a person on
+    # this invitation, and usually the one the reader wants to reply to.
+    if organizer and not any(person.organizer for person in people):
+        people.insert(
+            0,
+            Person(
+                name=organizer_name or name_from_email(organizer_address),
+                email=organizer_address,
+                organizer=True,
+                is_self=bool(organizer.get("self")),
+            ),
+        )
     agenda, links = plain_text(str(item.get("description") or ""))
     conference = None
     for entry in (item.get("conferenceData") or {}).get("entryPoints") or []:
@@ -217,6 +285,7 @@ def parse(item: dict[str, Any]) -> Invite:
         ),
         conference_url=conference or item.get("hangoutLink"),
         html_link=item.get("htmlLink"),
+        people=tuple(people),
     )
 
 

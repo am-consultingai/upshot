@@ -95,12 +95,22 @@ recording matched to the meeting that was on, named from it and given its attend
 
 ### Main screen: calendar view
 
-A **List / Calendar** toggle, and within the calendar **Day / Week / Month**. Day and week
-share a time-grid that reuses the existing tested overlap packer; month is a cell grid. All
-date arithmetic is pure functions in `frontend/src/lib/calendar.ts`, covered by 14 unit
-tests including DST, year boundaries and a month starting on Sunday. Labels come from
-`Intl.DateTimeFormat`, so Hebrew is correct with no translation table. The choice persists
-as `ui.view` / `ui.calendar_span`.
+The calendar holds the detail side whenever nothing is open on it, with **Day / Week /
+Month** spans; the meeting list is the column beside it, so there is no List/Calendar
+toggle to choose between them (**D48**). Day and week share a time-grid that reuses the
+existing tested overlap packer; month is a cell grid. All date arithmetic is pure functions
+in `frontend/src/lib/calendar.ts`, covered by 22 unit tests including DST, year boundaries
+and a month starting on Sunday. Labels come from `Intl.DateTimeFormat`, so Hebrew is
+correct with no translation table. The span persists as `ui.calendar_span`.
+
+An event and the recording of it are one block: the event keeps its name and its slot, the
+block is flagged, and clicking it opens the recording. A recording with no stored match is
+matched against the cache when the page is read, so one made before the calendar was
+connected stops drawing a duplicate block of its own; only a confident verdict counts, and
+nothing is written back.
+
+Each card in the list carries what its meeting still owes — the number of open action
+items, or a green tick and the total once they are all done.
 
 ### Crosstalk detection, and its removal
 
@@ -294,6 +304,53 @@ What shipped in response:
   silently range-filters the meeting list beside it.
 
 Not done from that review: speaker names in place of `ME`/`THEM`.
+
+---
+
+## 8. Closing the redesign's data gaps (2026-09-23)
+
+Backend for the redesign mock (migration `0005`, D50–D55):
+
+- **Action items** carry `detail`, `due_at` (YYYY-MM-DD; the model's, else `due` resolved by
+  `app/due.py` against the meeting's day, lazily for old rows), `snoozed_until` and
+  `source`. `PATCH /api/action-items/{id}` takes any of `done`, `due_at`, `snoozed_until`,
+  `who`, `what`, `detail` (null clears); `POST /api/meetings/{id}/action-items` adds one by
+  hand (`source: "user"`, survives re-summarize); `DELETE /api/action-items/{id}`.
+- **Tags**: `GET /api/tags`, `PUT /api/meetings/{id}/tags`; `tags` on the list and detail.
+- **Speaker names**: `speaker_names` on the meeting, merged by `PATCH /api/meetings/{id}`.
+  Speaker names in place of `ME`/`THEM` — the gap left above — is now data; showing it is
+  the page's.
+- **Chapters** from the summarizer, on the meeting payload. Prompt v6: a lead sentence
+  first, `<p class="next">` under a decision. The meeting's date always reaches the model.
+- **Related meetings** (`GET /api/meetings/{id}/related`) and **ask**
+  (`POST /api/meetings/{id}/ask`, scope `meeting` | `related`).
+- `GET /api/status` reports `storage_bytes` (cached 60 s); `POST /api/recording/start`
+  accepts `calendar_id`/`event_id` to record an upcoming event already matched to it.
+
+Front end, the same day (D56) — every item on the ticket's gap list, checked by
+`frontend/e2e/redesign.spec.ts` against the mock's own seeded library:
+
+- **Library**: month-and-year bar with `‹ ›`, `T` and the week number; Day / Week / Month /
+  **List**; stacked day headers with today in a pill; a zone label; an all-day band that
+  tints its day; chips with a time range, "recording · 27m" and "13:00 · failed"; a rail
+  with Now recording, Up next ("Record this one") and open items by due date.
+- **Sidebar**: "Record a meeting", a workspace menu on the brand row, rows reading
+  `09:30 · 42m · 3 items` / `summary failed` / `done`, a `⋯` and right-click menu per row,
+  delete behind a named dialog with a toast, and the data folder's size in the footer.
+- **Meeting**: date, length, people and tag chips with `+ Add tag`; no calendar strip;
+  "1 of 3 done" with `+ Add` and a fold; lead sentence, `next` lines, a section minimap;
+  a rail of named speakers with real talk time (renamable), related meetings with their
+  reason, and Ask this meeting; "Copy summary".
+- **Transcript**: speaker blocks with names, `(00:00:04)` stamps, find with "2 of 4",
+  chapters under Jump to, and a waveform banded by speaker.
+- **Inbox**: Mine / Everyone / Done; Overdue / This week / Later / No date; a second line
+  per item; late chips; hover-revealed snooze and `⋯`; a date picker; a key strip; a rail of
+  sources, who you are waiting on, and what was cleared this week.
+- **Search & palette**: recents and scopes before typing; grouped hits in the palette with
+  a key footer. Tooltips, toasts and the confirmation dialog are in use, not just built.
+
+`UP_SHOTS=1 npx playwright test parity` writes the same screens, light, dark and Hebrew, to
+`artifacts/parity/` for reading against `.ui-research/mocks/shots/`.
 
 ---
 

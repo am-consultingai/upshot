@@ -467,7 +467,18 @@ class Detector:
         title: str = "",
         meeting_id: str | None = None,
     ) -> int:
-        return self.dao.add_detector_event(
+        """Record a verdict, in the log file as well as the database.
+
+        Despite the name this only ever wrote a row to `detector_events`. That
+        table was read by exactly one thing — the Detector screen — so when the
+        screen was removed on 2026-09-22 the whole audit trail would have become
+        invisible: the question "why did it record that?" had no answer outside a
+        SQL client. One line per verdict, at INFO, restores it.
+
+        The evidence is summarised rather than dumped. The full items stay in the
+        row; what belongs on one line is which signals fired and how hard.
+        """
+        row_id = self.dao.add_detector_event(
             peak_score=peak,
             evidence=[item.as_dict() for item in evidence],
             outcome=str(outcome),
@@ -475,6 +486,17 @@ class Detector:
             window_title=title or None,
             meeting_id=meeting_id,
         )
+        why = ", ".join(f"{item.code}{item.weight:+d}" for item in evidence) or "no evidence"
+        log.info(
+            "detector %s: %s scored %d (%s)%s%s",
+            outcome,
+            process or "unknown process",
+            peak,
+            why,
+            f" — {title}" if title else "",
+            f" — meeting {meeting_id}" if meeting_id else "",
+        )
+        return row_id
 
     def _publish(self, state: str, **payload: Any) -> None:
         if self.events is not None:

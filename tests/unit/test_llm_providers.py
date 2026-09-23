@@ -141,9 +141,27 @@ def test_claude_cli_maps_rate_limit(tmp_path) -> None:  # type: ignore[no-untype
     (tmp_path / "claude").write_text("#!/bin/sh\n")
     config = default_config()
     config.set("llm.claude_cli_path", str(tmp_path / "claude"))
-    client = ClaudeCliClient(config, runner=fake_runner([(1, "", "Usage limit reached")]))
+    client = ClaudeCliClient(config, runner=fake_runner([(1, "", "Rate limit exceeded (429)")]))
     with pytest.raises(RecoverableError, match="rate limited"):
         client.complete_json(system_blocks=BLOCKS, user="x")
+
+
+def test_claude_cli_knows_a_spent_plan_from_a_rate_limit(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The plan's allowance waits for its reset (or the fallback); a 429 just backs off."""
+    from app.errors import QuotaExhausted
+
+    (tmp_path / "claude").write_text("#!/bin/sh\n")
+    config = default_config()
+    config.set("llm.claude_cli_path", str(tmp_path / "claude"))
+    spent = ClaudeCliClient(
+        config, runner=fake_runner([(1, "", "Claude AI usage limit reached|1790000000")])
+    )
+    with pytest.raises(QuotaExhausted) as raised:
+        spent.complete_json(system_blocks=BLOCKS, user="x")
+    assert raised.value.provider == "claude-subscription"
+    assert raised.value.retry_at is not None and raised.value.retry_at.timestamp() == 1790000000
+    assert "allowance is used up" in str(raised.value)
+    assert "1790000000" not in str(raised.value), "plain words, not the CLI's"
 
 
 def test_claude_cli_status_reports_the_version(tmp_path) -> None:  # type: ignore[no-untyped-def]

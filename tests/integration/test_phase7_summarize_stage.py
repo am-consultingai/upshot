@@ -287,3 +287,106 @@ def test_resummarizing_keeps_the_ticks(tmp_path: Path) -> None:
     again = h.dao.action_items(meeting_id=meeting.id)
     assert [item.what for item in again] == [item.what for item in first]
     assert again[0].done is True
+
+
+def test_the_meeting_date_always_reaches_the_model(tmp_path: Path) -> None:
+    """No calendar invitation, and still a date: "by Thursday" is unresolvable without
+    knowing which week it was said in (D50)."""
+    from app.due import anchor_date
+
+    h, meeting = prepared(tmp_path)
+    llm = FakeLlm()
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=llm)))
+    anchor = anchor_date(meeting.started_at)
+    assert anchor is not None
+    for call in llm.calls:
+        assert call["user"].startswith(f"Date: {anchor.isoformat()} ({anchor:%A})")
+        assert "Transcript:" in call["user"]
+
+
+def test_dates_details_and_chapters_are_stored(tmp_path: Path) -> None:
+    """What the fake stands in for: `detail` and `due_at` reach the row, and `chapters`
+    reach notes.json in time order."""
+    from app.due import anchor_date, resolve_due
+
+    h, meeting = prepared(tmp_path)
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services()))
+    stored = h.dao.action_items(meeting_id=meeting.id)
+    first = next(item for item in stored if item.who == "ME")
+    assert first.detail == "so the numbers are in before the review"
+    anchor = anchor_date(meeting.started_at)
+    assert anchor is not None
+    expected = resolve_due("this week", anchor)
+    assert expected is not None and first.due_at == expected.isoformat()
+    notes = summarize.load_notes(meeting.path)
+    validate(notes)
+    chapters = notes["chapters"]
+    assert chapters and chapters[0]["start_ms"] == 0
+    assert [c["start_ms"] for c in chapters] == sorted(c["start_ms"] for c in chapters)
+    assert notes["summary_html"].startswith("<p>"), "a lead sentence, not a heading"
+
+
+def test_a_spoken_due_without_a_date_is_resolved_at_store_time(tmp_path: Path) -> None:
+    h, meeting = prepared(tmp_path)
+    h.dao.update_meeting(meeting.id, started_at="2026-09-23T14:00:00")
+    meeting = h.dao.require_meeting(meeting.id)
+
+    class WordsOnly(FakeLlm):
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            from app.llm.client import LlmResult
+
+            return LlmResult(
+                data={
+                    "summary_html": "<p>Done.</p>",
+                    "action_items": [
+                        {"who": "Dana", "what": "write the spec", "due": "עד יום חמישי"},
+                        {"who": "ME", "what": "chase legal", "due": "asap"},
+                        {"who": "ME", "what": "book it", "due": "Friday", "due_at": "2026-10-09"},
+                    ],
+                },
+                model="fake",
+                attempts=1,
+            )
+
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=WordsOnly())))
+    rows = h.dao.conn.execute(
+        "SELECT what, due_at FROM action_items WHERE meeting_id = ? ORDER BY seq", (meeting.id,)
+    ).fetchall()
+    assert [(row["what"], row["due_at"]) for row in rows] == [
+        ("write the spec", "2026-09-24"),
+        ("chase legal", None),
+        ("book it", "2026-10-09"),  # the model's own date is trusted over ours
+    ]
+
+
+def test_windowed_chapters_are_concatenated_when_the_merge_has_none(tmp_path: Path) -> None:
+    h, meeting = prepared(tmp_path, llm__window_tokens=200)
+
+    class Windowed(FakeLlm):
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            from app.llm.client import LlmResult
+
+            merging = kwargs["user"].startswith("Merge these")
+            index = len(self.calls)
+            self.calls.append(kwargs)
+            data: dict[str, object] = {"summary_html": f"<p>part {index}</p>"}
+            if not merging:
+                data["chapters"] = [{"title": f"Part {index}", "start_ms": index * 60000}]
+            return LlmResult(data=data, model="fake", attempts=1)
+
+    llm = Windowed()
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services(llm=llm)))
+    assert len(llm.calls) > 2, "the transcript should have been split"
+    chapters = summarize.load_notes(meeting.path)["chapters"]
+    windows = len(llm.calls) - 1
+    assert [c["title"] for c in chapters] == [f"Part {i}" for i in range(windows)]
+    from itertools import pairwise
+
+    assert all(c["end_ms"] == n["start_ms"] for c, n in pairwise(chapters))
+
+
+def test_the_shipped_prompt_asks_for_the_lead_and_the_next_step() -> None:
+    text = " ".join(load_prompt("system").text.split())
+    assert '<p class="next">' in text
+    assert "no heading before it" in text
+    assert "`chapters`" in text and "`due_at`" in text and "`detail`" in text

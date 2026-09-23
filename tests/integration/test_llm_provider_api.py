@@ -57,7 +57,14 @@ def test_llm_status_lists_every_provider(api) -> None:  # type: ignore[no-untype
     body = api.client().get("/api/llm/status").json()
     assert body["active"] == "fake"  # the test harness wires the fake
     ids = {provider["id"] for provider in body["providers"]}
-    assert ids == {"anthropic", "gemini", "openai", "claude-subscription", "ollama"}
+    assert ids == {
+        "anthropic",
+        "gemini",
+        "openai",
+        "claude-subscription",
+        "codex-subscription",
+        "ollama",
+    }
     by_id = {provider["id"]: provider for provider in body["providers"]}
     assert by_id["anthropic"]["ready"] is False
     assert by_id["gemini"]["console"].startswith("https://aistudio.google.com")
@@ -194,3 +201,28 @@ def test_provider_switch_persists(api) -> None:  # type: ignore[no-untyped-def]
     client.put("/api/settings", json={"values": {"llm.provider": "gemini"}})
     assert client.get("/api/llm/status").json()["active"] == "gemini"
     assert client.get("/api/settings").json()["config"]["llm"]["provider"] == "gemini"
+
+
+def test_llm_test_never_changes_the_chosen_provider_while_it_probes(api, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The probe names its provider to the factory; the shared config is not touched.
+
+    It used to set ``llm.provider`` to the provider under test and put the old value
+    back afterwards, so a Test pressed while a new choice was still being saved restored
+    the old choice over it (D59). Here the fake records what the config said *during*
+    the call, while the configured provider is a different one.
+    """
+    from app.llm.client import FakeLlm
+
+    seen: list[object] = []
+    original = FakeLlm.complete_json
+
+    def spying(self, **kwargs):  # type: ignore[no-untyped-def]
+        seen.append(api.services.config.get("llm.provider"))
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(FakeLlm, "complete_json", spying)
+    api.services.config.set("llm.provider", "ollama")
+    body = api.client().post("/api/llm/test", json={"provider": "fake"}).json()
+    assert body["ok"] is True
+    assert seen == ["ollama"]
+    assert api.services.config.get("llm.provider") == "ollama"

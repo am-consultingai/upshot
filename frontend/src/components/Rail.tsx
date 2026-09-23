@@ -21,7 +21,14 @@ import type { MessageKey } from "../locales/en";
  * half-pixel boundaries and blurs it.
  */
 const ITEMS: { to: string; key: MessageKey; testid: string; path: string }[] = [
-  { to: "/", key: "nav.timeline", testid: "nav-timeline", path: "M2.5 4h11M2.5 8h11M2.5 12h7" },
+  {
+    to: "/",
+    key: "nav.timeline",
+    testid: "nav-timeline",
+    // A calendar page with its two rings. The three stacked lines this used to be
+    // promised a list, and the screen behind it is a calendar.
+    path: "M2.5 4.5h11v9h-11zM2.5 7h11M5.5 2.5v2M10.5 2.5v2",
+  },
   {
     to: "/actions",
     key: "nav.actions",
@@ -34,12 +41,6 @@ const ITEMS: { to: string; key: MessageKey; testid: string; path: string }[] = [
     key: "nav.search",
     testid: "nav-search",
     path: "M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z",
-  },
-  {
-    to: "/detector",
-    key: "nav.detector",
-    testid: "nav-detector",
-    path: "M8 2.5v11M3.5 6v4M12.5 6v4M6 4v8M10 4v8",
   },
   {
     to: "/settings",
@@ -88,7 +89,7 @@ export default function Rail() {
         onClick={() => start.mutate()}
         title={t("timeline.start")}
         aria-label={t("timeline.start")}
-        className="mb-2 grid size-8.5 place-items-center rounded-full bg-danger disabled:opacity-40"
+        className="mb-2 grid size-8.5 place-items-center rounded-full bg-danger hover:brightness-110 active:translate-y-px active:brightness-95 disabled:opacity-40 disabled:hover:brightness-100"
       >
         <span className="size-2.5 rounded-full bg-on-solid" />
       </button>
@@ -105,7 +106,7 @@ export default function Rail() {
             `grid size-8.5 place-items-center rounded-lg transition-colors ${
               isActive
                 ? "bg-raised text-primary shadow-sm"
-                : "text-tertiary hover:bg-surface-3 hover:text-primary"
+                : "text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
             }`
           }
         >

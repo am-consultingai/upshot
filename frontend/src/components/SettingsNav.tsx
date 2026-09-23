@@ -1,10 +1,14 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
+import SetupMark from "./SetupMark";
+import Tooltip from "./Tooltip";
 
 export interface SettingsSection {
   id: string;
   label: MessageKey;
+  /** What the section is for, on hover — for the ones a name does not explain. */
+  hint?: MessageKey;
 }
 
 /**
@@ -24,7 +28,14 @@ export interface SettingsSection {
  * The section lives in the URL hash, so "View prompt" keeps working as a link
  * and the browser's back button still means something.
  */
-export default function SettingsNav({ sections }: { sections: SettingsSection[] }) {
+export default function SettingsNav({
+  sections,
+  warnings = {},
+}: {
+  sections: SettingsSection[];
+  /** Section id → why it needs attention; those sections carry a "!". */
+  warnings?: Record<string, string>;
+}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const { hash } = useLocation();
@@ -35,21 +46,31 @@ export default function SettingsNav({ sections }: { sections: SettingsSection[] 
       <div className="sticky top-6 space-y-0.5">
         {sections.map((section) => {
           const active = section.id === current;
-          return (
+          const button = (
             <button
               key={section.id}
               type="button"
               data-testid={`settings-section-${section.id}`}
               aria-current={active ? "page" : undefined}
               onClick={() => navigate(`/settings#${section.id}`)}
-              className={`block w-full rounded-md px-2.5 py-1.5 text-start text-sm transition-colors ${
+              className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-start text-sm transition-colors ${
                 active
                   ? "bg-surface-2 font-medium text-primary"
-                  : "text-secondary hover:bg-surface-1 hover:text-primary"
+                  : "text-secondary hover:bg-a-200 hover:text-primary active:bg-a-300"
               }`}
             >
-              {t(section.label)}
+              <span className="min-w-0 flex-1 truncate">{t(section.label)}</span>
+              {warnings[section.id] && (
+                <SetupMark testid={`settings-warning-${section.id}`} label={warnings[section.id]} />
+              )}
             </button>
+          );
+          return section.hint ? (
+            <Tooltip key={section.id} label={t(section.label)} hint={t(section.hint)} side="end">
+              {button}
+            </Tooltip>
+          ) : (
+            button
           );
         })}
       </div>

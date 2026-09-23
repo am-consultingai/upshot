@@ -60,7 +60,9 @@ def _pyaudio_module() -> Any:
         import pyaudiowpatch as pyaudio
     except ImportError as exc:  # pragma: no cover - Windows-only wheel
         raise NoDeviceError(
-            "PyAudioWPatch is not installed — audio capture needs the Windows build"
+            "Recording only works on the Windows build. This copy is running on "
+            "another system, where Upshot cannot open the microphone or capture "
+            "what the computer is playing."
         ) from exc
     return pyaudio
 

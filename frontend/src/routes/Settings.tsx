@@ -7,8 +7,9 @@ import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
 import MicMeter from "../components/MicMeter";
-import SettingRow, { SELECT_CLASS, SettingGroup } from "../components/SettingRow";
+import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
+import { useSetupWarnings } from "../lib/setup";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -37,13 +38,14 @@ const SECTIONS: SettingsSection[] = [
   { id: "appearance", label: "settings.groupAppearance" },
   { id: "storage", label: "settings.groupStorage" },
   { id: "calendar", label: "settings.groupCalendar" },
-  { id: "summaries", label: "settings.groupSummaries" },
+  { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents" },
   { id: "prompt", label: "settings.prompt" },
 ];
 
 export default function Settings() {
   const section = useSection(SECTIONS);
-  const { t, locale, setLocale, theme, setTheme } = useI18n();
+  const setup = useSetupWarnings();
+  const { t, locale, setLocale, theme, setTheme, tooltips, setTooltips } = useI18n();
   const queryClient = useQueryClient();
   const [dataRoot, setDataRoot] = useState("");
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
@@ -60,6 +62,10 @@ export default function Settings() {
   }, [config.data_root]);
 
   const warnings = settings.data?.warnings ?? [];
+  // Keys the environment is holding down. Handed to every row, so a control a launcher
+  // has pinned admits it rather than saving, reading back, and reverting on the next
+  // start with nothing on screen to explain it.
+  const pinned = settings.data?.pinned ?? {};
   const localWarning = /onedrive|dropbox|google drive/i.test(dataRoot);
 
   const devices = audio.data?.devices ?? [];
@@ -68,8 +74,15 @@ export default function Settings() {
   const selectedOutput = config.audio?.output_device ?? null;
 
   return (
+    <PinnedContext.Provider value={pinned}>
     <section data-testid="settings-page" className="flex gap-10">
-      <SettingsNav sections={SECTIONS} />
+      <SettingsNav
+        sections={SECTIONS}
+        warnings={{
+          ...(setup.calendar ? { calendar: t("setup.calendarMissing") } : {}),
+          ...(setup.summaries ? { summaries: t("setup.summariesMissing") } : {}),
+        }}
+      />
 
       <div className="min-w-0 flex-1">
       <h1 className="display mb-6 text-2xl">{t(SECTIONS.find((s) => s.id === section)!.label)}</h1>
@@ -88,6 +101,7 @@ export default function Settings() {
         <SettingRow
           label={t("settings.microphone")}
           htmlFor="mic-device"
+          configKey="audio.input_device"
           description={
             devices.length === 0 ? (
               <>
@@ -179,6 +193,7 @@ export default function Settings() {
         <SettingRow
           label={t("settings.detection")}
           htmlFor="detection-mode"
+          configKey="detection.mode"
           description={<span data-testid="detection-hint">{t("settings.detectionHint")}</span>}
         >
           <select
@@ -200,7 +215,7 @@ export default function Settings() {
 
       {section === "appearance" && (
       <SettingGroup>
-        <SettingRow label={t("settings.theme")} htmlFor="ui-theme">
+        <SettingRow label={t("settings.theme")} htmlFor="ui-theme" configKey="ui.theme">
           <select
             id="ui-theme"
             data-testid="ui-theme"
@@ -228,7 +243,11 @@ export default function Settings() {
           </select>
         </SettingRow>
 
-        <SettingRow label={t("settings.language")} htmlFor="ui-language">
+        <SettingRow
+          label={t("settings.language")}
+          htmlFor="ui-language"
+          configKey="ui.language"
+        >
           <select
             id="ui-language"
             data-testid="ui-language"
@@ -248,7 +267,11 @@ export default function Settings() {
           </select>
         </SettingRow>
 
-        <SettingRow label={t("settings.summaryLanguage")} htmlFor="summary-language">
+        <SettingRow
+          label={t("settings.summaryLanguage")}
+          htmlFor="summary-language"
+          configKey="summary.language"
+        >
           <select
             id="summary-language"
             data-testid="summary-language"
@@ -263,6 +286,29 @@ export default function Settings() {
             ))}
           </select>
         </SettingRow>
+
+        {/*
+         * Off by default — the tooltips are how a new user learns what "Up next" or
+         * "Ask this meeting" is for — and one click away for someone who has.
+         */}
+        <SettingRow
+          label={t("settings.tooltipsOff")}
+          htmlFor="ui-tooltips-off"
+          configKey="ui.tooltips_off"
+          description={t("settings.tooltipsOffHint")}
+        >
+          <input
+            id="ui-tooltips-off"
+            data-testid="ui-tooltips-off"
+            type="checkbox"
+            checked={!tooltips}
+            onChange={(event) => {
+              setTooltips(!event.target.checked);
+              save.mutate({ "ui.tooltips_off": event.target.checked });
+            }}
+            className="size-4 accent-[var(--accent)]"
+          />
+        </SettingRow>
       </SettingGroup>
       )}
 
@@ -270,6 +316,7 @@ export default function Settings() {
       <SettingGroup>
         <SettingRow
           label={t("settings.dataRoot")}
+          configKey="data_root"
           htmlFor="data-root"
           description={t("settings.dataRootNote")}
           tone={
@@ -311,5 +358,6 @@ export default function Settings() {
       {section === "prompt" && <PromptSettings />}
       </div>
     </section>
+    </PinnedContext.Provider>
   );
 }
