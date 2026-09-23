@@ -68,6 +68,33 @@ test("a_new_install_opens_on_setup_and_done_lands_in_the_library", async ({ page
   await expect(page).toHaveURL(/\/$/);
 });
 
+test("a_slow_device_list_is_not_reported_as_no_microphone", async ({ page }) => {
+  // Machine B, job 012: the list took seconds, and the screen said "No microphone found"
+  // the whole time, on a laptop with a working microphone.
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/audio/devices", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await gotoApp(page, "/welcome");
+  await expect(page.getByTestId("welcome-page")).toContainText("Looking for microphones");
+  await expect(page.getByTestId("welcome-page")).not.toContainText("No microphone found");
+  release();
+  await expect(page.getByTestId("welcome-page")).not.toContainText("Looking for microphones");
+});
+
+test("a_downloaded_model_is_not_shown_as_still_to_download", async ({ page }) => {
+  await page.route("**/api/model", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), state: "ready" } });
+  });
+  await gotoApp(page, "/welcome");
+  await expect(page.getByTestId("model-ready")).toBeVisible();
+  await expect(page.getByTestId("model-size")).toContainText("on this computer");
+  await expect(page.getByTestId("model-size")).not.toContainText("to download");
+});
+
 test("done_saves_the_hebrew_that_was_shown", async ({ page }) => {
   await gotoApp(page, "/welcome");
   await page.getByTestId("welcome-done").click();
