@@ -467,10 +467,14 @@ def test_the_interpreter_behind_a_link_counts_as_upshot(
     real = tmp_path / "cpython-3.14.7" / "python.exe"
     real.parent.mkdir()
     real.write_bytes(b"")
-    try:
-        (tmp_path / "cpython-3.14").symlink_to(real.parent, target_is_directory=True)
-    except OSError:
-        pytest.skip("this Windows account may not create symlinks (no Developer Mode)")
+    link = tmp_path / "cpython-3.14"
+    if sys.platform == "win32":
+        # A junction, as uv makes it; unlike a symlink it needs no Developer Mode (job 016).
+        import _winapi
+
+        _winapi.CreateJunction(str(real.parent), str(link))
+    else:
+        link.symlink_to(real.parent, target_is_directory=True)
     monkeypatch.setattr(sys, "_base_executable", str(tmp_path / "cpython-3.14" / "python.exe"))
 
     assert _exe_key(str(real)) in own_executables()
