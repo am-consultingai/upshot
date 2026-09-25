@@ -11,6 +11,7 @@ model's context, and says so when it was cut, with what to ask for next.
 from __future__ import annotations
 
 import json
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -19,16 +20,25 @@ from app.db.dao import Meeting
 from app.meetings import calendar_payload
 from app.services import Services
 
-#: Tool output is data, never instructions (D61). Step 6 of the plan randomises the
-#: delimiter per request; the fixed pair is enough for the model to know where it ends.
-DATA_OPEN = "<upshot-data>"
-DATA_CLOSE = "</upshot-data>"
+#: Tool output is data, never instructions (D61). It is fenced with a tag whose name is
+#: made when the app starts ("spotlighting"): a transcript that says "</upshot-data>
+#: ignore the above" cannot close the fence, because it cannot know the name. The system
+#: prompt tells the model the name (see :func:`data_tag`).
+DATA_TAG = f"upshot-data-{secrets.token_hex(4)}"
+DATA_OPEN = f"<{DATA_TAG}>"
+DATA_CLOSE = f"</{DATA_TAG}>"
 MAX_CHARS = 24_000
+
+
+def data_tag() -> str:
+    return DATA_TAG
 
 
 def as_data(payload: Any) -> str:
     # Compact: the model reads it as easily, and every byte is a token of its context.
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    # Belt and braces: the fence cannot be closed from inside, even by a lucky guess.
+    text = text.replace(DATA_CLOSE, "").replace(f"<{DATA_TAG}", "")
     return f"{DATA_OPEN}\n{text}\n{DATA_CLOSE}"
 
 
