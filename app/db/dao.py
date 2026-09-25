@@ -123,11 +123,10 @@ class SearchHit:
     at_ms: int
     text: str
     snippet: str
-    #: Where the match came from: ``title``, ``action`` or ``transcript``. The
+    #: Where the match came from: ``title``, ``action``, ``summary`` or ``transcript``. The
     #: screen renders each differently — a title hit has no speaker and no
     #: timestamp, so it cannot be labelled "they said" or seeked to.
     kind: str = "transcript"
-
 
 
 def _fts_query(raw: str) -> str:
@@ -138,25 +137,35 @@ def _fts_query(raw: str) -> str:
     apostrophe each raised ``OperationalError`` and the endpoint answered 500 —
     typing an ordinary English word broke the search box.
 
-    Every token is quoted (which makes operators and punctuation literal) and the
-    last one gets a prefix star, because the last word in a search box is usually
-    still being typed.
+    Every token is quoted, which makes operators and punctuation literal. The index is
+    of trigrams, so each quoted token already matches inside longer words — a prefix,
+    a Hebrew word with its preposition attached — and needs no star. A token shorter
+    than three characters cannot be matched by trigrams at all: then there is no FTS
+    expression, and the caller falls back to LIKE.
     """
     tokens = [token for token in raw.split() if token]
-    if not tokens:
+    if not tokens or any(len(token) < 3 for token in tokens):
         return ""
-    quoted = ['"' + token.replace('"', '""') + '"' for token in tokens]
-    quoted[-1] += "*"
-    return " ".join(quoted)
+    return " ".join('"' + token.replace('"', '""') + '"' for token in tokens)
 
 
 def _mark(text: str, query: str, *, context: int = 40) -> str:
     """A snippet in the same bracket convention SQLite's ``snippet()`` produces.
 
-    The screen splits on ``[`` and ``]`` to highlight, so a hit found by LIKE has
-    to arrive looking like a hit found by FTS.
+    The screen splits on ``[`` and ``]`` to highlight. Every hit's snippet is made
+    here, including the index's: SQLite's ``snippet()`` counts tokens, and a trigram
+    index's tokens are three letters long, so its excerpts came out as a few characters
+    with a word cut in half. The whole query is marked if it appears as typed, otherwise
+    the first of its words that does.
     """
-    index = text.lower().find(query.lower())
+    lowered = text.lower()
+    index = lowered.find(query.lower())
+    if index < 0:
+        for word in query.split():
+            index = lowered.find(word.lower())
+            if index >= 0:
+                query = word
+                break
     if index < 0:
         return text
     start = max(0, index - context)
@@ -545,6 +554,8 @@ class Dao:
 
     def delete_meeting(self, meeting_id: str) -> None:
         self.clear_turns(meeting_id)
+        if capabilities(self.conn).fts:
+            self.conn.execute("DELETE FROM search_fts WHERE meeting_id = ?", (meeting_id,))
         self.conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
 
     # -- transcripts and search -------------------------------------------
@@ -561,8 +572,8 @@ class Dao:
             )
             if capabilities(self.conn).fts:
                 self.conn.execute(
-                    "INSERT INTO transcripts_fts(meeting_id, speaker, at_ms, text) "
-                    "VALUES (?,?,?,?)",
+                    "INSERT INTO search_fts(meeting_id, kind, speaker, at_ms, text) "
+                    "VALUES (?,'transcript',?,?,?)",
                     (meeting_id, turn.speaker, turn.at_ms, turn.text),
                 )
             count += 1
@@ -571,7 +582,48 @@ class Dao:
     def clear_turns(self, meeting_id: str) -> None:
         self.conn.execute("DELETE FROM transcript_turns WHERE meeting_id = ?", (meeting_id,))
         if capabilities(self.conn).fts:
-            self.conn.execute("DELETE FROM transcripts_fts WHERE meeting_id = ?", (meeting_id,))
+            self.conn.execute(
+                "DELETE FROM search_fts WHERE meeting_id = ? AND kind = 'transcript'", (meeting_id,)
+            )
+
+    def index_summary(self, meeting_id: str, text: str) -> None:
+        """Keep the searchable copy of this meeting's summary. Replaces any earlier one.
+
+        An empty text is stored too: it says the meeting was looked at and has no
+        summary, so the start-up backfill does not open its folder again.
+        """
+        text = text.strip()
+        self.conn.execute(
+            "INSERT INTO meeting_texts(meeting_id, kind, text, updated_at) "
+            "VALUES (?, 'summary', ?, ?) ON CONFLICT(meeting_id, kind) DO UPDATE "
+            "SET text = excluded.text, updated_at = excluded.updated_at",
+            (meeting_id, text, iso(self.clock.now())),
+        )
+        if capabilities(self.conn).fts:
+            self.conn.execute(
+                "DELETE FROM search_fts WHERE meeting_id = ? AND kind = 'summary'", (meeting_id,)
+            )
+            if text:
+                self.conn.execute(
+                    "INSERT INTO search_fts(meeting_id, kind, speaker, at_ms, text) "
+                    "VALUES (?, 'summary', '', 0, ?)",
+                    (meeting_id, text),
+                )
+
+    def summary_text(self, meeting_id: str) -> str:
+        row = self.conn.execute(
+            "SELECT text FROM meeting_texts WHERE meeting_id = ? AND kind = 'summary'",
+            (meeting_id,),
+        ).fetchone()
+        return str(row["text"]) if row else ""
+
+    def meetings_without_summary_text(self) -> list[Meeting]:
+        """Meetings whose summary has never been copied for search: the backfill's list."""
+        rows = self.conn.execute(
+            "SELECT * FROM meetings WHERE id NOT IN "
+            "(SELECT meeting_id FROM meeting_texts WHERE kind = 'summary')"
+        ).fetchall()
+        return [_row_to_meeting(r) for r in rows]
 
     def turns(self, meeting_id: str) -> list[Turn]:
         rows = self.conn.execute(
@@ -593,10 +645,9 @@ class Dao:
         signal there is ("the meeting I mean is called this"), an action item is
         next, and the sentence hits follow. Within a kind, newest first.
 
-        Not covered: the summary. It is written to ``summary.html`` in the meeting
-        folder rather than to a column, so searching it means reading and stripping
-        a file per meeting on every keystroke. The right fix is a plain-text copy in
-        the database at render time, which is a migration, not a query.
+        Summaries are searched too, after action items and before transcript lines: a
+        plain-text copy kept in ``meeting_texts`` by the render stage (``index_summary``),
+        since the summary itself is a file.
         """
         query = query.strip()
         if not query:
@@ -630,36 +681,50 @@ class Dao:
                 )
             )
 
-        hits.extend(self._search_turns(query, limit=limit))
+        hits.extend(self._search_texts(query, kind="summary", limit=limit))
+        hits.extend(self._search_texts(query, kind="transcript", limit=limit))
         return hits[:limit]
 
-    def _search_turns(self, query: str, *, limit: int) -> list[SearchHit]:
-        """FTS5 when available, LIKE over ``transcript_turns`` when it is not."""
-        if capabilities(self.conn).fts:
-            match = _fts_query(query)
-            if not match:
-                return []
+    def _search_texts(self, query: str, *, kind: str, limit: int) -> list[SearchHit]:
+        """Transcript lines or summaries: the trigram index when it can answer, LIKE when not.
+
+        A trigram index cannot match a run shorter than three characters, so a query
+        with a word that short (two Hebrew letters is a real word) is answered by LIKE,
+        which finds the same substrings, only without the index.
+        """
+        match = _fts_query(query)
+        if capabilities(self.conn).fts and match:
             rows = self.conn.execute(
-                "SELECT meeting_id, speaker, at_ms, text, "
-                "snippet(transcripts_fts, 3, '[', ']', '…', 12) AS snip "
-                "FROM transcripts_fts WHERE transcripts_fts MATCH ? LIMIT ?",
-                (match, limit),
+                "SELECT meeting_id, speaker, at_ms, text FROM search_fts "
+                "WHERE search_fts MATCH ? AND kind = ? LIMIT ?",
+                (match, kind, limit),
             ).fetchall()
             return [
                 SearchHit(
-                    r["meeting_id"], r["speaker"], r["at_ms"], r["text"], r["snip"], "transcript"
+                    r["meeting_id"],
+                    r["speaker"],
+                    r["at_ms"],
+                    r["text"],
+                    _mark(r["text"], query),
+                    kind,
                 )
                 for r in rows
             ]
-        rows = self.conn.execute(
-            "SELECT meeting_id, speaker, at_ms, text FROM transcript_turns "
-            "WHERE text LIKE ? ORDER BY meeting_id, seq LIMIT ?",
-            (f"%{query}%", limit),
-        ).fetchall()
+        if kind == "summary":
+            rows = self.conn.execute(
+                "SELECT meeting_id, '' AS speaker, 0 AS at_ms, text FROM meeting_texts "
+                "WHERE kind = 'summary' AND lower(text) LIKE lower(?) LIMIT ?",
+                (f"%{query}%", limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT meeting_id, speaker, at_ms, text FROM transcript_turns "
+                "WHERE lower(text) LIKE lower(?) ORDER BY meeting_id, seq LIMIT ?",
+                (f"%{query}%", limit),
+            ).fetchall()
         return [
             SearchHit(
-                r["meeting_id"], r["speaker"], r["at_ms"], r["text"], _mark(r["text"], query),
-                "transcript",
+                r["meeting_id"], r["speaker"], r["at_ms"], r["text"], _mark(r["text"], query), kind
             )
             for r in rows
         ]

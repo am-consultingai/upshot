@@ -134,6 +134,28 @@ def run(ctx: StageContext) -> None:
     rendered = render_free(notes, language=language)
     ui_path.write_text(rendered.ui, encoding="utf-8")
     email_path.write_text(rendered.email, encoding="utf-8")
+    # The searchable copy (D61): search and the assistant read the summary from here.
+    ctx.dao.index_summary(ctx.meeting.id, plaintext(notes, language))
     meta.mirror(ctx.refresh(), summary_language=language, rendered=True)
     ctx.metrics.update({"summary_language": language, "dir": direction_for(language)})
     log.info("rendered %s (%s)", ui_path.name, direction_for(language))
+
+
+def backfill_search(dao: Any) -> int:
+    """Copy the summary of every meeting that has none in the search index yet.
+
+    Meetings summarized before summaries were searchable (2026-09-26) have only their
+    files. Each is read once: a meeting with no summary gets an empty copy, which marks it
+    as checked. Returns how many summaries were found.
+    """
+    found = 0
+    for meeting in dao.meetings_without_summary_text():
+        text = ""
+        try:
+            if notes_path(Path(meeting.folder)).exists():
+                text = plaintext(load_notes(Path(meeting.folder)), meeting.language or "")
+        except (OSError, ValueError) as exc:
+            log.warning("could not read the summary of %s for search: %s", meeting.id, exc)
+        dao.index_summary(meeting.id, text)
+        found += bool(text.strip())
+    return found

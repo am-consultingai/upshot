@@ -111,8 +111,8 @@ export interface SearchHit {
   text: string;
   /** The match with `[` `]` around the term, from SQLite's own snippet(). */
   snippet: string;
-  /** Where it matched. A title or action hit has no speaker and no timestamp. */
-  kind: "title" | "action" | "transcript";
+  /** Where it matched. Only a transcript hit has a speaker and a timestamp. */
+  kind: "title" | "action" | "summary" | "transcript";
 }
 
 export interface MeetingDetail extends Meeting {
