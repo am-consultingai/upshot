@@ -332,7 +332,7 @@ export interface DetectorEvent {
   meeting_id: string | null;
 }
 
-function csrfToken(): string {
+export function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)up_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
 }

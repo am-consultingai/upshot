@@ -57,6 +57,10 @@ def shell(path: Path) -> Response:
 
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:
     svc = services or build(config)
+    from app.assistant import mcp as assistant_mcp
+    from app.assistant.api import router as assistant_router
+
+    mcp_app, mcp_server = assistant_mcp.mount(svc)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -64,7 +68,10 @@ def create_app(services: Services | None = None, *, config: Config | None = None
 
         svc.events.bind_loop(asyncio.get_running_loop())
         svc.queue.reset_running()
-        yield
+        # The assistant's MCP server keeps its sessions in a task group that must be
+        # running for as long as the app is; a mounted app's own lifespan never runs.
+        async with mcp_server.session_manager.run():
+            yield
 
     app = FastAPI(
         title="Upshot",
@@ -75,6 +82,8 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     )
     app.state.services = svc
     app.include_router(router)
+    app.include_router(assistant_router)
+    app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())
         log.warning("UP_TEST_MODE=1 — the seed route is mounted")

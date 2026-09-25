@@ -228,6 +228,11 @@ DEFAULTS: dict[str, Any] = {
         "sweep_hours": 6,  # how often the worker looks; 0 disables the sweep entirely
     },
     "enrichment": {"source": "google", "timeout_s": 2.0},  # google|null|fake
+    "assistant": {
+        # A test hook: the command that stands for the CLI, e.g. ["{python}", "fake.py"].
+        # Empty means the real binary of the chosen subscription.
+        "cli_command": [],
+    },
     "calendar": {
         # Whether the calendar invitation goes to the summary model along with the
         # transcript: what the meeting was called, when it ran, who was invited, what the
