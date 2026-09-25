@@ -35,8 +35,8 @@ const DETECTION_MODES = [
  */
 const SECTIONS: SettingsSection[] = [
   { id: "audio", label: "settings.groupAudio" },
-  // What first-run setup asks, kept reachable after it: the meeting language, the
-  // speech model and where it runs.
+  // What first-run setup asks, kept reachable after it: the speech model and where it
+  // runs.
   { id: "speech", label: "settings.groupSpeech" },
   { id: "appearance", label: "settings.groupAppearance" },
   { id: "storage", label: "settings.groupStorage" },

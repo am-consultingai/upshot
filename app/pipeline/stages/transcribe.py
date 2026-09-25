@@ -1,4 +1,4 @@
-"""The transcribe stage: one WAV per track → one segment list, language resolved once."""
+"""The transcribe stage: one WAV per track → one segment list, and the language it was in."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from app import glossary as glossary_module
 from app import meta
 from app.asr.backend import AsrBackend, Segment
 from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
-from app.asr.language import resolve_language
+from app.asr.language import spoken_language
+from app.asr.models import ASR_LANGUAGE
 from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
 from app.audio.writer import ChunkRecord, recover, track_files, track_path
@@ -37,11 +38,6 @@ def clean_path(folder: Path, track: str) -> Path:
 
 def _chunk_inputs(folder: Path) -> list[Path]:
     return sorted(track_files(folder).values())
-
-
-def first_chunks(records: list[ChunkRecord], folder: Path) -> dict[str, Path]:
-    """Where language detection looks. One file per track now, so this is that file."""
-    return track_files(folder)
 
 
 def build_initial_prompt(ctx: StageContext, previous_sentence: str | None) -> str | None:
@@ -178,18 +174,6 @@ def run(ctx: StageContext) -> None:
     records = recover(folder)
     echo_model = _measure_echo(ctx)
     backend = backend_for(ctx)
-    decision = resolve_language(backend, first_chunks(records, folder), ctx.config)
-    ctx.dao.update_meeting(
-        ctx.meeting.id, language=decision.language, language_conf=decision.confidence
-    )
-    if decision.review_reason:
-        meta.add_review_reason(folder, decision.review_reason)
-    log.info(
-        "language %s (%s, p=%.2f) pinned for the whole meeting",
-        decision.language,
-        decision.source,
-        decision.confidence,
-    )
 
     # One pass per track over the whole file. Lost audio was written as silence, so the
     # file's timeline is the meeting's timeline and the timestamps need no shifting. It
@@ -200,7 +184,11 @@ def run(ctx: StageContext) -> None:
         for _track, wav in sorted(_asr_inputs(ctx, echo_model).items()):
             ctx.checkpoint()
             track_segments = backend.transcribe(
-                wav, language=decision.language, initial_prompt=prompt, word_timestamps=True
+                # Always Hebrew, whatever was spoken (D60): English comes out as English.
+                wav,
+                language=ASR_LANGUAGE,
+                initial_prompt=prompt,
+                word_timestamps=True,
             )
             segments.extend(track_segments)
     finally:
@@ -209,6 +197,18 @@ def run(ctx: StageContext) -> None:
     segments = [segment.shifted(0.0, new_id=index) for index, segment in enumerate(segments)]
 
     segments = _diarize(ctx, segments, records)
+
+    # What the meeting was in, read from what was said: it picks the summary's language.
+    decision = spoken_language(segment.text for segment in segments)
+    ctx.dao.update_meeting(
+        ctx.meeting.id, language=decision.language, language_conf=decision.confidence
+    )
+    log.info(
+        "meeting language %s (%s, %.0f%% of the letters)",
+        decision.language,
+        decision.source,
+        decision.confidence * 100,
+    )
 
     payload: dict[str, Any] = {
         "version": 1,

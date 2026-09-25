@@ -1,9 +1,9 @@
 """First-run setup (ClickUp z8tj1had06, z8tj1haczh, z8tj1had07).
 
 What the /welcome screen stands on: the persisted ``setup.done`` flag and who is spared
-the screen, the meeting language deciding which speech model is fetched, the VRAM gate
-on the automatic GPU choice, and a GPU that fails to load falling back to the CPU's own
-model rather than to the GPU's.
+the screen, the one speech model whatever the language or the device (D60), the VRAM
+gate on the automatic GPU choice, and a GPU that fails to load falling back to the same
+model on the CPU.
 """
 
 from __future__ import annotations
@@ -24,20 +24,13 @@ from app.asr.local import (
     probe_device,
 )
 from app.asr.model_manager import VERIFIED, target_for
-from app.asr.models import (
-    CPU_REPO,
-    CPU_REPO_MULTILINGUAL,
-    GPU_REPO,
-    GPU_REPO_MULTILINGUAL,
-    resolve,
-    wants_hebrew_model,
-)
+from app.asr.models import REPO, resolve
 from app.config import Config, default_config
 
 # ------------------------------------------------------------------ the setup flag
 
 
-def place_model(app_home: Path, repo: str = CPU_REPO) -> Path:
+def place_model(app_home: Path, repo: str = REPO) -> Path:
     """A verified model where the manager would have put it."""
     target = target_for(repo, app_home)
     target.mkdir(parents=True)
@@ -127,15 +120,9 @@ def test_the_seed_reset_leaves_setup_done_unless_asked(
     client = build_harness(tmp_path).client()
     client.post("/api/test/seed", json={"reset": True, "setup_done": False})
     assert client.get("/api/settings").json()["config"]["setup"]["done"] is False
-    client.put(
-        "/api/settings",
-        json={"values": {"asr.language_mode": "fixed", "asr.default_language": "en"}},
-    )
     client.post("/api/test/seed", json={"reset": True})
     config = client.get("/api/settings").json()["config"]
     assert config["setup"]["done"] is True
-    assert config["asr"]["language_mode"] == "detect"
-    assert config["asr"]["default_language"] == "he"
 
 
 def test_the_device_setting_is_checked() -> None:
@@ -148,34 +135,41 @@ def test_the_device_setting_is_checked() -> None:
 # ------------------------------------------------------------------ language → model
 
 
-@pytest.mark.parametrize(
-    ("mode", "language", "hebrew"),
-    [
-        ("detect", "he", True),  # the default, and what every install before this ran
-        ("fixed", "he", True),
-        ("fixed", "en", False),
-        ("detect", "en", True),  # detection with the Hebrew model, as before
-    ],
-)
-def test_the_meeting_language_picks_the_model(mode: str, language: str, hebrew: bool) -> None:
-    config = default_config(asr__language_mode=mode, asr__default_language=language)
-    assert wants_hebrew_model(config) is hebrew
-    cpu = resolve(config, device="cpu").reference
-    gpu = resolve(config, device="cuda").reference
-    if hebrew:
-        assert (cpu, gpu) == (CPU_REPO, GPU_REPO)
-    else:
-        assert (cpu, gpu) == (CPU_REPO_MULTILINGUAL, GPU_REPO_MULTILINGUAL)
+@pytest.mark.parametrize("device", ["auto", "cpu", "cuda"])
+def test_one_model_whatever_the_device(device: str) -> None:
+    """ivrit-ai large-v3 on the GPU and the CPU alike: its turbo sibling is what turned
+    English into Hebrew on machine B (D60)."""
+    assert resolve(default_config(asr__device=device)).reference == REPO
+    assert REPO == "ivrit-ai/whisper-large-v3-ct2"
 
 
-def test_a_configured_repo_wins_over_the_language() -> None:
-    config = default_config(
-        asr__language_mode="fixed", asr__default_language="en", asr__model_repo="me/my-model"
+def test_no_other_speech_model_is_named_anywhere_in_the_app() -> None:
+    """D60 in one line: the turbo fine-tune and stock Whisper each broke on English or
+    Hebrew, and a second model id is how either would come back."""
+    import re
+
+    pattern = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]*whisper[A-Za-z0-9_.-]*", re.I)
+    named = {
+        (str(path), match)
+        for path in Path("app").rglob("*.py")
+        for match in pattern.findall(path.read_text(encoding="utf-8"))
+    }
+    assert {match for _path, match in named} == {REPO}, sorted(named)
+
+
+def test_an_old_config_cannot_bring_another_model_back(tmp_path: Path, app_home: Path) -> None:
+    """A config saved by an earlier build may still say English, or name a repo."""
+    path = tmp_path / "app_config.json"
+    data = default_config().as_dict()
+    data["asr"].update(
+        language_mode="fixed", default_language="en", model_repo="mobiuslabsgmbh/turbo"
     )
-    assert resolve(config).reference == "me/my-model"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    cfg = Config.load(file=path, environ={})
+    assert resolve(cfg).reference == REPO
 
 
-def test_the_model_api_follows_the_language_and_says_where_it_runs(
+def test_the_model_api_names_the_one_model_and_says_where_it_runs(
     tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.fixtures.api import build_harness
@@ -185,21 +179,17 @@ def test_the_model_api_follows_the_language_and_says_where_it_runs(
     api.services.config.set("asr.device", "cpu")
     client = api.client()
 
-    hebrew = client.get("/api/model").json()
-    assert hebrew["repo"] == CPU_REPO and hebrew["hebrew"] is True
-    assert hebrew["state"] == "missing"
+    model = client.get("/api/model").json()
+    assert model["repo"] == REPO
+    assert model["state"] == "missing"
     # The size is known before the download is started, for the screen to show.
-    assert hebrew["expected_bytes"] > 1_000_000_000
-    assert hebrew["free_bytes"] > 0
-    assert (hebrew["device"], hebrew["device_reason"]) == ("cpu", "configured")
-    assert hebrew["min_vram_mb"] == MIN_VRAM_MB
+    assert model["expected_bytes"] > 3_000_000_000
+    assert model["free_bytes"] > 0
+    assert (model["device"], model["device_reason"]) == ("cpu", "configured")
+    assert model["min_vram_mb"] == MIN_VRAM_MB
 
-    client.put(
-        "/api/settings",
-        json={"values": {"asr.language_mode": "fixed", "asr.default_language": "en"}},
-    )
-    english = client.get("/api/model").json()
-    assert english["repo"] == CPU_REPO_MULTILINGUAL and english["hebrew"] is False
+    client.put("/api/settings", json={"values": {"asr.device": "cuda"}})
+    assert client.get("/api/model").json()["repo"] == REPO, "the device never changes the model"
 
 
 # ------------------------------------------------------------------ the VRAM gate
@@ -303,7 +293,9 @@ class Model:
         return [], None
 
 
-def test_a_gpu_that_fails_to_load_falls_back_to_the_cpu_model(app_home: Path) -> None:
+def test_a_gpu_that_fails_to_load_falls_back_to_the_same_model_on_the_cpu(
+    app_home: Path,
+) -> None:
     built: list[tuple[str, str]] = []
 
     def factory(**kwargs: Any) -> Model:
@@ -315,13 +307,13 @@ def test_a_gpu_that_fails_to_load_falls_back_to_the_cpu_model(app_home: Path) ->
     config = default_config(asr__device="cuda", asr__compute_type="int8")
     backend = LocalAsr(config, model_factory=factory)
     backend.load()
-    assert built == [("cuda", GPU_REPO), ("cpu", CPU_REPO)]
+    assert built == [("cuda", REPO), ("cpu", REPO)]
     assert backend.fell_back and backend.choice is not None
-    assert backend.choice.reference == CPU_REPO
-    assert backend.describe()["name"] == CPU_REPO
+    assert backend.choice.reference == REPO
+    assert backend.describe() == {"name": REPO, "compute": "int8", "device": "cpu"}
 
 
-def test_the_fallback_fetches_the_cpu_model_not_the_gpu_one(app_home: Path) -> None:
+def test_the_fallback_does_not_fetch_again(app_home: Path) -> None:
     fetched: list[str] = []
 
     def fetch(repo: str) -> Path:
@@ -335,7 +327,7 @@ def test_the_fallback_fetches_the_cpu_model_not_the_gpu_one(app_home: Path) -> N
 
     config = default_config(asr__device="cuda", asr__compute_type="int8")
     LocalAsr(config, model_factory=factory, fetch=fetch).load()
-    assert fetched == [GPU_REPO, CPU_REPO]
+    assert fetched == [REPO], "the CPU loads the files the GPU attempt already fetched"
 
 
 def test_a_model_the_caller_chose_survives_the_fallback(tmp_path: Path) -> None:

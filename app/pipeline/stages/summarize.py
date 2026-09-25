@@ -11,6 +11,7 @@ from typing import Any
 
 from app import glossary as glossary_module
 from app import meta
+from app.asr.models import ASR_LANGUAGE
 from app.due import anchor_date, resolve_due
 from app.errors import QuotaExhausted
 from app.llm import schema
@@ -135,7 +136,7 @@ def resolve_summary_language(ctx: StageContext) -> str:
     configured = ctx.config.summary_language
     if configured != "auto":
         return configured
-    return ctx.meeting.language or ctx.config.default_language
+    return ctx.meeting.language or ASR_LANGUAGE
 
 
 def language_instruction(language: str) -> str:

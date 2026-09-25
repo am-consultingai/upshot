@@ -1,73 +1,51 @@
-"""Language resolution: once per meeting, then pinned (TECHNICAL-DESIGN.md §7).
+"""Which language a meeting was in: read from its transcript, not asked of the model (D60).
 
-Per-chunk detection is deliberately *not* used — Whisper's mid-audio language switching
-is unreliable and one wrong switch corrupts a whole chunk.
+The speech model is always told the language is Hebrew (``models.ASR_LANGUAGE``). That is
+how ivrit-ai large-v3 writes English speech as English; told "English" it drifts into
+Hebrew nobody said, and its own language detection answers Hebrew for every input. So
+the question of what language a meeting was in is no longer put to the model before
+transcription. It is answered afterwards, from the words that came out.
+
+The answer decides the summary's language when ``summary.language`` is ``auto``, and the
+direction the page renders in.
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
 
-from app.asr.backend import AsrBackend
-from app.audio.vad import TwoStageVad, make_vad, read_wav
-from app.config import Config
-from app.log import get
+from app.asr.models import ASR_LANGUAGE
 
-log = get(__name__)
+HEBREW_LETTER = re.compile(r"[א-ת]")
+LATIN_LETTER = re.compile(r"[A-Za-z]")
+
+#: Hebrew wins at this share of the letters. Low on purpose: a Hebrew meeting is full of
+#: English product names and terms ("ה-deployment", "sprint"), and Hebrew spends fewer
+#: letters per word than English, so even an evenly mixed meeting lands near 0.4. A
+#: meeting that is mostly Hebrew, or mixed, is summarized in Hebrew.
+HEBREW_SHARE = 0.25
 
 
 @dataclass(frozen=True)
 class LanguageDecision:
     language: str
+    #: The share of the transcript's letters in that language's script; 0 with no text.
     confidence: float
-    source: str  # fixed|detected|default
-    needs_review: bool = False
-
-    @property
-    def review_reason(self) -> str | None:
-        if not self.needs_review:
-            return None
-        return f"language detection was only {self.confidence:.2f} confident"
+    source: str = "transcript"  # transcript|default
 
 
-def has_speech(wav: Path, min_s: float, vad: TwoStageVad | None = None) -> bool:
-    try:
-        pcm, rate = read_wav(wav)
-    except Exception:
-        return False
-    return (vad or TwoStageVad()).has_speech(pcm, rate, min_s=min_s)
-
-
-def resolve_language(
-    backend: AsrBackend,
-    first_chunks: dict[str, Path],
-    config: Config,
-    *,
-    vad: TwoStageVad | None = None,
-    min_speech_s: float = 3.0,
-) -> LanguageDecision:
-    default = config.default_language
-    if config.language_mode == "fixed":
-        return LanguageDecision(default, 1.0, "fixed")
-    vad = vad or make_vad(config)
-    minimum = config.detect_min_confidence
-    for track in ("them", "me"):  # 'them' usually carries more speech
-        wav = first_chunks.get(track)
-        if wav is None or not wav.exists():
-            continue
-        if not has_speech(wav, min_speech_s, vad):
-            continue
-        language, probability = backend.detect_language(wav)
-        if probability >= minimum:
-            log.info("language %s detected on %s (p=%.2f)", language, track, probability)
-            return LanguageDecision(language, probability, "detected")
-        log.warning(
-            "language detection returned %s at %.2f (< %.2f) — using the default %s",
-            language,
-            probability,
-            minimum,
-            default,
-        )
-        return LanguageDecision(default, probability, "default", needs_review=True)
-    return LanguageDecision(default, 0.0, "default", needs_review=True)
+def spoken_language(texts: Iterable[str]) -> LanguageDecision:
+    """Hebrew or English, by which script the transcript is written in."""
+    hebrew = latin = 0
+    for text in texts:
+        hebrew += len(HEBREW_LETTER.findall(text))
+        latin += len(LATIN_LETTER.findall(text))
+    total = hebrew + latin
+    if total == 0:
+        return LanguageDecision(ASR_LANGUAGE, 0.0, "default")
+    share = hebrew / total
+    if share >= HEBREW_SHARE:
+        return LanguageDecision("he", round(share, 3))
+    return LanguageDecision("en", round(1 - share, 3))
