@@ -695,8 +695,11 @@ class Dao:
         match = _fts_query(query)
         if capabilities(self.conn).fts and match:
             rows = self.conn.execute(
+                # A meeting deleted by any path that forgot the index (FTS tables do not
+                # cascade) must not come back as a hit.
                 "SELECT meeting_id, speaker, at_ms, text FROM search_fts "
-                "WHERE search_fts MATCH ? AND kind = ? LIMIT ?",
+                "WHERE search_fts MATCH ? AND kind = ? "
+                "AND meeting_id IN (SELECT id FROM meetings) LIMIT ?",
                 (match, kind, limit),
             ).fetchall()
             return [

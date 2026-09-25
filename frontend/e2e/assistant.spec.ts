@@ -131,3 +131,36 @@ test("a_hebrew_word_is_found_inside_its_prefixed_form_by_search_and_by_the_assis
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("assistant-answer")).toContainText("Pricing sync");
 });
+
+/* Plan step 3: checked citations, drawn as chips that open the moment. */
+test("a_citation_is_a_chip_that_opens_the_meeting_at_the_moment", async ({ page, seed }) => {
+  await seed(BUDGET);
+  await gotoApp(page, "/");
+  await page.keyboard.press("Control+j");
+  await page.getByTestId("assistant-input").fill("Which meetings mention the budget");
+  await page.keyboard.press("Enter");
+  // The fake cites 500 ms inside the line and adds a citation to a meeting that does
+  // not exist: one chip, snapped to the line, and no trace of the invented one.
+  const chip = page.getByTestId("assistant-citation");
+  await expect(chip).toHaveCount(1);
+  await expect(chip).toHaveText("1");
+  await expect(chip).toHaveAttribute("data-at-ms", "4000");
+  await expect(chip).toHaveAttribute("title", /The marketing budget is cut by ten percent/);
+  await expect(page.getByTestId("assistant-answer")).not.toContainText("[[");
+  await chip.click();
+  await expect(page).toHaveURL(/\/m\/as-1\?at=4000/);
+  await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "as-1");
+  // The panel stays open beside the meeting it points into.
+  await expect(page.getByTestId("assistant-panel")).toBeVisible();
+});
+
+test("the_question_carries_the_screen_it_was_asked_from", async ({ page, seed }) => {
+  await seed(BUDGET);
+  await gotoApp(page, "/m/as-1");
+  await page.keyboard.press("Control+j");
+  const request = page.waitForRequest("**/api/assistant/chat");
+  await page.getByTestId("assistant-input").fill("NOTOOL what is this meeting about?");
+  await page.keyboard.press("Enter");
+  const body = (await request).postDataJSON();
+  expect(body.context).toEqual({ route: "/m/as-1", meeting_id: "as-1" });
+});

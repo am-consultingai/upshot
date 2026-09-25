@@ -74,7 +74,10 @@ def mcp_call(config_path: str, tool: str, arguments: dict) -> str:  # type: igno
     return "".join(block.get("text", "") for block in content if isinstance(block, dict))
 
 
-def say(message_id: str, text: str, *, slow: bool) -> None:
+def say(message_id: str, text: str, *, slow: bool, tail: list[str] | None = None) -> None:
+    """Stream ``text`` word by word, then each piece of ``tail`` as its own delta."""
+    pieces = [*re.findall(r"\S+\s*", text), *(tail or [])]
+    text = text + "".join(tail or [])
     emit(
         {"type": "stream_event", "event": {"type": "message_start", "message": {"id": message_id}}}
     )
@@ -88,7 +91,7 @@ def say(message_id: str, text: str, *, slow: bool) -> None:
             },
         }
     )
-    for word in re.findall(r"\S+\s*", text):
+    for word in pieces:
         emit(
             {
                 "type": "stream_event",
@@ -175,11 +178,22 @@ def main() -> int:
         match = re.search(r'"count":\s*(\d+)', result)
         count = int(match.group(1)) if match else 0
         titles = list(dict.fromkeys(re.findall(r'"meeting_title":\s*"([^"]*)"', result)))[:3]
+        tail: list[str] = []
+        moment = re.search(
+            r'"meeting_id":\s*"([^"]+)"[^{}]*?"kind":\s*"transcript"[^{}]*?"at_ms":\s*(\d+)',
+            result,
+        )
         if count:
             text = f"{prefix}Found {count} results for “{query}”, in: " + ", ".join(titles) + "."
+            if moment:
+                # Cited the way the prompt asks: a marker split across two deltas, a
+                # moment a little inside the line (it must snap back to the line's
+                # start), and one that names no real meeting (it must be dropped).
+                meeting_id, at_ms = moment.group(1), int(moment.group(2)) + 500
+                tail = [f" [[m:{meeting_id}@", f"{at_ms}]] [[m:no-such-meeting@1]]"]
         else:
             text = f"{prefix}No meetings mention “{query}”."
-        say("msg_1", text, slow=slow)
+        say("msg_1", text, slow=slow, tail=tail)
     emit(
         {
             "type": "result",

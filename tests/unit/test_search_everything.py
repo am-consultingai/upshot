@@ -127,3 +127,11 @@ def test_no_fts_database_still_searches_summaries(tmp_path: Path) -> None:
     with pytest.raises(sqlite3.OperationalError):
         conn.execute("SELECT * FROM search_fts")
     conn.close()
+
+
+def test_a_meeting_deleted_behind_the_index_is_not_a_hit(dao: Dao, tmp_path: Path) -> None:
+    """FTS tables do not cascade; a raw delete must not leave a ghost result."""
+    m = meeting(dao, tmp_path, "ghost")
+    dao.index_summary(m, "kubernetes migration")
+    dao.conn.execute("DELETE FROM meetings WHERE id = ?", (m,))
+    assert kinds(dao, "kubernetes") == []
