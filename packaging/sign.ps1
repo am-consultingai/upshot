@@ -19,10 +19,17 @@ $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
 if (-not $cert) { throw "no code-signing certificate '$CertSubject' in Cert:\CurrentUser\My" }
 $sig = $null
 # The timestamp server is a network call and fails now and then; a signature without a
-# timestamp dies with the certificate, so retry rather than sign without one.
-for ($attempt = 1; $attempt -le 3; $attempt++) {
-    $sig = Set-AuthenticodeSignature -FilePath $Path -Certificate $cert -TimestampServer $TimestampServer -HashAlgorithm SHA256
-    if ($sig.SignerCertificate -and $sig.TimeStamperCertificate) { break }
+# timestamp dies with the certificate, so retry rather than sign without one. A freshly
+# built exe can also be held open for a moment (the selftest's process exiting, Defender
+# scanning it): build-11 on A died on "being used by another process", so that retries too.
+for ($attempt = 1; $attempt -le 4; $attempt++) {
+    try {
+        $sig = Set-AuthenticodeSignature -FilePath $Path -Certificate $cert -TimestampServer $TimestampServer -HashAlgorithm SHA256
+        if ($sig.SignerCertificate -and $sig.TimeStamperCertificate) { break }
+    } catch [System.IO.IOException] {
+        if ($attempt -eq 4) { throw }
+        Write-Host "signing ${Path}: $($_.Exception.Message) - retrying"
+    }
     Start-Sleep -Seconds (5 * $attempt)
 }
 # A self-signed certificate that is not in Trusted Root reports UnknownError here even
