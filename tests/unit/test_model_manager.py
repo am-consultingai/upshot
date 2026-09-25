@@ -11,7 +11,7 @@ import pytest
 
 from app.asr import model_manager
 from app.asr.model_manager import ModelManager, RemoteFile, target_for
-from app.asr.models import CPU_REPO, resolve
+from app.asr.models import REPO, resolve
 from app.config import default_config
 
 MODEL = b"m" * 4096
@@ -44,16 +44,16 @@ def writing(model: bytes = MODEL, gate: threading.Event | None = None) -> Any:
 
 
 def test_the_model_lands_in_the_app_home_and_resolve_finds_it(app_home: Path) -> None:
-    manager = ModelManager(CPU_REPO, home=app_home, lister=lister, downloader=writing())
+    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing())
     assert manager.status().state == "missing"
     status = manager.start()
     assert status.state in ("downloading", "ready")
     status = manager.wait(5)
     assert status.state == "ready", status.error
     assert status.done_bytes == status.total_bytes == len(MODEL) + len(CONFIG)
-    assert Path(status.path) == target_for(CPU_REPO, app_home)
-    choice = resolve(default_config(), device="cpu")
-    assert choice.local and Path(choice.reference) == target_for(CPU_REPO, app_home)
+    assert Path(status.path) == target_for(REPO, app_home)
+    choice = resolve(default_config())
+    assert choice.local and Path(choice.reference) == target_for(REPO, app_home)
 
 
 def test_too_little_space_fails_before_fetching_anything(
@@ -62,7 +62,7 @@ def test_too_little_space_fails_before_fetching_anything(
     fetched: list[str] = []
     monkeypatch.setattr(model_manager, "free_bytes", lambda path: 10)
     manager = ModelManager(
-        CPU_REPO, home=app_home, lister=lister, downloader=lambda *a: fetched.append("x")
+        REPO, home=app_home, lister=lister, downloader=lambda *a: fetched.append("x")
     )
     status = manager.start()
     status = manager.wait(5)
@@ -74,7 +74,7 @@ def test_too_little_space_fails_before_fetching_anything(
 
 def test_cancel_stops_the_download_and_a_restart_resumes(app_home: Path) -> None:
     gate = threading.Event()
-    manager = ModelManager(CPU_REPO, home=app_home, lister=lister, downloader=writing(gate=gate))
+    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing(gate=gate))
     manager.start()
     manager.cancel()
     gate.set()
@@ -87,28 +87,28 @@ def test_cancel_stops_the_download_and_a_restart_resumes(app_home: Path) -> None
 
 def test_a_file_that_does_not_match_its_checksum_is_removed(app_home: Path) -> None:
     manager = ModelManager(
-        CPU_REPO, home=app_home, lister=lister, downloader=writing(model=b"x" * len(MODEL))
+        REPO, home=app_home, lister=lister, downloader=writing(model=b"x" * len(MODEL))
     )
     manager.start()
     status = manager.wait(5)
     assert status.state == "failed"
     assert "checksum" in status.error
-    assert not (target_for(CPU_REPO, app_home) / "model.bin").exists()
+    assert not (target_for(REPO, app_home) / "model.bin").exists()
 
 
 def test_files_from_a_stopped_download_are_not_a_model(app_home: Path) -> None:
-    target = target_for(CPU_REPO, app_home)
+    target = target_for(REPO, app_home)
     target.mkdir(parents=True)
     (target / "model.bin").write_bytes(MODEL[:100])
     (target / "config.json").write_bytes(CONFIG)
-    manager = ModelManager(CPU_REPO, home=app_home, lister=lister, downloader=writing())
+    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing())
     assert manager.status().state == "missing"
-    assert not resolve(default_config(), device="cpu").local
+    assert not resolve(default_config()).local
 
 
 def test_ensure_downloads_then_returns_the_folder(app_home: Path) -> None:
-    manager = ModelManager(CPU_REPO, home=app_home, lister=lister, downloader=writing())
-    assert manager.ensure() == target_for(CPU_REPO, app_home)
+    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing())
+    assert manager.ensure() == target_for(REPO, app_home)
     failing = ModelManager("other/repo", home=app_home, lister=lister, downloader=lambda *a: None)
     with pytest.raises(RuntimeError, match=r"could not be downloaded: model\.bin is missing"):
         failing.ensure()
@@ -136,7 +136,7 @@ def test_a_missing_model_is_fetched_through_the_manager_not_faster_whisper(app_h
     config.set("asr.device", "cpu")
     backend = LocalAsr(config, model_factory=factory, fetch=fetch)
     backend.load()
-    assert fetched == [CPU_REPO]
+    assert fetched == [REPO]
     assert built[0]["model_size_or_path"] == str(app_home / "fetched")
 
 
@@ -151,11 +151,11 @@ def test_the_model_api_reports_and_starts_the_download(
     client = api.client()
 
     # The API finds this same manager; give it stand-ins for the hub.
-    manager = model_manager.manager_for(CPU_REPO)
+    manager = model_manager.manager_for(REPO)
     manager.lister, manager.downloader = lister, writing()
 
     before = client.get("/api/model").json()
-    assert before["state"] == "missing" and before["repo"] == CPU_REPO
+    assert before["state"] == "missing" and before["repo"] == REPO
     started = client.post("/api/model/download").json()
     assert started["state"] in ("downloading", "ready")
     manager.wait(5)

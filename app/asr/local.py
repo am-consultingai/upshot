@@ -25,7 +25,7 @@ from typing import Any
 
 from app import paths
 from app.asr.backend import Segment, Word, track_of
-from app.asr.models import ModelChoice, resolve
+from app.asr.models import ASR_LANGUAGE, ModelChoice, resolve
 from app.config import Config
 from app.log import get
 
@@ -282,32 +282,6 @@ def _default_factory(**kwargs: Any) -> Any:  # pragma: no cover - needs the real
     return WhisperModel(**kwargs)
 
 
-def decode_audio(wav: Path) -> Any:
-    """A WAV as the 1D float32 mono array at 16 kHz that faster-whisper's
-    ``detect_language`` requires.
-
-    Prefers the library's own decoder so resampling matches what ``transcribe`` does
-    internally; falls back to ``wave`` since our chunks are already 16 kHz mono int16.
-    """
-    try:
-        from faster_whisper.audio import decode_audio as _decode
-
-        return _decode(str(wav), sampling_rate=16000)
-    except Exception:  # pragma: no cover - only when the helper moves or av is absent
-        import wave
-
-        import numpy as np
-
-        with wave.open(str(wav), "rb") as handle:
-            frames = handle.readframes(handle.getnframes())
-            channels = handle.getnchannels()
-        audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
-        if channels > 1:
-            usable = audio.size - (audio.size % channels)
-            audio = audio[:usable].reshape(-1, channels).mean(axis=1)
-        return audio
-
-
 class LocalAsr:
     """faster-whisper, loaded lazily and unloaded before the LLM stage."""
 
@@ -324,8 +298,7 @@ class LocalAsr:
         self.config = config
         self.model_factory = model_factory or _default_factory
         self.choice = choice
-        #: A choice the caller made is kept whatever the device; one resolved here was
-        #: resolved *for* a device, and is resolved again if the device changes.
+        #: A choice the caller made is kept; otherwise the model is resolved at load.
         self._given_choice = choice
         # Downloads a repo that is not on disk and returns its folder. Without it the repo
         # id goes to faster-whisper, which fetches it unseen into the Hugging Face cache.
@@ -340,7 +313,7 @@ class LocalAsr:
     # -- loading -----------------------------------------------------------
 
     def describe(self) -> dict[str, Any]:
-        choice = self.choice or resolve(self.config, device=self.device)
+        choice = self.choice or resolve(self.config)
         return {"name": choice.reference, "compute": self.compute_type, "device": self.device}
 
     def load(self) -> Any:
@@ -348,7 +321,7 @@ class LocalAsr:
             return self.model
         device, compute, registered = probe_device(self.config)
         self.registered_dll_dirs = registered
-        self.choice = self._given_choice or resolve(self.config, device=device)
+        self.choice = self._given_choice or resolve(self.config)
         try:
             self.model = self._build(device, compute)
             self.device, self.compute_type = device, compute
@@ -358,17 +331,15 @@ class LocalAsr:
                 raise
             log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
             self.fell_back = True
-            # The GPU's model is large-v3, 3 GB and several times slower than turbo on a
-            # CPU. Keeping it after the fallback made a meeting take hours instead of
-            # minutes; the CPU gets the CPU's model, fetched first if it is not here.
-            self.choice = self._given_choice or resolve(self.config, device="cpu")
+            # The same model on the CPU (D60): slower, about four times the meeting's
+            # length, but the only one that keeps English as English.
             self.model = self._build("cpu", "int8")
             self.device, self.compute_type = "cpu", "int8"
             self._warmup()
         return self.model
 
     def _build(self, device: str, compute_type: str) -> Any:
-        choice = self.choice or resolve(self.config, device=device)
+        choice = self.choice or resolve(self.config)
         if not choice.local and choice.repo_id and self.fetch is not None:
             folder = self.fetch(choice.repo_id)
             choice = ModelChoice(str(folder), local=True, repo_id=choice.repo_id)
@@ -395,7 +366,9 @@ class LocalAsr:
                 handle.setsampwidth(2)
                 handle.setframerate(16000)
                 handle.writeframes(b"\x00\x00" * 8000)  # 0.5 s of silence
-            self._raw_transcribe(path, language="en", initial_prompt=None, word_timestamps=False)
+            self._raw_transcribe(
+                path, language=ASR_LANGUAGE, initial_prompt=None, word_timestamps=False
+            )
         self.warmups += 1
 
     # -- protocol ----------------------------------------------------------
@@ -458,24 +431,6 @@ class LocalAsr:
                 )
             )
         return out
-
-    def detect_language(self, wav: Path) -> tuple[str, float]:
-        model = self.load()
-        detect = getattr(model, "detect_language", None)
-        if detect is not None:
-            try:
-                # `transcribe` takes a path; `detect_language` does NOT — it wants a 1D
-                # float32 array at 16 kHz and calls `.dtype` on whatever it is given. A
-                # path here raised "'str' object has no attribute 'dtype'" and cost a
-                # whole meeting.
-                language, probability, *_rest = detect(decode_audio(wav))
-                return str(language), float(probability)
-            except Exception as exc:
-                # Never let a detection-API change take the transcript with it: the
-                # transcribe path below reaches the same answer, just more slowly.
-                log.warning("detect_language failed (%s); falling back to transcribe", exc)
-        _segments, info = model.transcribe(str(wav), language=None, vad_filter=True)
-        return str(info.language), float(info.language_probability)
 
     def unload(self) -> None:
         """ASR and the LLM are never resident together (DESIGN.md §20.4)."""

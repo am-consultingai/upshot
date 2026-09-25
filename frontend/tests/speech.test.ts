@@ -2,47 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   SPARE_BYTES,
   downloadFraction,
-  initialMeetingLanguage,
-  meetingLanguageOf,
-  meetingLanguageValues,
   roomForModel,
   setupPending,
 } from "../src/lib/speech";
-
-describe("meeting language", () => {
-  it("reads the two config keys as what a person means", () => {
-    expect(meetingLanguageOf({ language_mode: "fixed", default_language: "he" })).toBe("he");
-    expect(meetingLanguageOf({ language_mode: "fixed", default_language: "en" })).toBe("en");
-    expect(meetingLanguageOf({ language_mode: "detect", default_language: "he" })).toBe("detect");
-    expect(meetingLanguageOf(undefined)).toBe("detect");
-  });
-
-  it("writes back what it read", () => {
-    for (const choice of ["he", "en", "detect"] as const) {
-      const values = meetingLanguageValues(choice);
-      const asr = {
-        language_mode: values["asr.language_mode"],
-        default_language: values["asr.default_language"],
-      };
-      expect(meetingLanguageOf(asr)).toBe(choice);
-    }
-  });
-
-  it("English is pinned, so it cannot be detected as Hebrew", () => {
-    expect(meetingLanguageValues("en")).toEqual({
-      "asr.language_mode": "fixed",
-      "asr.default_language": "en",
-    });
-  });
-
-  it("offers Hebrew to a new install, and shows an existing choice as it is", () => {
-    const untouched = { language_mode: "detect", default_language: "he" };
-    expect(initialMeetingLanguage(untouched, false)).toBe("he");
-    // Someone who set up already and chose detection keeps seeing it.
-    expect(initialMeetingLanguage(untouched, true)).toBe("detect");
-    expect(initialMeetingLanguage({ language_mode: "fixed", default_language: "en" }, false)).toBe("en");
-  });
-});
 
 describe("setupPending", () => {
   it("is only an explicit false", () => {

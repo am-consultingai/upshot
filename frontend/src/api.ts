@@ -300,9 +300,7 @@ export interface AudioLevel {
 /**
  * The speech model, and where it will run: `/api/model`.
  *
- * `repo` follows the meeting language — the Hebrew fine-tune, or stock Whisper for a
- * language pinned to something else — and the device, so changing either changes
- * which model this describes.
+ * `repo` is always ivrit-ai large-v3 (D60): the same model on the GPU and the CPU.
  */
 export interface ModelStatus {
   repo: string;
@@ -317,7 +315,6 @@ export interface ModelStatus {
   error: string;
   /** "no_space" when the drive is too full, so the screen words it itself. */
   code: "" | "no_space";
-  hebrew: boolean;
   device: "cpu" | "cuda";
   device_reason: "configured" | "no_cuda" | "low_vram" | "vram_unknown" | "gpu";
   vram_mb: number | null;

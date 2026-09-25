@@ -3,32 +3,12 @@ import { Link } from "react-router-dom";
 import { api, type ModelStatus } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
 import { formatBytes } from "../lib/format";
-import {
-  MEETING_LANGUAGES,
-  downloadFraction,
-  meetingLanguageOf,
-  meetingLanguageValues,
-  roomForModel,
-  type AsrLanguageConfig,
-  type MeetingLanguage,
-} from "../lib/speech";
+import { downloadFraction, roomForModel } from "../lib/speech";
 import BusyButton from "./BusyButton";
 import SettingRow, { SELECT_CLASS, SettingGroup } from "./SettingRow";
 
 const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent disabled:opacity-40";
 const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
-
-const LANGUAGE_LABELS: Record<MeetingLanguage, MessageKey> = {
-  he: "speech.languageHe",
-  en: "speech.languageEn",
-  detect: "speech.languageDetect",
-};
-
-const LANGUAGE_NOTES: Record<MeetingLanguage, MessageKey> = {
-  he: "speech.languageHeNote",
-  en: "speech.languageEnNote",
-  detect: "speech.languageDetectNote",
-};
 
 const DEVICE_REASONS: Record<ModelStatus["device_reason"], MessageKey> = {
   gpu: "speech.reasonGpu",
@@ -56,12 +36,11 @@ export function useModelStatus() {
 }
 
 /**
- * A settings write that can change which model is meant.
+ * A speech settings write: the device the model runs on.
  *
- * The meeting language and the device both pick the repo, so after either one the
- * model status is asked again. A download already running is for the model that was
- * meant a moment ago: it is stopped first, and its files stay for if the choice comes
- * back, since the manager resumes rather than restarts.
+ * The model status is asked again after it, since it also says where the model will
+ * run. A download already running is stopped first and resumed from its files, as
+ * before; the model itself is the same whatever is chosen (D60).
  */
 export function useSpeechSave() {
   const queryClient = useQueryClient();
@@ -76,45 +55,6 @@ export function useSpeechSave() {
       await queryClient.invalidateQueries({ queryKey: ["model"] });
     },
   });
-}
-
-export function MeetingLanguageRow({
-  selected,
-  onChoose,
-}: {
-  selected: MeetingLanguage;
-  onChoose: (choice: MeetingLanguage) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <SettingRow
-      label={t("speech.language")}
-      htmlFor="meeting-language"
-      configKey="asr.language_mode"
-      description={
-        <>
-          <span className="block">{t("speech.languageHint")}</span>
-          <span className="mt-1 block" data-testid="meeting-language-note">
-            {t(LANGUAGE_NOTES[selected])}
-          </span>
-        </>
-      }
-    >
-      <select
-        id="meeting-language"
-        data-testid="meeting-language"
-        value={selected}
-        onChange={(event) => onChoose(event.target.value as MeetingLanguage)}
-        className={SELECT_CLASS}
-      >
-        {MEETING_LANGUAGES.map((code) => (
-          <option key={code} value={code}>
-            {t(LANGUAGE_LABELS[code])}
-          </option>
-        ))}
-      </select>
-    </SettingRow>
-  );
 }
 
 /**
@@ -307,17 +247,10 @@ export function ComputeDeviceRow() {
 /** The Settings section: the same rows as first-run setup, reading what is saved. */
 export default function SpeechSettings() {
   const { t } = useI18n();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const save = useSpeechSave();
-  const asr = (settings.data?.config as { asr?: AsrLanguageConfig } | undefined)?.asr;
 
   return (
     <>
       <SettingGroup>
-        <MeetingLanguageRow
-          selected={meetingLanguageOf(asr)}
-          onChoose={(choice) => save.mutate(meetingLanguageValues(choice))}
-        />
         <SpeechModelRow />
         <ComputeDeviceRow />
       </SettingGroup>

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from app import paths
-from app.asr.models import CPU_REPO, looks_like_model_dir
+from app.asr.models import REPO, looks_like_model_dir
 from app.log import get
 
 log = get(__name__)
@@ -129,7 +129,7 @@ class ModelManager:
 
     def __init__(
         self,
-        repo: str = CPU_REPO,
+        repo: str = REPO,
         *,
         home: Path | None = None,
         lister: Lister = hub_lister,

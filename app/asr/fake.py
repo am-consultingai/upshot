@@ -17,6 +17,17 @@ SENTENCES: tuple[str, ...] = (
     "מי לוקח את המשימה של ה-monitoring",
 )
 
+#: An English meeting, for ``language="en"``: the meeting's language is read from what
+#: was transcribed (``app/asr/language.py``), so the fake has to say it in English.
+SENTENCES_EN: tuple[str, ...] = (
+    "let's start with the status of the project",
+    "we have a problem with the deployment in production",
+    "I'll take that and get back to you by Thursday",
+    "we agreed to move the release to next week",
+    "let's write that down as a decision",
+    "who is taking the monitoring task",
+)
+
 
 class FakeAsr:
     """Deterministic segments derived from the input file name and its duration."""
@@ -27,16 +38,14 @@ class FakeAsr:
         self,
         *,
         language: str = "he",
-        confidence: float = 0.95,
         repetitions: int = 1,
         segment_s: float = 6.0,
     ) -> None:
         self.language = language
-        self.confidence = confidence
+        self.sentences = SENTENCES_EN if language == "en" else SENTENCES
         self.repetitions = max(1, repetitions)
         self.segment_s = segment_s
         self.transcribe_calls: list[dict[str, object]] = []
-        self.detect_calls: list[Path] = []
         self.unloaded = 0
 
     # -- helpers
@@ -80,9 +89,9 @@ class FakeAsr:
         while start + 1.0 <= duration:
             end = min(duration, start + self.segment_s)
             for repeat in range(self.repetitions):
-                text = SENTENCES[(seed + index + repeat) % len(SENTENCES)]
+                text = self.sentences[(seed + index + repeat) % len(self.sentences)]
                 if self.repetitions > 1:
-                    text = SENTENCES[(seed + index) % len(SENTENCES)]
+                    text = self.sentences[(seed + index) % len(self.sentences)]
                 words = self._words(text, start, end)
                 segments.append(
                     Segment(
@@ -111,10 +120,6 @@ class FakeAsr:
             Word(part, round(start + i * step, 3), round(start + (i + 1) * step, 3), 0.9)
             for i, part in enumerate(parts)
         )
-
-    def detect_language(self, wav: Path) -> tuple[str, float]:
-        self.detect_calls.append(wav)
-        return self.language, self.confidence
 
     def unload(self) -> None:
         self.unloaded += 1

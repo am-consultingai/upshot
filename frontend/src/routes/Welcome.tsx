@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
@@ -6,19 +5,7 @@ import { useI18n, type MessageKey } from "../i18n";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
 import BusyButton from "../components/BusyButton";
 import { PinnedContext, SettingGroup } from "../components/SettingRow";
-import {
-  ComputeDeviceRow,
-  MeetingLanguageRow,
-  SpeechModelRow,
-  useModelStatus,
-  useSpeechSave,
-} from "../components/SpeechSettings";
-import {
-  initialMeetingLanguage,
-  meetingLanguageValues,
-  type AsrLanguageConfig,
-  type MeetingLanguage,
-} from "../lib/speech";
+import { ComputeDeviceRow, SpeechModelRow, useModelStatus } from "../components/SpeechSettings";
 
 /** One numbered step: the heading says what it is, the rows below do it. */
 function Step({ n, title, hint, children }: { n: number; title: MessageKey; hint?: MessageKey; children: React.ReactNode }) {
@@ -39,19 +26,18 @@ function Step({ n, title, hint, children }: { n: number; title: MessageKey; hint
  * First-run setup (ClickUp z8tj1had06).
  *
  * A stranger installing Upshot on Windows had no speech model on disk and no way to learn
- * that until their first meeting sat "transcribing" for minutes; and the default language
- * handling pinned an English meeting as Hebrew. This screen asks the four things that
- * decide whether the first meeting works, in the order they depend on each other: the
- * language picks the model, the model is downloaded, the devices are tested, and the
- * device plan says how long a transcript will take.
+ * that until their first meeting sat "transcribing" for minutes. This screen asks the
+ * three things that decide whether the first meeting works: the model is downloaded, the
+ * devices are tested, and the device plan says how long a transcript will take. There is
+ * no language question: one model transcribes Hebrew and English alike (D60), and the
+ * meeting's language is read from its transcript.
  *
  * There is no AI provider step and no calendar step, deliberately: both are optional to
  * a working transcript, both live in Settings with their own "!" until set up, and a
  * first-run screen that asks for an API key is one people close.
  *
- * Every control applies the moment it changes, like Settings. "Done" marks setup finished
- * (`setup.done`) and saves the language shown, so the preselected Hebrew is a choice
- * rather than an accident of the default; "Skip" marks it finished and changes nothing.
+ * Every control applies the moment it changes, like Settings. "Done" and "Skip" both mark
+ * setup finished (`setup.done`); nothing else is saved by either.
  */
 export default function Welcome() {
   const { t } = useI18n();
@@ -59,12 +45,6 @@ export default function Welcome() {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const model = useModelStatus();
-  const saveSpeech = useSpeechSave();
-  const config = settings.data?.config as
-    | { asr?: AsrLanguageConfig; setup?: { done?: boolean } }
-    | undefined;
-  const [chosen, setChosen] = useState<MeetingLanguage | null>(null);
-  const language = chosen ?? initialMeetingLanguage(config?.asr, config?.setup?.done === true);
 
   const finish = useMutation({
     mutationFn: (values: Record<string, unknown>) =>
@@ -83,25 +63,15 @@ export default function Welcome() {
         <h1 className="display mb-2 text-2xl">{t("welcome.title")}</h1>
         <p className="mb-8 max-w-prose text-sm text-secondary">{t("welcome.intro")}</p>
 
-        <Step n={1} title="speech.language">
-          <MeetingLanguageRow
-            selected={language}
-            onChoose={(choice) => {
-              setChosen(choice);
-              saveSpeech.mutate(meetingLanguageValues(choice));
-            }}
-          />
-        </Step>
-
-        <Step n={2} title="speech.model">
+        <Step n={1} title="speech.model">
           <SpeechModelRow />
         </Step>
 
-        <Step n={3} title="welcome.audio" hint="welcome.audioHint">
+        <Step n={2} title="welcome.audio" hint="welcome.audioHint">
           <AudioDeviceSettings />
         </Step>
 
-        <Step n={4} title="welcome.device">
+        <Step n={3} title="welcome.device">
           <ComputeDeviceRow />
         </Step>
 
@@ -114,7 +84,7 @@ export default function Welcome() {
           <BusyButton
             data-testid="welcome-done"
             busy={finish.isPending}
-            onClick={() => finish.mutate(meetingLanguageValues(language))}
+            onClick={() => finish.mutate({})}
             className="rounded bg-accent px-3 py-1.5 text-sm text-on-accent"
           >
             {t("welcome.done")}

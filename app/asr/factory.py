@@ -32,8 +32,7 @@ def make_backend(config: Config) -> AsrBackend:
             "Set UP_ASR__BACKEND to 'local' for real transcription."
         )
         return FakeAsr(
-            language=str(config.get("asr.fake_language", config.default_language)),
-            confidence=float(config.get("asr.fake_confidence", 0.95)),
+            language=str(config.get("asr.fake_language", "he")),
             repetitions=int(config.get("asr.fake_repetitions", 1)),
         )
     if kind == "local":
