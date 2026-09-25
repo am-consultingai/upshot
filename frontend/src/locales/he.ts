@@ -49,7 +49,7 @@ export const he: Record<MessageKey, string> = {
   "palette.navigate": "מעבר אל",
   "palette.do": "פעולות",
   "palette.open": "פגישות",
-  "nav.timeline": "ספרייה",
+  "nav.timeline": "לוח שנה",
   "nav.actions": "משימות",
   "nav.search": "חיפוש",
   "nav.settings": "הגדרות",
@@ -252,6 +252,7 @@ export const he: Record<MessageKey, string> = {
   "settings.localReady": "מוכן",
   "settings.saveKey": "שמירת מפתח",
   "settings.signIn": "התחברות",
+  "settings.signOut": "התנתקות",
   "settings.signInHint":
     "נפתח מסך ההתחברות של Anthropic. האפליקציה לא רואה את פרטי ההתחברות.",
   "settings.cliMissing": "‏Claude Code לא מותקן במחשב הזה.",
@@ -513,4 +514,11 @@ export const he: Record<MessageKey, string> = {
   "welcome.done": "סיום",
   "welcome.skip": "דילוג בינתיים",
   "welcome.modelLater": "מודל הדיבור עוד לא הורד. הוא יורד לפני שהפגישה הראשונה מתומללת, וזה יעכב את התמלול שלה.",
+  "settings.signinOpened":
+    "דף ההתחברות נפתח בדפדפן ברירת המחדל. סיימו שם - השורה תתעדכן לבד כשתהיו מחוברים.",
+  "settings.signinOpenHere": "לפתוח בדפדפן הזה",
+  "settings.signinCopy": "העתקת הקישור",
+  "settings.signinCopied": "הועתק",
+  "settings.signinCancel": "ביטול",
+  "settings.signinLog": "הפלט של ההתחברות נרשם אל",
 };
