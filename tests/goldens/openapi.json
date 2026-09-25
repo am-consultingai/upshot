@@ -1208,6 +1208,102 @@
         "summary": "Llm Signin"
       }
     },
+    "/api/llm/signin/cancel": {
+      "post": {
+        "description": "Stop a windowless sign-in: it holds a port and would otherwise wait forever.",
+        "operationId": "llm_signin_cancel_api_llm_signin_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderPost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Signin Cancel Api Llm Signin Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Llm Signin Cancel"
+      }
+    },
+    "/api/llm/signout": {
+      "post": {
+        "description": "Sign the CLI out, with the vendor's own command. Its sign-in, if one waits, ends too.\n\nThe command runs with no window: it asks nothing. Summaries on that plan stop until\nthe user signs in again, which the row then offers.",
+        "operationId": "llm_signout_api_llm_signout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProviderPost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Signout Api Llm Signout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Llm Signout"
+      }
+    },
     "/api/llm/status": {
       "get": {
         "description": "What each summarization provider needs, and whether it has it.",

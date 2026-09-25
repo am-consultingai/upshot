@@ -1657,11 +1657,45 @@ def cli_row(svc: Services, provider: str, label: str) -> dict[str, Any]:
         "install_method": plan.method if plan else "",
         "install_docs": module.INSTALL_DOCS_URL,
         "update_hint": module.update_command(cli.path) if cli.installed else "",
+        # The window Install or Sign in opened is still there; closing it ends the wait.
+        "console_open": console_open(provider),
+        # A windowless sign-in's link, for the page to offer in the browser it runs in.
+        "signin_url": signin_url(provider),
         # Neither CLI reports its remaining allowance without an interactive session
         # (Codex shows it only inside its TUI's /status), and polling it would spend
         # what it measures. Null until one can say so cheaply.
         "quota": None,
     }
+
+
+#: The console most recently launched for each CLI provider. Kept so the Settings row can
+#: tell a login still in progress from one whose window the user closed: without it the
+#: page waited out its whole timeout with a busy Sign in button that could not be pressed
+#: again (closing the window mid-login on 2026-09-25 left it spinning until a reload).
+_CONSOLES: dict[str, Any] = {}
+
+
+#: Sign-ins running with no window (``app/llm/signin.py``), one per CLI provider.
+_LOGINS: dict[str, Any] = {}
+
+
+def console_open(provider: str) -> bool:
+    """Is the install or sign-in launched for ``provider`` still going?
+
+    A window still open, or a windowless sign-in still running: either way the row keeps
+    waiting, and once neither is, it stops.
+    """
+    process = _CONSOLES.get(provider)
+    login = _LOGINS.get(provider)
+    return (process is not None and process.poll() is None) or (
+        login is not None and login.running()
+    )
+
+
+def signin_url(provider: str) -> str:
+    """The link a windowless sign-in printed, while it is still waiting for the browser."""
+    login = _LOGINS.get(provider)
+    return str(login.url) if login is not None and login.running() and login.url else ""
 
 
 def launch_console(
@@ -1703,7 +1737,7 @@ def launch_console(
     problems: list[str] = []
     for index, argv in enumerate(attempts, start=1):
         try:
-            subprocess.Popen(
+            _CONSOLES[provider] = subprocess.Popen(
                 argv,
                 cwd=where,
                 env=child_env(),
@@ -1765,11 +1799,92 @@ def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, 
             f"{product} is not installed. Install it, then sign in — the app never "
             "handles your credentials.",
         )
+    if not getattr(module, "SIGNIN_CONSOLE", True):
+        return hidden_signin(provider, client.login_command(), module)
     return launch_console(
         module.login_console(client.login_command()),
         f"could not launch {product}",
         provider=provider,
     ) | {"log": console_log(provider, "signin")}
+
+
+def hidden_signin(provider: str, argv: list[str], module: Any) -> dict[str, Any]:
+    """Run the login with no window and return the link it prints (``app/llm/signin.py``).
+
+    A second Sign in replaces the first: the old one still holds the callback port, and
+    the user pressing the button again means they have given up on it.
+    """
+    from app.llm.console_log import log_path
+    from app.llm.signin import HiddenLogin
+
+    product = CLI_PROVIDERS[provider]
+    previous = _LOGINS.pop(provider, None)
+    if previous is not None:
+        previous.stop()
+    name = f"{provider.removesuffix('-subscription')}-signin"
+    try:
+        login = HiddenLogin(
+            argv,
+            url_pattern=module.LOGIN_URL,
+            log_file=log_path(name),
+            cwd=module.workdir(),
+            env=module.child_env(),
+        )
+    except OSError as exc:
+        log.error("hidden sign-in for %s failed to start: %s", provider, exc, exc_info=True)
+        raise HTTPException(500, f"could not start the {product} sign-in: {exc}") from exc
+    _LOGINS[provider] = login
+    url = login.wait_for_url()
+    if url is None and not login.running():
+        tail = " ".join(login.lines[-3:]) or "it printed nothing"
+        log.error("hidden sign-in for %s exited without a link: %s", provider, tail)
+        raise HTTPException(500, f"the {product} sign-in stopped before it began: {tail}")
+    log.info("hidden sign-in for %s started (pid %d)", provider, login.process.pid)
+    return {
+        "launched": True,
+        "command": " ".join(argv),
+        "url": url or "",
+        "log": console_log(provider, "signin"),
+    }
+
+
+@router.post("/llm/signout")
+def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
+    """Sign the CLI out, with the vendor's own command. Its sign-in, if one waits, ends too.
+
+    The command runs with no window: it asks nothing. Summaries on that plan stop until
+    the user signs in again, which the row then offers.
+    """
+    provider = chosen_cli(body)
+    product = CLI_PROVIDERS[provider]
+    client = cli_client(services_of(request), provider)
+    if client.resolve() is None:
+        raise HTTPException(409, f"{product} is not installed, so there is nothing to sign out of.")
+    login = _LOGINS.pop(provider, None)
+    if login is not None:
+        login.stop()
+    argv = client.logout_command()
+    try:
+        code, out, err = client.runner(argv, "", 60.0)
+    except Exception as exc:
+        log.error("sign-out of %s failed to run: %s", provider, exc, exc_info=True)
+        raise HTTPException(500, f"could not sign out of {product}: {exc}") from exc
+    log.info("signed out of %s (exit %d)", provider, code)
+    signed_in = client.status().signed_in
+    if signed_in is True:
+        detail = (err or out).strip() or f"exit code {code}"
+        raise HTTPException(500, f"{product} is still signed in after signing out: {detail}")
+    return {"signed_out": True}
+
+
+@router.post("/llm/signin/cancel")
+def llm_signin_cancel(body: ProviderPost | None = None) -> dict[str, Any]:
+    """Stop a windowless sign-in: it holds a port and would otherwise wait forever."""
+    provider = chosen_cli(body)
+    login = _LOGINS.pop(provider, None)
+    if login is not None:
+        login.stop()
+    return {"stopped": login is not None}
 
 
 @router.post("/llm/install")
