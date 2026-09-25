@@ -93,6 +93,10 @@ class Translator:
         self.streamed: set[str] = set()
         self.current_message = ""
 
+    def done(self, event: dict[str, Any]) -> bool:
+        """The event that ends a turn, successful or not."""
+        return event.get("type") == "result"
+
     def _text_id(self) -> str:
         self.part += 1
         return f"t{self.part}"
@@ -212,6 +216,18 @@ class ClaudeRoute:
         #: A test hook: the whole command line that stands for ``claude``.
         self.command = list(command) if command else None
 
+    label = "Claude Code"
+
+    def env(self) -> dict[str, str]:
+        return claude_cli.child_env()
+
+    def translator(self, turn: Turn, citer: Citer | None) -> Translator:
+        """What reads this CLI's events. The Codex route brings its own."""
+        return Translator(turn, citer)
+
+    def classify(self, code: int, err: str, path: str) -> str:
+        return classify(code, "", err, path)
+
     def executable(self) -> list[str] | None:
         if self.command:
             return list(self.command)
@@ -301,14 +317,14 @@ class ClaudeRoute:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                env=claude_cli.child_env(),
+                env=self.env(),
                 cwd=claude_cli.workdir(),
                 creationflags=claude_cli.creation_flags(visible=False),
             )
         except OSError as exc:
             turn.failed = True
             yield stream.data("problem", {"code": "not-installed", "provider": self.name})
-            yield stream.error(f"Claude Code could not be started: {exc}")
+            yield stream.error(f"{self.label} could not be started: {exc}")
             return
         stderr: list[str] = []
 
@@ -333,7 +349,7 @@ class ClaudeRoute:
         except OSError:
             pass
 
-        translator = Translator(turn, citer)
+        translator = self.translator(turn, citer)
         finished = False
         started = False
         lost_candidate: dict[str, Any] | None = None
@@ -371,7 +387,7 @@ class ClaudeRoute:
                     started = True
                 for chunk in translator.feed(event):
                     yield chunk
-                if event.get("type") == "result":
+                if translator.done(event):
                     finished = True
             code = await loop.run_in_executor(None, process.wait)
             if lost_candidate is not None:
@@ -385,7 +401,7 @@ class ClaudeRoute:
                 yield chunk
             if not finished:
                 turn.failed = True
-                text = classify(code, "", "".join(stderr), path)
+                text = self.classify(code, "".join(stderr), path)
                 problem = problem_code(text)
                 if problem:
                     yield stream.data("problem", {"code": problem, "provider": self.name})

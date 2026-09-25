@@ -99,7 +99,6 @@ def test_signed_out_says_so_with_a_problem_code(api) -> None:  # type: ignore[no
     [
         ("ollama", "local-model"),
         ("anthropic", "unsupported-provider"),
-        ("codex-subscription", "codex"),
     ],
 )
 def test_providers_the_assistant_does_not_serve_yet(api, provider: str, code: str) -> None:  # type: ignore[no-untyped-def]
