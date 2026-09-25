@@ -82,3 +82,33 @@ def test_problem_codes() -> None:
     assert problem_code("Claude Code is not signed in. Run `claude`") == "signed-out"
     assert problem_code("Claude Code is rate limited: 429") == "rate-limited"
     assert problem_code("something else") == ""
+
+
+def test_a_marker_split_anywhere_still_becomes_one_citation(tmp_path: Path) -> None:
+    from app.assistant.citations import Citer
+    from app.clock import FakeClock
+    from app.db.dao import Dao, connect
+    from app.db.dao import Turn as DbTurn
+
+    conn = connect(tmp_path / "index.db")
+    dao = Dao(conn, FakeClock())
+    dao.insert_meeting(meeting_id="m1", folder=tmp_path / "m1", source="manual", title="Sync")
+    dao.index_turns("m1", [DbTurn(0, "ME", 1000, "first"), DbTurn(1, "THEM", 9000, "second")])
+    whole = "Said [[m:m1@9500]] and again [[m:m1@9000]], and the meeting [[m:m1]]. [x] [["
+    for size in (1, 2, 3, 7):
+        citer = Citer(dao)
+        shown = ""
+        for start in range(0, len(whole), size):
+            text, _ = citer.feed(whole[start : start + size])
+            shown += text
+        text, _ = citer.flush()
+        shown += text
+        assert (
+            shown
+            == "Said [1](#cite-1) and again [1](#cite-1), and the meeting [2](#cite-2). [x] [["
+        ), size
+        assert [(c["n"], c["at_ms"], c["quote"]) for c in citer.citations] == [
+            (1, 9000, "second"),
+            (2, None, ""),
+        ]
+    conn.close()

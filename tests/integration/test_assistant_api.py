@@ -139,6 +139,31 @@ def test_the_tool_server_opens_only_with_its_own_token(api) -> None:  # type: ig
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
             headers=good,
         ).json()
-    names = [tool["name"] for tool in listed["result"]["tools"]]
-    assert names == ["search"]
-    assert listed["result"]["tools"][0]["annotations"]["readOnlyHint"] is True
+    names = sorted(tool["name"] for tool in listed["result"]["tools"])
+    assert names == [
+        "calendar_range",
+        "get_meeting",
+        "get_transcript",
+        "list_action_items",
+        "list_meetings",
+        "related_meetings",
+        "search",
+    ]
+    assert all(tool["annotations"]["readOnlyHint"] is True for tool in listed["result"]["tools"])
+    assert not any(tool["annotations"].get("destructiveHint") for tool in listed["result"]["tools"])
+
+
+def test_citations_are_checked_snapped_and_numbered(api) -> None:  # type: ignore[no-untyped-def]
+    """The fake cites 500 ms inside the line, splits the marker across two deltas, and
+    adds one to a meeting that does not exist."""
+    with serve(api) as client:
+        chunks = chunks_of(ask(client, "Which meetings mention the budget"))
+    citations = [c["data"] for c in chunks if c != "[DONE]" and c["type"] == "data-citation"]
+    assert len(citations) == 1, "the invented meeting is dropped"
+    cite = citations[0]
+    assert (cite["n"], cite["meeting_id"], cite["at_ms"]) == (1, "m-budget", 4000), "snapped"
+    assert cite["quote"] == "The marketing budget is cut by ten percent."
+    assert cite["title"] == "Q4 budget review" and cite["speaker"]
+    text = text_of(chunks)
+    assert "[1](#cite-1)" in text
+    assert "[[" not in text and "no-such-meeting" not in text
