@@ -35,6 +35,9 @@ class AuthState:
     session_secret: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     csrf_secret: str = field(default_factory=lambda: secrets.token_urlsafe(24))
     launcher_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    #: Opens the assistant's MCP server (``/mcp/``) and nothing else. Handed only to the
+    #: CLI the app spawns, in its ``--mcp-config``; see ``app/assistant/mcp.py``.
+    mcp_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     _tokens: set[str] = field(default_factory=set)
     _used: set[str] = field(default_factory=set)
 
@@ -224,6 +227,11 @@ def write_launcher_key(auth: AuthState, home: Path) -> Path:
     return path
 
 
+#: Answered by the assistant's MCP server, which checks its own bearer token instead.
+#: The caller is a CLI process, which has no cookie to double-submit.
+MCP_PREFIX = "/mcp"
+
+
 class CsrfMiddleware:
     """Double-submit token on every mutating route; SameSite=Strict is the primary defense."""
 
@@ -235,6 +243,7 @@ class CsrfMiddleware:
         if (
             scope["type"] == "http"
             and scope.get("method") in MUTATING
+            and not _is_mcp(str(scope.get("path", "")))
             and not self.auth.valid_csrf(_header(scope, CSRF_HEADER))
         ):
             await JSONResponse({"detail": "missing or invalid CSRF token"}, 403)(
@@ -242,3 +251,7 @@ class CsrfMiddleware:
             )
             return
         await self.app(scope, receive, send)
+
+
+def _is_mcp(path: str) -> bool:
+    return path == MCP_PREFIX or path.startswith(MCP_PREFIX + "/")

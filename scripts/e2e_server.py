@@ -65,6 +65,10 @@ def main() -> int:
     config.set("llm.gemini_base_url", "http://127.0.0.1:9")
     config.set("llm.openai_base_url", "http://127.0.0.1:9")
     config.set("llm.ollama_url", "http://127.0.0.1:9")
+    # The assistant spawns a stand-in for the Claude CLI: it makes real MCP calls to this
+    # server and streams recorded stream-json, and spends nothing.
+    fake_cli = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "fake_claude.py"
+    config.set("assistant.cli_command", ["{python}", str(fake_cli)])
 
     services = build(config, with_worker=True, with_recorder=True)
     services.auth.session_secret = os.environ.get("UP_E2E_SESSION", services.auth.session_secret)
