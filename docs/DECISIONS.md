@@ -1912,6 +1912,24 @@ Three research passes fed this entry:
 - AI assistant 3 (the core) uses `VercelAIAdapter` instead of a hand-written stream.
 - AI assistant 4 (the panel) is built to this entry and stays L.
 
+**As built (2026-09-26, branch `ai-assistant`).** Everything above, with these
+differences, each for a reason found while building:
+- **No `use-stick-to-bottom`.** The question scrolls to the top on send and the view never
+  follows the stream, which is the NN/G rule itself; there was nothing left for it to do.
+- **Codex keeps nothing.** `codex exec --ephemeral` with a recap of the stored
+  conversation each turn, instead of `exec resume`: nothing lands in the user's own Codex
+  history (as with the summarizer), and the resume flags could not be confirmed without a
+  Codex to try them on. Claude Code does resume, and when it has lost a session the
+  question is asked again with a recap before the user sees anything.
+- **Codex answers arrive whole.** `exec --json` does not stream an agent message's text,
+  only the finished message; tool steps still appear as they happen.
+- **The data fence is named at start-up** (`<upshot-data-xxxxxxxx>`), not per request:
+  one MCP server serves every conversation, and a name the transcript cannot know is what
+  matters.
+- **Follow-ups** are written by the model at the end of its answer
+  (`[[suggest: … | …]]`) and taken out of the text, so they cost no extra call.
+- **History search** covers titles only, as D62 said.
+
 **Open decisions for the product owner.**
 
 | # | Decision | Recommended |

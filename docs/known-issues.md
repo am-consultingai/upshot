@@ -171,6 +171,29 @@ mechanism would extend to them if they do.
 
 ---
 
+## The assistant (branch `ai-assistant`, 2026-09-26)
+
+### A. Codex has not met the real CLI
+The route is built from codex-rs's event types and the config reference, and tested
+against a fake that insists on the safety flags. Unconfirmed on a real Codex: that
+`mcp_servers.upshot.default_tools_approval_mode="approve"` is what lets `exec` call
+Upshot's tools unasked, and the exact wording when it is not signed in. To check: install
+Codex, sign in, choose it in Settings → AI, ask one question.
+
+### B. The frozen build has not carried the MCP server yet
+`mcp` 2.x is a new dependency, imported inside a function; its modules are listed in
+`packaging/upshot.spec`, but no installer has been built since. The next Windows build
+should open the panel and ask once.
+
+### C. Four end-to-end specs outside the assistant are timing-sensitive
+Seen failing in full runs and passing alone during this work (ClickUp tech debt):
+`polish the_balloon_counts_open_items_and_follows_the_ticks` (checks `chip.count()` before
+the calendar has drawn and then pages to the wrong week), `polish
+key_features_explain_themselves_on_hover`, `redesign the_calendar_rail_has_up_next_and_open_items`
+(near midnight), and pytest `test_the_meter_releases_the_device_when_the_client_goes_away`.
+A fifth, `meeting search_finds_a_transcript`, was not flaky: it caught search returning a
+deleted meeting, fixed in the same branch.
+
 ## Older, still open
 
 ### 11. Cancelling the echo loosens one timestamp
