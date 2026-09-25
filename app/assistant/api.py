@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.assistant import stream
+from app.assistant.citations import Citer
 from app.assistant.claude_route import ClaudeRoute, Turn
 from app.llm.prompts import load
 from app.log import get
@@ -127,6 +128,7 @@ async def chat(request: Request, body: ChatPost) -> StreamingResponse:
             system=system_prompt(body.context),
             resume=sessions.get(chat_id, ""),
             turn=turn,
+            citer=Citer(svc.dao),
         ):
             yield stream.sse(chunk)
         if turn.session_id and not turn.failed:
