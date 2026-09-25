@@ -76,7 +76,7 @@ def choose_profile(config: Config) -> tuple[str, str]:
     profile = (
         configured if configured != "auto" else ("gpu-live" if device == "cuda" else "cpu-deferred")
     )
-    choice = resolve(config, device=device)
+    choice = resolve(config)
     return profile, choice.reference
 
 

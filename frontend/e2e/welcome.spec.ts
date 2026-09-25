@@ -13,7 +13,7 @@ test.beforeEach(async ({ seedBody }) => {
 });
 
 test.afterEach(async ({ request }) => {
-  // Setup done again, the meeting language back at its default.
+  // Setup done again.
   await reset(request);
 });
 
@@ -24,16 +24,15 @@ test("a_new_install_opens_on_setup_and_done_lands_in_the_library", async ({ page
   // The screen has the window to itself: nothing assumes a finished setup.
   await expect(page.getByTestId("rail")).toHaveCount(0);
 
-  // 1. Hebrew is offered first, and the model is the Hebrew one.
-  await expect(page.getByTestId("meeting-language")).toHaveValue("he");
-  await expect(page.getByTestId("model-name")).toContainText("ivrit-ai/");
-
-  // 2. What the download is, before it is pressed.
+  // 1. The one model (D60), and what the download is, before it is pressed. No language
+  // is asked: the model transcribes Hebrew and English alike.
+  await expect(page.getByTestId("meeting-language")).toHaveCount(0);
+  await expect(page.getByTestId("model-name")).toContainText("ivrit-ai/whisper-large-v3-ct2");
   await expect(page.getByTestId("model-size")).toContainText("GB");
   await expect(page.getByTestId("model-free")).toContainText("free");
   await expect(page.getByTestId("model-download")).toBeVisible();
 
-  // 3. Both meters are there, and the synthetic tone moves the microphone's.
+  // 2. Both meters are there, and the synthetic tone moves the microphone's.
   await expect(page.getByTestId("mic-meter-me")).toBeVisible();
   await expect(page.getByTestId("mic-meter-them")).toBeVisible();
   await expect
@@ -44,14 +43,9 @@ test("a_new_install_opens_on_setup_and_done_lands_in_the_library", async ({ page
     )
     .toBeGreaterThan(0);
 
-  // 4. Where it will run, and why.
+  // 3. Where it will run, and why.
   await expect(page.getByTestId("device-plan")).toBeVisible();
   await expect(page.getByTestId("device-reason")).not.toBeEmpty();
-
-  // English is transcribed as English: the model follows the language.
-  await page.getByTestId("meeting-language").selectOption("en");
-  await expect(page.getByTestId("model-name")).toContainText("faster-whisper");
-  await expect(page.getByTestId("meeting-language-note")).toContainText("English as English");
 
   await page.getByTestId("welcome-done").click();
   await expect(page).toHaveURL(/\/$/);
@@ -59,8 +53,6 @@ test("a_new_install_opens_on_setup_and_done_lands_in_the_library", async ({ page
 
   const settings = await (await page.request.get("/api/settings")).json();
   expect(settings.config.setup.done).toBe(true);
-  expect(settings.config.asr.language_mode).toBe("fixed");
-  expect(settings.config.asr.default_language).toBe("en");
 
   // And it stays done.
   await page.reload();
@@ -95,22 +87,12 @@ test("a_downloaded_model_is_not_shown_as_still_to_download", async ({ page }) =>
   await expect(page.getByTestId("model-size")).not.toContainText("to download");
 });
 
-test("done_saves_the_hebrew_that_was_shown", async ({ page }) => {
-  await gotoApp(page, "/welcome");
-  await page.getByTestId("welcome-done").click();
-  await expect(page).toHaveURL(/\/$/);
-  const settings = await (await page.request.get("/api/settings")).json();
-  expect(settings.config.asr.language_mode).toBe("fixed");
-  expect(settings.config.asr.default_language).toBe("he");
-});
-
 test("skip_marks_setup_done_and_changes_nothing", async ({ page }) => {
   await gotoApp(page, "/welcome");
   await page.getByTestId("welcome-skip").click();
   await expect(page).toHaveURL(/\/$/);
   const settings = await (await page.request.get("/api/settings")).json();
   expect(settings.config.setup.done).toBe(true);
-  expect(settings.config.asr.language_mode).toBe("detect");
 });
 
 test("every_screen_leads_to_setup_until_it_is_done", async ({ page }) => {
@@ -126,16 +108,15 @@ test("setup_stays_reachable_from_settings", async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
 
   await gotoSettings(page, "speech");
-  await expect(page.getByTestId("meeting-language")).toHaveValue("detect");
-  await expect(page.getByTestId("model-name")).toBeVisible();
+  await expect(page.getByTestId("model-name")).toContainText("ivrit-ai/whisper-large-v3-ct2");
   await expect(page.getByTestId("asr-device")).toHaveValue("auto");
 
-  // Chosen in Settings, the language moves the model there too.
-  await page.getByTestId("meeting-language").selectOption("en");
-  await expect(page.getByTestId("model-name")).toContainText("faster-whisper");
+  // The device changes where the model runs, never which model it is.
+  await page.getByTestId("asr-device").selectOption("cpu");
+  await expect(page.getByTestId("model-name")).toContainText("ivrit-ai/whisper-large-v3-ct2");
+  await page.getByTestId("asr-device").selectOption("auto"); // saved: put it back
 
   // And the whole screen can be had again, without being sent back to it.
   await page.getByTestId("open-welcome").click();
   await expect(page).toHaveURL(/\/welcome$/);
-  await expect(page.getByTestId("meeting-language")).toHaveValue("en");
 });
