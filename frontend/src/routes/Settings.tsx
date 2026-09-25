@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type Locale } from "../i18n";
@@ -7,7 +6,6 @@ import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
-import SpeechSettings from "../components/SpeechSettings";
 import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
 import { useSetupWarnings } from "../lib/setup";
@@ -16,7 +14,6 @@ import { useSetupWarnings } from "../lib/setup";
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
 
 interface ConfigShape {
-  data_root?: string | null;
   ui?: { language?: string };
   summary?: { language?: string };
   detection?: { mode?: string };
@@ -30,16 +27,14 @@ const DETECTION_MODES = [
 ] as const;
 
 /*
- * Sections, in the order someone meets them: what it records, how it looks,
- * where it puts things, what it connects to, then the two long ones.
+ * Sections, in the order someone meets them: what it records, how it looks, what it
+ * connects to, then the two long ones. There is no Transcription or Storage section:
+ * which model runs, where it runs and where recordings are kept are the app's business,
+ * not the user's (first-run setup still downloads the model and says where it runs).
  */
 const SECTIONS: SettingsSection[] = [
   { id: "audio", label: "settings.groupAudio" },
-  // What first-run setup asks, kept reachable after it: the speech model and where it
-  // runs.
-  { id: "speech", label: "settings.groupSpeech" },
   { id: "appearance", label: "settings.groupAppearance" },
-  { id: "storage", label: "settings.groupStorage" },
   { id: "calendar", label: "settings.groupCalendar" },
   { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents" },
   { id: "prompt", label: "settings.prompt" },
@@ -50,7 +45,6 @@ export default function Settings() {
   const setup = useSetupWarnings();
   const { t, locale, setLocale, theme, setTheme, tooltips, setTooltips } = useI18n();
   const queryClient = useQueryClient();
-  const [dataRoot, setDataRoot] = useState("");
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const save = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
@@ -59,16 +53,10 @@ export default function Settings() {
 
   const config = (settings.data?.config ?? {}) as ConfigShape;
 
-  useEffect(() => {
-    if (config.data_root !== undefined && config.data_root !== null) setDataRoot(config.data_root);
-  }, [config.data_root]);
-
-  const warnings = settings.data?.warnings ?? [];
   // Keys the environment is holding down. Handed to every row, so a control a launcher
   // has pinned admits it rather than saving, reading back, and reverting on the next
   // start with nothing on screen to explain it.
   const pinned = settings.data?.pinned ?? {};
-  const localWarning = /onedrive|dropbox|google drive/i.test(dataRoot);
 
   return (
     <PinnedContext.Provider value={pinned}>
@@ -89,8 +77,7 @@ export default function Settings() {
        * no confirmation toast, which is the current convention and the documented
        * Windows rule: "when a user changes a setting, the app should immediately
        * reflect the change — don't require a confirmation button." The control's
-       * own new state is the acknowledgement. The one exception is the data folder,
-       * which is a free-text path and cannot be applied on every keystroke.
+       * own new state is the acknowledgement.
        */}
 
       {section === "audio" && (
@@ -219,48 +206,6 @@ export default function Settings() {
       </SettingGroup>
       )}
 
-      {section === "storage" && (
-      <SettingGroup>
-        <SettingRow
-          label={t("settings.dataRoot")}
-          configKey="data_root"
-          htmlFor="data-root"
-          description={t("settings.dataRootNote")}
-          tone={
-            (localWarning || warnings.length > 0) && (
-              <p data-testid="sync-warning" className="mt-1 text-xs text-warning">
-                {t("settings.syncWarning")}
-              </p>
-            )
-          }
-        >
-          {/*
-           * The one setting that is not instant: a path is only meaningful once it
-           * is finished being typed, so this commits on blur and on Enter rather
-           * than on every keystroke.
-           */}
-          <input
-            id="data-root"
-            data-testid="data-root"
-            value={dataRoot}
-            onChange={(event) => setDataRoot(event.target.value)}
-            onBlur={() => dataRoot && save.mutate({ data_root: dataRoot })}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            spellCheck={false}
-            className="w-[22rem] max-w-full rounded-sm border border-line bg-canvas px-2 py-1.5 font-mono text-xs"
-          />
-          {save.isSuccess && (
-            <span data-testid="settings-saved" className="text-xs text-success">
-              {t("settings.saved")}
-            </span>
-          )}
-        </SettingRow>
-      </SettingGroup>
-      )}
-
-      {section === "speech" && <SpeechSettings />}
       {section === "calendar" && <CalendarSettings />}
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}

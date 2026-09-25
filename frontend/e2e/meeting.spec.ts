@@ -110,14 +110,6 @@ test("settings_roundtrip", async ({ page }) => {
   expect(html).not.toContain("app_password");
 });
 
-test("data_root_picker", async ({ page }) => {
-  await gotoSettings(page, "storage");
-  const input = page.getByTestId("data-root");
-  await expect(input).toBeVisible();
-  await input.fill("C:/Users/am/OneDrive/meetings");
-  await expect(page.getByTestId("sync-warning")).toBeVisible();
-});
-
 test("search_finds_a_transcript", async ({ page, seed }) => {
   await seed([
     {
