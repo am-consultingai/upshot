@@ -1,10 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { csrfToken } from "../../api";
 import { useI18n, type MessageKey } from "../../i18n";
 import { Spinner } from "../BusyButton";
+import { stamp } from "../../lib/speakers";
+
+/** What the server sends for each checked citation (app/assistant/citations.py). */
+export interface Citation {
+  n: number;
+  meeting_id: string;
+  title: string;
+  started_at: string | null;
+  at_ms: number | null;
+  speaker: string;
+  quote: string;
+}
 
 /**
  * The assistant (D61, D62): one conversation about the user's meetings and about
@@ -156,13 +168,20 @@ function Message({ message }: { message: UIMessage }) {
       </div>
     );
   }
+  const citations = new Map<number, Citation>();
+  for (const part of message.parts) {
+    if (part.type === "data-citation") {
+      const citation = part.data as Citation;
+      citations.set(citation.n, citation);
+    }
+  }
   return (
     <div className="space-y-2" data-testid="assistant-answer">
       {message.parts.map((part, index) => {
         if (part.type === "text") {
           return (
             <p key={index} dir="auto" className="whitespace-pre-wrap text-sm leading-relaxed">
-              {part.text}
+              <Cited text={part.text} citations={citations} />
             </p>
           );
         }
@@ -175,22 +194,71 @@ function Message({ message }: { message: UIMessage }) {
   );
 }
 
+/** Text with its `[n](#cite-n)` links drawn as numbered chips. */
+function Cited({ text, citations }: { text: string; citations: Map<number, Citation> }) {
+  const pieces = text.split(/\[(\d+)\]\(#cite-\d+\)/);
+  return (
+    <>
+      {pieces.map((piece, index) => {
+        if (index % 2 === 0) return piece;
+        const citation = citations.get(Number(piece));
+        return citation ? <CitationChip key={index} citation={citation} /> : null;
+      })}
+    </>
+  );
+}
+
+function CitationChip({ citation }: { citation: Citation }) {
+  const navigate = useNavigate();
+  const { t } = useI18n();
+  const where = citation.at_ms === null ? "" : ` · ${stamp(citation.at_ms / 1000)}`;
+  const label = `${t("assistant.source")} ${citation.n}: ${citation.title}${where}`;
+  return (
+    <bdi>
+      <button
+        type="button"
+        data-testid="assistant-citation"
+        data-meeting-id={citation.meeting_id}
+        data-at-ms={citation.at_ms ?? ""}
+        aria-label={label}
+        title={citation.quote ? `${citation.speaker ? `${citation.speaker}: ` : ""}“${citation.quote}”\n${label}` : label}
+        onClick={() =>
+          navigate(citation.at_ms === null ? `/m/${citation.meeting_id}` : `/m/${citation.meeting_id}?at=${citation.at_ms}`)
+        }
+        className="mx-0.5 inline-grid h-4.5 min-w-4.5 place-items-center rounded-xs bg-a-200 px-1 align-text-top font-mono text-2xs text-accent hover:bg-a-300"
+      >
+        {citation.n}
+      </button>
+    </bdi>
+  );
+}
+
+const TOOL_LABELS: Record<string, MessageKey> = {
+  search: "assistant.tool.search",
+  list_meetings: "assistant.tool.list_meetings",
+  get_meeting: "assistant.tool.get_meeting",
+  get_transcript: "assistant.tool.get_transcript",
+  list_action_items: "assistant.tool.list_action_items",
+  calendar_range: "assistant.tool.calendar_range",
+  related_meetings: "assistant.tool.related_meetings",
+};
+
 function ToolStep({ name, input, state }: { name: string; input: unknown; state: string }) {
   const { t } = useI18n();
-  const query = typeof input === "object" && input !== null && "query" in input ? String((input as { query: unknown }).query) : "";
-  const key = (`assistant.tool.${name}` as MessageKey) in catalogueKeys ? (`assistant.tool.${name}` as MessageKey) : "assistant.tool.other";
-  const label = t(key).replace("{query}", query).replace("{name}", name);
+  const args = typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
+  const label = t(TOOL_LABELS[name] ?? "assistant.tool.other")
+    .replace("{query}", String(args.query ?? args.contains ?? ""))
+    .replace("{from}", String(args.date_from ?? ""))
+    .replace("{name}", name);
   const done = state === "output-available";
   const failed = state === "output-error";
   return (
-    <p className="flex items-center gap-2 text-xs text-tertiary" data-testid="assistant-tool" data-state={state}>
+    <p className="flex items-center gap-2 text-xs text-tertiary" data-testid="assistant-tool" data-tool={name} data-state={state}>
       {done ? "✓" : failed ? "!" : <Spinner />}
       <bdi>{label}</bdi>
     </p>
   );
 }
-
-const catalogueKeys: Record<string, true> = { "assistant.tool.search": true };
 
 function meetingOf(pathname: string): string {
   const match = pathname.match(/^\/m\/([^/]+)/);

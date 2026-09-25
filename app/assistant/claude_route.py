@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from app.assistant import stream
+from app.assistant.citations import Citer
 from app.assistant.mcp import TOOL_PREFIX, client_config
 from app.config import Config
 from app.errors import PermanentError, QuotaExhausted, RecoverableError
@@ -78,8 +79,9 @@ def classify(code: int, out: str, err: str, path: str) -> str:
 class Translator:
     """``stream-json`` events in, AI SDK chunks out. Stateful across one turn."""
 
-    def __init__(self, turn: Turn) -> None:
+    def __init__(self, turn: Turn, citer: Citer | None = None) -> None:
         self.turn = turn
+        self.citer = citer
         self.part = 0
         self.open_text: str | None = None
         #: Message ids whose text arrived as deltas, so the whole message is not re-sent.
@@ -90,11 +92,32 @@ class Translator:
         self.part += 1
         return f"t{self.part}"
 
+    def _cited(self, text: str, *, final: bool = False) -> tuple[str, list[dict[str, Any]]]:
+        """The text with its citation markers checked, and a part for each new citation."""
+        if self.citer is None:
+            return text, []
+        shown, found = self.citer.feed(text)
+        if final:
+            rest, more = self.citer.flush()
+            shown, found = shown + rest, found + more
+        return shown, [stream.data("citation", citation) for citation in found]
+
+    def _emit_text(self, text: str, *, final: bool = False) -> list[dict[str, Any]]:
+        shown, chunks = self._cited(text, final=final)
+        if shown:
+            if self.open_text is None:
+                self.open_text = self._text_id()
+                chunks.append(stream.text_start(self.open_text))
+            self.turn.text += shown
+            chunks.append(stream.text_delta(self.open_text, shown))
+        return chunks
+
     def close_text(self) -> list[dict[str, Any]]:
         if self.open_text is None:
             return []
+        chunks = self._emit_text("", final=True)
         part, self.open_text = self.open_text, None
-        return [stream.text_end(part)]
+        return [*chunks, stream.text_end(part)]
 
     def feed(self, event: dict[str, Any]) -> list[dict[str, Any]]:
         kind = event.get("type")
@@ -126,15 +149,8 @@ class Translator:
             delta = ev.get("delta") or {}
             if delta.get("type") != "text_delta":
                 return []
-            text = str(delta.get("text", ""))
-            chunks: list[dict[str, Any]] = []
-            if self.open_text is None:
-                self.open_text = self._text_id()
-                chunks.append(stream.text_start(self.open_text))
             self.streamed.add(self.current_message)
-            self.turn.text += text
-            chunks.append(stream.text_delta(self.open_text, text))
-            return chunks
+            return self._emit_text(str(delta.get("text", "")))
         if kind == "content_block_stop":
             return self.close_text()
         return []
@@ -149,13 +165,8 @@ class Translator:
                 # A CLI without partial messages: the whole text arrives at once.
                 text = str(block.get("text", ""))
                 if text:
-                    part = self._text_id()
-                    self.turn.text += text
-                    chunks += [
-                        stream.text_start(part),
-                        stream.text_delta(part, text),
-                        stream.text_end(part),
-                    ]
+                    chunks += self._emit_text(text, final=True)
+                    chunks += self.close_text()
             elif block.get("type") == "tool_use":
                 chunks += self.close_text()
                 name = tool_name(str(block.get("name", "")))
@@ -228,6 +239,7 @@ class ClaudeRoute:
         system: str,
         resume: str = "",
         turn: Turn | None = None,
+        citer: Citer | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         turn = turn if turn is not None else Turn(session_id=resume)
         base = self.executable()
@@ -243,11 +255,11 @@ class ClaudeRoute:
             config_path = Path(folder) / "mcp.json"
             config_path.write_text(json.dumps(client_config(port, token)), encoding="utf-8")
             args = self.args(base, mcp_config=str(config_path), system=system, resume=resume)
-            async for chunk in self._spawn(args, question, turn, base[0]):
+            async for chunk in self._spawn(args, question, turn, base[0], citer):
                 yield chunk
 
     async def _spawn(
-        self, args: list[str], question: str, turn: Turn, path: str
+        self, args: list[str], question: str, turn: Turn, path: str, citer: Citer | None
     ) -> AsyncIterator[dict[str, Any]]:
         loop = asyncio.get_running_loop()
         lines: asyncio.Queue[str | None] = asyncio.Queue()
@@ -292,7 +304,7 @@ class ClaudeRoute:
         except OSError:
             pass
 
-        translator = Translator(turn)
+        translator = Translator(turn, citer)
         finished = False
         try:
             while True:

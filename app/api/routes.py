@@ -2068,6 +2068,8 @@ def test_router() -> APIRouter:
             svc.conn.execute("DELETE FROM meeting_tags")
             svc.conn.execute("DELETE FROM action_items")
             svc.conn.execute("DELETE FROM meetings")
+            if capabilities(svc.conn).fts:
+                svc.conn.execute("DELETE FROM search_fts")
             svc.extras.pop("storage_bytes", None)
             svc.conn.execute("DELETE FROM detector_events")
             # And from the default appearance. These are saved settings, so a spec
