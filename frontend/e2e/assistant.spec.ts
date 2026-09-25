@@ -164,3 +164,81 @@ test("the_question_carries_the_screen_it_was_asked_from", async ({ page, seed })
   const body = (await request).postDataJSON();
   expect(body.context).toEqual({ route: "/m/as-1", meeting_id: "as-1" });
 });
+
+/* Plan step 4: saved conversations. */
+test("a_reload_keeps_the_conversation_and_the_follow_up_resumes_it", async ({ page, seed }) => {
+  await seed(BUDGET);
+  await gotoApp(page, "/");
+  await page.keyboard.press("Control+j");
+  await page.getByTestId("assistant-input").fill("Which meetings mention the budget");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("assistant-answer")).toContainText("Q4 budget review");
+
+  await page.reload();
+  await expect(page.getByTestId("app")).toBeVisible();
+  await page.keyboard.press("Control+j");
+  await expect(page.getByTestId("assistant-question")).toContainText("Which meetings mention the budget");
+  await expect(page.getByTestId("assistant-answer")).toContainText("Q4 budget review");
+  await expect(page.getByTestId("assistant-citation")).toHaveCount(1);
+  await expect(page.getByTestId("assistant-tool")).toHaveAttribute("data-state", "output-available");
+
+  await page.getByTestId("assistant-input").fill("NOTOOL and the first one?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("assistant-answer").nth(1)).toContainText("Continuing.");
+});
+
+test("history_lists_reopens_renames_and_deletes_conversations", async ({ page, seed }) => {
+  await seed(BUDGET);
+  await gotoApp(page, "/");
+  await page.keyboard.press("Control+j");
+  const input = page.getByTestId("assistant-input");
+  await input.fill("NOTOOL first conversation");
+  await input.press("Enter");
+  await expect(page.getByTestId("assistant-answer")).toContainText("without searching");
+  await page.getByTestId("assistant-new").click();
+  await input.fill("NOTOOL second conversation");
+  await input.press("Enter");
+  await expect(page.getByTestId("assistant-answer")).toContainText("without searching");
+
+  await page.getByTestId("assistant-history").click();
+  const rows = page.getByTestId("assistant-session");
+  await expect(rows).toHaveCount(2);
+  await expect(page.getByTestId("assistant-history-list")).toContainText("Today");
+  await expect(rows.first()).toContainText("NOTOOL second conversation");
+
+  // Reopen the first: its own messages, not the second's.
+  await rows.nth(1).getByTestId("assistant-session-open").click();
+  await expect(page.getByTestId("assistant-question")).toHaveText("NOTOOL first conversation");
+
+  // Rename it.
+  await page.getByTestId("assistant-history").click();
+  await rows.nth(1).hover();
+  await rows.nth(1).getByTestId("assistant-session-rename").click();
+  await page.getByTestId("assistant-rename-input").fill("Renamed chat");
+  await page.getByTestId("assistant-rename-input").press("Enter");
+  await expect(rows.nth(1)).toContainText("Renamed chat");
+
+  // Delete it; the one being shown, so the panel moves to a new chat.
+  await rows.nth(1).hover();
+  await rows.nth(1).getByTestId("assistant-session-delete").click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+  await expect(rows).toHaveCount(1);
+  await page.getByTestId("assistant-history").click();
+  await expect(page.getByTestId("assistant-empty")).toBeVisible();
+});
+
+test("an_answer_stopped_part_way_is_kept", async ({ page, seed }) => {
+  await seed(BUDGET);
+  await gotoApp(page, "/");
+  await page.keyboard.press("Control+j");
+  await page.getByTestId("assistant-input").fill("NOTOOL SLOW tell me a long story");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("assistant-answer")).toContainText("I can");
+  await page.getByTestId("assistant-stop").click();
+  await expect(page.getByTestId("assistant-send")).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.reload();
+  await expect(page.getByTestId("app")).toBeVisible();
+  await page.keyboard.press("Control+j");
+  await expect(page.getByTestId("assistant-answer")).toContainText("I can");
+});

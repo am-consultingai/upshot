@@ -167,3 +167,66 @@ def test_citations_are_checked_snapped_and_numbered(api) -> None:  # type: ignor
     text = text_of(chunks)
     assert "[1](#cite-1)" in text
     assert "[[" not in text and "no-such-meeting" not in text
+
+
+# ------------------------------------------------------------------ saved conversations
+
+
+def test_a_conversation_is_kept_and_reopens_as_it_was_shown(api) -> None:  # type: ignore[no-untyped-def]
+    with serve(api) as client:
+        ask(client, "Which meetings mention the budget", chat_id="kept")
+        listed = client.get("/api/assistant/sessions").json()["sessions"]
+        opened = client.get("/api/assistant/sessions/kept").json()
+    assert [(s["id"], s["title"]) for s in listed] == [
+        ("kept", "Which meetings mention the budget")
+    ]
+    assert opened["session"]["provider"] == "claude-subscription"
+    user, answer = opened["messages"]
+    assert (
+        user["role"] == "user" and user["parts"][0]["text"] == "Which meetings mention the budget"
+    )
+    kinds = [part["type"] for part in answer["parts"]]
+    assert "dynamic-tool" in kinds and "data-citation" in kinds and "text" in kinds
+    tool = next(part for part in answer["parts"] if part["type"] == "dynamic-tool")
+    assert (tool["toolName"], tool["state"]) == ("search", "output-available")
+    text = next(part for part in answer["parts"] if part["type"] == "text")["text"]
+    assert "[1](#cite-1)" in text
+
+
+def test_rename_and_delete(api) -> None:  # type: ignore[no-untyped-def]
+    with serve(api) as client:
+        ask(client, "NOTOOL hello", chat_id="r")
+        renamed = client.patch("/api/assistant/sessions/r", json={"title": "  Greetings  "})
+        assert renamed.json()["session"]["title"] == "Greetings"
+        assert client.patch("/api/assistant/sessions/nope", json={"title": "x"}).status_code == 404
+        assert client.delete("/api/assistant/sessions/r").status_code == 200
+        assert client.get("/api/assistant/sessions/r").status_code == 404
+        assert client.delete("/api/assistant/sessions/r").status_code == 404
+    assert api.services.conn.execute("SELECT COUNT(*) FROM assistant_messages").fetchone()[0] == 0
+
+
+def test_a_session_the_cli_lost_starts_again_with_a_recap(api) -> None:  # type: ignore[no-untyped-def]
+    from app.assistant.store import SessionStore
+
+    with serve(api) as client:
+        ask(client, "NOTOOL first question", chat_id="lost")
+        SessionStore(api.services.conn, api.services.clock).set_cli_session(
+            "lost", "gone-123", "claude-subscription"
+        )
+        chunks = chunks_of(ask(client, "NOTOOL and then?", chat_id="lost"))
+        session = client.get("/api/assistant/sessions/lost").json()
+    assert text_of(chunks).startswith("Recapped."), "the question went with the conversation so far"
+    assert not any(c != "[DONE]" and c["type"] == "error" for c in chunks), "the user never saw it"
+    stored = SessionStore(api.services.conn, api.services.clock).get("lost")
+    assert stored is not None and not stored.cli_session_id.startswith("gone-"), (
+        "the new one is kept"
+    )
+    assert len(session["messages"]) == 4
+
+
+def test_long_first_questions_make_short_titles() -> None:
+    from app.assistant.store import title_from
+
+    assert title_from("  what   did we decide  ") == "what did we decide"
+    long = "what did we decide about the pricing page and the Berlin launch in the last three weeks"
+    assert title_from(long) == "what did we decide about the pricing page and the Berlin…"
