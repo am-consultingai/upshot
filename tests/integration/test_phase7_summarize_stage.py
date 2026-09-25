@@ -174,6 +174,21 @@ def test_free_form_lets_the_prompt_decide_everything(tmp_path: Path) -> None:
     assert "labels" not in html
 
 
+def test_rendering_makes_the_summary_searchable(tmp_path: Path) -> None:
+    from app.pipeline.stages import render
+
+    """Search and the assistant read the summary from the index the render stage fills."""
+    h, meeting = prepared(tmp_path)
+    summarize.run(h.context(meeting, JobStage.SUMMARIZE, services=Services()))
+    render.run(h.context(meeting, JobStage.RENDER, services=Services()))
+    stored = h.dao.summary_text(meeting.id)
+    assert stored, "the render stage kept a plain-text copy"
+    assert "<" not in stored, "tags out"
+    word = max(stored.split(), key=len).strip(".,:;!?()")
+    hits = [hit for hit in h.dao.search(word) if hit.kind == "summary"]
+    assert [hit.meeting_id for hit in hits] == [meeting.id]
+
+
 def test_a_hosted_model_is_not_split_into_windows(tmp_path: Path) -> None:
     """A 25 kB transcript went out as two windows and a merge: three calls where one
     would do, each 1.5 to 2 minutes through Claude Code. Null sizes it to the provider."""

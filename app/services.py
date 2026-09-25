@@ -71,6 +71,13 @@ def build(
     clock = clock or SystemClock()
     conn = connect(fts=str(cfg.get("db.fts", "auto")) != "off")
     dao = Dao(conn, clock)
+    try:
+        # Summaries written before they were searchable (D61); each folder is read once.
+        from app.pipeline.stages.render import backfill_search
+
+        backfill_search(dao)
+    except Exception:  # search is not worth failing a start over
+        log.exception("could not backfill summaries into search")
     queue = JobQueue(conn, clock)
     events = EventBus()
     calendar, calendar_sync, source = build_calendar(cfg, conn, events, clock)
