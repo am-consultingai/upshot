@@ -71,6 +71,15 @@ INSTALL_DOCS_URL = "https://developers.openai.com/codex/cli"
 #: opens the interactive agent in the window we meant for signing in.
 NATIVE_INSTALL = "$env:CODEX_NON_INTERACTIVE=1; irm https://chatgpt.com/codex/install.ps1 | iex"
 NPM_INSTALL = f"npm install -g {NPM_PACKAGE}"
+
+#: Show Sign in's PowerShell window (True), or run ``codex login`` with no window and let
+#: the Settings page carry the link (False, ``app/llm/signin.py``). The login asks nothing
+#: on its console, so the window only made the user watch it. Install still opens one.
+SIGNIN_CONSOLE = False
+#: The link ``codex login`` prints and opens: OpenAI's authorize page, carrying this
+#: machine's callback (``localhost:1455``) and the PKCE challenge. It redirects at once to a
+#: plain log-in page; the session rides along in a cookie.
+LOGIN_URL = re.compile(r"https://auth\.openai\.com/\S+")
 #: Published by "OpenAI, Inc." in microsoft/winget-pkgs (0.156.1 on 2026-09-23) though not
 #: in OpenAI's docs: a portable zip with a ``codex`` alias. Not ``OpenAI.Codex_…``, the
 #: Appx id of the desktop app.
@@ -598,6 +607,10 @@ class CodexCliClient:
     def login_command(self) -> list[str]:
         """What the user runs to sign in. We launch it; OpenAI's browser flow owns it."""
         return [self.resolve() or self.executable, "login"]
+
+    def logout_command(self) -> list[str]:
+        """Sign out. Asks nothing and opens nothing, so it runs with no window."""
+        return [self.resolve() or self.executable, "logout"]
 
     # -- protocol ----------------------------------------------------------
 

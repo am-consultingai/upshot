@@ -9,6 +9,10 @@ the application sends — ``--version``, ``login status``, ``exec`` — the way 
 
 ``FAKE_CODEX_MODE`` picks the behaviour: ``ok`` (default), ``quota``, ``signed-out``,
 ``old`` (a build without ``login status``) or ``api-key`` (signed in, but with a key).
+``login`` prints the link the way 0.156.1 does and waits to be stopped, as the real one
+waits for the browser; in ``login-fails`` it exits at once, as when its port is taken.
+``logout`` leaves a ``signed-out`` file beside the script, and ``login status`` then says
+so, whatever the mode.
 """
 
 from __future__ import annotations
@@ -36,8 +40,19 @@ if args[:1] == ["--version"]:
     print("codex-cli 0.0.0-fake")
     sys.exit(0)
 
+signed_out = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "signed-out")
+
+if args == ["logout"]:
+    record()
+    open(signed_out, "w").close()
+    print("Successfully logged out")
+    sys.exit(0)
+
 if args[:2] == ["login", "status"]:
     record()
+    if os.path.exists(signed_out):
+        print("Not logged in", file=sys.stderr)
+        sys.exit(1)
     if mode == "old":
         print("error: unrecognized subcommand 'status'", file=sys.stderr)
         sys.exit(2)
@@ -48,6 +63,24 @@ if args[:2] == ["login", "status"]:
         print("Logged in using an API key - sk-proj-***FAKE", file=sys.stderr)
         sys.exit(0)
     print("Logged in using ChatGPT", file=sys.stderr)
+    sys.exit(0)
+
+if args == ["login"]:
+    record()
+    if mode == "login-fails":
+        print("Error: failed to bind localhost:1455: address in use", file=sys.stderr)
+        sys.exit(1)
+    print("Starting local login server on http://localhost:1455.", file=sys.stderr)
+    print("If your browser did not open, navigate to this URL to authenticate:", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(
+        "https://auth.openai.com/oauth/authorize?response_type=code&client_id=app_FAKE"
+        "&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=FAKE",
+        file=sys.stderr,
+        flush=True,
+    )
+    import time
+    time.sleep(60)
     sys.exit(0)
 
 if args[:1] == ["exec"]:

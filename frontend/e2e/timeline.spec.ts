@@ -52,7 +52,7 @@ test("queue_card_shows_eta", async ({ page, seed }) => {
 
 test("default_locale_is_english", async ({ page }) => {
   await gotoApp(page);
-  await expect(page.getByTestId("nav-timeline")).toHaveAccessibleName("Library");
+  await expect(page.getByTestId("nav-timeline")).toHaveAccessibleName("Calendar");
   expect(await page.evaluate(() => document.dir)).toBe("ltr");
 });
 
@@ -62,7 +62,7 @@ test("locale_switch_no_reload", async ({ page }) => {
     (window as unknown as { __marker: number }).__marker = 42;
   });
   await page.getByTestId("ui-language").selectOption("he");
-  await expect(page.getByTestId("nav-timeline")).toHaveAccessibleName("ספרייה");
+  await expect(page.getByTestId("nav-timeline")).toHaveAccessibleName("לוח שנה");
   expect(await page.evaluate(() => document.dir)).toBe("rtl");
   expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(42);
 });

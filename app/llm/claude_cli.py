@@ -547,6 +547,10 @@ class ClaudeCliClient:
         supports_auth = self.account_status(path)[0] is not None
         return [path, "auth", "login"] if supports_auth else [path]
 
+    def logout_command(self) -> list[str]:
+        """Sign out. Asks nothing and opens nothing, so it runs with no window."""
+        return [self.resolve() or self.executable, "auth", "logout"]
+
     # -- protocol ----------------------------------------------------------
 
     def build_args(self, path: str, *, system: str = "") -> list[str]:

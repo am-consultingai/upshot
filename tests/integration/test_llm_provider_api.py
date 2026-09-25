@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -155,6 +156,92 @@ def test_a_failed_console_launch_is_logged_and_explained(api, caplog) -> None:  
     assert any("console launch attempt" in record.message for record in caplog.records), (
         "and the log must carry it, with context"
     )
+
+
+def test_the_row_says_when_its_console_was_closed(api) -> None:  # type: ignore[no-untyped-def]
+    """Closing the sign-in window must end the wait, not leave Sign in spinning.
+
+    Found 2026-09-25: the user closed the window a login had opened (the browser it chose
+    was the wrong one) and the button stayed busy, unpressable, until the page reloaded.
+    """
+    from app.api import routes
+
+    class Window:
+        def __init__(self) -> None:
+            self.code: int | None = None
+
+        def poll(self) -> int | None:
+            return self.code
+
+    def row() -> dict[str, Any]:
+        providers = api.client().get("/api/llm/status").json()["providers"]
+        by_id: dict[str, dict[str, Any]] = {p["id"]: p for p in providers}
+        return by_id["codex-subscription"]
+
+    window = Window()
+    try:
+        assert row()["console_open"] is False, "nothing launched yet"
+        # Windows only for the launch itself: the status route has Windows paths of its own.
+        with pytest.MonkeyPatch.context() as monkey:
+            monkey.setattr("sys.platform", "win32")
+            monkey.setattr("subprocess.Popen", lambda *_args, **_kwargs: window)
+            routes.launch_console(
+                ["powershell.exe", "-Command", "exit"],
+                "could not start",
+                provider="codex-subscription",
+            )
+        assert row()["console_open"] is True
+        window.code = 0xC000013A  # what closing a console window leaves as the exit code
+        assert row()["console_open"] is False
+    finally:
+        routes._CONSOLES.clear()
+
+
+def test_claude_signs_out_with_its_own_command(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``claude auth logout``, run with no window; the row then reads signed out."""
+    from app.llm import claude_cli
+
+    state = {"signed_in": True}
+    sent: list[list[str]] = []
+
+    def runner(args, _stdin, _timeout):  # type: ignore[no-untyped-def]
+        sent.append(list(args))
+        if args[1:] == ["auth", "logout"]:
+            state["signed_in"] = False
+            return 0, "Successfully logged out from your Anthropic account.", ""
+        if args[1:3] == ["auth", "status"]:
+            return 0, json.dumps({"loggedIn": state["signed_in"]}), ""
+        return 0, "2.1.263 (Claude Code)", ""
+
+    monkeypatch.setattr(claude_cli, "subprocess_runner", runner)
+    monkeypatch.setattr(claude_cli.ClaudeCliClient, "resolve", lambda _self: "claude")
+    client = api.client()
+    response = client.post("/api/llm/signout", json={"provider": "claude-subscription"})
+    assert response.json() == {"signed_out": True}
+    assert ["claude", "auth", "logout"] in sent
+    rows = {p["id"]: p for p in client.get("/api/llm/status").json()["providers"]}
+    assert rows["claude-subscription"]["signed_in"] is False
+
+
+def test_a_sign_out_that_does_not_take_says_so(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.llm import claude_cli
+
+    def runner(args, _stdin, _timeout):  # type: ignore[no-untyped-def]
+        if args[1:] == ["auth", "logout"]:
+            return 1, "", "keychain is locked"
+        if args[1:3] == ["auth", "status"]:
+            return 0, json.dumps({"loggedIn": True}), ""
+        return 0, "2.1.263 (Claude Code)", ""
+
+    monkeypatch.setattr(claude_cli, "subprocess_runner", runner)
+    monkeypatch.setattr(claude_cli.ClaudeCliClient, "resolve", lambda _self: "claude")
+    response = api.client().post("/api/llm/signout", json={"provider": "claude-subscription"})
+    assert response.status_code == 500
+    assert "keychain is locked" in response.json()["detail"]
 
 
 def test_forced_retry_marks_every_later_stage(api) -> None:  # type: ignore[no-untyped-def]

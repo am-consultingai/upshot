@@ -257,6 +257,10 @@ export interface LlmProvider {
   install_method?: string;
   install_docs?: string;
   update_hint?: string;
+  /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */
+  console_open?: boolean;
+  /** A windowless sign-in's link, while it waits for the browser. */
+  signin_url?: string;
   /** What is left of a plan's allowance, when the CLI can say so cheaply. */
   quota?: string | null;
 }
@@ -425,7 +429,19 @@ export const api = {
     ),
   /** Which subscription CLI; the server defaults to Claude for callers that do not say. */
   llmSignin: (provider = "claude-subscription") =>
-    request<{ launched: boolean; command: string; log?: string }>("/api/llm/signin", {
+    request<{ launched: boolean; command: string; log?: string; url?: string }>(
+      "/api/llm/signin",
+      { method: "POST", body: JSON.stringify({ provider }) },
+    ),
+  /** Sign the CLI out with its own logout command. */
+  llmSignout: (provider: string) =>
+    request<{ signed_out: boolean }>("/api/llm/signout", {
+      method: "POST",
+      body: JSON.stringify({ provider }),
+    }),
+  /** Stop a sign-in running with no window; it holds a port until it is stopped. */
+  llmSigninCancel: (provider: string) =>
+    request<{ stopped: boolean }>("/api/llm/signin/cancel", {
       method: "POST",
       body: JSON.stringify({ provider }),
     }),

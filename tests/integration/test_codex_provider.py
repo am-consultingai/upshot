@@ -182,7 +182,12 @@ def test_a_fallback_that_cannot_run_is_refused_too(api) -> None:  # type: ignore
     assert response.status_code == 409
 
 
-def test_signin_install_and_update_take_the_provider(api) -> None:  # type: ignore[no-untyped-def]
+def test_signin_install_and_update_take_the_provider(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.llm import codex_cli
+
+    monkeypatch.setattr(codex_cli, "SIGNIN_CONSOLE", True)  # the window, where it is kept
     client = api.client()
     signin = client.post("/api/llm/signin", json={"provider": "codex-subscription"}).json()
     # Off Windows nothing is launched; the command shown is what would have run.
@@ -199,6 +204,89 @@ def test_signin_install_and_update_take_the_provider(api) -> None:  # type: igno
     assert "claude" in claude["docs"]
     refused = client.post("/api/llm/signin", json={"provider": "gemini"})
     assert refused.status_code == 400
+
+
+@pytest.fixture
+def hidden(api):  # type: ignore[no-untyped-def]
+    """Sign in with no window, as shipped; every login stopped when the test ends."""
+    from app.api import routes
+    from app.llm import codex_cli
+
+    assert codex_cli.SIGNIN_CONSOLE is False, "the shipped setting hides the window"
+    yield api
+    for login in routes._LOGINS.values():
+        login.stop()
+    routes._LOGINS.clear()
+
+
+def codex_row(api) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+    providers = api.client().get("/api/llm/status").json()["providers"]
+    by_id: dict[str, dict[str, Any]] = {p["id"]: p for p in providers}
+    return by_id["codex-subscription"]
+
+
+def test_a_hidden_signin_hands_the_page_its_link(hidden, codex_log: Path) -> None:  # type: ignore[no-untyped-def]
+    """No window: the link ``codex login`` prints is what the page offers instead."""
+    body = hidden.client().post("/api/llm/signin", json={"provider": "codex-subscription"}).json()
+    assert body["launched"] is True
+    assert body["url"].startswith("https://auth.openai.com/oauth/authorize?")
+    assert "localhost%3A1455" in body["url"], "the link carries this machine's callback"
+    row = codex_row(hidden)
+    assert row["console_open"] is True
+    assert row["signin_url"] == body["url"]
+    # The window's transcript is gone; the same file records the output instead.
+    assert "Starting local login server" in Path(body["log"]).read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY" not in calls(codex_log)[-1]["env"], "the login gets no key either"
+
+
+def test_cancel_stops_a_hidden_signin(hidden) -> None:  # type: ignore[no-untyped-def]
+    client = hidden.client()
+    client.post("/api/llm/signin", json={"provider": "codex-subscription"})
+    stopped = client.post("/api/llm/signin/cancel", json={"provider": "codex-subscription"})
+    assert stopped.json() == {"stopped": True}
+    row = codex_row(hidden)
+    assert row["console_open"] is False, "the row stops waiting"
+    assert row["signin_url"] == ""
+
+
+def test_a_second_signin_replaces_the_first(hidden) -> None:  # type: ignore[no-untyped-def]
+    """The old login holds the callback port; pressing Sign in again means it is abandoned."""
+    from app.api import routes
+
+    client = hidden.client()
+    client.post("/api/llm/signin", json={"provider": "codex-subscription"})
+    first = routes._LOGINS["codex-subscription"]
+    client.post("/api/llm/signin", json={"provider": "codex-subscription"})
+    assert not first.running()
+    assert routes._LOGINS["codex-subscription"].running()
+
+
+def test_a_hidden_signin_that_dies_says_why(  # type: ignore[no-untyped-def]
+    hidden, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODE", "login-fails")
+    response = hidden.client().post("/api/llm/signin", json={"provider": "codex-subscription"})
+    assert response.status_code == 500
+    assert "address in use" in response.json()["detail"]
+    assert codex_row(hidden)["console_open"] is False
+
+
+def test_sign_out_flips_the_row_back_to_sign_in(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    assert codex_row(api)["signed_in"] is True
+    response = client.post("/api/llm/signout", json={"provider": "codex-subscription"})
+    assert response.json() == {"signed_out": True}
+    assert codex_row(api)["signed_in"] is False, "the row now offers Sign in"
+
+
+def test_sign_out_also_ends_a_waiting_signin(hidden) -> None:  # type: ignore[no-untyped-def]
+    from app.api import routes
+
+    client = hidden.client()
+    client.post("/api/llm/signin", json={"provider": "codex-subscription"})
+    login = routes._LOGINS["codex-subscription"]
+    client.post("/api/llm/signout", json={"provider": "codex-subscription"})
+    assert not login.running(), "it would otherwise go on holding the callback port"
 
 
 def test_signin_without_codex_is_actionable(api) -> None:  # type: ignore[no-untyped-def]
