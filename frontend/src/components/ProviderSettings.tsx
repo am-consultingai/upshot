@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LlmProvider } from "../api";
 import { useI18n } from "../i18n";
@@ -84,6 +84,21 @@ const GROUPS = [
   holds: (provider: LlmProvider) => boolean;
 }[];
 
+/**
+ * Whether the wait on an Install or Sign in window is over: the CLI reports signed in, or
+ * a status fetched after the launch says the window is gone (the user closed it). An
+ * older server that does not report the window leaves only the timeout to end it.
+ */
+export function watchFinished(state: {
+  signedIn: boolean;
+  consoleOpen: boolean | undefined;
+  checkedAt: number;
+  launchedAt: number;
+}): boolean {
+  if (state.signedIn) return true;
+  return state.consoleOpen === false && state.checkedAt > state.launchedAt;
+}
+
 export default function ProviderSettings() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -98,6 +113,13 @@ export default function ProviderSettings() {
   // looking until it does.
   // Which CLI's console is being waited on, or null.
   const [watching, setWatching] = useState<string | null>(null);
+  // When the watched console was launched: a status fetched before then says nothing
+  // about the window it opened.
+  const since = useRef(0);
+  const watch = (provider: string) => {
+    since.current = Date.now();
+    setWatching(provider);
+  };
 
   const status = useQuery({
     queryKey: ["llm-status"],
@@ -127,10 +149,23 @@ export default function ProviderSettings() {
   const signin = useMutation({
     mutationFn: (provider: string) => api.llmSignin(provider),
     onSuccess: (result, provider) => {
-      if (result.launched) setWatching(provider);
+      if (result.launched) watch(provider);
       invalidate();
     },
   });
+  const signout = useMutation({
+    mutationFn: (provider: string) => api.llmSignout(provider),
+    onSuccess: invalidate,
+  });
+  const cancelSignin = useMutation({
+    mutationFn: (provider: string) => api.llmSigninCancel(provider),
+    onSuccess: () => {
+      setWatching(null);
+      invalidate();
+    },
+  });
+  // Which row's sign-in link was just copied, for a moment's acknowledgement.
+  const [copied, setCopied] = useState<string | null>(null);
   const update = useMutation({
     mutationFn: (provider: string) => api.llmUpdate(provider),
     onSuccess: invalidate,
@@ -140,7 +175,7 @@ export default function ProviderSettings() {
     onSuccess: (result, provider) => {
       // Nothing was launched only when no installer can run; then the guide is the answer.
       if (!result.launched && result.docs) window.open(result.docs, "_blank", "noreferrer");
-      if (result.launched) setWatching(provider);
+      if (result.launched) watch(provider);
       invalidate();
     },
   });
@@ -158,9 +193,15 @@ export default function ProviderSettings() {
   // of the very step the user is still completing.
   const cli = (status.data?.providers ?? []).find((provider) => provider.id === watching);
   const signedIn = cli?.signed_in === true;
+  const finished = watchFinished({
+    signedIn,
+    consoleOpen: cli?.console_open,
+    checkedAt: status.dataUpdatedAt,
+    launchedAt: since.current,
+  });
   useEffect(() => {
     if (!watching) return undefined;
-    if (signedIn) {
+    if (finished) {
       setWatching(null);
       return undefined;
     }
@@ -168,7 +209,7 @@ export default function ProviderSettings() {
     // and an old build can never report success however long we wait.
     const timer = window.setTimeout(() => setWatching(null), 180_000);
     return () => window.clearTimeout(timer);
-  }, [watching, signedIn]);
+  }, [watching, finished]);
 
   const active = pendingProvider ?? status.data?.active;
   /*
@@ -227,6 +268,7 @@ export default function ProviderSettings() {
           const failure =
             (install.variables === provider.id && install.error) ||
             (signin.variables === provider.id && signin.error) ||
+            (signout.variables === provider.id && signout.error) ||
             (update.variables === provider.id && update.error) ||
             null;
           return (
@@ -308,6 +350,17 @@ export default function ProviderSettings() {
                         {t("settings.install")}
                       </BusyButton>
                     )}
+                    {/* One button that flips: Sign out once signed in, Sign in otherwise. */}
+                    {provider.signed_in === true && (
+                      <BusyButton
+                        data-testid="provider-signout"
+                        busy={signout.isPending && signout.variables === provider.id}
+                        onClick={() => signout.mutate(provider.id)}
+                        className="rounded border border-line px-2 py-1 text-sm"
+                      >
+                        {t("settings.signOut")}
+                      </BusyButton>
+                    )}
                     {provider.signed_in !== true && (
                       <BusyButton
                         data-testid="provider-signin"
@@ -343,7 +396,47 @@ export default function ProviderSettings() {
                       {t("settings.starting")}
                     </span>
                   )}
-                  {mine && !install.isPending && (
+                  {mine && !install.isPending && provider.signin_url && (
+                    // A sign-in with no window: the link is the whole interface. The CLI has
+                    // already opened it in the default browser, which may not be this one.
+                    <div className="grid gap-1" data-testid="provider-signin-link">
+                      <span className="text-xs text-secondary">{t("settings.signinOpened")}</span>
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <a
+                          data-testid="provider-signin-open"
+                          href={provider.signin_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline"
+                        >
+                          {t("settings.signinOpenHere")}
+                        </a>
+                        <button
+                          type="button"
+                          data-testid="provider-signin-copy"
+                          className="underline"
+                          onClick={() => {
+                            void navigator.clipboard
+                              .writeText(provider.signin_url ?? "")
+                              .then(() => setCopied(provider.id));
+                          }}
+                        >
+                          {copied === provider.id
+                            ? t("settings.signinCopied")
+                            : t("settings.signinCopy")}
+                        </button>
+                        <BusyButton
+                          data-testid="provider-signin-cancel"
+                          busy={cancelSignin.isPending && cancelSignin.variables === provider.id}
+                          onClick={() => cancelSignin.mutate(provider.id)}
+                          className="rounded border border-line px-2 py-1 text-sm"
+                        >
+                          {t("settings.signinCancel")}
+                        </BusyButton>
+                      </div>
+                    </div>
+                  )}
+                  {mine && !install.isPending && !provider.signin_url && (
                     <span className="text-xs text-secondary" data-testid="provider-watching">
                       {t("settings.watching")}
                     </span>
@@ -353,9 +446,13 @@ export default function ProviderSettings() {
                     const log =
                       (install.variables === provider.id && install.data?.log) ||
                       (signin.variables === provider.id && signin.data?.log);
+                    // A windowless sign-in answers with its link; there was no window to show.
+                    const windowless =
+                      signin.variables === provider.id && signin.data?.url !== undefined;
                     return log ? (
                       <span className="text-xs text-tertiary" data-testid="provider-console-log">
-                        {t("settings.consoleLog")} <code className="select-all">{log}</code>
+                        {t(windowless ? "settings.signinLog" : "settings.consoleLog")}{" "}
+                        <code className="select-all">{log}</code>
                       </span>
                     ) : null;
                   })()}

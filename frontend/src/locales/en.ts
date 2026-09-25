@@ -47,7 +47,7 @@ export const en = {
   "palette.navigate": "Go to",
   "palette.do": "Actions",
   "palette.open": "Meetings",
-  "nav.timeline": "Library",
+  "nav.timeline": "Calendar",
   "nav.actions": "Action items",
   "nav.search": "Search",
   "nav.settings": "Settings",
@@ -257,6 +257,7 @@ export const en = {
   "settings.localReady": "Ready",
   "settings.saveKey": "Save key",
   "settings.signIn": "Sign in",
+  "settings.signOut": "Sign out",
   "settings.signInHint":
     "Opens Anthropic's own login. This app never sees your credentials.",
   "settings.cliMissing": "Claude Code is not installed on this machine.",
@@ -518,6 +519,13 @@ export const en = {
   "welcome.done": "Done",
   "welcome.skip": "Skip for now",
   "welcome.modelLater": "The speech model is not downloaded yet. It will be fetched before the first meeting is transcribed, which delays that meeting's transcript.",
+  "settings.signinOpened":
+    "The sign-in page opened in your default browser. Finish there - this row updates itself when you are signed in.",
+  "settings.signinOpenHere": "Open it in this browser",
+  "settings.signinCopy": "Copy link",
+  "settings.signinCopied": "Copied",
+  "settings.signinCancel": "Cancel",
+  "settings.signinLog": "The sign-in's output is recorded to",
 } as const;
 
 export type MessageKey = keyof typeof en;
