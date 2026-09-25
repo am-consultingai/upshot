@@ -43,6 +43,8 @@ class Turn:
     session_id: str = ""
     text: str = ""
     failed: bool = False
+    #: The CLI no longer has the session it was asked to resume (plan step 4).
+    session_lost: bool = False
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -240,7 +242,11 @@ class ClaudeRoute:
         resume: str = "",
         turn: Turn | None = None,
         citer: Citer | None = None,
+        recap: str = "",
     ) -> AsyncIterator[dict[str, Any]]:
+        """One turn. A resumed session the CLI has lost is started again with ``recap``,
+        the conversation so far, in front of the question — before the user sees any
+        of it."""
         turn = turn if turn is not None else Turn(session_id=resume)
         base = self.executable()
         if base is None:
@@ -255,11 +261,26 @@ class ClaudeRoute:
             config_path = Path(folder) / "mcp.json"
             config_path.write_text(json.dumps(client_config(port, token)), encoding="utf-8")
             args = self.args(base, mcp_config=str(config_path), system=system, resume=resume)
-            async for chunk in self._spawn(args, question, turn, base[0], citer):
+            async for chunk in self._spawn(args, question, turn, base[0], citer, resume):
                 yield chunk
+            if turn.session_lost:
+                log.info("the CLI has no session %s any more; starting a new one", resume)
+                turn.session_lost = False
+                turn.session_id = ""
+                if recap:
+                    question = f"(The conversation so far, for context:\n{recap}\n)\n\n{question}"
+                args = self.args(base, mcp_config=str(config_path), system=system, resume="")
+                async for chunk in self._spawn(args, question, turn, base[0], citer, ""):
+                    yield chunk
 
     async def _spawn(
-        self, args: list[str], question: str, turn: Turn, path: str, citer: Citer | None
+        self,
+        args: list[str],
+        question: str,
+        turn: Turn,
+        path: str,
+        citer: Citer | None,
+        resume: str,
     ) -> AsyncIterator[dict[str, Any]]:
         loop = asyncio.get_running_loop()
         lines: asyncio.Queue[str | None] = asyncio.Queue()
@@ -306,6 +327,8 @@ class ClaudeRoute:
 
         translator = Translator(turn, citer)
         finished = False
+        started = False
+        lost_candidate: dict[str, Any] | None = None
         try:
             while True:
                 try:
@@ -325,11 +348,31 @@ class ClaudeRoute:
                     continue
                 if not isinstance(event, dict):
                     continue
+                if (
+                    resume
+                    and not started
+                    and event.get("type") == "result"
+                    and event.get("is_error")
+                    and not event.get("num_turns")
+                ):
+                    # Maybe a lost session; stderr says, once the process has ended.
+                    finished = True
+                    lost_candidate = event
+                    continue
+                if event.get("type") in ("assistant", "stream_event", "user"):
+                    started = True
                 for chunk in translator.feed(event):
                     yield chunk
                 if event.get("type") == "result":
                     finished = True
             code = await loop.run_in_executor(None, process.wait)
+            if lost_candidate is not None:
+                await loop.run_in_executor(None, _wait_for, stderr)
+                if "no conversation found" in "".join(stderr).lower():
+                    turn.session_lost = True
+                    return
+                for chunk in translator.feed(lost_candidate):
+                    yield chunk
             for chunk in translator.close_text():
                 yield chunk
             if not finished:
@@ -344,6 +387,15 @@ class ClaudeRoute:
             # CLI must not go on spending the user's allowance on an answer nobody reads.
             if process.poll() is None:
                 process.kill()
+
+
+def _wait_for(stderr: list[str], timeout: float = 5.0) -> None:
+    """The stderr reader appends once, when the stream closes; give it a moment."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while not stderr and time.monotonic() < deadline:
+        time.sleep(0.02)
 
 
 def problem_code(text: str) -> str:

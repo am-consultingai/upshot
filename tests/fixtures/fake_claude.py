@@ -9,6 +9,8 @@ Behaviour by what the question contains:
 - ``SIGNED-OUT``  prints the CLI's not-signed-in message and exits 1.
 - ``SLOW``        waits between words, so Stop can be tested.
 - ``NOTOOL``      answers without calling a tool.
+- a ``--resume`` id starting ``gone-`` fails the way the CLI does for a session it no
+  longer has; a question that starts with a recap is answered "Recapped. …".
 - otherwise       searches for the quoted words, or the question's last word.
 
 Standard library only: it runs under whatever Python the app does.
@@ -124,7 +126,20 @@ def main() -> int:
     if "SIGNED-OUT" in question:
         sys.stderr.write("Invalid API key · Please run /login\n")
         return 1
-    session = arg(argv, "--resume") or str(uuid.uuid4())
+    resumed = arg(argv, "--resume")
+    if resumed.startswith("gone-"):
+        emit(
+            {
+                "type": "result",
+                "subtype": "error_during_execution",
+                "is_error": True,
+                "num_turns": 0,
+                "session_id": resumed,
+            }
+        )
+        sys.stderr.write(f"No conversation found with session ID: {resumed}\n")
+        return 1
+    session = resumed or str(uuid.uuid4())
     emit(
         {
             "type": "system",
@@ -135,6 +150,8 @@ def main() -> int:
     )
     slow = "SLOW" in question
     prefix = "Continuing. " if "--resume" in argv else ""
+    if question.startswith("(The conversation so far"):
+        prefix = "Recapped. "
     if "NOTOOL" in question:
         say("msg_1", f"{prefix}I can answer that without searching.", slow=slow)
     else:

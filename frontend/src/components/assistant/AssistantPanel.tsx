@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { csrfToken } from "../../api";
+import { api, csrfToken } from "../../api";
+import { confirmDialog } from "../ConfirmDialog";
 import { useI18n, type MessageKey } from "../../i18n";
 import { Spinner } from "../BusyButton";
 import { stamp } from "../../lib/speakers";
@@ -26,10 +28,118 @@ export interface Citation {
  * The answer comes from the user's own CLI (Claude Code on their plan), which calls
  * Upshot's read-only tools; this component only shows the stream.
  */
+const CURRENT = "upshot.assistant.chat";
+
+function remembered(): string {
+  try {
+    return window.localStorage.getItem(CURRENT) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function remember(id: string) {
+  try {
+    window.localStorage.setItem(CURRENT, id);
+  } catch {
+    /* private window: the conversation is still in the database */
+  }
+}
+
 export default function AssistantPanel({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
+  const [chatId, setChatId] = useState(() => remembered() || newId());
+  const [view, setView] = useState<"chat" | "history">("chat");
+  // The conversation this panel was showing, as stored: it reopens where it was left.
+  // Read once when it is opened and never while it is on screen — the chat holds the
+  // live state from then on, and a refetch would replace it mid-answer. No cache either
+  // (`gcTime: 0`), so closing and reopening the panel reads what was stored since.
+  const stored = useQuery({
+    queryKey: ["assistant-session", chatId],
+    queryFn: () => api.assistantSession(chatId),
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const [loaded, setLoaded] = useState<string | null>(null);
+  if ((stored.isSuccess || stored.isError) && loaded !== chatId) setLoaded(chatId);
+  const ready = loaded === chatId;
+
+  const queries = useQueryClient();
+  const open = (id: string) => {
+    // Whatever was cached for it predates its latest answers.
+    queries.removeQueries({ queryKey: ["assistant-session", id] });
+    remember(id);
+    setChatId(id);
+    setView("chat");
+  };
+
+  return (
+    <aside
+      data-testid="assistant-panel"
+      aria-label={t("assistant.title")}
+      className="flex w-[25rem] shrink-0 flex-col border-s border-line-subtle bg-surface-1"
+    >
+      <header className="flex items-center gap-1 border-b border-line-subtle px-3 py-2">
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("assistant.title")}</h2>
+        <button
+          type="button"
+          data-testid="assistant-history"
+          aria-pressed={view === "history"}
+          onClick={() => setView(view === "history" ? "chat" : "history")}
+          className="rounded-sm px-2 py-1 text-xs text-secondary hover:bg-a-200 aria-pressed:bg-a-200"
+        >
+          {t("assistant.history")}
+        </button>
+        <button
+          type="button"
+          data-testid="assistant-new"
+          onClick={() => open(newId())}
+          className="rounded-sm px-2 py-1 text-xs text-secondary hover:bg-a-200"
+        >
+          {t("assistant.new")}
+        </button>
+        <button
+          type="button"
+          data-testid="assistant-close"
+          aria-label={t("assistant.close")}
+          onClick={onClose}
+          className="grid size-7 place-items-center rounded-sm text-secondary hover:bg-a-200"
+        >
+          <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5]">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </header>
+      {view === "history" ? (
+        <History
+          current={chatId}
+          onOpen={open}
+          onDeleted={(id) => {
+            // The list stays open; the chat behind it becomes a new one.
+            if (id !== chatId) return;
+            const next = newId();
+            remember(next);
+            setChatId(next);
+          }}
+        />
+      ) : ready ? (
+        <Chat key={chatId} id={chatId} initial={stored.data?.messages ?? []} />
+      ) : (
+        <div className="grid flex-1 place-items-center">
+          <Spinner />
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function Chat({ id, initial }: { id: string; initial: UIMessage[] }) {
+  const { t } = useI18n();
   const { pathname } = useLocation();
-  const [chatId, setChatId] = useState(() => newId());
+  const queries = useQueryClient();
   const [draft, setDraft] = useState("");
   const composer = useRef<HTMLTextAreaElement>(null);
 
@@ -47,49 +157,28 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
       }),
     [],
   );
-  const { messages, sendMessage, status, stop, error } = useChat({ id: chatId, transport });
+  const { messages, sendMessage, status, stop, error } = useChat({
+    id,
+    messages: initial,
+    transport,
+    onFinish: () => void queries.invalidateQueries({ queryKey: ["assistant-sessions"] }),
+  });
   const busy = status === "submitted" || status === "streaming";
 
   useEffect(() => {
     composer.current?.focus();
-  }, [chatId]);
+  }, []);
 
   const send = () => {
     const text = draft.trim();
     if (!text || busy) return;
     setDraft("");
+    remember(id);
     void sendMessage({ text });
   };
 
   return (
-    <aside
-      data-testid="assistant-panel"
-      aria-label={t("assistant.title")}
-      className="flex w-[25rem] shrink-0 flex-col border-s border-line-subtle bg-surface-1"
-    >
-      <header className="flex items-center gap-2 border-b border-line-subtle px-3 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("assistant.title")}</h2>
-        <button
-          type="button"
-          data-testid="assistant-new"
-          onClick={() => setChatId(newId())}
-          className="rounded-sm px-2 py-1 text-xs text-secondary hover:bg-a-200"
-        >
-          {t("assistant.new")}
-        </button>
-        <button
-          type="button"
-          data-testid="assistant-close"
-          aria-label={t("assistant.close")}
-          onClick={onClose}
-          className="grid size-7 place-items-center rounded-sm text-secondary hover:bg-a-200"
-        >
-          <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5]">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
-      </header>
-
+    <>
       <div role="log" aria-label={t("assistant.title")} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3" data-testid="assistant-log">
         {messages.length === 0 && (
           <p className="text-sm text-tertiary" data-testid="assistant-empty">
@@ -153,7 +242,137 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
           )}
         </div>
       </div>
-    </aside>
+    </>
+  );
+}
+
+/** Today, this week, older: how every chat history is read (Linear, ChatGPT, Claude). */
+function groupOf(updatedAt: string, now: Date): "today" | "week" | "older" {
+  const when = new Date(updatedAt);
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (when >= startOfDay) return "today";
+  const weekAgo = new Date(startOfDay);
+  weekAgo.setDate(weekAgo.getDate() - 6);
+  return when >= weekAgo ? "week" : "older";
+}
+
+const GROUPS: { id: "today" | "week" | "older"; key: MessageKey }[] = [
+  { id: "today", key: "assistant.today" },
+  { id: "week", key: "assistant.thisWeek" },
+  { id: "older", key: "assistant.older" },
+];
+
+function History({
+  current,
+  onOpen,
+  onDeleted,
+}: {
+  current: string;
+  onOpen: (id: string) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const queries = useQueryClient();
+  const sessions = useQuery({ queryKey: ["assistant-sessions"], queryFn: () => api.assistantSessions() });
+  const [editing, setEditing] = useState<string | null>(null);
+  const rows = sessions.data?.sessions ?? [];
+  const now = new Date();
+
+  const refresh = () => void queries.invalidateQueries({ queryKey: ["assistant-sessions"] });
+  const rename = async (id: string, title: string) => {
+    setEditing(null);
+    if (title.trim()) await api.renameAssistantSession(id, title);
+    refresh();
+  };
+  const remove = async (id: string, title: string, after: HTMLElement | null) => {
+    const sure = await confirmDialog({
+      title: t("assistant.deleteTitle"),
+      body: <bdi className="font-semibold">{title}</bdi>,
+      confirm: t("assistant.delete"),
+      cancel: t("assistant.cancel"),
+    });
+    if (!sure) return;
+    await api.deleteAssistantSession(id);
+    onDeleted(id);
+    refresh();
+    after?.focus();
+  };
+
+  if (sessions.isSuccess && rows.length === 0) {
+    return (
+      <p className="flex-1 px-3 py-3 text-sm text-tertiary" data-testid="assistant-history-empty">
+        {t("assistant.noHistory")}
+      </p>
+    );
+  }
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2" data-testid="assistant-history-list">
+      {GROUPS.map((group) => {
+        const inGroup = rows.filter((row) => groupOf(row.updated_at, now) === group.id);
+        if (inGroup.length === 0) return null;
+        return (
+          <section key={group.id} className="mb-3">
+            <h3 className="px-2 py-1 text-2xs font-medium uppercase tracking-wide text-tertiary">{t(group.key)}</h3>
+            <ul>
+              {inGroup.map((row, index) => (
+                <li key={row.id} className="group flex items-center gap-1 rounded-sm hover:bg-a-200" data-testid="assistant-session" data-session-id={row.id}>
+                  {editing === row.id ? (
+                    <input
+                      autoFocus
+                      dir="auto"
+                      data-testid="assistant-rename-input"
+                      defaultValue={row.title}
+                      aria-label={t("assistant.rename")}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void rename(row.id, event.currentTarget.value);
+                        if (event.key === "Escape") {
+                          event.stopPropagation();
+                          setEditing(null);
+                        }
+                      }}
+                      onBlur={(event) => void rename(row.id, event.currentTarget.value)}
+                      className="min-w-0 flex-1 rounded-sm border border-accent bg-raised px-2 py-1 text-sm outline-none"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid="assistant-session-open"
+                      aria-current={row.id === current ? "true" : undefined}
+                      onClick={() => onOpen(row.id)}
+                      className="min-w-0 flex-1 truncate px-2 py-1.5 text-start text-sm aria-[current=true]:font-semibold"
+                    >
+                      <bdi>{row.title || t("assistant.untitled")}</bdi>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="assistant-session-rename"
+                    aria-label={`${t("assistant.rename")}: ${row.title}`}
+                    onClick={() => setEditing(row.id)}
+                    className="rounded-sm px-1.5 py-1 text-2xs text-tertiary opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-a-300"
+                  >
+                    {t("assistant.rename")}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="assistant-session-delete"
+                    aria-label={`${t("assistant.delete")}: ${row.title}`}
+                    onClick={(event) => {
+                      const list = event.currentTarget.closest("ul");
+                      const previous = list?.querySelectorAll<HTMLElement>("[data-testid=assistant-session-open]")[Math.max(0, index - 1)] ?? null;
+                      void remove(row.id, row.title, previous);
+                    }}
+                    className="rounded-sm px-1.5 py-1 text-2xs text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-a-300"
+                  >
+                    {t("assistant.delete")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
