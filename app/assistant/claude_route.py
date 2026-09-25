@@ -43,6 +43,8 @@ class Turn:
     session_id: str = ""
     text: str = ""
     failed: bool = False
+    #: The model the CLI says it ran, for the answer's footer (D62).
+    model: str = ""
     #: The CLI no longer has the session it was asked to resume (plan step 4).
     session_lost: bool = False
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
@@ -84,6 +86,7 @@ class Translator:
     def __init__(self, turn: Turn, citer: Citer | None = None) -> None:
         self.turn = turn
         self.citer = citer
+        self.suggested = False
         self.part = 0
         self.open_text: str | None = None
         #: Message ids whose text arrived as deltas, so the whole message is not re-sent.
@@ -102,7 +105,11 @@ class Translator:
         if final:
             rest, more = self.citer.flush()
             shown, found = shown + rest, found + more
-        return shown, [stream.data("citation", citation) for citation in found]
+        chunks = [stream.data("citation", citation) for citation in found]
+        if self.citer.suggestions and not self.suggested:
+            self.suggested = True
+            chunks.append(stream.data("suggestions", {"items": self.citer.suggestions}))
+        return shown, chunks
 
     def _emit_text(self, text: str, *, final: bool = False) -> list[dict[str, Any]]:
         shown, chunks = self._cited(text, final=final)
@@ -125,6 +132,7 @@ class Translator:
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
             self.turn.session_id = str(event.get("session_id") or self.turn.session_id)
+            self.turn.model = str(event.get("model") or self.turn.model)
             return []
         if kind == "stream_event":
             return self._partial(event.get("event") or {})

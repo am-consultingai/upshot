@@ -19,6 +19,7 @@
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-router-dom": "^7.1.0",
+    "streamdown": "2.6.0",
     "wavesurfer.js": "^7.8.0"
   },
   "devDependencies": {

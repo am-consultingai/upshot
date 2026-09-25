@@ -230,3 +230,66 @@ def test_long_first_questions_make_short_titles() -> None:
     assert title_from("  what   did we decide  ") == "what did we decide"
     long = "what did we decide about the pricing page and the Berlin launch in the last three weeks"
     assert title_from(long) == "what did we decide about the pricing page and the Berlin…"
+
+
+# ------------------------------------------------------------------ the full panel (D62)
+
+
+def test_follow_ups_are_their_own_part_and_the_answer_names_its_model(api) -> None:  # type: ignore[no-untyped-def]
+    with serve(api) as client:
+        chunks = chunks_of(ask(client, "NOTOOL SUGGEST hello", chat_id="f"))
+        stored = client.get("/api/assistant/sessions/f").json()["messages"][-1]
+    suggestions = next(c for c in chunks if c != "[DONE]" and c["type"] == "data-suggestions")
+    assert suggestions["data"]["items"] == ["What was decided?", "Who owes what?"]
+    assert "[[" not in text_of(chunks) and "suggest" not in text_of(chunks)
+    assert chunks[-2]["messageMetadata"] == {
+        "provider": "claude-subscription",
+        "model": "fake-model",
+    }
+    assert stored["metadata"] == {"provider": "claude-subscription", "model": "fake-model"}
+    assert any(part["type"] == "data-suggestions" for part in stored["parts"])
+
+
+def test_retry_replaces_the_stored_answer(api) -> None:  # type: ignore[no-untyped-def]
+    question = {"id": "q1", "role": "user", "parts": [{"type": "text", "text": "NOTOOL hi"}]}
+    with serve(api) as client:
+        client.post("/api/assistant/chat", json={"id": "rt", "messages": [question]})
+        client.post(
+            "/api/assistant/chat",
+            json={"id": "rt", "messages": [question], "trigger": "regenerate-message"},
+        )
+        messages = client.get("/api/assistant/sessions/rt").json()["messages"]
+    assert [m["role"] for m in messages] == ["user", "assistant"], "one question, one answer"
+
+
+def test_a_citation_into_a_deleted_meeting_is_marked_missing(api) -> None:  # type: ignore[no-untyped-def]
+    with serve(api) as client:
+        ask(client, "Which meetings mention the budget", chat_id="gone")
+        api.services.dao.delete_meeting("m-budget")
+        answer = client.get("/api/assistant/sessions/gone").json()["messages"][-1]
+    citation = next(part for part in answer["parts"] if part["type"] == "data-citation")
+    assert citation["data"]["missing"] is True
+
+
+def test_status_names_the_provider_and_whether_it_answers(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    assert client.get("/api/assistant/status").json() == {
+        "provider": "fake",
+        "available": True,
+        "problem": None,
+    }
+    api.services.config.set("llm.provider", "ollama")
+    assert client.get("/api/assistant/status").json()["problem"] == "local-model"
+
+
+def test_the_scope_decides_what_the_question_is_about(api) -> None:  # type: ignore[no-untyped-def]
+    here = {"route": "/m/m-budget", "meeting_id": "m-budget"}
+    with serve(api) as client:
+        one = text_of(
+            chunks_of(ask(client, "SCOPE?", chat_id="s1", context={**here, "scope": "meeting"}))
+        )
+        every = text_of(
+            chunks_of(ask(client, "SCOPE?", chat_id="s2", context={**here, "scope": "all"}))
+        )
+        home = text_of(chunks_of(ask(client, "SCOPE?", chat_id="s3", context={"route": "/"})))
+    assert (one, every, home) == ("Scope is meeting.", "Scope is all.", "Scope is all.")

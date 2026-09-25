@@ -8,7 +8,8 @@ from Claude Code 2.1.282 on 2026-09-25).
 Behaviour by what the question contains:
 - ``SIGNED-OUT``  prints the CLI's not-signed-in message and exits 1.
 - ``SLOW``        waits between words, so Stop can be tested.
-- ``NOTOOL``      answers without calling a tool.
+- ``NOTOOL``      answers without calling a tool; with ``SUGGEST`` it offers follow-ups.
+- ``SCOPE``       says whether the system prompt scoped it to one meeting or to all.
 - a ``--resume`` id starting ``gone-`` fails the way the CLI does for a session it no
   longer has; a question that starts with a recap is answered "Recapped. …".
 - otherwise       searches for the quoted words, or the question's last word.
@@ -146,14 +147,25 @@ def main() -> int:
             "subtype": "init",
             "session_id": session,
             "tools": ["mcp__upshot__search"],
+            "model": "fake-model",
         }
     )
     slow = "SLOW" in question
     prefix = "Continuing. " if "--resume" in argv else ""
     if question.startswith("(The conversation so far"):
         prefix = "Recapped. "
-    if "NOTOOL" in question:
-        say("msg_1", f"{prefix}I can answer that without searching.", slow=slow)
+    system = arg(argv, "--system-prompt")
+    if "SCOPE" in question:
+        scope = "all" if "all of the user's meetings" in system else "meeting"
+        say("msg_1", f"{prefix}Scope is {scope}.", slow=slow)
+    elif "NOTOOL" in question:
+        # Follow-ups, when asked for, arrive split across deltas like any marker.
+        tail = (
+            [" [[suggest: What was decided", "? | Who owes what?]]"]
+            if "SUGGEST" in question
+            else []
+        )
+        say("msg_1", f"{prefix}I can answer that without searching.", slow=slow, tail=tail)
     else:
         quoted = re.findall(r"[\"“']([^\"”']+)[\"”']", question)
         words = re.findall(r"\w+", question)

@@ -25,7 +25,13 @@ describe("catalogue parity", () => {
    * strings mean translated, not forgotten: the product name, and the name of a file
    * format, which is not translated into Hebrew any more than "PDF" is.
    */
-  const PROPER_NOUNS = new Set(["app.title", "meeting.exportMarkdown"]);
+  const PROPER_NOUNS = new Set([
+    "app.title",
+    "meeting.exportMarkdown",
+    "assistant.provider.anthropic",
+    "assistant.provider.openai",
+    "assistant.provider.gemini",
+  ]);
 
   it("no translation is left as the English string", () => {
     const identical = Object.keys(en).filter(

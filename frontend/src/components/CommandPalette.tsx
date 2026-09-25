@@ -118,6 +118,13 @@ export default function CommandPalette() {
     const list: Command[] = [
       { id: "nav.timeline", group: "palette.navigate", label: t("nav.timeline"), keys: "G L", run: go("/") },
       { id: "nav.actions", group: "palette.navigate", label: t("nav.actions"), keys: "G A", run: go("/actions") },
+      {
+        id: "assistant",
+        group: "palette.do",
+        label: t("assistant.open"),
+        keys: "Ctrl J",
+        run: () => window.dispatchEvent(new CustomEvent("upshot:assistant")),
+      },
       { id: "nav.search", group: "palette.navigate", label: t("nav.search"), keys: "/", run: go("/search") },
       { id: "nav.settings", group: "palette.navigate", label: t("nav.settings"), keys: "G ,", run: go("/settings") },
     ];

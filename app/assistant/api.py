@@ -27,8 +27,11 @@ router = APIRouter(prefix="/api/assistant")
 class ChatPost(BaseModel):
     id: str = ""
     messages: list[dict[str, Any]] = Field(default_factory=list)
-    #: The screen the question was asked from: ``{"route": "/m/abc", "meeting_id": "abc"}``.
+    #: The screen the question was asked from: ``{"route": "/m/abc", "meeting_id": "abc",
+    #: "scope": "meeting" | "all"}``.
     context: dict[str, Any] = Field(default_factory=dict)
+    #: Sent by useChat: ``submit-message``, or ``regenerate-message`` for Retry.
+    trigger: str = ""
 
 
 def services_of(request: Request) -> Services:
@@ -94,9 +97,17 @@ def system_prompt(context: dict[str, Any]) -> str:
     text = load("assistant").text
     route = str(context.get("route") or "")
     meeting = str(context.get("meeting_id") or "")
+    scope = str(context.get("scope") or ("meeting" if meeting else "all"))
     where = f"\n\nThe user is on the screen {route or '/'}"
     if meeting:
-        where += f', looking at the meeting with id {meeting}. "This meeting" means that one'
+        where += f", looking at the meeting with id {meeting}"
+    if meeting and scope == "meeting":
+        where += (
+            '. The question is about that meeting unless it says otherwise; "this meeting" '
+            "means that one"
+        )
+    else:
+        where += ". The question is about all of the user's meetings"
     return text + where + "."
 
 
@@ -130,6 +141,9 @@ async def chat(request: Request, body: ChatPost) -> StreamingResponse:
             yield stream.DONE
             return
         session = store.ensure(chat_id, title=question, provider=route.name)
+        if body.trigger == "regenerate-message" and asked.get("id"):
+            # Retry: the answer being replaced goes, so it is not stored twice.
+            store.truncate_after(chat_id, str(asked["id"]))
         recap = store.recap(chat_id)
         store.append(
             chat_id,
@@ -156,14 +170,20 @@ async def chat(request: Request, body: ChatPost) -> StreamingResponse:
                 yield stream.sse(chunk)
             if turn.session_id and not turn.failed:
                 store.set_cli_session(chat_id, turn.session_id, route.name)
-            metadata = {"provider": route.name}
+            metadata = {"provider": route.name, "model": turn.model}
             yield stream.sse(stream.finish("error" if turn.failed else "stop", metadata))
             yield stream.DONE
         finally:
             # Also when the panel stops the answer part-way: what arrived is kept.
             if collector.has_answer or collector.parts:
                 store.append(
-                    chat_id, {"id": message_id, "role": "assistant", "parts": collector.parts}
+                    chat_id,
+                    {
+                        "id": message_id,
+                        "role": "assistant",
+                        "parts": collector.parts,
+                        "metadata": {"provider": route.name, "model": turn.model},
+                    },
                 )
 
     return StreamingResponse(events(), media_type=stream.MEDIA_TYPE, headers=stream.HEADERS)
@@ -181,11 +201,37 @@ def sessions(request: Request) -> dict[str, Any]:
 
 @router.get("/sessions/{session_id}")
 def session(request: Request, session_id: str) -> dict[str, Any]:
-    store = store_of(services_of(request))
+    svc = services_of(request)
+    store = store_of(svc)
     found = store.get(session_id)
     if found is None:
         raise HTTPException(404, f"no such conversation: {session_id}")
-    return {"session": found.as_api(), "messages": store.messages(session_id)}
+    messages = store.messages(session_id)
+    # A citation into a meeting deleted since is shown as such, not as a dead link (D62).
+    exists: dict[str, bool] = {}
+    for message in messages:
+        for part in message["parts"]:
+            if isinstance(part, dict) and part.get("type") == "data-citation":
+                data = part.get("data") or {}
+                meeting_id = str(data.get("meeting_id", ""))
+                if meeting_id not in exists:
+                    exists[meeting_id] = svc.dao.get_meeting(meeting_id) is not None
+                if not exists[meeting_id]:
+                    data["missing"] = True
+    return {"session": found.as_api(), "messages": messages}
+
+
+@router.get("/status")
+def status(request: Request) -> dict[str, Any]:
+    """Which provider answers, and whether it can: the panel names it before a question
+    is asked (D62), and says up front when the chosen provider is not served yet."""
+    svc = services_of(request)
+    route, problem = route_for(svc)
+    return {
+        "provider": str(svc.config.get("llm.provider", "anthropic")),
+        "available": route is not None,
+        "problem": problem["code"] if problem else None,
+    }
 
 
 @router.patch("/sessions/{session_id}")

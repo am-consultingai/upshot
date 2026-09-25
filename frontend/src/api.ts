@@ -372,6 +372,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  assistantStatus: () =>
+    request<{ provider: string; available: boolean; problem: string | null }>("/api/assistant/status"),
   assistantSessions: () => request<{ sessions: AssistantSession[] }>("/api/assistant/sessions"),
   assistantSession: (id: string) =>
     request<{ session: AssistantSession; messages: UIMessage[] }>(`/api/assistant/sessions/${encodeURIComponent(id)}`),

@@ -111,15 +111,17 @@ class SessionStore:
         ).fetchone()
         now = self._now()
         self.conn.execute(
-            "INSERT INTO assistant_messages(id, session_id, seq, role, parts_json, created_at) "
-            "VALUES (?,?,?,?,?,?) ON CONFLICT(session_id, id) DO UPDATE "
-            "SET parts_json = excluded.parts_json",
+            "INSERT INTO assistant_messages"
+            "(id, session_id, seq, role, parts_json, metadata_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?) ON CONFLICT(session_id, id) DO UPDATE "
+            "SET parts_json = excluded.parts_json, metadata_json = excluded.metadata_json",
             (
                 str(message["id"]),
                 session_id,
                 int(seq_row[0]),
                 str(message["role"]),
                 json.dumps(message.get("parts") or [], ensure_ascii=False),
+                json.dumps(message.get("metadata") or {}, ensure_ascii=False),
                 now,
             ),
         )
@@ -129,13 +131,34 @@ class SessionStore:
 
     def messages(self, session_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
-            "SELECT id, role, parts_json FROM assistant_messages WHERE session_id = ? ORDER BY seq",
+            "SELECT id, role, parts_json, metadata_json FROM assistant_messages "
+            "WHERE session_id = ? ORDER BY seq",
             (session_id,),
         ).fetchall()
-        return [
-            {"id": row["id"], "role": row["role"], "parts": json.loads(row["parts_json"])}
-            for row in rows
-        ]
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            message: dict[str, Any] = {
+                "id": row["id"],
+                "role": row["role"],
+                "parts": json.loads(row["parts_json"]),
+            }
+            metadata = json.loads(row["metadata_json"] or "{}")
+            if metadata:
+                message["metadata"] = metadata
+            out.append(message)
+        return out
+
+    def truncate_after(self, session_id: str, message_id: str) -> None:
+        """Drop everything after this message: Retry asks it again (D62)."""
+        row = self.conn.execute(
+            "SELECT seq FROM assistant_messages WHERE session_id = ? AND id = ?",
+            (session_id, message_id),
+        ).fetchone()
+        if row is not None:
+            self.conn.execute(
+                "DELETE FROM assistant_messages WHERE session_id = ? AND seq > ?",
+                (session_id, int(row["seq"])),
+            )
 
     def recap(self, session_id: str, *, max_chars: int = 4000) -> str:
         """The conversation so far as plain text, newest last, for a CLI that lost it."""

@@ -145,7 +145,8 @@ test("a_citation_is_a_chip_that_opens_the_meeting_at_the_moment", async ({ page,
   await expect(chip).toHaveCount(1);
   await expect(chip).toHaveText("1");
   await expect(chip).toHaveAttribute("data-at-ms", "4000");
-  await expect(chip).toHaveAttribute("title", /The marketing budget is cut by ten percent/);
+  await chip.hover();
+  await expect(page.getByTestId("assistant-citation-card")).toContainText("The marketing budget is cut by ten percent");
   await expect(page.getByTestId("assistant-answer")).not.toContainText("[[");
   await chip.click();
   await expect(page).toHaveURL(/\/m\/as-1\?at=4000/);
@@ -162,7 +163,7 @@ test("the_question_carries_the_screen_it_was_asked_from", async ({ page, seed })
   await page.getByTestId("assistant-input").fill("NOTOOL what is this meeting about?");
   await page.keyboard.press("Enter");
   const body = (await request).postDataJSON();
-  expect(body.context).toEqual({ route: "/m/as-1", meeting_id: "as-1" });
+  expect(body.context).toEqual({ route: "/m/as-1", meeting_id: "as-1", scope: "meeting" });
 });
 
 /* Plan step 4: saved conversations. */

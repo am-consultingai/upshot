@@ -81,7 +81,8 @@ export default function Toaster() {
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       className="ma-toaster fixed bottom-6 z-[70] w-[356px]"
-      style={{ insetInlineEnd: 24, height: 72 }}
+      // Beside the assistant while it is open (it sets --assistant-width), never under it.
+      style={{ insetInlineEnd: "calc(var(--assistant-width, 0px) + 24px)", height: 72 }}
     >
       {items.map((item, index) => (
         <div

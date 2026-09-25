@@ -22,8 +22,12 @@ from app.ask import Line, _line_at, transcript_lines
 from app.db.dao import Dao
 
 MARKER = re.compile(r"\[\[m:([A-Za-z0-9_.\-]+)(?:@(\d+))?\]\]")
+#: Follow-up questions the model offers at the end of an answer (D62), taken out of the
+#: text and sent as their own part: ``[[suggest: one | two | three]]``.
+SUGGEST = re.compile(r"\s*\[\[suggest:(.*?)\]\]\s*", re.DOTALL)
 #: Longer than any real marker: a held-back tail this long was never one.
 MAX_HELD = 96
+MAX_HELD_SUGGEST = 600
 
 
 @dataclass
@@ -31,6 +35,7 @@ class Citer:
     dao: Dao
     held: str = ""
     citations: list[dict[str, Any]] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
     _by_key: dict[tuple[str, int | None], int] = field(default_factory=dict)
     _lines: dict[str, list[Line]] = field(default_factory=dict)
 
@@ -50,6 +55,13 @@ class Citer:
 
     def _replace(self, text: str) -> tuple[str, list[dict[str, Any]]]:
         new: list[dict[str, Any]] = []
+
+        def offered(match: re.Match[str]) -> str:
+            items = [" ".join(item.split()) for item in match.group(1).split("|")]
+            self.suggestions = [item for item in items if item][:3]
+            return ""
+
+        text = SUGGEST.sub(offered, text)
 
         def one(match: re.Match[str]) -> str:
             meeting_id = match.group(1)
@@ -96,7 +108,8 @@ def _hold_from(text: str) -> int | None:
     """Where an unfinished marker might start, if the chunk ends inside one."""
     opened = text.rfind("[[")
     if opened >= 0 and "]]" not in text[opened:]:
-        return opened if len(text) - opened <= MAX_HELD else None
+        longest = MAX_HELD_SUGGEST if text[opened:].startswith("[[s") else MAX_HELD
+        return opened if len(text) - opened <= longest else None
     if text.endswith("["):
         return len(text) - 1
     return None
