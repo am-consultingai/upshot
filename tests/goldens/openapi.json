@@ -199,6 +199,11 @@
             },
             "title": "Messages",
             "type": "array"
+          },
+          "trigger": {
+            "default": "",
+            "title": "Trigger",
+            "type": "string"
           }
         },
         "title": "ChatPost",
@@ -820,6 +825,27 @@
           }
         },
         "summary": "Rename Session"
+      }
+    },
+    "/api/assistant/status": {
+      "get": {
+        "description": "Which provider answers, and whether it can: the panel names it before a question\nis asked (D62), and says up front when the chosen provider is not served yet.",
+        "operationId": "status_api_assistant_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Status Api Assistant Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status"
       }
     },
     "/api/attention": {

@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "./fonts.css";
 @import "./tokens.css";
+/* Streamdown's own classes (the assistant's answers) live in its dist, not in src. */
+@source "../node_modules/streamdown/dist/*.js";
 
 /*
  * Hover means hover, whatever the device says its primary pointer is.
@@ -578,4 +580,40 @@ kbd {
 /* Headings sit further from what came before than from what follows: they belong below. */
 .summary-prose > h2 {
   margin-block: 2.2em 0.6em;
+}
+
+/*
+ * The assistant's answers (D62). Short and plain: an answer is read in a 400px column,
+ * so paragraphs stay tight and lists indent from the inline start in either direction.
+ */
+.assistant-prose > * + * {
+  margin-block-start: 0.6em;
+}
+.assistant-prose ul,
+.assistant-prose ol {
+  padding-inline-start: 1.25em;
+}
+.assistant-prose ul {
+  list-style: disc;
+}
+.assistant-prose ol {
+  list-style: decimal;
+}
+.assistant-prose li + li {
+  margin-block-start: 0.2em;
+}
+.assistant-prose strong {
+  font-weight: 600;
+}
+.assistant-prose h1,
+.assistant-prose h2,
+.assistant-prose h3 {
+  font-weight: 600;
+  font-size: 1em;
+}
+.assistant-prose code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
 }

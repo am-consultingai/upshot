@@ -22,6 +22,8 @@ CREATE TABLE assistant_messages (
   seq INTEGER NOT NULL,
   role TEXT NOT NULL,
   parts_json TEXT NOT NULL,
+  -- The answer's own facts: which provider and model wrote it.
+  metadata_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL,
   PRIMARY KEY (session_id, id)
 );

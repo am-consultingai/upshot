@@ -315,6 +315,22 @@ export default function Sidebar() {
           </NavLink>
           </Tooltip>
         ))}
+        <Tooltip label={t("assistant.open")} hint={t("help.assistant")} side="end">
+          <button
+            type="button"
+            data-testid="nav-assistant"
+            onClick={() => window.dispatchEvent(new CustomEvent("upshot:assistant"))}
+            className="flex h-8 items-center gap-2.5 rounded-md px-2 text-start text-sm text-secondary hover:bg-a-200 hover:text-primary active:bg-a-300"
+          >
+            <svg viewBox="0 0 16 16" className="size-4 shrink-0 fill-none stroke-current stroke-[1.5]" aria-hidden="true">
+              <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2zM5.5 7h5" />
+            </svg>
+            <span className="truncate">{t("assistant.open")}</span>
+            <kbd className="ms-auto shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
+              Ctrl J
+            </kbd>
+          </button>
+        </Tooltip>
       </div>
 
       {/*
