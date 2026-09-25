@@ -2306,6 +2306,12 @@ def test_router() -> APIRouter:
                 meta.update(folder, audio_deleted_at=item["audio_deleted_at"])
             if item.get("summary_html"):
                 (folder / "summary.html").write_text(item["summary_html"], encoding="utf-8")
+                # What the render stage would have indexed for search.
+                from app.pipeline.stages.render import plaintext
+
+                svc.dao.index_summary(
+                    str(item["id"]), plaintext({"summary_html": item["summary_html"]}, "")
+                )
             if item.get("notes") or item.get("chapters"):
                 notes = dict(item.get("notes") or {})
                 if item.get("chapters"):
