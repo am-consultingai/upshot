@@ -70,7 +70,7 @@ def test_a_question_calls_the_real_tool_server_and_streams_the_answer(api) -> No
     assert (call["toolName"], call["input"]) == ("search", {"query": "budget"})
     output = next(c for c in chunks if c != "[DONE]" and c["type"] == "tool-output-available")
     assert "Q4 budget review" in output["output"], "the tool ran against this app's data"
-    assert "<upshot-data>" in output["output"], "tool output is marked as data"
+    assert output["output"].startswith("<upshot-data-"), "tool output is marked as data"
     assert "Q4 budget review" in text_of(chunks)
     assert chunks[-2]["type"] == "finish" and chunks[-2]["finishReason"] == "stop"
 
