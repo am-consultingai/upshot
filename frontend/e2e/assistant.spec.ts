@@ -95,3 +95,39 @@ test("escape_closes_the_panel_and_gives_focus_back", async ({ page, seed }) => {
   await page.keyboard.press("Control+j");
   await expect(page.getByTestId("assistant-panel")).toHaveCount(0);
 });
+
+/* Plan step 2: search reaches summaries, and a Hebrew word inside its prefixed form. */
+const SEARCHABLE = [
+  {
+    id: "se-1",
+    title: "Pricing sync",
+    state: "RENDERED",
+    started_at: isoAt(0, 11),
+    summary_html: "<p>We agreed the Berlin launch moves to January.</p>",
+    turns: [{ speaker: "THEM", at_ms: 7000, text: "דיברנו בתקציב של הרבעון הבא" }],
+  },
+];
+
+test("search_finds_a_word_only_the_summary_holds", async ({ page, seed }) => {
+  await seed(SEARCHABLE);
+  await gotoApp(page, "/search");
+  await page.getByTestId("search-input").fill("Berlin");
+  await page.getByTestId("search-input").press("Enter");
+  const group = page.getByTestId("search-group");
+  await expect(group).toHaveCount(1);
+  await expect(group).toHaveAttribute("data-kind", "summary");
+  await expect(page.getByTestId("hit-kind")).toHaveAttribute("data-kind", "summary");
+});
+
+test("a_hebrew_word_is_found_inside_its_prefixed_form_by_search_and_by_the_assistant", async ({ page, seed }) => {
+  await seed(SEARCHABLE);
+  await gotoApp(page, "/search");
+  await page.getByTestId("search-input").fill("תקציב");
+  await page.getByTestId("search-input").press("Enter");
+  await expect(page.getByTestId("search-group")).toHaveAttribute("data-kind", "transcript");
+
+  await page.keyboard.press("Control+j");
+  await page.getByTestId("assistant-input").fill("מה נאמר על 'תקציב'");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("assistant-answer")).toContainText("Pricing sync");
+});

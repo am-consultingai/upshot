@@ -56,6 +56,7 @@ const GROUP_ORDER: MessageKey[] = [
   "palette.recent",
   "palette.open",
   "palette.actionItems",
+  "palette.summaries",
   "palette.transcript",
   "palette.navigate",
   "palette.do",
@@ -172,8 +173,14 @@ export default function CommandPalette() {
         const title = hit.meeting_title ?? byMeeting.get(hit.meeting_id)?.title ?? hit.meeting_id;
         return {
           id: `hit.${hit.kind}.${hit.meeting_id}.${hit.at_ms}.${index}`,
-          group: hit.kind === "action" ? "palette.actionItems" : "palette.transcript",
-          label: hit.text,
+          group:
+            hit.kind === "action"
+              ? "palette.actionItems"
+              : hit.kind === "summary"
+                ? "palette.summaries"
+                : "palette.transcript",
+          // A summary is a whole document; the row shows the part that matched.
+          label: hit.kind === "summary" ? hit.snippet.replace(/[[\]]/g, "") : hit.text,
           snippet: hit.snippet,
           sub:
             hit.kind === "transcript"

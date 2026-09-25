@@ -119,21 +119,46 @@ def probe_fts5(conn: sqlite3.Connection) -> bool:
     return True
 
 
+#: One index over everything searchable in a meeting's words: transcript lines and the
+#: summary. Trigrams rather than words, because Hebrew glues its prepositions and
+#: articles to the word — ב, ה, ו, ל, מ, ש — and a word index never finds "תקציב" inside
+#: "בתקציב". A trigram index matches any run of three or more characters, which also
+#: makes the last word of a query a prefix without any help. Diacritics stay distinct
+#: (niqqud is meaning, not decoration), as they did in the word index this replaced.
 FTS_DDL = """
-CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts USING fts5(
-  meeting_id UNINDEXED, speaker UNINDEXED, at_ms UNINDEXED, text,
-  tokenize = 'unicode61 remove_diacritics 0'
+CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(
+  meeting_id UNINDEXED, kind UNINDEXED, speaker UNINDEXED, at_ms UNINDEXED, text,
+  tokenize = 'trigram remove_diacritics 0'
 )
 """
 
+#: The word index before 2026-09-26. Dropped once its rows are in ``search_fts``.
+OLD_FTS = "transcripts_fts"
+
 
 def ensure_fts(conn: sqlite3.Connection, *, enabled: bool = True) -> bool:
-    """Create the FTS index when possible. Returns the resulting capability."""
+    """Create the FTS index when possible. Returns the resulting capability.
+
+    A database that has transcript lines but an empty index — one created before the
+    trigram index, or with FTS off at the time — is filled from ``transcript_turns`` and
+    ``meeting_texts`` here, once, in the same transaction.
+    """
     if not enabled or not probe_fts5(conn):
         return False
     conn.execute("BEGIN")
     try:
         conn.execute(FTS_DDL.strip())
+        empty = conn.execute("SELECT 1 FROM search_fts LIMIT 1").fetchone() is None
+        if empty:
+            conn.execute(
+                "INSERT INTO search_fts(meeting_id, kind, speaker, at_ms, text) "
+                "SELECT meeting_id, 'transcript', speaker, at_ms, text FROM transcript_turns"
+            )
+            conn.execute(
+                "INSERT INTO search_fts(meeting_id, kind, speaker, at_ms, text) "
+                "SELECT meeting_id, kind, '', 0, text FROM meeting_texts WHERE text != ''"
+            )
+        conn.execute(f"DROP TABLE IF EXISTS {OLD_FTS}")
         conn.execute("COMMIT")
     except sqlite3.Error:
         conn.execute("ROLLBACK")

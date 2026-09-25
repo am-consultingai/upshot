@@ -13,12 +13,14 @@ const SCOPES: { id: Scope; key: MessageKey }[] = [
   { id: "all", key: "search.scopeAll" },
   { id: "title", key: "search.scopeMeetings" },
   { id: "action", key: "search.scopeActions" },
+  { id: "summary", key: "search.scopeSummaries" },
   { id: "transcript", key: "search.scopeTranscripts" },
 ];
 
 const GROUP: Record<SearchHit["kind"], MessageKey> = {
   title: "search.scopeMeetings",
   action: "search.scopeActions",
+  summary: "search.scopeSummaries",
   transcript: "search.scopeTranscripts",
 };
 
@@ -74,7 +76,7 @@ export default function SearchPage() {
   const count = (kind: Scope) => (kind === "all" ? hits.length : hits.filter((hit) => hit.kind === kind).length);
   // A hit's kind decides how its row reads, so group by it: a meeting name is a
   // stronger answer than a sentence and should not be buried among sentences.
-  const groups = (["title", "action", "transcript"] as const)
+  const groups = (["title", "action", "summary", "transcript"] as const)
     .filter((kind) => scope === "all" || scope === kind)
     .map((kind) => [kind, hits.filter((hit) => hit.kind === kind)] as const)
     .filter(([, rows]) => rows.length > 0);
@@ -248,7 +250,9 @@ export default function SearchPage() {
                           ? t("search.kindTitle")
                           : hit.kind === "action"
                             ? t("search.kindAction")
-                            : hit.speaker === "ME"
+                            : hit.kind === "summary"
+                              ? t("search.kindSummary")
+                              : hit.speaker === "ME"
                               ? t("meeting.you")
                               : (hit.speaker_name ?? t("meeting.themSaid"))}
                       </span>
