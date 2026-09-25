@@ -64,19 +64,22 @@ def last_user_text(messages: list[dict[str, Any]]) -> str:
 
 
 def route_for(svc: Services) -> tuple[ClaudeRoute | None, dict[str, Any] | None]:
-    """The CLI that answers, or why none can. Subscriptions only for now (D62)."""
+    """The CLI that answers, or why none can: the two subscriptions for now (D62)."""
     provider = str(svc.config.get("llm.provider", "anthropic"))
-    command = list(svc.config.get("assistant.cli_command", []) or [])
+    command = [
+        sys.executable if part == "{python}" else str(part)
+        for part in svc.config.get("assistant.cli_command", []) or []
+    ]
     if provider == "fake":
         if not command:
             return None, {"code": "not-configured", "provider": provider}
-        return ClaudeRoute(
-            svc.config, command=[sys.executable if c == "{python}" else c for c in command]
-        ), None
+        return ClaudeRoute(svc.config, command=command), None
     if provider == "claude-subscription":
         return ClaudeRoute(svc.config, command=command or None), None
     if provider == "codex-subscription":
-        return None, {"code": "codex", "provider": provider}
+        from app.assistant.codex_route import CodexRoute
+
+        return CodexRoute(svc.config, command=command or None), None
     if provider == "ollama":
         return None, {"code": "local-model", "provider": provider}
     return None, {"code": "unsupported-provider", "provider": provider}
@@ -86,10 +89,9 @@ CHOOSE_CLAUDE = "Choose Claude Code in Settings → AI to use it."
 PROBLEM_TEXT = {
     "local-model": f"The assistant does not work with local models yet. {CHOOSE_CLAUDE}",
     "unsupported-provider": (
-        "For now the assistant works with your Claude plan through Claude Code. "
-        "Choose it in Settings → AI."
+        "For now the assistant works with your own plan, through Claude Code or Codex. "
+        "Choose one in Settings → AI."
     ),
-    "codex": f"The assistant does not work with Codex yet. {CHOOSE_CLAUDE}",
     "not-configured": "The assistant is not configured.",
 }
 
