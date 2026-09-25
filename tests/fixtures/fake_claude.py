@@ -9,6 +9,7 @@ Behaviour by what the question contains:
 - ``SIGNED-OUT``  prints the CLI's not-signed-in message and exits 1.
 - ``SLOW``        waits between words, so Stop can be tested.
 - ``NOTOOL``      answers without calling a tool; with ``SUGGEST`` it offers follow-ups.
+- ``ECHO:`` text  answers with the text itself, as a fooled model would.
 - ``SCOPE``       says whether the system prompt scoped it to one meeting or to all.
 - a ``--resume`` id starting ``gone-`` fails the way the CLI does for a session it no
   longer has; a question that starts with a recap is answered "Recapped. …".
@@ -155,7 +156,10 @@ def main() -> int:
     if question.startswith("(The conversation so far"):
         prefix = "Recapped. "
     system = arg(argv, "--system-prompt")
-    if "SCOPE" in question:
+    if question.startswith("ECHO:"):
+        # Says exactly what it was given: stands for a model that an injection fooled.
+        say("msg_1", question[len("ECHO:") :].strip(), slow=False)
+    elif "SCOPE" in question:
         scope = "all" if "all of the user's meetings" in system else "meeting"
         say("msg_1", f"{prefix}Scope is {scope}.", slow=slow)
     elif "NOTOOL" in question:
