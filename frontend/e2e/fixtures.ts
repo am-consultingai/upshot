@@ -192,7 +192,7 @@ export async function gotoApp(page: Page, path = "/"): Promise<void> {
  */
 export async function gotoSettings(
   page: Page,
-  section: "audio" | "speech" | "appearance" | "storage" | "summaries" | "prompt" = "audio",
+  section: "audio" | "appearance" | "calendar" | "summaries" | "prompt" = "audio",
 ): Promise<void> {
   await gotoApp(page, `/settings#${section}`);
   await expect(page.getByTestId(`settings-section-${section}`)).toHaveAttribute(

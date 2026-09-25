@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { api, type ModelStatus } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
 import { formatBytes } from "../lib/format";
 import { downloadFraction, roomForModel } from "../lib/speech";
 import BusyButton from "./BusyButton";
-import SettingRow, { SELECT_CLASS, SettingGroup } from "./SettingRow";
+import SettingRow, { SELECT_CLASS } from "./SettingRow";
 
 const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent disabled:opacity-40";
 const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
@@ -241,22 +240,5 @@ export function ComputeDeviceRow() {
         <option value="cuda">{t("speech.deviceGpu")}</option>
       </select>
     </SettingRow>
-  );
-}
-
-/** The Settings section: the same rows as first-run setup, reading what is saved. */
-export default function SpeechSettings() {
-  const { t } = useI18n();
-
-  return (
-    <>
-      <SettingGroup>
-        <SpeechModelRow />
-        <ComputeDeviceRow />
-      </SettingGroup>
-      <Link to="/welcome" data-testid="open-welcome" className="px-1 text-sm text-secondary underline">
-        {t("speech.runSetup")}
-      </Link>
-    </>
   );
 }
