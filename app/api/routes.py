@@ -152,17 +152,16 @@ def _disk_usage(path: Path) -> Any:
 
 
 def _model_manager(svc: Services) -> Any:
-    from app.asr.local import planned_device
     from app.asr.model_manager import manager_for
     from app.asr.models import resolve
 
-    choice = resolve(svc.config, device=planned_device(svc.config))
+    choice = resolve(svc.config)
     return choice, manager_for(choice.repo_id or choice.reference)
 
 
 def _model_payload(svc: Services) -> dict[str, Any]:
     from app.asr.local import MIN_VRAM_MB, device_plan
-    from app.asr.models import REPO_BYTES, wants_hebrew_model
+    from app.asr.models import REPO_BYTES
 
     choice, manager = _model_manager(svc)
     payload: dict[str, Any] = manager.status().as_dict()
@@ -172,8 +171,7 @@ def _model_payload(svc: Services) -> dict[str, Any]:
     plan = device_plan(svc.config)
     payload.update(
         # The size before the download starts, when the hub has not been asked yet.
-        expected_bytes=payload["total_bytes"] or REPO_BYTES.get(payload["repo"], 0),
-        hebrew=wants_hebrew_model(svc.config),
+        expected_bytes=payload["total_bytes"] or REPO_BYTES,
         # Where it will run and why, for the setup screen's "CPU or GPU".
         device=plan.device,
         device_reason=plan.reason,
@@ -2086,8 +2084,6 @@ def test_router() -> APIRouter:
             # asks for the opposite below: a spec that died on /welcome must not send
             # every spec after it there too.
             svc.config.set("setup.done", True)
-            for key in ("language_mode", "default_language"):
-                svc.config.set(f"asr.{key}", DEFAULTS["asr"][key])
             svc.config.save()
         if "setup_done" in body:
             svc.config.set("setup.done", bool(body["setup_done"]))

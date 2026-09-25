@@ -58,21 +58,17 @@ DEFAULTS: dict[str, Any] = {
         # checkbox in Settings turns them off for someone who no longer needs them.
         "tooltips_off": False,
     },
-    # Follow the meeting. This app transcribes Hebrew by default (asr.default_language),
-    # so defaulting summaries to English meant an English write-up of a Hebrew meeting
-    # unless the user found the setting first.
+    # Follow the meeting: the language it was spoken in, read from its transcript
+    # (app/asr/language.py). Defaulting summaries to English meant an English write-up
+    # of a Hebrew meeting unless the user found the setting first.
     "summary": {"language": "auto"},  # en|he|auto
     "asr": {
         "backend": "local",  # local|remote|fake
-        "language_mode": "detect",  # detect|fixed
-        "default_language": "he",
-        "detect_min_confidence": 0.6,
         "model_path": None,
         # An existing CUDA library folder (DESIGN.md §2). Without this the probe only
         # looks in the app home, the standard toolkit paths and the nvidia-* wheels, so a
         # hand-placed cuBLAS/cuDNN is invisible and transcription silently runs on CPU.
         "cuda_dir": None,
-        "model_repo": None,
         "compute_type": "auto",
         "device": "auto",
         "beam_size": 5,
@@ -88,7 +84,6 @@ DEFAULTS: dict[str, Any] = {
         "diarization_min_duration_off": 0.5,
         "diarization_fake_speakers": 2,
         "fake_language": "he",
-        "fake_confidence": 0.95,
         "fake_repetitions": 1,
     },
     "audio": {
@@ -273,7 +268,6 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "ui.language": ("en", "he"),
     "summary.language": ("en", "he", "auto"),
     "asr.backend": ("local", "remote", "fake"),
-    "asr.language_mode": ("detect", "fixed"),
     "asr.device": ("auto", "cpu", "cuda"),
     "asr.diarization": ("off", "onnx", "fake"),
     "audio.capture": ("wasapi", "synthetic"),
@@ -736,18 +730,6 @@ class Config:
     @property
     def min_meeting_s(self) -> int:
         return int(self.get("audio.min_meeting_s", 120))
-
-    @property
-    def default_language(self) -> str:
-        return str(self.get("asr.default_language", "he"))
-
-    @property
-    def language_mode(self) -> str:
-        return str(self.get("asr.language_mode", "detect"))
-
-    @property
-    def detect_min_confidence(self) -> float:
-        return float(self.get("asr.detect_min_confidence", 0.6))
 
     @property
     def detection_weights(self) -> dict[str, int]:

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app import meta
+from app.asr.models import ASR_LANGUAGE
 from app.clock import parse_iso
 from app.log import get
 from app.pipeline.artifacts import up_to_date
@@ -129,7 +130,7 @@ def run(ctx: StageContext) -> None:
     notes = load_notes(folder)
     language = ctx.meeting.summary_language or ctx.config.summary_language
     if language == "auto":
-        language = ctx.meeting.language or ctx.config.default_language
+        language = ctx.meeting.language or ASR_LANGUAGE
     rendered = render_free(notes, language=language)
     ui_path.write_text(rendered.ui, encoding="utf-8")
     email_path.write_text(rendered.email, encoding="utf-8")

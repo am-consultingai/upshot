@@ -38,16 +38,16 @@ recordings and transcriptions to their datasets.
 
 How Upshot uses them:
 
-- **Which model.** With an NVIDIA GPU, Upshot transcribes with
-  [`ivrit-ai/whisper-large-v3-ct2`](https://huggingface.co/ivrit-ai/whisper-large-v3-ct2).
-  Without one, it uses the faster
-  [`ivrit-ai/whisper-large-v3-turbo-ct2`](https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ct2).
-  Both run locally through [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
-  so no audio is sent anywhere to be transcribed.
+- **Which model.** Upshot transcribes with one model,
+  [`ivrit-ai/whisper-large-v3-ct2`](https://huggingface.co/ivrit-ai/whisper-large-v3-ct2),
+  on an NVIDIA GPU or on the CPU. It handles Hebrew and English, mixed in one meeting
+  too (docs/DECISIONS.md D60). It runs locally through
+  [faster-whisper](https://github.com/SYSTRAN/faster-whisper), so no audio is sent
+  anywhere to be transcribed.
 - **How it gets there.** The model is not part of this repository or the application.
   The first time transcription runs, faster-whisper downloads it from Hugging Face onto
   the user's machine. A model folder already on disk (the `asr.model_path` configuration
-  key) is used instead, and `asr.model_repo` can point at a different model.
+  key) is used instead.
 - **Unmodified.** Upshot loads the published weights as they are.
 
 The models are released by ivrit.ai under the

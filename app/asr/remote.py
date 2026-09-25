@@ -107,8 +107,5 @@ class RemoteAsr:
             for index, item in enumerate(payload.get("segments", []))
         ]
 
-    def detect_language(self, wav: Path) -> tuple[str, float]:
-        return self.fallback.detect_language(wav)
-
     def unload(self) -> None:
         self.fallback.unload()

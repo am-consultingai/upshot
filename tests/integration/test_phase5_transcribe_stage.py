@@ -15,8 +15,9 @@ class Services:
         self.asr = asr
 
 
-def test_language_pinned_after_first_chunk(tmp_path: Path) -> None:
-    """Detection runs once and the whole meeting is transcribed in that language.
+def test_the_model_is_told_hebrew_and_the_language_comes_from_the_words(tmp_path: Path) -> None:
+    """D60: ivrit-ai is always given Hebrew, which is how it writes English as English.
+    What the meeting was in is read from the transcript afterwards.
 
     Audio is one file per track, so this is one pass per track rather than one per
     committed segment — the model sees the entire track as context.
@@ -25,32 +26,32 @@ def test_language_pinned_after_first_chunk(tmp_path: Path) -> None:
     meeting = h.meeting()
     records = write_chunks(meeting.path, seconds=200)
     assert len({r.seq for r in records}) > 1, "more than one committed segment per track"
-    backend = FakeAsr(language="en", confidence=0.92)
+    backend = FakeAsr(language="en")  # says English, whatever it is told
     ctx = h.context(meeting, services=Services(backend))
 
     transcribe.run(ctx)
 
-    assert len(backend.detect_calls) == 1, "detection runs once, then the language is pinned"
     languages = {call["language"] for call in backend.transcribe_calls}
-    assert languages == {"en"}
+    assert languages == {"he"}, "never told English: that is what drifts into Hebrew"
     assert len(backend.transcribe_calls) == 2, "one pass per track, not per segment"
     assert {call["wav"].stem for call in backend.transcribe_calls} == {"me", "them"}
     stored = h.dao.require_meeting(meeting.id)
-    assert stored.language == "en"
-    assert stored.language_conf == pytest.approx(0.92)
+    assert stored.language == "en", "an English transcript is an English meeting"
+    assert stored.language_conf == pytest.approx(1.0)
+    _segments, payload = transcribe.load_segments(meeting.path)
+    assert payload["language"] == "en"
+    assert payload["language_source"] == "transcript"
     assert backend.unloaded == 1, "the model is unloaded before the LLM stage"
 
 
-def test_low_confidence_records_review_reason(tmp_path: Path) -> None:
+def test_a_hebrew_meeting_needs_no_review(tmp_path: Path) -> None:
+    """There is no detection left to be unsure about, so nothing is flagged for it."""
     h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
     meeting = h.meeting()
     write_chunks(meeting.path, seconds=90)
-    backend = FakeAsr(language="en", confidence=0.4)
-    transcribe.run(h.context(meeting, services=Services(backend)))
-    stored = h.dao.require_meeting(meeting.id)
-    assert stored.language == "he", "low confidence falls back to the configured default"
-    reasons = meta.review_reasons(meeting.path)
-    assert reasons and "confident" in reasons[0]
+    transcribe.run(h.context(meeting, services=Services(FakeAsr())))
+    assert h.dao.require_meeting(meeting.id).language == "he"
+    assert meta.review_reasons(meeting.path) == []
 
 
 def test_segments_are_on_the_meeting_timeline(tmp_path: Path) -> None:

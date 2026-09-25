@@ -19,7 +19,7 @@ Replaces today's manual flow: Audacity → script → paste to LLM → paste to 
 | Decision | Choice |
 |---|---|
 | Topology | **Single Windows application** — tray app + local web UI, shipped as a PyInstaller one-dir build behind a per-user Inno installer |
-| Transcription | **Local**, faster-whisper + ivrit.ai models — `large-v3-ct2` on GPU, `large-v3-turbo-ct2` on CPU |
+| Transcription | **Local**, faster-whisper + one ivrit.ai model, `whisper-large-v3-ct2`, on GPU and CPU alike (D60) |
 | Compute | **Execution profiles**, auto-detected: `gpu-live`, `cpu-deferred`, `remote-worker` |
 | Summarization | **Claude API** — Opus 5 default, Sonnet 5 for cost (~$0.13 vs ~$0.05/meeting); a "sensitive" flag forces local Ollama |
 | Trigger | **Manual Start/Stop in the UI** (+ hotkey) in M1, **auto-detection** in M2. Calendar arming is post-V1 and out of scope |
@@ -97,7 +97,7 @@ local while the Worker may be somewhere else. Same installer, different config.
 | Profile | Chosen when | Transcribes | Model | Summary arrives |
 |---|---|---|---|---|
 | `gpu-live` | CUDA present, ≥4 GB VRAM on GPU 0 (read with `nvidia-smi`; unreadable → CPU) | during the meeting, chunk by chunk | `whisper-large-v3-ct2`, int8 (Pascal) | ~1 min after the call |
-| `cpu-deferred` | no CUDA | **after** the meeting, on policy | `whisper-large-v3-turbo-ct2`, int8, cores−2 threads | 0.5–2× meeting length later |
+| `cpu-deferred` | no CUDA | **after** the meeting, on policy | `whisper-large-v3-ct2`, int8, cores−2 threads | ~4× meeting length later (i7-8700, D60) |
 | `remote-worker` | a worker URL is configured and reachable | chunks POSTed to the GPU box as they close | whatever that box runs | ~1 min after the call |
 | `cloud-asr` | opt-in only, never a silent fallback | after the meeting | provider API | minutes |
 
@@ -105,7 +105,13 @@ Fallback chain is explicit and logged: `remote → local GPU → local CPU`. If 
 is asleep when the laptop tries to reach it, the laptop transcribes locally and the UI
 says so — it does not silently queue forever.
 
-### Why `turbo` on CPU
+### Why `turbo` on CPU — superseded by D60 (2026-09-25)
+
+**No longer true: the CPU runs `whisper-large-v3-ct2` too.** Tested on English, Hebrew and
+the two spliced together, the turbo fine-tune translated the English of a mixed meeting
+into Hebrew (and invented Hebrew for an English meeting on machine B), so the speed below
+was bought with wrong transcripts. `docs/DECISIONS.md` D60 has the measurements. The
+original reasoning is kept for the record:
 
 See **§20** for exact model sizes and RAM figures. `ivrit-ai/whisper-large-v3-turbo-ct2` is published (6.4K downloads) in the exact
 CTranslate2 format faster-whisper loads. Turbo keeps the full encoder but cuts
@@ -362,11 +368,12 @@ chunks are far past that threshold, which is one of the quiet advantages of not 
 **Model resolution order** (per profile, all local): configured path → app-home download
 → download. With `model_path` pointed at an existing local model directory, first run downloads nothing.
 
-**The meeting language picks the repo.** Hebrew, and per-meeting detection, use the ivrit-ai
-fine-tunes above. A language pinned to anything else (first-run setup's "English") uses
-stock Whisper of the same size — `Systran/faster-whisper-large-v3` on GPU,
-`mobiuslabsgmbh/faster-whisper-large-v3-turbo` on CPU — because the Hebrew fine-tune's
-detection leans to Hebrew and pinned an English meeting as Hebrew.
+**One model, always told Hebrew (D60).** `ivrit-ai/whisper-large-v3-ct2` on every device,
+given `language="he"` for every meeting: that is how it writes English speech as English,
+alone or mixed with Hebrew. Told "en" it drifts into Hebrew, and its own detection says
+Hebrew for everything, so nothing is detected before transcription. The meeting's
+language (for the summary and the page direction) is read from the transcript's script
+afterwards (`app/asr/language.py`).
 
 ---
 
@@ -473,7 +480,7 @@ DNS-rebinding defenses per `SECURITY-AND-AUTH.md` §9.
 PyInstaller one-dir, Inno Setup per-user installer (no admin prompt), pystray launcher,
 and a first-run bootstrap that will adopt an existing local model and CUDA directory when
 `model_path`/`cuda_dir` are configured, instead of re-downloading 3 GB. On a no-GPU
-machine the bootstrap fetches `turbo-ct2` (~2 GB) and skips the CUDA wheels entirely.
+machine the bootstrap fetches the same `large-v3-ct2` (~3.1 GB, D60) and skips the CUDA wheels entirely.
 Autostart on login — the app must be running *before* the meeting to catch it.
 
 ---
@@ -525,7 +532,7 @@ paid tools are all cloud and Granola doesn't support Hebrew at all.
 |---|---|
 | `pyaudiowpatch` wheel on Python 3.13 | Verify first; fall back to Python 3.12, or `soundcard` |
 | Loopback also captures your own Zoom echo / notification sounds | Zoom's echo cancellation keeps your voice out of the output stream in practice; mute notification sounds while armed |
-| CPU profile falls badly behind on a long meeting | Deferred by design, so it can't affect the call; `turbo` + int8 + `when_idle`; show an honest ETA; remote-worker as the real fix |
+| CPU profile falls badly behind on a long meeting | Deferred by design, so it can't affect the call; int8 + `when_idle` (about 4× the meeting's length with `large-v3`, D60); show an honest ETA; remote-worker as the real fix |
 | 8 GB VRAM shared between Whisper and a local LLM | Sequential by stage — Ollama loads only after Whisper unloads |
 | Calendar events with no meeting link (phone 1:1s, ad-hoc calls) | Mic-in-use catches them even unarmed; tray toggle covers the rest |
 | Disk fills mid-meeting | Preflight free-space check before arming; retention policy prunes raw audio; recorder halts cleanly rather than corrupting |
@@ -565,7 +572,7 @@ by measurement in M0.
 
 | Component | Required? | Model |
 |---|---|---|
-| **ASR** | always | `ivrit-ai/whisper-large-v3-ct2` (GPU) or `ivrit-ai/whisper-large-v3-turbo-ct2` (CPU) |
+| **ASR** | always | `ivrit-ai/whisper-large-v3-ct2`, GPU and CPU alike (D60) |
 | **VAD** | always | Silero VAD — bundled inside faster-whisper, ~2 MB, negligible RAM |
 | **Summarizer** | one of | Claude API (nothing local) **or** a local Hebrew LLM (below) |
 | **Diarization** | later | `ivrit-ai/pyannote-speaker-diarization-3.1` — small weights but drags in PyTorch (~2.5 GB install, +2–3 GB RAM). Deferred for good reason |
@@ -582,13 +589,19 @@ the download is large and the resident set is roughly half of it, plus activatio
 
 A copy of the 3.09 GB `large-v3` artifact already exists on the target machine (a
 2,945 MB `model.bin` from earlier local work); pointing `model_path` at it skips the
-download. A CPU-only machine downloads the 1.62 GB turbo model and nothing else.
+download. Every machine, CPU-only included, downloads the 3.09 GB `large-v3` model (D60);
+turbo is listed for comparison only.
+
+**Measured on the CPU (D60, 2026-09-25):** `large-v3` int8 on an i7-8700 (6 cores)
+transcribed 103 s of Hebrew speech in 409 s — **about 4× the audio** — with a peak of
+**4.6 GB** RAM, above the estimate in the table.
 
 **Speed lever that matters more than the model choice:** the VAD filter means only actual
 speech is transcribed. In a 45-minute meeting the `me` track might hold 10 minutes of
 speech and `them` 30 — so ~40 minutes of audio goes through the model, not 90. Budget CPU
 transcription at roughly **0.7–1.5× the meeting's length** with turbo+int8 on a modern
-4–8 core laptop, and measure it properly in M0 rather than trusting that range.
+4–8 core laptop, and measure it properly in M0 rather than trusting that range. (Superseded:
+with `large-v3` on the CPU, measured, it is about 4× the speech — see above.)
 
 ### 20.3 Local Hebrew LLM — the real options
 
@@ -619,16 +632,16 @@ loaded at the same time.** Peak RAM is the larger of the two stages, not their s
 
 | System RAM | What's viable |
 |---|---|
-| **8 GB** | ASR (turbo, ~1.8 GB peak) + **Claude API** for summaries. A local LLM does not fit alongside Windows and a video call. |
-| **16 GB** | Comfortable. ASR turbo or large-v3, plus a local 7B or the 12B for sensitive meetings, sequentially. |
+| **8 GB** | ASR (`large-v3`, 4.6 GB peak measured on the CPU) + **Claude API** for summaries. Tight alongside Windows and a video call; transcription is deferred to idle time. |
+| **16 GB** | Comfortable. ASR `large-v3`, plus a local 7B or the 12B for sensitive meetings, sequentially. |
 | **32 GB** | Everything, including keeping a model resident between meetings to skip load time. |
 
-Disk footprint for a fresh no-GPU install: **~1.6 GB** (ASR only) or **~2.7–9 GB** with a
+Disk footprint for a fresh no-GPU install: **~3.1 GB** (ASR only) or **~2.7–9 GB** with a
 local LLM, plus ~50 MB app and ~80 MB ffmpeg. Audio is the real consumer over time — a
 45-minute meeting at 16 kHz mono ×2 tracks is ~85 MB, so the retention policy earns its keep.
 
 ### 20.5 Recommended defaults
 
 - **Your desktop:** `large-v3-ct2` on CUDA int8 + Claude. Local LLM only for meetings flagged sensitive.
-- **A no-GPU laptop:** `turbo-ct2` int8 + Claude, deferred to `after_meeting`. Ship with no local LLM at all — make it an opt-in download for people who want fully-offline mode.
-- **Fully offline mode:** `turbo-ct2` + `DictaLM-3.0-Nemotron-12B-Instruct-Q4_K_M` on 16 GB+, or the 1.7B on 8 GB with visibly lower summary quality.
+- **A no-GPU laptop:** `large-v3-ct2` int8 + Claude, deferred to `when_idle` (about 4× the meeting's length, D60). Ship with no local LLM at all — make it an opt-in download for people who want fully-offline mode.
+- **Fully offline mode:** `large-v3-ct2` + `DictaLM-3.0-Nemotron-12B-Instruct-Q4_K_M` on 16 GB+, or the 1.7B on 8 GB with visibly lower summary quality.

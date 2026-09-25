@@ -14,25 +14,23 @@ getting the first real summaries out of the application.
 ### 1. First-run setup — **in the app since 2026-09-24**, still no installer around it
 
 `bootstrap.py` and `preflight()` exist and are tested. On top of them the interface now
-opens on **`/welcome`** until setup is done (ClickUp z8tj1had06), with four steps, each
-applying the moment it changes and each also in Settings, Transcription:
+opens on **`/welcome`** until setup is done (ClickUp z8tj1had06), with three steps, each
+applying the moment it changes and each also in Settings, Transcription. There is no
+language question any more (D60, 2026-09-25): one model, `ivrit-ai/whisper-large-v3-ct2`,
+transcribes Hebrew and English, mixed in one meeting too, and the meeting's language is
+read from its transcript.
 
-1. **Meeting language** — Hebrew (preselected), English, or detect per meeting. It writes
-   `asr.language_mode`/`asr.default_language` and **picks the model**: a language pinned
-   to anything but Hebrew gets stock Whisper (`Systran/faster-whisper-large-v3` on GPU,
-   `mobiuslabsgmbh/faster-whisper-large-v3-turbo` on CPU), because the ivrit-ai
-   fine-tune heard an English meeting as Hebrew (z8tj1haczh). Hebrew and "detect" keep
-   the ivrit-ai models, so no existing install's model changes.
-2. **Speech model** — name, size, free space, Download with progress and Cancel, over
+1. **Speech model** — name, size, free space, Download with progress and Cancel, over
    `/api/model` (`model_manager.py`). A drive too full is said in words before a byte is
    fetched.
-3. **Microphone and speakers** — the Settings rows and live meters, shared
+2. **Microphone and speakers** — the Settings rows and live meters, shared
    (`AudioDeviceSettings.tsx`).
-4. **CPU or GPU** — where Whisper will run and why. The automatic choice now needs
+3. **CPU or GPU** — where Whisper will run and why. The automatic choice needs
    ≥ 4096 MB on GPU 0 (`nvidia-smi`, hidden, 5 s timeout; any failure → CPU; z8tj1had07),
-   and a GPU that fails to load falls back to the CPU's model instead of keeping large-v3.
+   and a GPU that fails to load falls back to the same model on the CPU (int8), which
+   takes about four times the meeting's length (measured on an i7-8700, D60).
 
-"Done" and "Skip" both set `setup.done`; Done also saves the language shown. An install
+"Done" and "Skip" both set `setup.done` and nothing else. An install
 whose `app_config.json` predates the flag and already has a model on disk is marked done
 on load, so existing users never see the screen. There is deliberately no AI-provider or
 calendar step: both are optional to a transcript and both carry their own "!" in Settings.

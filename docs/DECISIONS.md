@@ -1520,3 +1520,49 @@ npm → winget fallback stays for any other failure. Verified on Windows 11 with
 installer up to the failing line; the full install on a clean machine is the Windows
 testing epic's job, because on a developer machine it would rewrite the user's PATH.
 
+
+## D60 — One speech model, ivrit-ai large-v3, always told Hebrew; the language is read from the transcript
+
+**Choice.** `ivrit-ai/whisper-large-v3-ct2` is the only speech model, on the GPU and the
+CPU alike. It is always called with `language="he"`. Nothing detects the language before
+transcription; the meeting's language (which picks the summary's language under
+`summary.language = auto`, and the page direction) is the script most of the transcript's
+letters are in (`app/asr/language.py`: Hebrew at ≥ 25 % of the letters). Removed: the
+turbo fine-tune for the CPU, stock Whisper for non-Hebrew meetings, the first-run
+"meeting language" question, `asr.language_mode`, `asr.default_language`,
+`asr.detect_min_confidence`, `asr.model_repo`, and every backend's `detect_language`. A
+test fails if any other Whisper repo id appears in `app/`.
+
+**Why.** Measured on 2026-09-25 on the author's machine (GTX 1080, int8) with an English
+clip (40.6 s), a Hebrew clip (102.9 s) and the two spliced Hebrew → English → Hebrew
+(66 s). Transcripts in the author's `F:\Junk\upshot\lang-tests\`.
+
+| Model, how it was called | English | Hebrew | Mixed |
+|---|---|---|---|
+| ivrit-ai large-v3, `language="he"` | English, correct (no punctuation) | best | **each part in its own language** |
+| ivrit-ai large-v3, `language="en"` | drifts into invented Hebrew from 14 s | — | — |
+| ivrit-ai large-v3-turbo, `language="he"` | English, correct | very good | **the English translated into Hebrew**, 11 s dropped |
+| stock large-v3-turbo, auto / `multilingual=True` | correct | worse than ivrit-ai | **the Hebrew translated into English** |
+
+The turbo fine-tune's failure is machine B's (ClickUp z8tj1haczh): an English meeting came
+out as Hebrew nobody said. The fix shipped for it on 2026-09-24 (a first-run language
+choice, routing English to stock Whisper) handled one-language meetings only, and asked
+the user something the app can work out. Language identification itself was also tested:
+ivrit-ai's own detector answers Hebrew at p = 1.00 for every 10 s window, English
+included, which is why the transcript's script is used instead. Stock whisper-small
+detects both languages correctly (p 0.93–1.00) and stays the fallback plan if a meeting
+ever needs segment-level routing.
+
+**Cost.** The CPU gets the 3.09 GB model instead of 1.62 GB, and runs slower: large-v3 int8
+on an i7-8700 (6 cores) took 409 s for 102.9 s of speech (**≈ 4× the audio**), peak RSS
+4.6 GB. CPU-only machines therefore transcribe after the meeting, when idle, and the
+setup screen says so. A GPU machine is unchanged.
+
+**What is kept.** The hardware fallbacks: no CUDA, under 4 GB of VRAM, or a failed GPU
+load all run the same model on the CPU (int8); the GPU's supported compute type is still
+probed (the GTX 1080 refuses `int8_float16`); `asr.model_path` still points at a model
+already on disk.
+
+**Not measured yet.** Real meetings rather than clips, and English terms inside Hebrew
+sentences — the commonest mix here. Diarization (D29) is unaffected: it works on voices,
+not language.

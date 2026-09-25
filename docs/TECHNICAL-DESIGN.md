@@ -419,6 +419,11 @@ surfaced in the UI. Delivery failures never block `RENDERED`.
 
 ## 7. ASR
 
+> **Superseded by D60 (2026-09-25).** Language is no longer detected before
+> transcription: the one model, `ivrit-ai/whisper-large-v3-ct2`, is always given Hebrew,
+> and the meeting's language is read from the transcript (`app/asr/language.py`). The
+> `asr.language_mode`/`asr.default_language` keys below are gone.
+
 ```python
 class AsrBackend(Protocol):
     name: str

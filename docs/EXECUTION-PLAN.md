@@ -331,6 +331,8 @@ another project):
 **Model resolution order:** configured `model_path` → app-home `model/` → download from the
 configured repo id. Profile picks the repo: GPU → `whisper-large-v3-ct2`, CPU →
 `whisper-large-v3-turbo-ct2`.
+*(Superseded by D60, 2026-09-25: one repo, `whisper-large-v3-ct2`, on both, always given
+Hebrew; the detection tests below were replaced by a check on the transcript's script.)*
 
 **Tests**
 

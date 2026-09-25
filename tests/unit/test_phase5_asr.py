@@ -12,29 +12,13 @@ import pytest
 from app.asr.backend import max_consecutive_repeats, sort_segments
 from app.asr.factory import make_backend
 from app.asr.fake import FakeAsr
-from app.asr.language import resolve_language
+from app.asr.language import spoken_language
 from app.asr.local import LocalAsr, cuda_library_dirs, probe_device
-from app.asr.models import GPU_REPO, resolve
+from app.asr.models import ASR_LANGUAGE, REPO, resolve
 from app.asr.remote import RemoteAsr
-from app.audio.vad import TwoStageVad
 from app.config import default_config
 
 RATE = 16000
-
-
-class NoVerifier:
-    """Silero disabled: the test fixtures are noise, not speech, and the question here
-    is only "does this track carry sound", which the energy gate answers."""
-
-    def available(self) -> bool:
-        return False
-
-    def voiced_frames(self, pcm, rate: int = 16000):  # type: ignore[no-untyped-def]
-        return []
-
-
-def gate_only_vad() -> TwoStageVad:
-    return TwoStageVad(silero=NoVerifier())
 
 
 def make_wav(path: Path, seconds: float, *, speech: bool = True) -> Path:
@@ -77,16 +61,6 @@ class RecordingModel:
             language, language_probability = "en", 0.99
 
         return iter([RawSegment()]), Info()
-
-    def detect_language(self, audio, **kwargs):  # type: ignore[no-untyped-def]
-        # The real WhisperModel.detect_language takes a 1D float32 array at 16 kHz and
-        # immediately reads `.dtype`. The old stub took a str and so hid a crash that
-        # only appeared on a real machine — model this contract, not a convenient one.
-        assert hasattr(audio, "dtype"), (
-            f"detect_language needs an ndarray, got {type(audio).__name__}"
-        )
-        self.calls.append({"detect_language": audio.shape})
-        return "en", 0.87, []
 
 
 # ------------------------------------------------------------------ fake backend
@@ -274,8 +248,8 @@ def test_model_resolution_prefers_configured_path(tmp_path: Path, app_home: Path
     assert choice.local is True and choice.reference == str(model_dir)
 
     empty = default_config()
-    fallback = resolve(empty, device="cuda")
-    assert fallback.local is False and fallback.reference == GPU_REPO
+    fallback = resolve(empty)
+    assert fallback.local is False and fallback.reference == REPO
 
 
 # ------------------------------------------------------------------ remote
@@ -296,56 +270,40 @@ def test_remote_falls_back_when_down(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ language
 
 
-def test_language_detect_prefers_them_track(tmp_path: Path) -> None:
-    backend = FakeAsr(language="en", confidence=0.9)
-    chunks = {
-        "me": make_wav(tmp_path / "me" / "0001.wav", 10, speech=False),
-        "them": make_wav(tmp_path / "them" / "0001.wav", 10, speech=True),
-    }
-    decision = resolve_language(backend, chunks, default_config(), vad=gate_only_vad())
-    assert decision.language == "en" and decision.source == "detected"
-    assert [p.parent.name for p in backend.detect_calls] == ["them"]
+def test_a_hebrew_transcript_is_a_hebrew_meeting() -> None:
+    decision = spoken_language(["בוא נתחיל עם הסטטוס של הפרויקט", "מי לוקח את זה"])
+    assert decision.language == "he" and decision.source == "transcript"
+    assert decision.confidence == 1.0
 
 
-def test_language_detect_falls_back_to_me(tmp_path: Path) -> None:
-    backend = FakeAsr(language="en", confidence=0.9)
-    chunks = {
-        "me": make_wav(tmp_path / "me" / "0001.wav", 10, speech=True),
-        "them": make_wav(tmp_path / "them" / "0001.wav", 10, speech=False),
-    }
-    decision = resolve_language(backend, chunks, default_config(), vad=gate_only_vad())
-    assert decision.language == "en"
-    assert [p.parent.name for p in backend.detect_calls] == ["me"]
+def test_an_english_transcript_is_an_english_meeting() -> None:
+    """What ivrit-ai writes for English speech when told Hebrew: English (D60)."""
+    decision = spoken_language(["did I have eyebrows when I left", "go to your room"])
+    assert decision.language == "en" and decision.confidence == 1.0
 
 
-def test_low_confidence_uses_default(tmp_path: Path) -> None:
-    backend = FakeAsr(language="en", confidence=0.4)
-    chunks = {"them": make_wav(tmp_path / "them" / "0001.wav", 10)}
-    decision = resolve_language(backend, chunks, default_config(), vad=gate_only_vad())
-    assert decision.language == "he"  # the configured default
-    assert decision.confidence == 0.4
-    assert decision.needs_review is True
-    assert decision.review_reason
+def test_english_terms_do_not_make_a_hebrew_meeting_english() -> None:
+    decision = spoken_language(
+        ["יש לנו בעיה עם ה-deployment בסביבת הפרודקשן", "מי לוקח את המשימה של ה-monitoring"]
+    )
+    assert decision.language == "he"
 
 
-def test_fixed_mode_skips_detection(tmp_path: Path) -> None:
-    backend = FakeAsr(language="en", confidence=0.99)
-    config = default_config(asr__language_mode="fixed")
-    chunks = {"them": make_wav(tmp_path / "them" / "0001.wav", 10)}
-    decision = resolve_language(backend, chunks, config, vad=gate_only_vad())
-    assert decision.language == "he" and decision.source == "fixed"
-    assert backend.detect_calls == []
+def test_an_evenly_mixed_meeting_is_summarized_in_hebrew() -> None:
+    # Hebrew spends fewer letters per word: the same time spoken lands well under half.
+    decision = spoken_language(
+        ["תגידו, גם אתם לומדים בקורס לעברית שימושית?", "I didn't know what to say, so I just said"]
+    )
+    assert decision.language == "he"
 
 
-def test_no_speech_anywhere_uses_default(tmp_path: Path) -> None:
-    backend = FakeAsr(language="en")
-    chunks = {
-        "me": make_wav(tmp_path / "me" / "0001.wav", 10, speech=False),
-        "them": make_wav(tmp_path / "them" / "0001.wav", 10, speech=False),
-    }
-    decision = resolve_language(backend, chunks, default_config(), vad=gate_only_vad())
-    assert decision.language == "he" and decision.needs_review is True
-    assert backend.detect_calls == []
+def test_a_silent_meeting_is_hebrew_by_default() -> None:
+    decision = spoken_language([])
+    assert (decision.language, decision.confidence, decision.source) == (
+        ASR_LANGUAGE,
+        0.0,
+        "default",
+    )
 
 
 # ------------------------------------------------------------------ glossary prompt
@@ -391,7 +349,7 @@ def test_glossary_corrections_apply_aliases() -> None:
 @pytest.mark.windows
 @pytest.mark.slow
 def test_transcribe_speech_fixture(tmp_path: Path) -> None:
-    """T1: a known English sentence must survive a real local transcription."""
+    """T1: a known English sentence survives a real local transcription told Hebrew (D60)."""
     from tests.fixtures import speech
 
     if not speech.available():
@@ -404,7 +362,7 @@ def test_transcribe_speech_fixture(tmp_path: Path) -> None:
     sentence = "The quick brown fox jumps over the lazy dog near the river bank"
     wav = speech.synth(sentence, tmp_path / "them" / "0001.wav")
     backend = LocalAsr(config)
-    segments = backend.transcribe(wav, language="en")
+    segments = backend.transcribe(wav, language=ASR_LANGUAGE)
     text = " ".join(segment.text for segment in segments).lower()
     expected = [word for word in sentence.lower().split() if len(word) > 2]
     hits = sum(1 for word in expected if word in text)
@@ -414,15 +372,13 @@ def test_transcribe_speech_fixture(tmp_path: Path) -> None:
 
 @pytest.mark.windows
 @pytest.mark.slow
-def test_detect_english_fixture(tmp_path: Path) -> None:
-    """T1: an English fixture detects as English, and the confidence is reported."""
+def test_english_speech_reads_as_an_english_meeting(tmp_path: Path) -> None:
+    """T1: English speech, transcribed as always with Hebrew, is an English meeting."""
     from tests.fixtures import speech
 
     if not speech.available():
         pytest.skip("SAPI is only available on Windows")
     config = default_config()
-    from app.asr.models import resolve
-
     if not resolve(config).local:
         pytest.skip("no local ASR model on this machine; set asr.model_path")
     wav = speech.synth(
@@ -430,10 +386,9 @@ def test_detect_english_fixture(tmp_path: Path) -> None:
         tmp_path / "them" / "0001.wav",
     )
     backend = LocalAsr(config)
-    language, confidence = backend.detect_language(wav)
-    print(f"language-detection confidence: {confidence:.3f}")
-    assert language == "en"
-    assert confidence >= 0.6, f"confidence {confidence:.2f} is below the one-chunk bar"
+    segments = backend.transcribe(wav, language=ASR_LANGUAGE)
+    decision = spoken_language(segment.text for segment in segments)
+    assert decision.language == "en", [segment.text for segment in segments]
     backend.unload()
 
 
@@ -503,40 +458,3 @@ def test_configured_cuda_dir_accepts_a_list(tmp_path: Path) -> None:
         system_dirs=(),
     )
     assert found == [first, second]
-
-
-def test_detect_language_is_given_audio_not_a_path(tmp_path: Path) -> None:
-    """faster-whisper's detect_language reads `.dtype` off its argument. Passing the
-    path raised "'str' object has no attribute 'dtype'" and failed a real meeting."""
-
-    wav = make_wav(tmp_path / "me" / "0001.wav", 2)
-    model = RecordingModel()
-    backend = LocalAsr(default_config(), model_factory=lambda **kw: model)
-    language, probability = backend.detect_language(wav)
-    assert (language, probability) == ("en", 0.87)
-    detected = [c for c in model.calls if "detect_language" in c]
-    assert detected, "detect_language was never reached"
-
-
-def test_detect_language_survives_an_api_change(tmp_path: Path) -> None:
-    """If the helper ever changes shape again, fall back rather than lose the meeting."""
-
-    class Hostile(RecordingModel):
-        def detect_language(self, audio, **kwargs):  # type: ignore[no-untyped-def]
-            raise AttributeError("'str' object has no attribute 'dtype'")
-
-    wav = make_wav(tmp_path / "me" / "0001.wav", 2)
-    backend = LocalAsr(default_config(), model_factory=lambda **kw: Hostile())
-    # Falls through to transcribe(), which reports the language on its Info object.
-    assert backend.detect_language(wav) == ("en", 0.99)
-
-
-def test_decode_audio_returns_float32_mono(tmp_path: Path) -> None:
-    import numpy as np
-
-    from app.asr.local import decode_audio
-
-    wav = make_wav(tmp_path / "me" / "0001.wav", 2)
-    audio = decode_audio(wav)
-    assert audio.dtype == np.float32
-    assert audio.ndim == 1

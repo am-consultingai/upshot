@@ -1,7 +1,7 @@
 """Model resolution and download (DESIGN.md §11, §20.2).
 
-Order: configured ``model_path`` → the app home's ``model/`` directory → the repo for the
-device and the meeting language, downloaded by ``app.asr.model_manager`` into
+Order: configured ``model_path`` → the app home's ``model/`` directory → the one repo,
+downloaded by ``app.asr.model_manager`` into
 ``models/asr/`` → the bare repo id.
 With ``model_path`` pointed at an existing CTranslate2 directory, first run downloads
 nothing.
@@ -28,25 +28,24 @@ EMBEDDING_URL = (
     "speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
 )
 
-GPU_REPO = "ivrit-ai/whisper-large-v3-ct2"
-CPU_REPO = "ivrit-ai/whisper-large-v3-turbo-ct2"
+#: The one speech model, on the GPU and the CPU alike (DECISIONS.md D60). Measured on
+#: 2026-09-25 against a Hebrew clip, an English clip and the two spliced together: it
+#: writes Hebrew as Hebrew and English as English, mixed or not, as long as it is told
+#: the language is Hebrew. The alternatives each failed one of those: its turbo sibling
+#: translated the English of the mixed clip into Hebrew (machine B's invented Hebrew,
+#: ClickUp z8tj1haczh), and stock Whisper turbo translated the Hebrew into English.
+REPO = "ivrit-ai/whisper-large-v3-ct2"
 
-#: Stock Whisper, for meetings the user has said are not in Hebrew. The ivrit-ai models
-#: are fine-tuned on Hebrew and their language detection leans to it: an English meeting
-#: came out pinned as Hebrew on a stranger's machine (ClickUp z8tj1haczh). These are the
-#: same two architectures, converted by the people faster-whisper itself maps
-#: "large-v3" and "turbo" to, so sizes and speed are unchanged.
-GPU_REPO_MULTILINGUAL = "Systran/faster-whisper-large-v3"
-CPU_REPO_MULTILINGUAL = "mobiuslabsgmbh/faster-whisper-large-v3-turbo"
+#: The language the model is always given. Not a setting: this model's own language
+#: detection answers Hebrew for every input, English included, and told "English" it
+#: drifts into Hebrew it was never played. Told "Hebrew", English speech comes out as
+#: English. Which language a meeting was in is read from its transcript instead
+#: (``app/asr/language.py``).
+ASR_LANGUAGE = "he"
 
-#: What each download weighs (DESIGN.md §20.2), so the setup screen can say so before it
+#: What the download weighs (DESIGN.md §20.2), so the setup screen can say so before it
 #: starts. The manager learns the exact figure from the hub once the download begins.
-REPO_BYTES: dict[str, int] = {
-    GPU_REPO: 3_090_000_000,
-    CPU_REPO: 1_620_000_000,
-    GPU_REPO_MULTILINGUAL: 3_090_000_000,
-    CPU_REPO_MULTILINGUAL: 1_620_000_000,
-}
+REPO_BYTES = 3_090_000_000
 
 MODEL_FILES = ("model.bin", "config.json")
 
@@ -68,25 +67,8 @@ def looks_like_model_dir(path: Path) -> bool:
     return path.is_dir() and all((path / name).exists() for name in MODEL_FILES)
 
 
-def repo_for_profile(profile: str, *, hebrew: bool = True) -> str:
-    gpu = profile in ("gpu-live", "remote-worker")
-    if hebrew:
-        return GPU_REPO if gpu else CPU_REPO
-    return GPU_REPO_MULTILINGUAL if gpu else CPU_REPO_MULTILINGUAL
-
-
-def wants_hebrew_model(config: Config) -> bool:
-    """The Hebrew fine-tune, unless every meeting is pinned to another language.
-
-    "Detect" keeps it on purpose: that is what every install before the setup screen
-    ran, so an existing user's model does not change under them, and most meetings here
-    are Hebrew. Only a fixed non-Hebrew language — the setup screen's "English" — moves
-    to stock Whisper, which transcribes English as English.
-    """
-    return not (config.language_mode == "fixed" and config.default_language != "he")
-
-
-def resolve(config: Config, *, device: str = "cpu") -> ModelChoice:
+def resolve(config: Config) -> ModelChoice:
+    """Where the model is: ``asr.model_path``, the app home's ``model/``, or the download."""
     configured = config.get("asr.model_path")
     if configured:
         path = Path(str(configured)).expanduser()
@@ -96,33 +78,30 @@ def resolve(config: Config, *, device: str = "cpu") -> ModelChoice:
     home_model = paths.app_home() / "model"
     if looks_like_model_dir(home_model):
         return ModelChoice(str(home_model), local=True)
-    repo = str(config.get("asr.model_repo") or "") or repo_for_profile(
-        "gpu-live" if device == "cuda" else "cpu-deferred", hebrew=wants_hebrew_model(config)
-    )
     from app.asr.model_manager import VERIFIED, target_for
 
-    managed = target_for(repo)
+    managed = target_for(REPO)
     if looks_like_model_dir(managed) and (managed / VERIFIED).is_file():
-        return ModelChoice(str(managed), local=True, repo_id=repo)
-    return ModelChoice(repo, local=False, repo_id=repo)
+        return ModelChoice(str(managed), local=True, repo_id=REPO)
+    return ModelChoice(REPO, local=False, repo_id=REPO)
 
 
 def any_model_on_disk(config: Config) -> bool:
-    """Whether a speech model this config would load is already here, on either device.
+    """Whether the speech model this config would load is already here.
 
     Never raises: it decides whether an existing install skips first-run setup, and a
     question like that must not be able to stop the application from starting.
     """
     try:
-        return any(resolve(config, device=device).local for device in ("cpu", "cuda"))
+        return resolve(config).local
     except Exception as exc:  # pragma: no cover - a filesystem that refuses to be read
         log.warning("could not tell whether a speech model is on disk: %s", exc)
         return False
 
 
-def ensure(config: Config, *, device: str = "cpu", allow_download: bool = True) -> ModelChoice:
+def ensure(config: Config, *, allow_download: bool = True) -> ModelChoice:
     """Resolve, downloading only when nothing local is available."""
-    choice = resolve(config, device=device)
+    choice = resolve(config)
     if choice.local or not allow_download:
         if not choice.local and not allow_download:
             raise FileNotFoundError(

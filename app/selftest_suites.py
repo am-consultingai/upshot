@@ -326,7 +326,7 @@ def _asr(args: argparse.Namespace) -> list[Check]:
     cfg = Config.load()
     kind = str(cfg.get("asr.backend", "local"))
     cuda_dirs = cuda_library_dirs(configured=cfg.get("asr.cuda_dir"))
-    choice = resolve(cfg, device="cuda" if cuda_dirs else "cpu")
+    choice = resolve(cfg)
     checks = [
         Check("asr_backend", True, f"asr.backend = {kind}", {"backend": kind}),
         Check(
@@ -927,7 +927,6 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
         cfg.set("data_root", str(root / "meetings"))
         cfg.set("asr.backend", "fake")
         cfg.set("asr.fake_language", "en")
-        cfg.set("asr.language_mode", "detect")
         cfg.set("llm.provider", "fake")
         cfg.set("audio.vad", "energy")
         cfg.set("delivery.notifier", "fake")
