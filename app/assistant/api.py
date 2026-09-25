@@ -15,6 +15,7 @@ from app.assistant import stream
 from app.assistant.citations import Citer
 from app.assistant.claude_route import ClaudeRoute, Turn
 from app.assistant.store import SessionStore
+from app.assistant.tools import data_tag
 from app.llm.prompts import load
 from app.log import get
 from app.services import Services
@@ -94,7 +95,7 @@ PROBLEM_TEXT = {
 
 
 def system_prompt(context: dict[str, Any]) -> str:
-    text = load("assistant").text
+    text = load("assistant").text.replace("{data_tag}", data_tag())
     route = str(context.get("route") or "")
     meeting = str(context.get("meeting_id") or "")
     scope = str(context.get("scope") or ("meeting" if meeting else "all"))
