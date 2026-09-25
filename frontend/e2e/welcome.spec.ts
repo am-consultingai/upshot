@@ -102,21 +102,15 @@ test("every_screen_leads_to_setup_until_it_is_done", async ({ page }) => {
   await expect(page).toHaveURL(/\/welcome$/);
 });
 
-test("setup_stays_reachable_from_settings", async ({ page }) => {
+test("settings_has_no_transcription_or_storage_section", async ({ page }) => {
+  // Which model runs, where it runs and where recordings live are not the user's to
+  // manage: first-run setup downloads the model, and Settings no longer shows any of it.
   await gotoApp(page, "/welcome");
   await page.getByTestId("welcome-skip").click();
   await expect(page).toHaveURL(/\/$/);
-
-  await gotoSettings(page, "speech");
-  await expect(page.getByTestId("model-name")).toContainText("ivrit-ai/whisper-large-v3-ct2");
-  await expect(page.getByTestId("asr-device")).toHaveValue("auto");
-
-  // The device changes where the model runs, never which model it is.
-  await page.getByTestId("asr-device").selectOption("cpu");
-  await expect(page.getByTestId("model-name")).toContainText("ivrit-ai/whisper-large-v3-ct2");
-  await page.getByTestId("asr-device").selectOption("auto"); // saved: put it back
-
-  // And the whole screen can be had again, without being sent back to it.
-  await page.getByTestId("open-welcome").click();
-  await expect(page).toHaveURL(/\/welcome$/);
+  await gotoSettings(page, "audio");
+  await expect(page.getByTestId("settings-section-speech")).toHaveCount(0);
+  await expect(page.getByTestId("settings-section-storage")).toHaveCount(0);
+  await expect(page.getByTestId("model-name")).toHaveCount(0);
+  await expect(page.getByTestId("data-root")).toHaveCount(0);
 });
