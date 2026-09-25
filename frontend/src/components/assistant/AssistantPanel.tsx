@@ -348,7 +348,7 @@ function Chat({
           </p>
         )}
         {(error || problem) && (
-          <Problem code={problem} text={error?.message ?? ""} onRetry={() => void regenerate()} />
+          <Problem code={problem} text={error?.message ?? ""} provider={provider} onRetry={() => void regenerate()} />
         )}
         {stopped && !busy && (
           <p className="text-xs text-tertiary" data-testid="assistant-stopped">
@@ -513,7 +513,7 @@ function Empty({
     <div className="space-y-3" data-testid="assistant-empty">
       <p className="text-sm text-secondary">{t("assistant.empty")}</p>
       {unavailable ? (
-        <Problem code={unavailable} text="" />
+        <Problem code={unavailable} text="" provider={provider} />
       ) : (
         <>
           {!disclosed && provider && (
@@ -704,8 +704,19 @@ function ToolStep({ name, input, output, state }: { name: string; input: unknown
 }
 
 /** A problem said in words, with the one thing to do about it (D62). */
-function Problem({ code, text, onRetry }: { code: string | null; text: string; onRetry?: () => void }) {
+function Problem({
+  code,
+  text,
+  provider,
+  onRetry,
+}: {
+  code: string | null;
+  text: string;
+  provider: string;
+  onRetry?: () => void;
+}) {
   const { t } = useI18n();
+  const cli = provider === "codex-subscription" ? "Codex" : "Claude Code";
   const navigate = useNavigate();
   const key: MessageKey | null =
     code === "signed-out"
@@ -716,18 +727,16 @@ function Problem({ code, text, onRetry }: { code: string | null; text: string; o
           ? "assistant.problem.localModel"
           : code === "unsupported-provider"
             ? "assistant.problem.unsupported"
-            : code === "codex"
-              ? "assistant.problem.codex"
-              : code === "quota"
+            : code === "quota"
                 ? "assistant.problem.quota"
                 : code === "rate-limited"
                   ? "assistant.problem.rateLimited"
                   : null;
-  const toSettings = code !== null && ["signed-out", "not-installed", "local-model", "unsupported-provider", "codex", "too-old"].includes(code);
+  const toSettings = code !== null && ["signed-out", "not-installed", "local-model", "unsupported-provider", "too-old"].includes(code);
   return (
     <div className="rounded-md bg-danger-quiet/40 p-2.5 text-sm" data-testid="assistant-error" data-problem={code ?? undefined}>
       <p dir="auto" className="text-primary">
-        {key ? t(key) : text}
+        {key ? t(key).replace("{cli}", cli) : text}
       </p>
       {key && text && (
         <p dir="auto" className="mt-1 text-xs text-tertiary">
