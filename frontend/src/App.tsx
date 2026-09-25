@@ -19,6 +19,7 @@ import CommandPalette from "./components/CommandPalette";
 import CaptureChoice from "./components/CaptureChoice";
 import Toaster from "./components/Toaster";
 import ConfirmHost from "./components/ConfirmDialog";
+import AssistantPanel from "./components/assistant/AssistantPanel";
 
 /** Typing into a field is not a shortcut. */
 function typing(target: EventTarget | null): boolean {
@@ -72,6 +73,57 @@ function useShortcuts(onRecord: () => void) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [navigate, onRecord]);
+}
+
+/**
+ * The assistant opens and closes with Ctrl/Cmd+J (D62), as Linear's and Fireflies' do.
+ *
+ * Matched on `event.code`, the physical key, so it still works when the keyboard is
+ * set to Hebrew and `event.key` is "ח". Closing gives focus back to whatever had it
+ * when the panel opened. `upshot:assistant` on the window toggles it too.
+ */
+function useAssistantToggle() {
+  const [open, setOpen] = useState(false);
+  const opener = useRef<HTMLElement | null>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+    const back = opener.current;
+    opener.current = null;
+    window.setTimeout(() => back?.focus(), 0);
+  }, []);
+  const toggle = useCallback(() => {
+    setOpen((was) => {
+      if (was) {
+        const back = opener.current;
+        opener.current = null;
+        window.setTimeout(() => back?.focus(), 0);
+        return false;
+      }
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      return true;
+    });
+  }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyJ") {
+        // The browser's own Ctrl+J is Downloads.
+        event.preventDefault();
+        toggle();
+        return;
+      }
+      if (event.key === "Escape" && document.querySelector("[data-testid=assistant-panel]")?.contains(event.target as Node)) {
+        event.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("upshot:assistant", toggle);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("upshot:assistant", toggle);
+    };
+  }, [toggle, close]);
+  return { open, close };
 }
 
 /**
@@ -206,6 +258,7 @@ export default function App() {
    */
   const { pathname } = useLocation();
   const welcoming = pathname === "/welcome";
+  const assistant = useAssistantToggle();
   const sendToSetup = saved.isSuccess && setupPending(saved.data?.config) && !welcoming;
 
   return (
@@ -267,6 +320,7 @@ export default function App() {
             )}
           </main>
         </div>
+        {!welcoming && assistant.open && <AssistantPanel onClose={assistant.close} />}
       </div>
     </I18nContext.Provider>
   );

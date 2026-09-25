@@ -35,6 +35,11 @@ hiddenimports = [
     "uvicorn.protocols.websockets.auto",
     "uvicorn.lifespan.on",
     "anyio._backends._asyncio",
+    # The assistant's tool server (app/assistant/mcp.py) imports these inside a function.
+    "mcp.server.mcpserver",
+    "mcp.server.streamable_http",
+    "mcp.server.streamable_http_manager",
+    "sse_starlette",
 ]
 
 datas = [
