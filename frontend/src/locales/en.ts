@@ -2,7 +2,7 @@ export const en = {
   "app.title": "Upshot",
   "capture.heading": "How should Upshot record your meetings?",
   "capture.lead": "Right now it records nothing on its own. It is watching for calls, but it will not start unless you press the red button — so a meeting you join in a hurry is a meeting you will not have notes for.",
-  "capture.privacy": "Either way the recording, the transcript and the summary stay on this computer. No bot joins the call and nobody else is told it is happening.",
+  "capture.privacy": "Either way the recording stays on this computer; only the text goes to the AI you chose. No bot joins the call and nobody else is told it is happening.",
   "capture.automatic": "Record calls automatically",
   "capture.automaticWhy": "Upshot starts when it recognises a call and tells you, with one click to throw the recording away.",
   "capture.manual": "Only when I press record",
