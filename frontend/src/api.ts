@@ -1,3 +1,4 @@
+import type { UIMessage } from "ai";
 /** The only place that talks to the backend. Cookie auth + the CSRF double-submit. */
 
 export interface Meeting {
@@ -332,6 +333,15 @@ export interface DetectorEvent {
   meeting_id: string | null;
 }
 
+/** A conversation with the assistant, as the history lists it. */
+export interface AssistantSession {
+  id: string;
+  title: string;
+  provider: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)up_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
@@ -362,6 +372,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  assistantSessions: () => request<{ sessions: AssistantSession[] }>("/api/assistant/sessions"),
+  assistantSession: (id: string) =>
+    request<{ session: AssistantSession; messages: UIMessage[] }>(`/api/assistant/sessions/${encodeURIComponent(id)}`),
+  renameAssistantSession: (id: string, title: string) =>
+    request<{ session: AssistantSession }>(`/api/assistant/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  deleteAssistantSession: (id: string) =>
+    request<{ deleted: string }>(`/api/assistant/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   status: () => request<Status>("/api/status"),
   audioDevices: () => request<AudioDevices>("/api/audio/devices"),
   model: () => request<ModelStatus>("/api/model"),
