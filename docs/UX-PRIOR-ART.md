@@ -233,7 +233,7 @@ document rather than as fields the document is built from (**D47**).
 | # | Change | Why | Status |
 |---|---|---|---|
 | 1 | **Group into sections** with headings — Recording, Transcription, Summaries, Privacy | Currently a flat stack of controls | **Done** — six named sections |
-| 2 | **Say the privacy story out loud**: audio and transcripts never leave this machine; here is where they live; here is what each provider sends | Our strongest differentiator, currently invisible | 
+| 2 | **Say the privacy story out loud**: audio never leaves this machine, and the text goes only to the provider the user chose; here is where they live; here is what each provider sends | Our strongest differentiator, currently invisible | 
 | 3 | **Promote the prompt editor to named templates** you can pick per meeting | Fireflies' summary-format dropdown |
 | 4 | Show storage location and disk used, with a purge control | Meetily surfaces this |
 | 5 | Glossary/custom dictionary as a first-class screen | Hyprnote ships it; critical for Hebrew + English product names |

@@ -36,8 +36,8 @@
       <li>Upshot is a desktop application that runs on your own Windows computer. Your recordings, transcripts and summaries are stored there.</li>
       <li>AM Consulting, which makes Upshot, does not run a server that receives your data. We never receive your recordings, transcripts, summaries or Google data.</li>
       <li>Audio is transcribed on your computer and is never uploaded.</li>
-      <li>To write a summary, the text of a meeting is sent to the AI provider you choose. If you choose a local model, nothing leaves your computer.</li>
-      <li>If you connect Google Calendar, Upshot only reads your events, on your computer, to notice and name your meetings. It does not share calendar data with anyone, including AI providers.</li>
+      <li>To write summaries and answer your questions, Upshot sends the text it keeps (transcripts, summaries, notes, action items and calendar details) to the AI provider you choose. If you choose a local model, nothing leaves your computer.</li>
+      <li>If you connect Google Calendar, Upshot reads your events, on your computer, to notice and name your meetings, and sends a meeting's invitation to the AI provider you choose along with its transcript. It does not share calendar data with AM Consulting or anyone else.</li>
     </ul>
   </section>
 
@@ -107,7 +107,7 @@
     <p>Calendar data is fetched directly from Google to your computer. The sign-in token Google issues is stored in Windows Credential Manager. Event details are stored with the matching meeting in your local data folder. AM Consulting never receives your calendar data or your token.</p>
 
     <h3>4.4 How we share it</h3>
-    <p>Upshot does not transfer or disclose your Google calendar data to AM Consulting or to any third party, including the AI providers that write summaries. It is not sold, and it is not used for advertising.</p>
+    <p>Upshot sends a meeting's calendar details (the title, times, organizer, the names of the people invited, the description, and the names and links of attached files) to the AI provider you choose, directly from your computer, so that it can write the meeting's summary and answer your questions about it. You can turn this off in Settings, and if you choose a local model nothing is sent. Email addresses are never sent. Upshot does not transfer or disclose your Google calendar data to AM Consulting or to any other third party. It is not sold, and it is not used for advertising.</p>
 
     <h3>4.5 Retention and deletion</h3>
     <p>Event details stay with the meeting on your computer until you delete that meeting in Upshot. You can disconnect Google Calendar at any time in Upshot's settings, which deletes the stored token; Upshot then stops reading your calendar. You can also revoke Upshot's access in your Google Account at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Uninstalling Upshot and deleting its data folder removes everything it stored.</p>
@@ -117,7 +117,7 @@
     <p>In particular:</p>
     <ul>
       <li>We use Google user data only to provide and improve the user-facing features described above.</li>
-      <li>We do not transfer Google user data to others, except as needed to provide those features, to comply with applicable law, or as part of a merger, acquisition or sale of assets with notice to you. Because the data stays on your computer, none of these transfers happen today.</li>
+      <li>We do not transfer Google user data to others, except as needed to provide those features, to comply with applicable law, or as part of a merger, acquisition or sale of assets with notice to you. The only such transfer today is the one described in section 4.4: calendar details sent to the AI provider you choose, to write your summaries and answer your questions.</li>
       <li>We do not use or transfer Google user data to serve advertisements, including retargeting, personalized or interest-based advertising.</li>
       <li>We do not sell Google user data.</li>
       <li>No person at AM Consulting reads your Google user data. We would only do so with your explicit consent (for example, if you send it to us for support), for security purposes such as investigating abuse, to comply with applicable law, or where it has been aggregated and anonymized for internal operations.</li>
@@ -129,7 +129,7 @@
     <h2>5. Services you choose to connect</h2>
     <p>Some features work by connecting, from your computer, to a service you choose. When you use one, that service receives the data described below directly from your computer, under your own account, and handles it according to its own terms and privacy policy. AM Consulting does not receive this data.</p>
     <ul>
-      <li><strong>AI summary providers.</strong> To write a summary, Upshot sends the meeting transcript and your summary instructions to the provider you select: Anthropic (Claude, through the API or through Claude Code on your own subscription), OpenAI or Google Gemini. If you select Ollama, the summary is written by a model running on your computer and nothing is sent. Audio is never sent to these providers.</li>
+      <li><strong>AI providers.</strong> To write summaries and answer your questions, Upshot sends the provider you select any of the text it keeps: meeting transcripts, summaries, notes, action items, calendar details and your instructions. The providers are: Anthropic (Claude, through the API or through Claude Code on your own subscription), OpenAI or Google Gemini. If you select Ollama, the summary is written by a model running on your computer and nothing is sent. Audio is never sent to these providers.</li>
       <li><strong>Email.</strong> If you set up email delivery, Upshot sends summaries through the email server and account you configure.</li>
       <li><strong>Model downloads.</strong> On first use, Upshot downloads speech-recognition models from Hugging Face and, if you enable speaker separation, its models from Hugging Face and GitHub. These downloads send no meeting data; like any web request, they reveal your IP address to the host.</li>
     </ul>

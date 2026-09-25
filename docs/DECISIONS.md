@@ -1566,3 +1566,358 @@ already on disk.
 **Not measured yet.** Real meetings rather than clips, and English terms inside Hebrew
 sentences — the commonest mix here. Diarization (D29) is unaffected: it works on voices,
 not language.
+
+## D61 — The AI assistant: PydanticAI for the API models, the two CLIs over our own MCP server, read-only tools over the existing index
+
+_Status: decided on 2026-09-25 by the product owner (ClickUp z8tj1hawba, epic z8tj1hawb9).
+Nothing is built yet. The decisions table at the end records each ruling._
+
+**Ruled by the product owner, 2026-09-25: local models are out of this plan.** v1 runs on
+the five cloud routes: the Anthropic, OpenAI and Gemini APIs, and the Claude Code and Codex
+CLIs. When Ollama is the chosen provider, the panel says the assistant does not work with
+local models yet. The research on them is kept under "Left for later" below.
+
+**Ruled by the product owner, 2026-09-25: the application may send all the data it holds to
+the chosen model.** Transcripts, summaries, notes, action items, calendar details and
+related meetings are all in scope for the assistant's tools. The privacy page, the site's
+FAQ and the capture screen's text were corrected to say so. Before this, they said
+calendar data never reaches an AI provider, which D45 had already made untrue.
+
+**Choice.** A new package, `app/assistant/`, runs one assistant for the whole application.
+- **Three routes share one harness.** **PydanticAI** (`pydantic-ai-slim`, MIT) runs the
+  agent loop for Anthropic, OpenAI and Gemini. It supports all three natively, as well as
+  Ollama for later, with streaming and typed tools, and its message history serialises to
+  JSON.
+- **The two CLIs run their own loops.** The Claude Code and Codex CLIs call the same tools
+  through an MCP server that Upshot serves on 127.0.0.1 with a token made at each launch.
+  Upshot relays their events.
+  - Claude: `claude -p --output-format stream-json --mcp-config … --strict-mcp-config
+    --allowedTools "mcp__upshot__*"`, resumed with `-r`.
+  - Codex: `codex exec --json` with `-c mcp_servers.upshot…`, resumed with `exec resume`.
+  - Tools are written once as plain functions and registered both as PydanticAI tools and
+    on the MCP server (the official `mcp` SDK).
+- **Tools are read-only in v1.**
+  - `search` (FTS5), `list_meetings`, `get_meeting` (summary, notes, action items),
+    `get_transcript(id, from_ms, to_ms)`, `list_action_items`, `calendar_range`,
+    `related_meetings` (D53).
+  - For questions about the app: `app_help(topic)` and `app_status` (non-secret
+    settings, provider sign-in state, recent failed jobs).
+- **Answers cite their sources.** The model cites `(meeting_id, at_ms)` pairs taken from
+  tool output. The server checks and snaps them to a transcript turn, exactly as
+  `ask.py:_citations` does, and a citation click opens `/m/<id>?at=<ms>`.
+- **Conversations are kept.** Sessions live in two new tables, `assistant_sessions` and
+  `assistant_messages` (migration 0006). Each session gets a title after its first
+  exchange, and older turns are compacted when a session nears the context window; the
+  full history stays on screen.
+- **The stream follows a published format.** Replies stream as server-sent events in the
+  Vercel AI SDK "UI message stream" format. It is small and well specified, so the
+  frontend can change libraries without touching the backend.
+- **The panel is a side sheet.** It docks on the inline-end side and does not block the
+  screen.
+  - Ctrl/Cmd+J opens and closes it; Esc closes it. A launcher button shows when it is
+    closed, and it is hidden on `/welcome`.
+  - A removable chip sets the scope to the current screen ("This meeting").
+  - Tool steps show as collapsible lines ("Searching meetings for 'budget'… 6 results").
+  - It has Stop, suggested prompts per screen, and a session list.
+  - `dir="auto"` goes on every message and on the input, with `<bdi>` around timestamps and
+    citations.
+  - It mounts next to `CommandPalette`/`Toaster` in `App.tsx`. The deeper UI study stays a
+    separate, later item.
+
+**Why each part.**
+- **The harness.** PydanticAI is the only candidate that covers the three API routes (and
+  Ollama, for later) natively, is pure Python and small (it freezes cleanly under
+  PyInstaller), and needs no router.
+  - **OpenAI Agents SDK** was the runner-up. It has good sessions, but Anthropic, Gemini
+    and Ollama go through a beta LiteLLM extension.
+  - **LangGraph and LlamaIndex** carry too much dependency weight for one chat panel.
+  - **smolagents'** main mode runs Python the model writes.
+  - **Agno** is now a hosting platform.
+  - **Claude Agent SDK** covers Claude only and bundles its own CLI binary.
+  - **LiteLLM** is large, and it was compromised on PyPI on 2026-03-24 (1.82.7/1.82.8 stole
+    credentials); that is not something to freeze into an installer.
+  - **Mem0 and Letta** are not needed: the meeting database already is the memory.
+- **The CLIs over MCP.** Both CLIs run their own agent loop and will not take an outside
+  tool-calling protocol, but both accept MCP servers. So MCP is the only way to give them
+  Upshot's tools, and it costs one server we would want anyway.
+  - `codex mcp-server` was removed in Codex 0.154.0. `codex app-server` (JSON-RPC, with
+    experimental client-side tools) is the fallback if `exec --json` proves too limited.
+- **The terms of use.** Anthropic's terms allow a user to run the unmodified `claude`
+  binary on their own subscription. They forbid an app from routing, storing or proxying
+  those credentials. Upshot spawns the user's own binary and never reads `~/.claude` or
+  `~/.codex`, as D30/D58 already do. These routes stay opt-in, and the terms are checked
+  again before each release.
+- **Agentic search, not embeddings.**
+  - Tool-based keyword search matches retrieval-augmented generation (RAG) in recent
+    results, and it is the approach Claude Code itself moved to.
+  - It needs no index to keep fresh, and it reuses FTS5 and D53.
+  - Two gaps must close first:
+    - **Summaries and notes are not in the database** (`dao.py:597`), so search cannot
+      reach them.
+    - **`unicode61` does not strip Hebrew prefixes** (ו/ה/ב/ל/ש), so "בתקציב" misses
+      "תקציב". An FTS5 `trigram` table fixes that.
+  - **Embeddings wait** until a measured miss rate asks for them. The candidate then is
+    EmbeddingGemma (about 200 MB quantised, Hebrew included) with `sqlite-vec`.
+- **Knowing the app.** Today the only text that describes the app to users is the 34
+  `help.*` tooltip strings.
+  - A small corpus, `docs/help/`, gets one file per screen and per settings section. It is
+    bundled with the app and read by `app_help`.
+  - "Why did this fail" comes from `app_status`, not from prose.
+  - A test fails when a settings key or route has no help entry, which keeps the corpus
+    current.
+- **Memory.** No automatic memory across sessions in v1. It would need view, edit and
+  delete screens, and it is one more place for injected text to persist. If users ask
+  for it, an explicit "About me" field in Settings comes first.
+
+**Privacy and safety.**
+- **Nothing is withheld.** Per the ruling above, the tools return every meeting's content
+  to whichever model the user chose.
+- **No way to send data out.** Private data and untrusted text (transcripts, calendar
+  invitations) are both in scope by design, so v1 removes the third leg of the "lethal
+  trifecta": the ability to send data out.
+  - The assistant has no web, email or other outbound tools.
+  - Model markdown renders no remote images.
+  - Links are limited to Upshot's own routes.
+- **Tool output is marked as data.** It is wrapped in randomised delimiters, and the system
+  prompt says marked text is data, never instructions.
+- **Writes wait for v2.** Any tool that writes (add an action item, edit a summary) waits
+  for v2 and goes through a confirmation card that shows the exact change.
+- **The privacy page.** Already corrected by the ruling above: it says the chosen provider
+  may receive any of the text Upshot keeps, calendar details included.
+
+**Cost and performance (estimates, not measured).**
+- **Cloud.** A cloud turn is about 3k tokens of instructions and tools, plus tool output
+  capped at about 8k per call. That is roughly 15–30k input tokens for a turn with two or
+  three tool calls.
+- **Subscriptions.** The CLI routes spend the user's plan allowance, and a spent allowance
+  falls back as summaries do (`QuotaExhausted` → `llm.fallback_provider`), unless the
+  fallback is the local model. That fallback
+  moves out of `summarize.py` so the assistant can share it.
+
+**Found on the way.** Ask (D54) uses the configured `llm.provider`, not the provider that
+wrote the summary, although its docstring and D54 say otherwise. Either the code or the
+text is wrong; this is left to its own ticket.
+
+**Proposed backlog items, in order.**
+
+| # | Item | Effort |
+|---|---|---|
+| 1 | Search that reaches everything: index summaries and notes, add a trigram FTS table for Hebrew prefixes | M |
+| 2 | Assistant core: sessions tables, streaming chat endpoint (AI SDK protocol), PydanticAI on Anthropic/OpenAI/Gemini, the read-only tools, checked citations | L |
+| 3 | The panel, v1: side sheet, Ctrl/Cmd+J, streaming, tool steps, citations, session list, scope chip, RTL | L |
+| 4 | Safety: delimited tool output, markdown without remote content, links only to Upshot's own screens | S |
+| 5 | The MCP server (localhost, per-launch token) and the Claude Code CLI route | M |
+| 6 | The Codex CLI route (`exec --json` + MCP config) | M |
+| 7 | Knowing the app: `docs/help/` corpus, `app_help` and `app_status`, the test that keeps it current | M |
+| 8 | Long conversations: titles, compaction, shared quota fallback | S |
+| 9 | The deeper UI study (the epic's "researched separately, later") | S |
+
+Later, not v1: writes with confirmation; embeddings as a hybrid, if measured; folding
+"Ask this meeting" into the panel; local models (below).
+
+**Decisions, as ruled by the product owner on 2026-09-25.**
+
+| # | Decision | Ruling |
+|---|---|---|
+| 1 | The harness | PydanticAI, with the CLIs over an MCP server |
+| 2 | Claude Code and Codex subscriptions as assistant routes | In v1, opt-in; terms re-checked before release |
+| 3 | Changing data from the assistant | **Read-only in v1.** A later version may change action items, meeting titles, speaker names and tags, each behind a confirmation card. Deleting meetings, settings, keys, sign-ins and recording stay off-limits in every version |
+| 4 | Memory across sessions | None in v1 |
+| 5 | Embeddings | **None in v1** |
+| 6 | Chat frontend | AI SDK `useChat` with our own components |
+| 7 | Panel details | Set now as v1 defaults (side sheet, Ctrl/Cmd+J); the UI study refines them later |
+| 8 | "Ask this meeting" | Stays beside the panel; folded in after panel v1 |
+| 9 | Ask's provider (configured vs the one that wrote the summary) | Its own ticket |
+| 10 | The nine backlog items | Added to the epic as listed |
+
+**Left for later: local models.** Findings kept for when Ollama is taken up:
+- On an 8 GB machine, `qwen3:4b` is the tool-calling model that fits. `gemma3` has no
+  tool support at all.
+- The assistant reads the model's capabilities from `/api/show`.
+  - **With tools:** it offers a short list of narrow tools, with thinking turned off,
+    because of an Ollama bug where tool calls inside thinking blocks hang.
+  - **Without tools:** Upshot runs the search itself and asks one question with the
+    results in context. That is `ask.py` today, widened.
+- `qwen3:4b` needs about 3 GB of RAM. Next to the CPU speech model (peak 4.6 GB, D60),
+  an 8 GB machine cannot run both at once.
+
+## D62 — The assistant panel: a docked column, built from our own components on AI SDK `useChat`, with honest citations and Hebrew handled per block
+
+_Status: adopted on 2026-09-25 with every recommendation below, when the product owner
+started the implementation without ruling on them one by one; any of them can still be
+revisited (ClickUp z8tj1hax1h, epic z8tj1hawb9). It replaces D61's first-pass panel
+defaults._
+
+**Order changed by the product owner, 2026-09-25: the subscription comes first.** The first
+build runs the assistant on the user's own Claude plan through the Claude Code CLI, with
+the Codex CLI second; the API keys (D61's PydanticAI harness) follow in a later epic. The
+CLI route needs no harness of ours: the CLI runs the loop and calls Upshot's tools over
+MCP, and Upshot translates its `stream-json` events into the AI SDK UI message stream
+itself. The implementation plan is `docs/assistant-plan.md`.
+
+Three research passes fed this entry:
+- **Published guidance:** Microsoft HAX, Apple's generative-AI HIG, Google PAIR, Nielsen
+  Norman Group (NN/G), IBM Carbon, GitHub Primer's Copilot accessibility patterns, and
+  shapeof.ai.
+- **Shipping products:** Linear, Notion, Granola, Fireflies, Otter, Slack, Microsoft 365
+  Copilot and VS Code Copilot Chat.
+- **Libraries:** the open-source chat libraries, installed and measured in a scratch
+  folder, plus a map of Upshot's own frontend.
+
+**Choice: the panel.**
+- **Where it sits.** The panel is a docked column on the inline-end side, a sibling of the
+  main column in `App.tsx`. It pushes the content aside instead of covering it, and the
+  `xl:` rails drop off as they already do when there is less room. This follows the
+  makeover's own rule, "a second workspace → a persistent rail, not a sheet".
+  - Width: 400px by default, resizable between 360 and 640px with a drag handle, and
+    remembered per machine.
+  - It stays open across route changes. It is hidden on `/welcome`.
+  - While it is open, the Toaster moves inward so the panel does not cover toasts.
+- **Opening and closing.**
+  - Ctrl/Cmd+J is bound by `KeyboardEvent.code`, so it still works when the keyboard is
+    in Hebrew, and it calls `preventDefault`, since browsers use Ctrl+J for Downloads. It
+    matches Linear and Fireflies.
+  - A launcher button sits in the sidebar, and the command palette gets an entry for it.
+  - Opening focuses the composer. Esc from the panel, or Ctrl+J again, closes it and
+    returns focus to where it came from.
+  - F6 and Shift+F6 cycle between the main area and the panel, the Windows convention.
+    There is no focus trap: the panel is not modal.
+- **Scope.** A chip above the composer shows what the question covers: "This meeting" on a
+  meeting page, "All meetings" elsewhere. It follows the current screen, and removing it
+  widens the scope to everything. This is Granola's model, and it follows HAX G4 (show
+  what fits the current context).
+- **Empty state.**
+  - One sentence says what the assistant can answer and what it cannot, since v1 only
+    reads.
+  - Three suggested prompts depend on the screen, shown as buttons. On a meeting page:
+    "What did we decide?", "What do I owe from this meeting?", "Who said what about…".
+    Elsewhere: "What's open for me this week?", "When did we last talk about…".
+- **While it works.**
+  - Each tool call is a collapsible line with its own state (running, done, failed),
+    worded exactly: "Searching 42 meetings for 'budget'… 6 found". Nothing is shown as
+    "Thinking…".
+  - The answer streams in.
+  - Stop keeps the partial answer and offers Retry.
+  - The view does **not** scroll past the start of a long answer, so the reader stays at
+    its beginning (NN/G).
+- **An answer.**
+  - The short answer comes first. There is no small talk and nothing like "I think" (NN/G,
+    "Less chat, more answer").
+  - **Citations** are numbered chips placed next to the claim they support.
+    - Hovering or focusing one shows a card with the quoted transcript line, the speaker,
+      the meeting and the time. Checking the quote is then cheap, which counters
+      over-trust (NN/G).
+    - Clicking one opens `/m/<id>?at=<ms>` and seeks, exactly as Ask does today.
+    - A citation whose meeting is gone renders as "source unavailable".
+  - **When nothing is found, the answer says so.** It reads "No meetings mention X", shows
+    the searches that ran with that tool step left open, and makes nothing up.
+  - A small footer names the provider and model that answered and has Copy and Retry.
+  - Two or three follow-up suggestions appear once the answer is finished. They come in
+    the same response, so they cost no extra call.
+- **Errors, each with a next step.**
+  - Provider signed out: a "Sign in" button that opens Settings at that provider.
+  - Allowance spent or rate limited: when to try again, and the fallback if one is set.
+  - Network error, and stopped partway: Retry.
+  - Local model chosen: the assistant does not work with local models yet (D61), with a
+    link to AI settings.
+- **Disclosure, not a choice.** Per D61, all data may go to the chosen model. The first
+  time the panel opens it says so in one line, naming the provider ("Questions and the
+  meeting text they need go to Claude. Upshot keeps everything else on this PC"), with a
+  link to the privacy page. A one-line reminder stays under the composer, where NN/G says
+  a disclaimer is actually read, not in a footer.
+- **History.**
+  - A session list, grouped Today / This week / Older, sits behind a button in the panel's
+    header.
+  - Sessions get an automatic title, and can be renamed and deleted. Search covers titles
+    only in v1.
+  - "New chat" is always one click away.
+
+**Choice: accessibility.**
+- **Announcements.**
+  - The conversation is a `role="log"`, but the streaming text itself is not announced; a
+    token-by-token stream floods screen readers.
+  - One visually hidden `role="status"` region, always present in the page, announces the
+    states: "Searching meetings…", then "Still working" every 5 seconds (GitHub Copilot's
+    rhythm), "Answer ready, 3 sources", "Stopped", and errors.
+  - The streaming message carries `aria-busy`.
+- **Structure and focus.**
+  - Each answer starts with a visually hidden "Assistant" heading, so H jumps between
+    answers.
+  - Focus never moves on its own when an answer completes.
+  - Tool lines are disclosure buttons with `aria-expanded`.
+  - Deleting a session moves focus to the previous item.
+  - The panel is an `<aside aria-label>`.
+- **Reduced motion.** The panel's slide and the "working" shimmer are removed, and text
+  appears in blocks. This reuses the existing reduced-motion gates in `index.css`.
+
+**Choice: Hebrew and mixed text.**
+- **Direction per block.**
+  - `dir="auto"` goes on every user message, on each markdown block of an answer, and on
+    the composer, so direction follows each paragraph's content, not the UI language. A
+    Hebrew UI can get an English answer, and one answer can mix both.
+  - This is the first `dir="auto"` in the app; today direction follows the locale or the
+    meeting's language.
+- **Isolated inserts.**
+  - `<bdi>` wraps meeting titles, speaker names and citation chips, so "[3]" and "12:34"
+    do not jump across a Hebrew sentence.
+  - Timestamps, code and tool JSON are `dir="ltr"`.
+- **Icons.** Send, chevrons and the collapse icon mirror. Play/seek, clock, search and the
+  checkmark do not.
+- **The composer.**
+  - Enter sends and Shift+Enter adds a new line, but never while an input method is still
+    composing (`isComposing`).
+  - Its auto-size layer uses the same bidi CSS as the textarea, since the caret drifting
+    in Hebrew is a bug already reported against Claude Code and t3code.
+
+**Choice: libraries.**
+
+| Layer | Pick | Why |
+|---|---|---|
+| Stream protocol, backend | PydanticAI's own `VercelAIAdapter` (`pydantic_ai.ui.vercel_ai`), `sdk_version=7` | It already emits the AI SDK UI message stream from our harness, header included, and converts messages both ways for storing sessions. Citations travel as typed `data-citation` parts from `ToolReturn` metadata. No protocol code of our own |
+| Client hook | `@ai-sdk/react` `useChat` (Apache-2.0, ~58 KB gz) | Streaming, Stop, Retry, tool and data parts. It has no session list; that is ours, on TanStack Query. Needs React ≥ 19.2.1: the lockfile has 19.2.8, and `package.json`'s `^19.0.0` is raised to match |
+| Components | **Our own**, in the app's idiom (tokens, `Tooltip`, `Menu`, the existing focus and motion rules), taking layout ideas from Vercel's AI Elements and prompt-kit source | The app has no component library: no shadcn, no Radix. Adding one for a single panel goes against the makeover's advice |
+| Stick-to-bottom scrolling | `use-stick-to-bottom` (MIT, ~2.7 KB, no deps) | What AI Elements, prompt-kit and CopilotKit all use. Scrolling is vertical, so it has no RTL issue |
+| Markdown | **Streamdown** (Apache-2.0, ~156 KB gz), lazy-loaded with the panel | Built for streaming: it repairs half-finished markdown, memoises per block, sanitises, and has **`dir="auto"` per block**, which mixed Hebrew/English needs. Its optional code, math and mermaid plugins stay out. Links route inside the app, and its default link-safety modal is replaced |
+
+**Rejected.**
+- **assistant-ui** (MIT) is the strongest runner-up. It has the most complete thread list
+  and RTL support, but costs about 240 KB gz, brings a second state store next to
+  TanStack Query, and churns through frequent 0.x releases. Most of it (branching,
+  editing, attachments, voice) is useless for a read-only panel. It runs on top of
+  `useChat`, so it stays open for later.
+- **AI Elements copied in as-is** needs shadcn and Radix set up, uses physical classes
+  (`ml-auto`, `left-[50%]`), and its inline citation is a carousel.
+- **CopilotKit** is about 3.7 MB gz, has a GraphQL runtime and no RTL work.
+- **LlamaIndex chat-ui** is stale and heavy.
+- **Deep Chat** uses a shadow DOM that fights Tailwind.
+- **chatscope** is stale and has no streaming markdown. **NLUX** is stale, supports React 18
+  only, and is MPL-licensed.
+- **Chainlit and Gradio** are separate apps.
+- **The AG-UI protocol** is sound and now stable, but its strengths (shared agent state,
+  frontend tools, interrupts) serve an assistant that acts. It becomes the path if writes
+  arrive.
+- **react-markdown** is about a third of Streamdown's size, but needs our own block
+  splitting and has no per-block direction.
+
+**Deferred.**
+- A full-page view, and tabs of open chats (Linear).
+- @-mentions of meetings and people (Fireflies); the scope chip covers v1.
+- Saved prompts (Granola's recipes), voice input, export and share, and search inside
+  conversations.
+- A "what was sent" inspector.
+- Any confidence display: Google PAIR advises against false precision.
+- Thumbs up and down.
+
+**Effect on the backlog.**
+- AI assistant 3 (the core) uses `VercelAIAdapter` instead of a hand-written stream.
+- AI assistant 4 (the panel) is built to this entry and stays L.
+
+**Open decisions for the product owner.**
+
+| # | Decision | Recommended |
+|---|---|---|
+| 1 | Docked column that pushes content, or a sheet that overlays it | Docked |
+| 2 | Components: our own, a library (assistant-ui), or AI Elements with shadcn and Radix | Our own |
+| 3 | Markdown: Streamdown (lazy-loaded), or react-markdown | Streamdown |
+| 4 | Thumbs up and down on answers: nobody receives them in a local app | Not in v1 |
+| 5 | Follow-up suggestions after each answer | Yes, in the same response |
