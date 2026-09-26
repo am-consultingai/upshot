@@ -199,6 +199,11 @@ try {
                 Step "http $path" ($r.StatusCode -eq 200) "status=$($r.StatusCode) bytes=$($r.RawContentLength)"
             } catch { Step "http $path" $false "$($_.Exception.Message)" }
         }
+        # Which build is this? The freeze knows its own version and commit (app/version.py).
+        try {
+            $b = (Get-Content -Raw -Encoding UTF8 (Join-Path $Out 'http_api_status.txt') | ConvertFrom-Json).build
+            Say "Installed Upshot $($b.version), commit $($b.commit), built $($b.built)" 'White'
+        } catch { Say "skip build-info : $($_.Exception.Message)" 'DarkYellow' }
         # The UI renders (JavaScript ran, no blank page): headless Edge dumps the DOM. Its own
         # profile folder, so it never touches the visible window's.
         foreach ($route in @('/welcome', '/', '/search', '/settings', '/actions')) {
