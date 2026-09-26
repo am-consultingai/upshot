@@ -130,6 +130,29 @@ try {
         Step 'signature-trusted' ($sig2.Status -eq 'Valid') "status=$($sig2.Status)"
     } catch { Say "skip signature-trusted : not elevated, the machine certificate store refused ($($_.Exception.Message))" 'DarkYellow' }
 
+    # 2b. Upgrade: with previous-Upshot-installer.zip in <In>, that older build is installed and
+    #     running first, and this one is installed over it, as an update reaches a user.
+    $previousZip = Join-Path $In 'previous-Upshot-installer.zip'
+    $oldProc = $null
+    $oldCommit = ''
+    $portFile = Join-Path $home_ 'server.port'
+    if (Test-Path $previousZip) {
+        Doing 'installing the previous build first (silently, without the model), then starting it'
+        $prevDir = Join-Path $env:TEMP 'previous'
+        Expand-Archive -Path $previousZip -DestinationPath $prevDir -Force
+        $prevSetup = Get-ChildItem $prevDir -Filter 'Upshot-*-Setup.exe' | Select-Object -First 1
+        $pp = Start-Process -FilePath $prevSetup.FullName -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/MERGETASKS="!speechmodel"', "/LOG=`"$(Join-Path $Out 'install-previous.log')`"") -PassThru
+        $null = $pp.Handle
+        $pp.WaitForExit()
+        $oldProc = Start-Process -FilePath $exe -PassThru
+        for ($i = 0; $i -lt 60 -and -not (Test-Path $portFile); $i++) { Start-Sleep -Seconds 1 }
+        try {
+            $port0 = (Get-Content -Raw $portFile).Trim()
+            $oldCommit = ((Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port0/api/status" -TimeoutSec 20).Content | ConvertFrom-Json).build.commit
+        } catch { }
+        Step 'previous-running' ((-not $oldProc.HasExited) -and [bool]$oldCommit) "installer exit=$($pp.ExitCode) commit=$oldCommit pid=$($oldProc.Id)"
+    }
+
     # 3. Per-user install from a local copy, which is what a download looks like.
     $local = if ($visible) { Join-Path $env:USERPROFILE 'Downloads' } else { $env:TEMP }
     New-Item -ItemType Directory -Force -Path $local | Out-Null
@@ -159,6 +182,14 @@ try {
     $hklm = Get-ChildItem 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall', 'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -like $appId }
     Step 'install' (($p.ExitCode -eq 0) -and (Test-Path $exe) -and $uninstKey -and -not $hklm) "exit=$($p.ExitCode) seconds=$([int]((Get-Date) - $t0).TotalSeconds) exe=$(Test-Path $exe) hkcuKey=$([bool]$uninstKey) hklmKey=$([bool]$hklm)"
     if (-not (Test-Path $exe)) { throw 'upshot.exe is not installed; nothing further to check' }
+    if ($oldProc) {
+        # The installer asks a running copy to quit (--quit), then stops what is left after 10 s.
+        # The previous build may predate --quit, so either way counts; what matters is it is gone.
+        $how = (Select-String -Path $installLog -Pattern 'asking it to quit|taskkill' -ErrorAction SilentlyContinue | ForEach-Object { $_.Line.Substring([Math]::Min(24, $_.Line.Length)) }) -join ' | '
+        Step 'upgrade-stopped-previous' $oldProc.HasExited "previous pid $($oldProc.Id) exited=$($oldProc.HasExited); installer: $how"
+        # Its port file would point the next check at a server that is gone.
+        Remove-Item -Force $portFile -ErrorAction SilentlyContinue
+    }
     Step 'start-menu' (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Upshot.lnk')) 'shortcut in the user Start menu'
     $exeSig = Get-AuthenticodeSignature $exe
     Step 'app-signed' ($null -ne $exeSig.SignerCertificate) "status=$($exeSig.Status)"
@@ -238,6 +269,7 @@ try {
         try {
             $b = (Get-Content -Raw -Encoding UTF8 (Join-Path $Out 'http_api_status.txt') | ConvertFrom-Json).build
             Say "Installed Upshot $($b.version), commit $($b.commit), built $($b.built)" 'White'
+            if ($oldCommit) { Step 'upgraded-build' ($b.commit -ne $oldCommit) "was $oldCommit, now $($b.commit)" }
         } catch { Say "skip build-info : $($_.Exception.Message)" 'DarkYellow' }
         # The UI renders (JavaScript ran, no blank page): headless Edge dumps the DOM. Its own
         # profile folder, so it never touches the visible window's. --timeout, not
@@ -296,6 +328,10 @@ try {
     $kept = @(Get-ChildItem $home_ -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
     Step 'user-data-kept' ((Test-Path (Join-Path $home_ 'index.db')) -or $kept.Count -gt 0) "app home $home_ holds: $($kept -join ', ')"
     Step 'shortcut-removed' (-not (Test-Path (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Upshot.lnk'))) 'Start menu entry gone'
+    # The uninstaller asked the app to quit (upshot.exe --quit) rather than killing it.
+    $asked = @(Select-String -Path (Join-Path $home_ 'logs\app.log') -Pattern 'asked to quit' -ErrorAction SilentlyContinue)
+    $killed = (Select-String -Path (Join-Path $Out 'uninstall.log') -Pattern 'taskkill' -ErrorAction SilentlyContinue | Select-Object -Last 1).Line
+    Step 'uninstall-graceful-quit' ($asked.Count -gt 0) "app.log 'asked to quit' lines=$($asked.Count); uninstaller: $killed"
 } catch {
     Step 'script' $false "$($_ | Out-String)"
 }
