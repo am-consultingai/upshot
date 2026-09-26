@@ -138,6 +138,7 @@ try {
     Good 'the Sandbox window is opening; Windows inside it takes about a minute to boot'
     Say '       Watch the Sandbox window: installer, app log, Upshot in Edge, uninstaller.' 'DarkGray'
     Say '       Every step is also printed here as it happens.' 'DarkGray'
+    Say '       The installer downloads the 3 GB speech model: allow 5 to 15 minutes for the install step.' 'DarkGray'
 
     # 5 ---------------------------------------------------------------------------------
     Title 'Inside the sandbox'
