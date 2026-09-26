@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
@@ -16,10 +16,20 @@ import RecordingBar from "./components/RecordingBar";
 import DetectionNudge, { type Detection } from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
 import CommandPalette from "./components/CommandPalette";
-import CaptureChoice from "./components/CaptureChoice";
 import Toaster from "./components/Toaster";
 import ConfirmHost from "./components/ConfirmDialog";
 import AssistantPanel from "./components/assistant/AssistantPanel";
+import AssistantLauncher from "./components/assistant/AssistantLauncher";
+import Confetti from "./components/Confetti";
+import { useRecordingControls } from "./lib/recording";
+
+/*
+ * The first-run setup mock (Setup 0, z8tj1hb03a), for confirming the flow before it is
+ * built. `vite dev`, or a build made with VITE_SETUP_MOCK=1, and nothing else: with the
+ * flag false the import is dead code and the chunk never reaches the frozen app.
+ */
+const SETUP_MOCK = import.meta.env.DEV || import.meta.env.VITE_SETUP_MOCK === "1";
+const MockSetup = SETUP_MOCK ? lazy(() => import("./setup/MockSetup")) : null;
 
 /** Typing into a field is not a shortcut. */
 function typing(target: EventTarget | null): boolean {
@@ -44,7 +54,9 @@ function useShortcuts(onRecord: () => void) {
   const pendingG = useRef<number | null>(null);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "r") {
+      // The physical key, as Ctrl+J does: on a Hebrew layout event.key is "ר", which
+      // missed this and let the browser reload the page instead.
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyR") {
         event.preventDefault();
         onRecord();
         return;
@@ -123,7 +135,7 @@ function useAssistantToggle() {
       window.removeEventListener("upshot:assistant", toggle);
     };
   }, [toggle, close]);
-  return { open, close };
+  return { open, close, toggle };
 }
 
 /**
@@ -236,10 +248,13 @@ export default function App() {
   }, [queryClient]);
 
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
+  // Ctrl+R starts a recording, and stops the one running: the same key both ways.
+  const recording = useRecordingControls();
+  const active = status.data?.recorder.active ?? false;
   const recordNow = useCallback(() => {
-    if (status.data?.recorder.active) return;
-    void api.startRecording().then(() => queryClient.invalidateQueries());
-  }, [status.data?.recorder.active, queryClient]);
+    if (active) recording.stop.mutate();
+    else recording.start.mutate();
+  }, [active, recording.start, recording.stop]);
   useShortcuts(recordNow);
 
   const t = useCallback((key: MessageKey) => catalogues[locale][key], [locale]);
@@ -256,8 +271,13 @@ export default function App() {
    * The welcome screen has the window to itself: no rail, no capture question, no
    * detection nudge. Each of those assumes an app that is already set up.
    */
-  const { pathname } = useLocation();
-  const welcoming = pathname === "/welcome";
+  const { pathname, state: routeState } = useLocation();
+  const navigateTo = useNavigate();
+  // First-run setup just finished: celebrate once, then forget it (a reload keeps
+  // history state, and the confetti is for the first arrival only).
+  const celebrate = (routeState as { celebrate?: boolean } | null)?.celebrate === true;
+  const celebrated = useCallback(() => navigateTo(pathname, { replace: true, state: null }), [navigateTo, pathname]);
+  const welcoming = pathname === "/welcome" || pathname === "/setup-mock";
   const assistant = useAssistantToggle();
   const sendToSetup = saved.isSuccess && setupPending(saved.data?.config) && !welcoming;
 
@@ -266,6 +286,7 @@ export default function App() {
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
         <CommandPalette />
         <Toaster />
+        {celebrate && <Confetti onDone={celebrated} />}
         <ConfirmHost />
         {!welcoming && <Sidebar />}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -274,19 +295,19 @@ export default function App() {
           {!welcoming && (
             <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
           )}
-          {/*
-           * Above the routes, not inside the empty detail pane where this started.
-           * How capture works is one decision about the whole application, and in the
-           * pane it was invisible to anyone whose saved view was the calendar — which
-           * is to say, invisible to exactly the person who uses the calendar most.
-           */}
-          {!welcoming && <CaptureChoice />}
+          {/* How meetings are recorded is asked in first-run setup (D64), not over the library. */}
           <main className="flex min-h-0 flex-1">
             {sendToSetup ? (
               <Navigate to="/welcome" replace />
             ) : (
             <Routes>
-              <Route path="/welcome" element={<Full wide><Welcome /></Full>} />
+              <Route path="/welcome" element={<Welcome />} />
+              {MockSetup && (
+                <Route
+                  path="/setup-mock"
+                  element={<Suspense fallback={null}><MockSetup /></Suspense>}
+                />
+              )}
               {/*
                * The library owns the list; what you open renders beside it. Search,
                * settings are a whole screen rather than one item from a
@@ -321,6 +342,7 @@ export default function App() {
           </main>
         </div>
         {!welcoming && assistant.open && <AssistantPanel onClose={assistant.close} />}
+        {!welcoming && <AssistantLauncher open={assistant.open} onToggle={assistant.toggle} />}
       </div>
     </I18nContext.Provider>
   );

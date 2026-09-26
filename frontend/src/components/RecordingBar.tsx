@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { formatElapsed } from "../lib/format";
+import { useRecordingControls } from "../lib/recording";
 import BusyButton from "./BusyButton";
 import RecordingWaveform from "./RecordingWaveform";
 
@@ -14,7 +15,6 @@ import RecordingWaveform from "./RecordingWaveform";
  */
 export default function RecordingBar() {
   const { t } = useI18n();
-  const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
   const recorder = status.isError ? undefined : status.data?.recorder;
   const meetingId = recorder && (recorder.active || recorder.paused) ? recorder.meeting_id : null;
@@ -23,10 +23,7 @@ export default function RecordingBar() {
     queryFn: () => api.meeting(meetingId as string),
     enabled: meetingId !== null,
   });
-  const stop = useMutation({
-    mutationFn: api.stopRecording,
-    onSuccess: () => queryClient.invalidateQueries(),
-  });
+  const { stop } = useRecordingControls();
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

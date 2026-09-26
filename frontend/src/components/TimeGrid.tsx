@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import type { CalendarEvent, Meeting } from "../api";
+import { useQuery } from "@tanstack/react-query";
+import { api, type CalendarEvent, type Meeting } from "../api";
 import { useI18n } from "../i18n";
 import {
   allDayKeys,
@@ -13,6 +14,7 @@ import {
   recordedIds,
   startOfDay,
   timedEvents,
+  workingHours,
   zoneLabel,
 } from "../lib/calendar";
 import { formatClock } from "../lib/format";
@@ -28,11 +30,11 @@ const GUTTER = 48;
 const SHORT_MINUTES = 40;
 
 /**
- * Where the grid opens when the period has nothing in it.
- *
- * The week used to open at 00:00 every time, so the entire working day was below the
- * fold and the first act on every visit was scrolling past nine empty hours. A
- * calendar that does not open on your day is not a calendar you use twice.
+ * Where the grid opens when nothing says otherwise: the start of the default working
+ * day. The week used to open at 00:00 every time, so the entire working day was below
+ * the fold and the first act on every visit was scrolling past nine empty hours. A
+ * calendar that does not open on your day is not a calendar you use twice. The user's
+ * own working hours (Settings, Calendar) replace it.
  */
 const DEFAULT_HOUR = 8;
 /** A little air above the first meeting, so it does not sit flush against the header. */
@@ -236,10 +238,17 @@ export default function TimeGrid({
    */
   const scroller = useRef<HTMLDivElement | null>(null);
   const spanKey = days.map(dayKey).join(",");
-  const openAt = firstMinute([
-    ...meetings.map((meeting) => meeting.started_at),
-    ...shown.map((event) => event.start),
-  ]);
+  // The working day decides where the grid opens and what it shades; a meeting before
+  // the day starts pulls the opening earlier so it is not hidden above the fold.
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const work = workingHours(settings.data?.config);
+  const openAt = Math.min(
+    firstMinute(
+      [...meetings.map((meeting) => meeting.started_at), ...shown.map((event) => event.start)],
+      work.start,
+    ),
+    Math.max(0, work.start * 60 - LEAD_MINUTES),
+  );
   /*
    * Aimed once per period, and only once the period has something in it.
    *
@@ -255,8 +264,8 @@ export default function TimeGrid({
     const node = scroller.current;
     if (!node || aimedAt.current === spanKey) return;
     node.scrollTop = openAt * PX_PER_MINUTE;
-    if (!empty) aimedAt.current = spanKey;
-  }, [spanKey, openAt, empty]);
+    if (!empty && settings.isSuccess) aimedAt.current = spanKey;
+  }, [spanKey, openAt, empty, settings.isSuccess]);
 
   const columns = `${GUTTER}px repeat(${days.length}, minmax(6rem, 1fr))`;
   const first = days[0];
@@ -463,6 +472,23 @@ export default function TimeGrid({
                 }`}
                 style={{ height: 24 * 60 * PX_PER_MINUTE }}
               >
+                {/* Outside working hours: shaded, still there to scroll to. */}
+                {work.start > 0 && (
+                  <div
+                    data-testid="off-hours"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 top-0 bg-a-100"
+                    style={{ height: work.start * 60 * PX_PER_MINUTE }}
+                  />
+                )}
+                {work.end < 24 && (
+                  <div
+                    data-testid="off-hours"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 bg-a-100"
+                    style={{ top: work.end * 60 * PX_PER_MINUTE }}
+                  />
+                )}
                 {HOURS.map((hour) => (
                   <div
                     key={hour}

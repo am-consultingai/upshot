@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRecordingControls } from "../lib/recording";
 import { api, type CalendarEvent } from "../api";
 import { useI18n } from "../i18n";
 import { addDays, dayKey, isHappening } from "../lib/calendar";
@@ -51,10 +52,7 @@ export default function LibraryRail() {
     queryFn: () => api.actionItems({ open: "true" }),
   });
 
-  const stop = useMutation({
-    mutationFn: api.stopRecording,
-    onSuccess: () => queryClient.invalidateQueries(),
-  });
+  const { stop } = useRecordingControls();
   const record = useMutation({
     mutationFn: (event: CalendarEvent) =>
       api.startRecording({ calendar_id: event.calendar_id, event_id: event.event_id }),

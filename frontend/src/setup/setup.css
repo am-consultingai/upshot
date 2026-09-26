@@ -1,0 +1,136 @@
+/*
+ * Motion for first-run setup's scenes (src/setup/visuals.tsx).
+ *
+ * Every scene loops on its own clock and explains one thing — what happens when you
+ * install, what signing in looks like — so the text beside it can be one line. All of
+ * it stops for anyone who asked their system for less motion: the scenes are drawn so
+ * their last frame still says what they mean.
+ *
+ * The scenes hold no text, so right-to-left simply mirrors the whole drawing (`.su-scene`)
+ * and every flow runs the way the reader reads.
+ */
+
+[dir="rtl"] .su-scene { transform: scaleX(-1); }
+
+/* Welcome: a waveform, a transcript typing itself, a summary ticking itself off. */
+@keyframes su-bar {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.su-bar { transform-box: fill-box; transform-origin: center; animation: su-bar 0.9s ease-in-out infinite; }
+
+@keyframes su-type {
+  0%, 8% { transform: scaleX(0); }
+  30%, 88% { transform: scaleX(1); }
+  100% { transform: scaleX(1); opacity: 0; }
+}
+.su-type { transform-box: fill-box; transform-origin: left center; animation: su-type 6s ease-out infinite; }
+
+@keyframes su-pop {
+  0%, 10% { transform: scale(0); opacity: 0; }
+  18%, 88% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+.su-pop { transform-box: fill-box; transform-origin: center; animation: su-pop 6s ease-out infinite; }
+
+@keyframes su-flow {
+  from { stroke-dashoffset: 16; }
+  to { stroke-dashoffset: 0; }
+}
+.su-flow { stroke-dasharray: 4 4; animation: su-flow 0.8s linear infinite; }
+
+/* Calendar: the meeting's name travels from the calendar to the recording. */
+@keyframes su-carry {
+  0%, 15% { transform: translate(0, 0); opacity: 0; }
+  25% { opacity: 1; }
+  60%, 100% { transform: translate(var(--su-dx), var(--su-dy)); opacity: 1; }
+}
+.su-carry { animation: su-carry 3.2s ease-in-out infinite; }
+
+/* Install: a window opens, fills, and closes; the app is left behind, ticked. */
+@keyframes su-window {
+  0%, 5% { transform: scale(0.6); opacity: 0; }
+  14%, 70% { transform: scale(1); opacity: 1; }
+  80%, 100% { transform: scale(0.6); opacity: 0; }
+}
+.su-window { transform-box: fill-box; transform-origin: center; animation: su-window 4s ease-in-out infinite; }
+
+@keyframes su-fill {
+  0%, 14% { transform: scaleX(0); }
+  66%, 100% { transform: scaleX(1); }
+}
+.su-fill { transform-box: fill-box; transform-origin: left center; animation: su-fill 4s ease-in-out infinite; }
+
+@keyframes su-appear {
+  0%, 76% { transform: scale(0.4); opacity: 0; }
+  86%, 100% { transform: scale(1); opacity: 1; }
+}
+.su-appear { transform-box: fill-box; transform-origin: center; animation: su-appear 4s ease-out infinite; }
+
+/* Sign in: the pointer presses the button; the code (or a tick) comes back to Upshot. */
+@keyframes su-pointer {
+  0% { transform: translate(28px, 30px); }
+  30%, 42% { transform: translate(0, 0); }
+  46% { transform: translate(0, 0) scale(0.85); }
+  52%, 100% { transform: translate(0, 0); }
+}
+.su-pointer { animation: su-pointer 4.4s ease-in-out infinite; }
+
+@keyframes su-press {
+  0%, 44% { opacity: 1; }
+  47% { opacity: 0.55; }
+  52%, 100% { opacity: 1; }
+}
+.su-press { animation: su-press 4.4s linear infinite; }
+
+@keyframes su-return {
+  0%, 52% { transform: translateX(0); opacity: 0; }
+  58% { opacity: 1; }
+  82%, 100% { transform: translateX(var(--su-return, 118px)); opacity: 1; }
+}
+.su-return { animation: su-return 4.4s ease-in-out infinite; }
+
+/* Speakers: waves leave the speaker while the test sound plays. */
+@keyframes su-wave {
+  0% { opacity: 0; transform: scale(0.7); }
+  30% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+.su-wave { transform-box: view-box; transform-origin: 18px 24px; animation: su-wave 1.2s ease-out infinite; }
+
+/* A stage in progress breathes; done and waiting stages hold still. */
+@keyframes su-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-accent) 0%, transparent); }
+}
+.su-pulse { animation: su-pulse 1.6s ease-in-out infinite; }
+
+/* Recording: the notification slides in; the record light blinks. */
+@keyframes su-toast {
+  0%, 15% { transform: translateY(14px); opacity: 0; }
+  30%, 85% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(0); opacity: 0; }
+}
+.su-toast { animation: su-toast 3.6s ease-out infinite; }
+
+@keyframes su-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.su-blink { animation: su-blink 1.2s ease-in-out infinite; }
+
+/* The last screen: a tick drawn once, not looped. */
+@keyframes su-draw {
+  from { stroke-dashoffset: 48; }
+  to { stroke-dashoffset: 0; }
+}
+.su-draw { stroke-dasharray: 48; animation: su-draw 0.6s 0.15s ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .su-bar, .su-type, .su-pop, .su-flow, .su-carry, .su-window, .su-fill, .su-appear,
+  .su-pointer, .su-press, .su-return, .su-wave, .su-pulse, .su-draw, .su-toast, .su-blink {
+    animation: none;
+  }
+  .su-carry { transform: translate(var(--su-dx), var(--su-dy)); }
+  .su-return { transform: translateX(var(--su-return, 118px)); }
+}

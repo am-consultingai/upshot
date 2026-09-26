@@ -59,6 +59,7 @@ def test_llm_status_lists_every_provider(api) -> None:  # type: ignore[no-untype
     assert body["active"] == "fake"  # the test harness wires the fake
     ids = {provider["id"] for provider in body["providers"]}
     assert ids == {
+        "none",
         "anthropic",
         "gemini",
         "openai",

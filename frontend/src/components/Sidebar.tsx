@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRecordingControls } from "../lib/recording";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { groupByDay } from "../lib/timeline";
@@ -86,14 +87,7 @@ export default function Sidebar() {
     setup.summaries ? t("setup.summariesMissing") : null,
   ].filter((reason): reason is string => reason !== null);
 
-  const start = useMutation({
-    mutationFn: api.startRecording,
-    onSuccess: () => queryClient.invalidateQueries(),
-  });
-  const stop = useMutation({
-    mutationFn: api.stopRecording,
-    onSuccess: () => queryClient.invalidateQueries(),
-  });
+  const { start, stop } = useRecordingControls();
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteMeeting(id),
     onSuccess: (_result, id) => {
@@ -262,16 +256,23 @@ export default function Sidebar() {
        * It is a labelled button now rather than a bare red circle — the one control
        * that must not be guessed at.
        */}
-      <Tooltip label={t("timeline.start")} keys="Ctrl R" hint={t("help.record")} side="end">
+      {/*
+       * One button, two states, in the same place: Record while idle, Stop while a
+       * meeting records. It used to grey out while recording, and a greyed-out
+       * record button is exactly where someone clicks to stop — to no effect.
+       */}
+      <Tooltip label={recording ? t("timeline.stop") : t("timeline.start")} keys="Ctrl R" hint={t("help.record")} side="end">
       <button
         type="button"
-        data-testid="start-recording"
-        disabled={recording || start.isPending}
-        onClick={() => start.mutate()}
-        className="mx-2.5 mb-2 flex h-8 items-center gap-2.5 rounded-md bg-raised px-2.5 text-sm font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] hover:bg-a-200 active:bg-a-300 disabled:opacity-40"
+        data-testid={recording ? "stop-recording" : "start-recording"}
+        aria-busy={start.isPending || stop.isPending}
+        onClick={() => (recording ? stop.mutate() : start.mutate())}
+        className={`mx-2.5 mb-2 flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] ${
+          recording ? "bg-danger text-on-solid hover:brightness-95" : "bg-raised hover:bg-a-200 active:bg-a-300"
+        }`}
       >
-        <span className="size-2.5 shrink-0 rounded-full bg-danger" />
-        <span className="truncate">{t("timeline.start")}</span>
+        <span className={`size-2.5 shrink-0 ${recording ? "rounded-[2px] bg-on-solid" : "rounded-full bg-danger"}`} />
+        <span className="truncate">{recording ? t("timeline.stop") : t("timeline.start")}</span>
         <kbd className="ms-auto shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
           ⌘R
         </kbd>
@@ -315,22 +316,6 @@ export default function Sidebar() {
           </NavLink>
           </Tooltip>
         ))}
-        <Tooltip label={t("assistant.open")} hint={t("help.assistant")} side="end">
-          <button
-            type="button"
-            data-testid="nav-assistant"
-            onClick={() => window.dispatchEvent(new CustomEvent("upshot:assistant"))}
-            className="flex h-8 items-center gap-2.5 rounded-md px-2 text-start text-sm text-secondary hover:bg-a-200 hover:text-primary active:bg-a-300"
-          >
-            <svg viewBox="0 0 16 16" className="size-4 shrink-0 fill-none stroke-current stroke-[1.5]" aria-hidden="true">
-              <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2zM5.5 7h5" />
-            </svg>
-            <span className="truncate">{t("assistant.open")}</span>
-            <kbd className="ms-auto shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
-              Ctrl J
-            </kbd>
-          </button>
-        </Tooltip>
       </div>
 
       {/*
@@ -368,7 +353,7 @@ export default function Sidebar() {
         aria-label={t("nav.timeline")}
         tabIndex={0}
         onKeyDown={onListKeyDown}
-        className="ma-list min-h-0 flex-1 overflow-y-auto px-2 pb-3 outline-none"
+        className="ma-list min-h-0 flex-1 overflow-y-auto px-2 pb-20 outline-none"
       >
         {meetings.isLoading && (
           <p data-testid="loading" className="px-2 py-3 text-sm text-tertiary">

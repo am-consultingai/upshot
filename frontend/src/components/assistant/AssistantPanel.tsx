@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useChat } from "@ai-sdk/react";
@@ -14,8 +14,9 @@ const Answer = lazy(() => import("./Answer"));
 
 /**
  * The assistant (D61, D62): one conversation about the user's meetings and about
- * Upshot, from any screen. A docked column beside the content rather than a sheet over
- * it — the meeting it is asked about stays in view, and a citation opens beside it.
+ * Upshot, from any screen. It floats above the content from the round button in the
+ * corner (AssistantLauncher), the way a chat does, rather than taking a column of the
+ * window (changed from D62's docked column at the product owner's request, 2026-09-26).
  *
  * The answer comes from the user's own CLI (Claude Code on their plan), which calls
  * Upshot's read-only tools; this component shows the stream, keeps the conversation,
@@ -23,11 +24,7 @@ const Answer = lazy(() => import("./Answer"));
  */
 
 const CURRENT = "upshot.assistant.chat";
-const WIDTH = "upshot.assistant.width";
 const DISCLOSED = "upshot.assistant.disclosed";
-const MIN_WIDTH = 360;
-const MAX_WIDTH = 640;
-const DEFAULT_WIDTH = 400;
 
 function read(key: string): string {
   try {
@@ -45,14 +42,11 @@ function write(key: string, value: string) {
   }
 }
 
-const clampWidth = (value: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(value)));
-
 export default function AssistantPanel({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
   const queries = useQueryClient();
   const [chatId, setChatId] = useState(() => read(CURRENT) || newId());
   const [view, setView] = useState<"chat" | "history">("chat");
-  const [width, setWidth] = useState(() => clampWidth(Number(read(WIDTH)) || DEFAULT_WIDTH));
   const panel = useRef<HTMLElement>(null);
   const status = useQuery({ queryKey: ["assistant-status"], queryFn: () => api.assistantStatus() });
 
@@ -81,14 +75,6 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
     setView("chat");
   };
 
-  // Toasts sit at the same edge; while the panel is open they move in beside it.
-  useEffect(() => {
-    document.documentElement.style.setProperty("--assistant-width", `${width}px`);
-    return () => {
-      document.documentElement.style.removeProperty("--assistant-width");
-    };
-  }, [width]);
-
   // F6 moves between the page and the panel, the Windows convention for panes (D62).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -114,10 +100,8 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
       ref={panel}
       data-testid="assistant-panel"
       aria-label={t("assistant.title")}
-      style={{ width }}
-      className="relative flex shrink-0 flex-col border-s border-line-subtle bg-surface-1"
+      className="fixed bottom-24 start-5 z-40 flex h-[min(640px,calc(100vh-8rem))] w-[min(420px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl bg-surface-1 shadow-2xl ring-1 ring-line"
     >
-      <Resizer width={width} onChange={setWidth} />
       <header className="flex items-center gap-1 border-b border-line-subtle px-3 py-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("assistant.title")}</h2>
         <button
@@ -175,55 +159,6 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </aside>
-  );
-}
-
-/** Drag the panel's inner edge, or focus it and use the arrow keys. */
-function Resizer({ width, onChange }: { width: number; onChange: (width: number) => void }) {
-  const { t } = useI18n();
-  const commit = useCallback(
-    (next: number) => {
-      const value = clampWidth(next);
-      onChange(value);
-      write(WIDTH, String(value));
-    },
-    [onChange],
-  );
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={t("assistant.resize")}
-      aria-valuemin={MIN_WIDTH}
-      aria-valuemax={MAX_WIDTH}
-      aria-valuenow={width}
-      tabIndex={0}
-      data-testid="assistant-resize"
-      onKeyDown={(event) => {
-        const rtl = document.documentElement.dir === "rtl";
-        // The panel is at the inline end, so "towards the content" widens it.
-        const wider = rtl ? "ArrowRight" : "ArrowLeft";
-        const narrower = rtl ? "ArrowLeft" : "ArrowRight";
-        if (event.key === wider) commit(width + 16);
-        else if (event.key === narrower) commit(width - 16);
-        else return;
-        event.preventDefault();
-      }}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        const start = event.clientX;
-        const from = width;
-        const rtl = document.documentElement.dir === "rtl";
-        const move = (moved: PointerEvent) => commit(from + (rtl ? moved.clientX - start : start - moved.clientX));
-        const up = () => {
-          window.removeEventListener("pointermove", move);
-          window.removeEventListener("pointerup", up);
-        };
-        window.addEventListener("pointermove", move);
-        window.addEventListener("pointerup", up);
-      }}
-      className="absolute inset-y-0 -start-1 z-10 w-2 cursor-col-resize outline-none hover:bg-a-200 focus-visible:bg-accent/40"
-    />
   );
 }
 
