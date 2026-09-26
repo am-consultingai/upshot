@@ -20,8 +20,10 @@ setup starts and shows, and which the transcribe stage falls back to:
 
 from __future__ import annotations
 
+import functools
 import os
 import shutil
+import ssl
 import threading
 import urllib.parse
 import urllib.request
@@ -121,6 +123,27 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+@functools.cache
+def tls_context() -> ssl.SSLContext:
+    """Trust certifi's roots and the system's, together.
+
+    The system store alone failed on a fresh Windows (job 022, CERTIFICATE_VERIFY_FAILED):
+    Windows adds most roots only when a CryptoAPI client first needs them, and Python's
+    ``ssl`` is not one, so the first HTTPS download from a new machine had nothing to trust.
+    certifi alone would refuse a company proxy that re-signs traffic with its own root,
+    which lives only in the system store. The hub's listing worked in the same run because
+    httpx carries certifi.
+    """
+    context = ssl.create_default_context()
+    try:
+        import certifi
+
+        context.load_verify_locations(cafile=certifi.where())
+    except Exception as exc:  # the system store is still there
+        log.warning("certifi's roots could not be loaded: %s", exc)
+    return context
+
+
 def http_fetch(
     url: str, dest: Path, on_bytes: Callable[[int], None], cancel: threading.Event
 ) -> None:
@@ -134,7 +157,7 @@ def http_fetch(
     request = urllib.request.Request(url, headers={"User-Agent": "Upshot"})
     if start:
         request.add_header("Range", f"bytes={start}-")
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.urlopen(request, timeout=60, context=tls_context()) as response:
         # A server that ignores Range sends the whole file again: start over.
         mode = "ab" if start and response.status == 206 else "wb"
         with dest.open(mode) as out:

@@ -257,3 +257,18 @@ def test_a_part_file_longer_than_the_file_is_started_again(app_home: Path) -> No
     manager.start()
     assert manager.wait(5).state == "ready"
     assert (target / "model.bin").read_bytes() == MODEL
+
+
+def test_downloads_trust_certifi_as_well_as_the_system() -> None:
+    """A fresh Windows fills its root store only on demand, so the system store alone
+    failed the first download there (job 022). certifi's roots are loaded too."""
+    import certifi
+
+    from app.asr.model_manager import tls_context
+
+    context = tls_context()
+    loaded = context.cert_store_stats()["x509_ca"]
+    with open(certifi.where(), encoding="ascii") as bundle:
+        in_certifi = bundle.read().count("BEGIN CERTIFICATE")
+    assert loaded >= in_certifi > 100
+    assert context.verify_mode.name == "CERT_REQUIRED" and context.check_hostname

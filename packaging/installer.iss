@@ -84,6 +84,29 @@ var
   LaterClicked: Boolean;
   PrepareNote: String;
 
+{ Upshot runs in the tray with no window, so neither CloseApplications nor the
+  uninstaller can ask it to close: job 022 found the uninstaller leaving 57 files and a
+  running upshot.exe behind while reporting success. Stop it outright. /T takes its
+  child processes (a notification being shown) with it. }
+procedure StopUpshot;
+var
+  ResultCode: Integer;
+begin
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
+    { 0: stopped; 128: none was running }
+    Log('taskkill {#AppExe}: exit ' + IntToStr(ResultCode));
+    if ResultCode = 0 then
+      Sleep(1500);
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  { An upgrade replaces upshot.exe, which a running copy holds open. }
+  StopUpshot;
+  Result := '';
+end;
+
 procedure LaterButtonClick(Sender: TObject);
 begin
   LaterClicked := True;
@@ -126,7 +149,7 @@ end;
 
 procedure RunPrepare;
 var
-  ProgressFile, CancelFile, Params, Stage, State, Code, Tick, LastTick: String;
+  ProgressFile, CancelFile, Params, Stage, State, Code, Error, Tick, LastTick: String;
   Lines: TArrayOfString;
   ResultCode, Percent, Quiet: Integer;
 begin
@@ -145,6 +168,7 @@ begin
   PreparePage.Show;
   State := '';
   Stage := 'model';
+  Error := '';
   LastTick := '';
   Quiet := 0;
   try
@@ -162,6 +186,7 @@ begin
         Stage := ReadValue(Lines, 'stage');
         State := ReadValue(Lines, 'state');
         Code := ReadValue(Lines, 'code');
+        Error := ReadValue(Lines, 'error');
         Percent := StrToIntDef(ReadValue(Lines, 'percent'), 0);
         PreparePage.SetText(ReadValue(Lines, 'text'), StageHint(Stage));
         PreparePage.SetProgress(Percent, 100);
@@ -179,7 +204,7 @@ begin
   finally
     PreparePage.Hide;
   end;
-  Log('Prepare ended: stage=' + Stage + ' state=' + State + ' code=' + Code);
+  Log('Prepare ended: stage=' + Stage + ' state=' + State + ' code=' + Code + ' error=' + Error);
   if State = 'cancelled' then
     PrepareNote := 'The speech model download was paused. {#AppName} continues it before your first transcription.'
   else if Code = 'no_space' then
@@ -208,6 +233,8 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Home, What: String;
 begin
+  if CurUninstallStep = usUninstall then
+    StopUpshot;
   if (CurUninstallStep <> usPostUninstall) or UninstallSilent then
     Exit;
   Home := ExpandConstant('{localappdata}\upshot');
