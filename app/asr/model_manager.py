@@ -7,17 +7,24 @@ never saw (job 007 on machine B). Here the download is its own step, which first
 setup starts and shows, and which the transcribe stage falls back to:
 
 - into ``<home>/models/asr/<repo>``, where ``models.resolve`` looks and the app owns it;
-- resumable: the hub keeps partial files under ``<target>/.cache`` and continues them;
+- resumable across runs: each file downloads into ``<name>.part`` and a later attempt asks
+  for the rest with an HTTP range. Not through the hub's own download: from 1.29 it writes
+  to a temporary name unique to the run and deletes it on any failure, so a stopped
+  download started again from zero (found 2026-09-26);
 - verified: each file against the SHA-256 the repo lists for it, once it has landed;
 - a free-space check on the target's drive before a byte is fetched;
-- progress and cancel through a progress class the hub calls for every block;
-- proxies from ``HTTPS_PROXY``/``HTTP_PROXY``, as every Python HTTP client reads them.
+- progress and cancel through a tqdm-shaped progress class called for every block;
+- proxies from ``HTTPS_PROXY``/``HTTP_PROXY``, and on Windows from the system's Internet
+  settings, as urllib reads both.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import threading
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -44,7 +51,7 @@ class RemoteFile:
 
 #: (repo_id) -> {file name: RemoteFile}
 Lister = Callable[[str], dict[str, RemoteFile]]
-#: (repo_id, local_dir, progress class) -> None; the hub's ``snapshot_download``.
+#: (repo_id, local_dir, progress class) -> None; ``http_downloader`` by default.
 Downloader = Callable[[str, Path, type], Any]
 
 
@@ -114,14 +121,65 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def hub_downloader(repo: str, target: Path, progress: type) -> Any:  # pragma: no cover
-    from huggingface_hub import constants, snapshot_download
+def http_fetch(
+    url: str, dest: Path, on_bytes: Callable[[int], None], cancel: threading.Event
+) -> None:
+    """Download ``url`` into ``dest``, continuing a partial file with an HTTP range.
 
-    # Plain HTTP, not Xet: Xet reports progress from its own thread and swallows what the
-    # progress class raises, so a cancel went unheard and the download ran on (measured
-    # with hub 1.29). Over HTTP the report comes from the download loop itself.
-    constants.HF_HUB_DISABLE_XET = True
-    return snapshot_download(repo_id=repo, local_dir=str(target), tqdm_class=progress)
+    ``on_bytes`` is told every block; raising ``DownloadCancelled`` from it, or setting
+    ``cancel``, stops the download and leaves ``dest`` where it got to. Proxies come from
+    the environment and, on Windows, from the system's Internet settings (urllib reads both).
+    """
+    start = dest.stat().st_size if dest.exists() else 0
+    request = urllib.request.Request(url, headers={"User-Agent": "Upshot"})
+    if start:
+        request.add_header("Range", f"bytes={start}-")
+    with urllib.request.urlopen(request, timeout=60) as response:
+        # A server that ignores Range sends the whole file again: start over.
+        mode = "ab" if start and response.status == 206 else "wb"
+        with dest.open(mode) as out:
+            while block := response.read(1 << 20):
+                if cancel.is_set():
+                    raise DownloadCancelled()
+                out.write(block)
+                on_bytes(len(block))
+
+
+#: (url, destination .part file, bytes received callback, cancel event) -> None
+Fetcher = Callable[[str, Path, Callable[[int], None], threading.Event], None]
+
+HUB_URL = "https://huggingface.co/{repo}/resolve/main/{name}"
+
+
+def http_downloader(lister: Lister = hub_lister, fetch: Fetcher = http_fetch) -> Downloader:
+    """Each file of the repo over plain HTTPS, into ``<name>.part`` until it is whole."""
+
+    def download(repo: str, target: Path, progress: type) -> None:
+        files = lister(repo)
+        parts = {name: target / (name + ".part") for name in files}
+        done = 0
+        for name, remote in files.items():
+            whole, part = target / name, parts[name]
+            if whole.is_file() and whole.stat().st_size == remote.size:
+                done += remote.size
+            elif part.is_file():
+                if part.stat().st_size > remote.size:  # can only be wrong; start it again
+                    part.unlink()
+                else:
+                    done += part.stat().st_size
+        bar = progress(total=sum(r.size for r in files.values()), initial=done)
+        never = threading.Event()  # cancelling is the progress class raising
+        for name, remote in files.items():
+            whole, part = target / name, parts[name]
+            if whole.is_file() and whole.stat().st_size == remote.size:
+                continue
+            part.parent.mkdir(parents=True, exist_ok=True)
+            if not (part.is_file() and part.stat().st_size == remote.size):
+                url = HUB_URL.format(repo=repo, name=urllib.parse.quote(name))
+                fetch(url, part, bar.update, never)
+            os.replace(part, whole)
+
+    return download
 
 
 class ModelManager:
@@ -133,12 +191,12 @@ class ModelManager:
         *,
         home: Path | None = None,
         lister: Lister = hub_lister,
-        downloader: Downloader = hub_downloader,
+        downloader: Downloader | None = None,
     ) -> None:
         self.repo = repo
         self.target = target_for(repo, home)
         self.lister = lister
-        self.downloader = downloader
+        self.downloader = downloader or http_downloader(lister)
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()

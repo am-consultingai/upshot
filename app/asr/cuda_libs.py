@@ -19,7 +19,6 @@ import hashlib
 import json
 import shutil
 import threading
-import urllib.request
 import zipfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -27,7 +26,14 @@ from pathlib import Path
 from typing import Any
 
 from app import paths
-from app.asr.model_manager import SPARE_BYTES, DownloadCancelled, NotEnoughSpace, free_bytes
+from app.asr.model_manager import (
+    SPARE_BYTES,
+    DownloadCancelled,
+    Fetcher,
+    NotEnoughSpace,
+    free_bytes,
+    http_fetch,
+)
 from app.config import Config
 from app.log import get
 
@@ -71,8 +77,6 @@ REQUIRED = ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll")
 #: Written into the folder once every wheel is unpacked: {wheel name: version}.
 MARKER = ".upshot-cuda"
 
-#: (url, destination .part file, bytes received callback, cancel event) -> None
-Fetcher = Callable[[str, Path, Callable[[int], None], threading.Event], None]
 #: GPU memory in MB, or None when there is no NVIDIA GPU or it cannot be read.
 VramQuery = Callable[[], "int | None"]
 
@@ -109,26 +113,6 @@ def wanted(config: Config, vram: VramQuery | None = None) -> tuple[bool, str]:
     if memory < MIN_VRAM_MB:
         return False, f"the GPU has {memory} MB, under the {MIN_VRAM_MB} MB the model needs"
     return True, f"NVIDIA GPU with {memory} MB"
-
-
-def http_fetch(
-    url: str, dest: Path, on_bytes: Callable[[int], None], cancel: threading.Event
-) -> None:  # pragma: no cover - network
-    """Download ``url`` into ``dest``, continuing a partial file. Proxies come from the
-    environment and, on Windows, from the system's Internet settings (urllib reads both)."""
-    start = dest.stat().st_size if dest.exists() else 0
-    request = urllib.request.Request(url, headers={"User-Agent": "Upshot"})
-    if start:
-        request.add_header("Range", f"bytes={start}-")
-    with urllib.request.urlopen(request, timeout=60) as response:
-        # A server that ignores Range sends the whole file again: start over.
-        mode = "ab" if start and response.status == 206 else "wb"
-        with dest.open(mode) as out:
-            while block := response.read(1 << 20):
-                if cancel.is_set():
-                    raise DownloadCancelled()
-                out.write(block)
-                on_bytes(len(block))
 
 
 def _sha256(path: Path) -> str:
