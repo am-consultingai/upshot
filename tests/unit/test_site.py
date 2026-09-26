@@ -79,9 +79,9 @@ def test_version_matches_pyproject(page: Path) -> None:
 
 @each_page
 def test_provider_count_matches_config(page: Path) -> None:
-    """``fake`` is a test double, not something a user can pick."""
+    """``fake`` is a test double, and ``none`` is no summarizer at all (D63)."""
     html, _ = _parse(page)
-    real = [p for p in _ENUMS["llm.provider"] if p != "fake"]
+    real = [p for p in _ENUMS["llm.provider"] if p not in ("fake", "none")]
     assert _numbers(html, "data-providers") == {str(len(real))}
 
 

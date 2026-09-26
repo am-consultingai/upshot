@@ -40,8 +40,6 @@ for (const [theme, language] of [
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoApp(page, "/m/shot-1");
-    const manual = page.getByTestId("capture-manual");
-    if (await manual.isVisible()) await manual.click();
     await page.keyboard.press("Control+j");
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${OUT}/empty-${theme}-${language}.png` });

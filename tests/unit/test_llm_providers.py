@@ -623,9 +623,38 @@ def test_sensitive_meetings_still_force_local() -> None:
         assert client.name == "ollama", "a sensitive meeting never leaves the machine"
 
 
-def test_default_is_still_the_anthropic_api() -> None:
-    assert default_config().get("llm.provider") == "anthropic"
+def test_default_is_transcripts_only() -> None:
+    """D63: a fresh install summarizes nothing until someone chooses an AI."""
+    assert default_config().get("llm.provider") == "none"
     from app.errors import ConfigError
 
     with pytest.raises(ConfigError):
         Config({"llm": {"provider": "not-a-provider"}}).validate()
+
+
+def test_a_config_that_never_named_a_provider_keeps_the_old_default(tmp_path: Path) -> None:
+    """An update must not quietly stop summaries that were running on the old default."""
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"setup": {"done": True}}), encoding="utf-8")
+    assert Config.load(file=path, environ={}).get("llm.provider") == "anthropic"
+
+
+def test_a_config_that_chose_none_keeps_it(tmp_path: Path) -> None:
+    path = tmp_path / "app_config.json"
+    path.write_text(json.dumps({"llm": {"provider": "none"}}), encoding="utf-8")
+    assert Config.load(file=path, environ={}).get("llm.provider") == "none"
+
+
+def test_none_is_never_a_fallback() -> None:
+    from app.errors import ConfigError
+
+    with pytest.raises(ConfigError):
+        Config({"llm": {"provider": "anthropic", "fallback_provider": "none"}}).validate()
+
+
+def test_asking_for_a_model_with_none_says_so() -> None:
+    from app.errors import PermanentError
+    from app.llm.client import make_client
+
+    with pytest.raises(PermanentError, match="No AI provider"):
+        make_client(default_config())

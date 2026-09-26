@@ -213,3 +213,45 @@ test("a_narrow_window_still_opens_the_meeting", async ({ page, seed }) => {
   await expect(page.getByTestId("meeting-page")).toHaveAttribute("data-meeting-id", "click-3");
   await page.setViewportSize({ width: 1280, height: 900 });
 });
+
+test("the_record_button_becomes_stop_and_stops", async ({ page, seed }) => {
+  // 2026-09-26: a recording "could not be stopped". The sidebar's Record button greyed
+  // out while recording — the natural place to click Stop — and did nothing.
+  await seed([]);
+  await gotoApp(page);
+  await page.getByTestId("start-recording").click();
+  await expect(page.getByTestId("recording-bar")).toBeVisible();
+  const stop = page.getByTestId("stop-recording");
+  await expect(stop).toBeEnabled();
+  await expect(stop).toContainText("Stop");
+  await stop.click();
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+  await expect(page.getByTestId("start-recording")).toBeEnabled();
+});
+
+test("ctrl_r_starts_and_stops_even_on_a_hebrew_keyboard", async ({ page, seed }) => {
+  await seed([]);
+  await gotoApp(page);
+  await page.keyboard.press("Control+KeyR");
+  await expect(page.getByTestId("recording-bar")).toBeVisible();
+  // Same key again stops it; and the page was never reloaded by the browser's Ctrl+R.
+  await page.evaluate(() => ((window as unknown as { stillHere: boolean }).stillHere = true));
+  await page.keyboard.press("Control+KeyR");
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { stillHere?: boolean }).stillHere)).toBe(true);
+});
+
+test("a_stop_that_fails_says_so_and_how_else_to_stop", async ({ page, seed }) => {
+  await seed([]);
+  await gotoApp(page);
+  await page.getByTestId("start-recording").click();
+  await expect(page.getByTestId("recording-bar")).toBeVisible();
+  await page.route("**/api/recording/stop", (route) => route.fulfill({ status: 500, body: "recorder wedged" }));
+  await page.getByTestId("recording-bar-stop").click();
+  await expect(page.getByText("Couldn't stop the recording")).toBeVisible();
+  await expect(page.getByText("recorder wedged")).toBeVisible();
+  // Let it stop for real, so the next spec starts clean.
+  await page.unroute("**/api/recording/stop");
+  await page.getByTestId("recording-bar-stop").click();
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+});

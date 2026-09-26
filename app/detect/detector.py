@@ -389,6 +389,10 @@ class Detector:
                 score=wake.peak_score,
                 event=event.title if event else None,
             )
+            # Detect and notify (D64): the nudge above reaches an open window; this
+            # reaches everyone else.
+            if self.notifier is not None:
+                self.notifier.call_detected(wake.process, event.title if event else wake.title)
             return
         meeting = self.meetings.create(
             source="detected",

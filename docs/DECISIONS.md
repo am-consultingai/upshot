@@ -1939,3 +1939,67 @@ differences, each for a reason found while building:
 | 3 | Markdown: Streamdown (lazy-loaded), or react-markdown | Streamdown |
 | 4 | Thumbs up and down on answers: nobody receives them in a local app | Not in v1 |
 | 5 | Follow-up suggestions after each answer | Yes, in the same response |
+
+## D63 — First-run setup asks for a calendar and an AI, both optional; no AI is the default
+
+**Choice.** The first screen a new install shows is a stepped setup (`frontend/src/setup/`,
+epic z8tj1hb01k): Welcome → speech model (only when the installer could not fetch it) →
+Google Calendar → AI summaries → sound check → recording (D64) → Done. There is no speech-model or CPU/GPU step; the device
+is chosen automatically. Calendar and AI are encouraged and skippable. The AI step offers
+Claude and Codex on the user's own paid plan: ticking a card installs the CLI if it is
+missing, goes straight on to its sign-in, and tests it, with no further click. With
+neither ticked it offers an API key, led by a free Gemini key from Google AI Studio, and
+says beside the button that Google's free tier may use what is sent to it. The computer's
+audio is checked by the page playing a chime and the loopback listening for it.
+
+`llm.provider` gains `none`, and it is the default. With `none` the pipeline stops after
+`assemble`: the meeting is **TRANSCRIBED**, no summarize job is queued, nothing fails and
+Settings shows no "!". A sensitive meeting is still summarized by the local model, as it
+always was. Asking for a model under `none` (Ask, the assistant) raises a
+`PermanentError` that says to choose a provider. `none` is never a fallback.
+
+When setup finishes, the provider is chosen by one rule (`frontend/src/setup/flow.ts`,
+`chooseSummarizer`): only a subscription that is ticked, installed and signed in counts;
+Claude before Codex when both do, with Codex as `llm.fallback_provider`; otherwise a key
+that passed its check; otherwise `none`.
+
+**Why.** A skipped AI step used to leave `anthropic` with no key, so every meeting
+recorded, transcribed, and then failed at the summary — telling someone who chose not to
+set up AI that something was broken. A first screen that demands a key is one people
+close; one that makes the key optional and shows what each step does is one they finish.
+Settled with the product owner on 2026-09-26, and the screens confirmed on a clickable
+mock (Setup 0, z8tj1hb03a) before they were wired.
+
+**Existing installs.** A saved config names its provider (`save` writes every key), so it
+keeps it. One that never named a provider was running on the old default and is loaded as
+`anthropic` (`PREVIOUS_DEFAULT_PROVIDER`), so an update does not quietly stop its
+summaries. A provider retired from `LLM_PROVIDERS` now falls back to `none`.
+
+**Not yet (tracked in the epic).** Claude Code's sign-in still reads its code in the
+window the install opened; moving it into the page is Setup 4. Summarizing a meeting
+transcribed under `none` once a provider is chosen needs a button on the meeting page
+(Setup 7). The Google consent screen must leave Testing mode (7-day tokens, D43) before
+setup is shipped to anyone.
+
+## D64 — "Detect and notify" is the default capture mode, asked at the end of setup
+
+**Choice.** How meetings are recorded is the last step of first-run setup (D63), before
+Done, with two answers: **Notify me when a call starts** (`detection.mode = shadow`,
+chosen for the user) and **Record calls automatically** (`on`). `off` is not offered in
+setup; Settings still has it. Finishing setup saves the answer and `detection.decided`. The banner
+that asked the same question over the library on first run (`CaptureChoice`) is gone.
+
+`shadow` now notifies: when the detector commits a wake in that mode it shows a Windows
+notification — "*Meeting* started in *App*. Upshot is not recording it. Open Upshot to
+record." — once per call, as well as the in-app nudge it already published. Settings
+calls the mode "Detect and notify".
+
+The speech model is no longer a setup step in any case: fetching it is the installer's
+job, and a missing model is fetched before the first transcription, as before.
+
+**Why.** Settled with the product owner on 2026-09-26. `shadow` was already the default
+for privacy — nothing is recorded that the user did not ask for — but it was silent
+outside Upshot's own window, which is the window nobody has open when a call starts; the
+notification is what makes the default useful. The banner asked the question at the worst
+moment, over the calendar, before the user had seen anything else; setup asks it once,
+next to the other first-run choices.

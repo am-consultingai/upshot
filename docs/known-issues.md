@@ -11,33 +11,26 @@ getting the first real summaries out of the application.
 
 ## Blocking a first release
 
-### 1. First-run setup — **in the app since 2026-09-24**, still no installer around it
+### 1. First-run setup — **rebuilt 2026-09-26** (D63), still no installer around it
 
-`bootstrap.py` and `preflight()` exist and are tested. On top of them the interface now
-opens on **`/welcome`** until setup is done (ClickUp z8tj1had06), with three steps, each
-applying the moment it changes and each also in Settings, Transcription. There is no
-language question any more (D60, 2026-09-25): one model, `ivrit-ai/whisper-large-v3-ct2`,
-transcribes Hebrew and English, mixed in one meeting too, and the meeting's language is
-read from its transcript.
+`bootstrap.py` and `preflight()` exist and are tested. On top of them the interface opens
+on **`/welcome`** until setup is done: the stepped flow of epic z8tj1hb01k
+(`frontend/src/setup/`) — Welcome → Google Calendar → AI summaries → sound check →
+recording (D64) → Done. Calendar and AI are optional; skipping AI leaves
+`llm.provider = none`, and meetings stop at the transcript without failing. The step
+reached is saved in `setup.step`, so closing the app half-way resumes there. An install
+whose `app_config.json` predates `setup` and already has a model on disk is marked done
+on load, so existing users never see the screen.
 
-1. **Speech model** — name, size, free space, Download with progress and Cancel, over
-   `/api/model` (`model_manager.py`). A drive too full is said in words before a byte is
-   fetched.
-2. **Microphone and speakers** — the Settings rows and live meters, shared
-   (`AudioDeviceSettings.tsx`).
-3. **CPU or GPU** — where Whisper will run and why. The automatic choice needs
-   ≥ 4096 MB on GPU 0 (`nvidia-smi`, hidden, 5 s timeout; any failure → CPU; z8tj1had07),
-   and a GPU that fails to load falls back to the same model on the CPU (int8), which
-   takes about four times the meeting's length (measured on an i7-8700, D60).
+The screens were confirmed on a mock (`/setup-mock` in `vite dev`, or
+`npm run build:mock` for one HTML file) before they were wired to the real backend.
 
-"Done" and "Skip" both set `setup.done` and nothing else. An install
-whose `app_config.json` predates the flag and already has a model on disk is marked done
-on load, so existing users never see the screen. There is deliberately no AI-provider or
-calendar step: both are optional to a transcript and both carry their own "!" in Settings.
-
-Still open: the screen's Download has only been exercised against a fake hub in tests
-and, for the model manager behind it, with the tiny model from the frozen build (#2). A
-first run through the screen on a second machine is Windows-testing job 012.
+Still open: Claude Code's sign-in code is typed into its own window, not the page
+(Setup 4); the chained install → sign-in → test has only run against the specs' stubbed
+status, never a real Claude Code or Codex install from this screen (Setup 10). The
+Download has only been exercised against a fake hub in tests and, for the model manager
+behind it, with the tiny model from the frozen build (#2). A first run through the screen
+on a second machine is Windows-testing job 012.
 
 ### 2. The frozen build: built and signed, not yet installed on a clean machine
 

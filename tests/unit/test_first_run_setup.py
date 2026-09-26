@@ -89,7 +89,7 @@ def test_a_config_saved_since_is_taken_at_its_word(tmp_path: Path, app_home: Pat
     place_model(app_home)
     path = tmp_path / "app_config.json"
     default_config().save(path)
-    assert json.loads(path.read_text())["setup"] == {"done": False}
+    assert json.loads(path.read_text())["setup"]["done"] is False
     assert Config.load(file=path, environ={}).get("setup.done") is False
 
 

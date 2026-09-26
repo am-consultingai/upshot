@@ -176,7 +176,9 @@ def test_ollama_gives_up_after_three_attempts() -> None:
 def test_sensitive_meetings_route_to_ollama() -> None:
     assert make_client(default_config(), sensitive=True).name == "ollama"
     assert make_client(default_config(llm__provider="fake")).name == "fake"
-    assert make_client(default_config()).name == "anthropic"
+    assert make_client(default_config(llm__provider="anthropic")).name == "anthropic"
+    # Transcripts only still sends a sensitive meeting to the local model.
+    assert make_client(default_config(), sensitive=True).name == "ollama"
 
 
 # ------------------------------------------------------------------ prompts

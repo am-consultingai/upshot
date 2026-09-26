@@ -101,6 +101,27 @@ def test_stage_advances_pipeline(h: Harness) -> None:
     assert stages == {"transcribe": "done", "assemble": "pending"}
 
 
+def test_transcripts_only_stops_at_the_transcript(h: Harness) -> None:
+    """D63: with no AI provider the meeting ends TRANSCRIBED, with no summary job to fail."""
+    h.config.set("llm.provider", "none")
+    meeting = h.meeting(MeetingState.TRANSCRIBING)
+    h.worker.stages["assemble"] = lambda ctx: None
+    h.queue.enqueue(meeting.id, JobStage.ASSEMBLE)
+    assert h.worker.run_once() is True
+    assert h.dao.require_meeting(meeting.id).state == MeetingState.TRANSCRIBED
+    assert {job.stage for job in h.queue.for_meeting(meeting.id)} == {"assemble"}
+
+
+def test_a_sensitive_meeting_is_still_summarized_locally_with_none(h: Harness) -> None:
+    h.config.set("llm.provider", "none")
+    meeting = h.meeting(MeetingState.TRANSCRIBING)
+    h.conn.execute("UPDATE meetings SET sensitive=1 WHERE id=?", (meeting.id,))
+    h.worker.stages["assemble"] = lambda ctx: None
+    h.queue.enqueue(meeting.id, JobStage.ASSEMBLE)
+    assert h.worker.run_once() is True
+    assert "summarize" in {job.stage for job in h.queue.for_meeting(meeting.id)}
+
+
 def test_retry_backoff_grows(h: Harness) -> None:
     meeting = h.meeting()
     h.queue.enqueue(meeting.id, "flaky")

@@ -268,3 +268,19 @@ export function isHappening(event: GridEvent, now: Date = new Date()): boolean {
   const end = new Date(event.end).getTime();
   return !event.all_day && now.getTime() >= start - 10 * 60_000 && now.getTime() < end;
 }
+
+/** The working day, in whole hours, as Settings saves it (`calendar.work_start/end`). */
+export interface WorkingHours {
+  start: number;
+  end: number;
+}
+
+export const DEFAULT_WORKING_HOURS: WorkingHours = { start: 8, end: 18 };
+
+/** The working day from the saved config, falling back to 08:00–18:00. */
+export function workingHours(config: Record<string, unknown> | undefined): WorkingHours {
+  const calendar = (config?.calendar ?? {}) as { work_start?: unknown; work_end?: unknown };
+  const start = typeof calendar.work_start === "number" ? calendar.work_start : DEFAULT_WORKING_HOURS.start;
+  const end = typeof calendar.work_end === "number" ? calendar.work_end : DEFAULT_WORKING_HOURS.end;
+  return start >= 0 && start < end && end <= 24 ? { start, end } : DEFAULT_WORKING_HOURS;
+}
