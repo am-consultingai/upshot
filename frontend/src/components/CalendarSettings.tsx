@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CalendarStatus } from "../api";
 import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
-import SettingRow, { SettingGroup } from "./SettingRow";
+import SettingRow, { SELECT_CLASS, SettingGroup } from "./SettingRow";
+import { workingHours } from "../lib/calendar";
 
 const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent";
 const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
@@ -229,6 +230,60 @@ export default function CalendarSettings() {
         </SettingRow>
       )}
 
+      <WorkingHoursRow />
     </SettingGroup>
+  );
+}
+
+const HOUR_LABEL = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+
+/**
+ * The working day, which the day and week views open on and shade around. Not tied to
+ * Google: it applies with no calendar connected, to the recordings alone. Each list only
+ * offers hours that keep the day running forwards, so there is no invalid pair to save.
+ */
+function WorkingHoursRow() {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const work = workingHours(settings.data?.config);
+  const save = useMutation({
+    mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
+    onSuccess: (next) => queryClient.setQueryData(["settings"], next),
+  });
+  const hours = Array.from({ length: 25 }, (_, hour) => hour);
+  return (
+    <SettingRow label={t("calendar.workingHours")} description={t("calendar.workingHoursHint")}>
+      <label className="flex items-center gap-2 text-xs text-tertiary">
+        {t("calendar.workFrom")}
+        <select
+          data-testid="work-start"
+          value={work.start}
+          onChange={(event) => save.mutate({ "calendar.work_start": Number(event.target.value) })}
+          className={SELECT_CLASS}
+        >
+          {hours.filter((hour) => work.end > hour).map((hour) => (
+            <option key={hour} value={hour}>
+              {HOUR_LABEL(hour)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-2 text-xs text-tertiary">
+        {t("calendar.workTo")}
+        <select
+          data-testid="work-end"
+          value={work.end}
+          onChange={(event) => save.mutate({ "calendar.work_end": Number(event.target.value) })}
+          className={SELECT_CLASS}
+        >
+          {hours.filter((hour) => hour > work.start).map((hour) => (
+            <option key={hour} value={hour}>
+              {HOUR_LABEL(hour)}
+            </option>
+          ))}
+        </select>
+      </label>
+    </SettingRow>
   );
 }

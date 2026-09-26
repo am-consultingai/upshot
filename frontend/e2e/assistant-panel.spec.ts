@@ -176,23 +176,24 @@ test("the_screen_reader_hears_states_not_the_stream", async ({ page, seed }) => 
   await expect(page.getByTestId("assistant-answer").getByRole("heading", { name: "Assistant" })).toHaveCount(1);
 });
 
-test("the_panel_resizes_from_the_keyboard_and_keeps_its_width", async ({ page, seed }) => {
+test("the_assistant_floats_from_a_round_button_in_the_lower_start_corner", async ({ page, seed }) => {
   await seed(BUDGET);
   await gotoApp(page, "/");
-  await page.keyboard.press("Control+j");
+  const launcher = page.getByTestId("assistant-launcher");
+  const box = (await launcher.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  // Lower left, over the content — not a column taken out of the window.
+  expect(box.x).toBeLessThan(40);
+  expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
+  const mainBefore = (await page.locator("main").boundingBox())!.width;
+  await launcher.click();
   const panel = page.getByTestId("assistant-panel");
-  const before = (await panel.boundingBox())!.width;
-  await page.getByTestId("assistant-resize").focus();
-  await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("ArrowLeft");
-  await expect.poll(async () => (await panel.boundingBox())!.width).toBe(before + 32);
-  await page.reload();
-  await expect(page.getByTestId("app")).toBeVisible();
-  await page.keyboard.press("Control+j");
-  await expect.poll(async () => (await page.getByTestId("assistant-panel").boundingBox())!.width).toBe(before + 32);
-  // Toasts move in beside it rather than under it.
-  const inset = await page.evaluate(() => document.documentElement.style.getPropertyValue("--assistant-width"));
-  expect(inset).toBe(`${before + 32}px`);
+  await expect(panel).toBeVisible();
+  await expect(launcher).toHaveAttribute("aria-expanded", "true");
+  expect((await page.locator("main").boundingBox())!.width).toBe(mainBefore);
+  expect((await panel.boundingBox())!.x).toBeLessThan(40);
+  await launcher.click();
+  await expect(panel).toHaveCount(0);
 });
 
 test("f6_moves_between_the_page_and_the_panel", async ({ page, seed }) => {
@@ -207,10 +208,11 @@ test("f6_moves_between_the_page_and_the_panel", async ({ page, seed }) => {
   await expect(page.getByTestId("assistant-input")).toBeFocused();
 });
 
-test("the_sidebar_and_the_palette_open_it_too", async ({ page, seed }) => {
+test("the_button_and_the_palette_open_it_too", async ({ page, seed }) => {
   await seed(BUDGET);
   await gotoApp(page, "/");
-  await page.getByTestId("nav-assistant").click();
+  await expect(page.getByTestId("nav-assistant")).toHaveCount(0);
+  await page.getByTestId("assistant-launcher").click();
   await expect(page.getByTestId("assistant-panel")).toBeVisible();
   await page.getByTestId("assistant-close").click();
   await expect(page.getByTestId("assistant-panel")).toHaveCount(0);
@@ -236,15 +238,16 @@ test("a_citation_into_a_deleted_meeting_says_so", async ({ page, seed, request }
   await expect(page.getByTestId("assistant-citation-card")).toContainText("deleted");
 });
 
-test("in_hebrew_the_panel_docks_left_and_each_paragraph_takes_its_own_direction", async ({ page, seed, request }) => {
+test("in_hebrew_the_panel_floats_at_the_lower_right_and_each_paragraph_takes_its_own_direction", async ({ page, seed, request }) => {
   await seed(BUDGET);
   await request.put("/api/settings", { headers: HEADERS, data: { values: { "ui.language": "he" } } });
   await gotoApp(page, "/");
   await page.keyboard.press("Control+j");
   const panel = page.getByTestId("assistant-panel");
   await expect(panel).toBeVisible();
+  // The start corner is the right one in Hebrew: the whole interface mirrors.
   const box = (await panel.boundingBox())!;
-  expect(box.x).toBeLessThan(400);
+  expect(box.x + box.width).toBeGreaterThan(page.viewportSize()!.width - 40);
   await expect(page.getByTestId("assistant-input")).toHaveAttribute("dir", "auto");
   await ask(page, "מה נאמר על 'budget'");
   await expect(page.getByTestId("assistant-question").locator("p")).toHaveAttribute("dir", "auto");

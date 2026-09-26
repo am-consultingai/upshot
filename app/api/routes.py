@@ -344,6 +344,7 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
     svc.recorder.start(meeting.path, meeting.id)
     svc.recorder.start_thread()
     svc.meetings.committed(meeting, meeting.path)
+    log.info("recording %s started from the interface", meeting.id)
     svc.events.publish("recorder", state="recording", meeting_id=meeting.id)
     if svc.notifier is not None:
         svc.notifier.recording_started(meeting.id, meeting.title or "")
@@ -352,13 +353,26 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
 
 @router.post("/recording/stop")
 def recording_stop(request: Request) -> dict[str, Any]:
+    """Stop the recording. Every request is logged, refused or not: a Stop that seemed to
+    do nothing (2026-09-26) could not be diagnosed, because nothing here said whether
+    the request had even arrived."""
     svc = services_of(request)
     if svc.recorder is None or not svc.recorder.committed:
+        log.warning(
+            "stop requested, refused: not recording (recorder %s)",
+            "absent" if svc.recorder is None else f"armed={svc.recorder.armed}",
+        )
         raise HTTPException(409, "not recording")
     meeting_id = svc.recorder.meeting_id or ""
-    result = svc.recorder.stop()
+    log.info("recording %s: stop requested from the interface", meeting_id)
+    try:
+        result = svc.recorder.stop()
+    except Exception:
+        log.exception("recording %s: stop failed", meeting_id)
+        raise
     duration_s = round(result.total_duration_ms / 1000)
     meeting = svc.meetings.finish(meeting_id, duration_s=duration_s)
+    log.info("recording %s stopped after %d s (%s)", meeting_id, duration_s, meeting.state)
     svc.events.publish("recorder", state="idle", meeting_id=meeting_id)
     if svc.notifier is not None and meeting.state == MeetingState.RECORDED:
         svc.notifier.recording_ended(meeting_id, duration_s // 60)
@@ -1575,6 +1589,8 @@ def llm_status(request: Request) -> dict[str, Any]:
         return bool(svc.config.secret(name, env=env))
 
     providers: list[dict[str, Any]] = [
+        # Transcripts only (D63): nothing to set up, so always ready.
+        {"id": "none", "label": "Transcripts only", "needs": "none", "ready": True},
         {
             "id": "anthropic",
             "label": "Claude (API key)",
@@ -2087,9 +2103,12 @@ def test_router() -> APIRouter:
             # asks for the opposite below: a spec that died on /welcome must not send
             # every spec after it there too.
             svc.config.set("setup.done", True)
+            svc.config.set("setup.step", "")
             svc.config.save()
         if "setup_done" in body:
             svc.config.set("setup.done", bool(body["setup_done"]))
+            # A fresh start of setup, not a resume of whatever the last spec left.
+            svc.config.set("setup.step", "")
             svc.config.save()
         if body.get("reset"):
             svc.conn.execute("DELETE FROM calendar_events")

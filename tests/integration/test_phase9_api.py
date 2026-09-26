@@ -324,7 +324,8 @@ def test_openapi_snapshot(api, golden) -> None:  # type: ignore[no-untyped-def]
 # ------------------------------------------------------------------ recording
 
 
-def test_recording_start_stop_roundtrip(api) -> None:  # type: ignore[no-untyped-def]
+def test_recording_start_stop_roundtrip(api, caplog) -> None:  # type: ignore[no-untyped-def]
+    caplog.set_level("INFO", logger="app.api.routes")
     client = api.client()
     started = client.post("/api/recording/start", json={"title": "Manual test"}).json()
     meeting_id = started["meeting_id"]
@@ -343,6 +344,13 @@ def test_recording_start_stop_roundtrip(api) -> None:  # type: ignore[no-untyped
     assert stopped["meeting_id"] == meeting_id
     assert stopped["chunks"] >= 1
     assert client.post("/api/recording/stop").status_code == 409
+    # Every stop is in the log, including the refused one: the log has to be able to
+    # say whether a Stop that "did nothing" ever arrived.
+    logged = caplog.text
+    assert f"recording {meeting_id} started from the interface" in logged
+    assert f"recording {meeting_id}: stop requested from the interface" in logged
+    assert f"recording {meeting_id} stopped after" in logged
+    assert "stop requested, refused: not recording" in logged
 
     meeting = api.services.dao.require_meeting(meeting_id)
     assert meeting.state in (MeetingState.RECORDED, MeetingState.DISCARDED)

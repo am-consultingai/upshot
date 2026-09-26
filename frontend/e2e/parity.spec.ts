@@ -47,9 +47,6 @@ for (const [theme, language] of [
     }
 
     await gotoApp(page, "/");
-    // The first-run question sits above everything until it is answered.
-    const manual = page.getByTestId("capture-manual");
-    if (await manual.isVisible()) await manual.click();
     await settle();
     await page.screenshot({ path: `${OUT}/library-${name}.png` });
 

@@ -114,7 +114,9 @@ DEFAULTS: dict[str, Any] = {
         "echo_window_s": 60,  # the stretch it is fitted on, chosen where THEM is loudest
     },
     "detection": {
-        # shadow|on|off. "shadow" watches and scores but never starts a recording, so
+        # shadow|on|off. "shadow" is "detect and notify" (D64): it watches, and when a
+        # call starts it tells the user — in the window and with a Windows notification —
+        # but never starts a recording itself. Before the notification it was silent, so
         # out of the box nothing is captured unless the red button is pressed — and
         # nobody joining a call three minutes late remembers the red button. The
         # conservative default is a deliberate privacy choice and it stays, but it is
@@ -169,11 +171,13 @@ DEFAULTS: dict[str, Any] = {
         "title_patterns": ["zoom meeting", "microsoft teams", "meet -", "meet –", "webex"],
     },
     "llm": {
-        # anthropic|openai|gemini|claude-subscription|codex-subscription|ollama|fake
+        # none|anthropic|openai|gemini|claude-subscription|codex-subscription|ollama|fake
+        # `none` is the default: a meeting is recorded and transcribed and stops there,
+        # which is a choice rather than a failure. First-run setup offers the rest (D63).
         # `claude-subscription` runs through the Claude Code CLI on this machine, using
-        # the signed-in user's own plan. It is never the default: Anthropic does not
-        # permit third-party products to offer claude.ai login (DECISIONS D30).
-        "provider": "anthropic",
+        # the signed-in user's own plan. It is never chosen for the user: Anthropic does
+        # not permit third-party products to offer claude.ai login (DECISIONS D30).
+        "provider": "none",
         "model": "claude-opus-5",
         "effort": "high",
         "local_model": "dictalm3-nemotron-12b",
@@ -239,6 +243,10 @@ DEFAULTS: dict[str, Any] = {
         # organizer wrote and what they attached. Email addresses never go, whatever this
         # says — an attendee is a name by the time anything here sees them.
         "prompt_invite": True,
+        # The working day, in whole hours (0–24). The day and week views open at its
+        # start and shade the hours outside it; nothing else reads it.
+        "work_start": 8,
+        "work_end": 18,
     },
     "setup": {
         # Whether first-run setup (the /welcome screen) is finished or skipped. Until it
@@ -246,6 +254,9 @@ DEFAULTS: dict[str, Any] = {
         # nothing had told them so. An install from before the screen existed, with a
         # model already on disk, is marked done when it loads (``_adopt_existing_install``).
         "done": False,
+        # The step first-run setup was left on, so closing the app half-way reopens it
+        # there. Empty once setup is finished, or before it has begun.
+        "step": "",
     },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
@@ -253,11 +264,15 @@ DEFAULTS: dict[str, Any] = {
     "schedule": {"hour": 2, "hours": 4},  # the window the `scheduled` job policy runs in
 }
 
+#: What `llm.provider` defaulted to before `none` did (D63), kept for configs that relied on it.
+PREVIOUS_DEFAULT_PROVIDER = "anthropic"
+
 #: Every summarizer this build offers. Removing one is this one line: it drops out of
 #: Settings and of the fallback choices, and a config still naming it falls back to the
 #: default with a warning (``_retire_providers``) rather than refusing to start. That is
 #: the switch D58 asks for, so the day a vendor says no is a release and not a scramble.
 LLM_PROVIDERS: tuple[str, ...] = (
+    "none",
     "anthropic",
     "openai",
     "gemini",
@@ -283,7 +298,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "detection.mode": ("shadow", "on", "off"),
     "detection.sources": ("windows", "fake"),
     "llm.provider": LLM_PROVIDERS,
-    "llm.fallback_provider": ("", *(p for p in LLM_PROVIDERS if p != "fake")),
+    "llm.fallback_provider": ("", *(p for p in LLM_PROVIDERS if p not in ("fake", "none"))),
     "delivery.mode": ("draft", "auto_send"),
     "delivery.notifier": ("windows", "fake"),
     "enrichment.source": ("google", "null", "fake"),
@@ -398,9 +413,14 @@ def _retire_providers(data: dict[str, Any]) -> list[str]:
     if isinstance(chosen, str) and chosen not in LLM_PROVIDERS:
         default = str(DEFAULTS["llm"]["provider"])
         _set(data, "llm.provider", default)
+        instead = (
+            "meetings now stop at the transcript"
+            if default == "none"
+            else f"summaries now use {default!r}"
+        )
         notices.append(
             f"The summarizer {chosen!r} is no longer available in this version, so "
-            f"summaries now use {default!r}. Choose another in Settings, AI agents."
+            f"{instead}. Choose another in Settings, AI agents."
         )
     try:
         fallback = _get(data, "llm.fallback_provider")
@@ -573,6 +593,11 @@ class Config:
                 raise ConfigError(f"{path} must contain a JSON object")
             _forget_old_defaults(file_layer)
             predates_setup = "setup" not in file_layer
+            # The default summarizer became `none` (D63). A file that never named one was
+            # summarizing with the old default, and an update must not quietly stop that.
+            llm_layer = file_layer.get("llm", {})
+            if isinstance(llm_layer, dict) and "provider" not in llm_layer:
+                _set(file_layer, "llm.provider", PREVIOUS_DEFAULT_PROVIDER)
             data = _merge(data, file_layer)
         env = env_layer(environ)
         data = _merge(data, env)
@@ -775,6 +800,11 @@ class Config:
         port = self.server_port
         if not (1 <= port <= 65535):
             raise ConfigError(f"server.port out of range: {port}")
+        start, end = self.get("calendar.work_start", 8), self.get("calendar.work_end", 18)
+        if not (0 <= start < end <= 24):
+            raise ConfigError(
+                f"calendar working hours must run forwards within a day, got {start}–{end}"
+            )
 
     def env_pinned(self) -> dict[str, str]:
         """Keys the environment is holding, and the variable holding each one.

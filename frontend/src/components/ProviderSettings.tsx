@@ -42,6 +42,7 @@ function readyLabel(provider: LlmProvider): MessageKey {
     return "settings.cliInstalled";
   }
   if (provider.needs === "key") return provider.ready ? "settings.keySet" : "settings.keyMissing";
+  if (provider.needs === "none") return "settings.noneReady";
   return "settings.localReady";
 }
 
@@ -60,6 +61,12 @@ function readyTone(provider: LlmProvider): string {
  */
 const GROUPS = [
   {
+    id: "none",
+    label: "settings.groupNone",
+    hint: "settings.groupNoneHint",
+    holds: (provider: LlmProvider) => provider.needs === "none",
+  },
+  {
     id: "subscription",
     label: "settings.groupSubscription",
     hint: "settings.groupSubscriptionHint",
@@ -75,7 +82,7 @@ const GROUPS = [
     id: "local",
     label: "settings.groupLocalModel",
     hint: "settings.groupLocalModelHint",
-    holds: (provider: LlmProvider) => provider.needs !== "cli" && provider.needs !== "key",
+    holds: (provider: LlmProvider) => !["cli", "key", "none"].includes(provider.needs),
   },
 ] as const satisfies readonly {
   id: string;

@@ -265,3 +265,16 @@ def test_a_config_saved_before_the_calendar_adopts_it(tmp_path: Path) -> None:
     chosen = tmp_path / "chosen.json"
     chosen.write_text(json.dumps({"enrichment": {"source": "fake"}}))
     assert Config.load(file=chosen).get("enrichment.source") == "fake", "a real choice stands"
+
+
+def test_working_hours_default_to_eight_till_six() -> None:
+    config = default_config()
+    assert (config.get("calendar.work_start"), config.get("calendar.work_end")) == (8, 18)
+
+
+@pytest.mark.parametrize(("start", "end"), [(18, 8), (9, 9), (-1, 17), (8, 25)])
+def test_working_hours_must_run_forwards_within_a_day(start: int, end: int) -> None:
+    from app.errors import ConfigError
+
+    with pytest.raises(ConfigError, match="working hours"):
+        default_config(calendar__work_start=start, calendar__work_end=end)

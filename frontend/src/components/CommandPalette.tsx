@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRecordingControls } from "../lib/recording";
 import { api, type SearchHit } from "../api";
 import { useI18n } from "../i18n";
 import { boost, score } from "../lib/score";
@@ -106,10 +107,7 @@ export default function CommandPalette() {
     mutationFn: () => api.startRecording(),
     onSuccess: () => queryClient.invalidateQueries(),
   });
-  const stop = useMutation({
-    mutationFn: api.stopRecording,
-    onSuccess: () => queryClient.invalidateQueries(),
-  });
+  const { stop } = useRecordingControls();
 
   const recording = status.data?.recorder.active ?? false;
 

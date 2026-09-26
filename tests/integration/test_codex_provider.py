@@ -435,7 +435,7 @@ def test_removing_codex_is_one_line_and_its_users_fall_back(
         encoding="utf-8",
     )
     config = Config.load(file=saved, environ={})
-    assert config.get("llm.provider") == "anthropic", "the default takes over"
+    assert config.get("llm.provider") == "none", "the default takes over: transcripts only (D63)"
     assert config.get("llm.fallback_provider") == ""
     notices = config.warnings()
     assert any("'codex-subscription' is no longer available" in n for n in notices)

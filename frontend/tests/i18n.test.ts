@@ -31,6 +31,13 @@ describe("catalogue parity", () => {
     "assistant.provider.anthropic",
     "assistant.provider.openai",
     "assistant.provider.gemini",
+    "firstRun.ai.claude.name",
+    "firstRun.ai.codex.name",
+    "firstRun.done.sum.claude-subscription",
+    "firstRun.done.sum.codex-subscription",
+    // Each language named in itself, in both catalogues.
+    "firstRun.languageEnglish",
+    "firstRun.languageHebrew",
   ]);
 
   it("no translation is left as the English string", () => {

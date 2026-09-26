@@ -453,6 +453,12 @@ def make_client(
     if not sensitive and provider is None:
         provider = str(config.get("llm.provider", "anthropic"))
     provider = "ollama" if sensitive else str(provider)
+    if provider == "none":
+        # Transcripts only (D63). The pipeline never asks for a summary then; this is for
+        # everything else that wants a model — Ask, the assistant — to say so plainly.
+        raise PermanentError(
+            "No AI provider is set up, so this needs one first: choose it in Settings, AI agents."
+        )
     if provider == "fake":
         return FakeLlm()
     if provider == "ollama":

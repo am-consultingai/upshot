@@ -124,6 +124,22 @@ class BaseNotifier:
             )
         )
 
+    def call_detected(self, process: str, title: str | None) -> None:
+        """A call started and, in the default mode, nothing records it: say so (D64).
+
+        "Detect and notify" is the default capture mode. Before this, a call noticed in
+        that mode surfaced only inside Upshot's own window, which is exactly the window
+        nobody has open when a call starts.
+        """
+        app = process.removesuffix(".exe") or "an app"
+        self.show(
+            Toast(
+                title=f"{title or 'A call'} started in {app}",
+                body="Upshot is not recording it. Open Upshot to record.",
+                key=f"call:{process}",
+            )
+        )
+
     def near_miss(self, process: str, when: str) -> None:
         self.show(
             Toast(

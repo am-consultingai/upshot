@@ -200,7 +200,20 @@ class Worker:
             current = MeetingState(meeting.state)
             if current != target and is_legal(current, target):
                 self.dao.set_state(job.meeting_id, target)
+        if self._transcripts_only(job):
+            log.info("meeting %s: transcribed; no AI provider, so no summary", job.meeting_id)
+            return
         self.queue.enqueue_next_stage(job)
+
+    def _transcripts_only(self, job: Job) -> bool:
+        """With no AI provider a meeting ends at its transcript (D63), not at a failure.
+
+        A sensitive meeting is the exception: it was always summarized by the local model,
+        whatever the provider says, so it still is.
+        """
+        if job.stage != JobStage.ASSEMBLE or str(self.config.get("llm.provider")) != "none":
+            return False
+        return not bool(self.dao.require_meeting(job.meeting_id).sensitive)
 
     def _on_deferred(self, job: Job, exc: Deferred) -> None:
         """Park the job until the provider says it can try again. The meeting stays put.

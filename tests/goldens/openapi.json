@@ -2646,6 +2646,7 @@
     },
     "/api/recording/stop": {
       "post": {
+        "description": "Stop the recording. Every request is logged, refused or not: a Stop that seemed to\ndo nothing (2026-09-26) could not be diagnosed, because nothing here said whether\nthe request had even arrived.",
         "operationId": "recording_stop_api_recording_stop_post",
         "responses": {
           "200": {
