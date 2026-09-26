@@ -24,7 +24,10 @@ param(
     # show: how long the app stays up, in view, before the uninstall.
     [int]$HoldSeconds = 60,
     # show: leave the sandbox open at the end instead of shutting it down.
-    [switch]$StayOpen
+    [switch]$StayOpen,
+    # Save a picture of the sandbox's screen every this many seconds into <Out>\screens,
+    # for whoever could not watch it happen. 0 = none.
+    [int]$ScreenshotSeconds = 0
 )
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
@@ -66,6 +69,29 @@ function Wait-Enter([int]$minutes) {
 
 "" | Out-File -Encoding utf8 $logFile
 Say "Upshot sandbox test, mode $Mode, as $(whoami)" 'White'
+if ($ScreenshotSeconds -gt 0) {
+    # A process of its own, so it keeps shooting while this script waits on the installer.
+    # It stops when DONE.txt appears, or after 400 pictures.
+    $screens = Join-Path $Out 'screens'
+    New-Item -ItemType Directory -Force -Path $screens | Out-Null
+    $shooter = Join-Path $env:TEMP 'screens.ps1'
+    @"
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+for (`$i = 0; `$i -lt 400 -and -not (Test-Path '$(Join-Path $Out 'DONE.txt')'); `$i++) {
+    try {
+        `$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        `$bmp = New-Object System.Drawing.Bitmap `$b.Width, `$b.Height
+        `$g = [System.Drawing.Graphics]::FromImage(`$bmp)
+        `$g.CopyFromScreen(`$b.Location, [System.Drawing.Point]::Empty, `$b.Size)
+        `$bmp.Save((Join-Path '$screens' ((Get-Date).ToString('HHmmss') + '.png')), [System.Drawing.Imaging.ImageFormat]::Png)
+        `$g.Dispose(); `$bmp.Dispose()
+    } catch { }
+    Start-Sleep -Seconds $ScreenshotSeconds
+}
+"@ | Out-File -Encoding ascii $shooter
+    Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $shooter) -WindowStyle Hidden | Out-Null
+    Say "screenshots every $ScreenshotSeconds s into $screens" 'DarkGray'
+}
 Say "Log: $logFile" 'White'
 
 $app = Join-Path $env:LOCALAPPDATA 'Programs\Upshot'
@@ -214,13 +240,15 @@ try {
             Say "Installed Upshot $($b.version), commit $($b.commit), built $($b.built)" 'White'
         } catch { Say "skip build-info : $($_.Exception.Message)" 'DarkYellow' }
         # The UI renders (JavaScript ran, no blank page): headless Edge dumps the DOM. Its own
-        # profile folder, so it never touches the visible window's.
+        # profile folder, so it never touches the visible window's. --timeout, not
+        # --virtual-time-budget: the app's open event stream keeps virtual time from ever
+        # running out, so Edge never dumped anything (found by machine A, 2026-09-26).
         foreach ($route in @('/welcome', '/', '/search', '/settings', '/actions')) {
             if (-not $edge) { Step "ui $route" $false 'no msedge.exe'; break }
             Doing "rendering $route in headless Edge"
             $dump = Join-Path $Out ("dom" + ($route -replace '[/]', '_') + '.html')
             $headless = "$env:TEMP\edge-headless"
-            $ep = Start-Process -FilePath $edge -ArgumentList @('--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', "--user-data-dir=$headless", '--virtual-time-budget=15000', '--dump-dom', "$base$route") -RedirectStandardOutput $dump -PassThru -WindowStyle Hidden
+            $ep = Start-Process -FilePath $edge -ArgumentList @('--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', "--user-data-dir=$headless", '--timeout=15000', '--dump-dom', "$base$route") -RedirectStandardOutput $dump -PassThru -WindowStyle Hidden
             $finished = $ep.WaitForExit(60000)
             Stop-EdgeProfile 'edge-headless'
             $html = if (Test-Path $dump) { Get-Content -Raw -Encoding UTF8 $dump } else { '' }
