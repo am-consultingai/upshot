@@ -55,10 +55,171 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: startup
 
 [Tasks]
 Name: "startup"; Description: "Start {#AppName} when I sign in"; GroupDescription: "Autostart:"
+; Ticked by default. A silent install that must not download passes /MERGETASKS="!speechmodel".
+Name: "speechmodel"; Description: "Download the speech model now (about 3 GB; with a suitable NVIDIA GPU, also its libraries, about 1.2 GB)"; GroupDescription: "Transcription:"
 
 [Run]
 Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
 ; User data (meetings, recordings, settings, the speech model) lives in
-; %LOCALAPPDATA%\upshot, outside {app}, so the uninstaller leaves it alone.
+; %LOCALAPPDATA%\upshot, outside {app}, so the uninstaller leaves it alone. It only
+; offers to remove the speech model and GPU libraries (see [Code]).
+
+[Code]
+{ The speech model (and, with a suitable NVIDIA GPU, the CUDA libraries) is fetched
+  during the install by "upshot.exe --prepare" (app/prepare.py), which does the work and
+  the checks; this page only shows the progress file it writes and asks it to stop.
+  A download that fails or is stopped never fails the install: the app fetches a
+  missing model before the first transcription, and runs on the CPU without the GPU
+  libraries. }
+
+const
+  { Polls (200 ms each) without a new report before the download counts as dead: 2 minutes. }
+  StalePolls = 600;
+
+var
+  PreparePage: TOutputProgressWizardPage;
+  LaterButton: TNewButton;
+  LaterClicked: Boolean;
+  PrepareNote: String;
+
+procedure LaterButtonClick(Sender: TObject);
+begin
+  LaterClicked := True;
+  LaterButton.Enabled := False;
+  LaterButton.Caption := 'Stopping...';
+end;
+
+procedure InitializeWizard;
+begin
+  PreparePage := CreateOutputProgressPage('Getting {#AppName} ready to transcribe',
+    '{#AppName} transcribes on this computer, so it needs its speech model. This is a one-time download.');
+  LaterButton := TNewButton.Create(PreparePage);
+  LaterButton.Caption := 'Download later';
+  LaterButton.Top := PreparePage.ProgressBar.Top + PreparePage.ProgressBar.Height + ScaleY(16);
+  LaterButton.Width := ScaleX(130);
+  LaterButton.Height := WizardForm.CancelButton.Height;
+  LaterButton.OnClick := @LaterButtonClick;
+  LaterButton.Parent := PreparePage.Surface;
+end;
+
+function ReadValue(const Lines: TArrayOfString; const Key: String): String;
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 0 to GetArrayLength(Lines) - 1 do
+    if Pos(Key + '=', Lines[I]) = 1 then begin
+      Result := Copy(Lines[I], Length(Key) + 2, MaxInt);
+      Exit;
+    end;
+end;
+
+function StageHint(const Stage: String): String;
+begin
+  if Stage = 'gpu' then
+    Result := 'NVIDIA cuBLAS and cuDNN, so transcription runs on your graphics card.'
+  else
+    Result := 'Hebrew and English speech recognition (ivrit-ai), from Hugging Face.';
+end;
+
+procedure RunPrepare;
+var
+  ProgressFile, CancelFile, Params, Stage, State, Code, Tick, LastTick: String;
+  Lines: TArrayOfString;
+  ResultCode, Percent, Quiet: Integer;
+begin
+  ProgressFile := ExpandConstant('{tmp}\prepare-progress.txt');
+  CancelFile := ExpandConstant('{tmp}\prepare-cancel');
+  Params := '--prepare --progress-file "' + ProgressFile + '" --cancel-file "' + CancelFile + '"';
+  Log('Running upshot.exe ' + Params);
+  { As the signed-in user, not an elevated one: the model belongs in their profile. }
+  if not ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), Params, '', SW_HIDE, ewNoWait, ResultCode) then begin
+    Log('Could not start the download: ' + SysErrorMessage(ResultCode));
+    PrepareNote := 'The speech model was not downloaded. {#AppName} downloads it before your first transcription.';
+    Exit;
+  end;
+  PreparePage.SetText('Starting the download...', StageHint('model'));
+  PreparePage.SetProgress(0, 100);
+  PreparePage.Show;
+  State := '';
+  Stage := 'model';
+  LastTick := '';
+  Quiet := 0;
+  try
+    repeat
+      Sleep(200);
+      Quiet := Quiet + 1;
+      if LaterClicked and not FileExists(CancelFile) then
+        SaveStringToFile(CancelFile, 'cancel', False);
+      if LoadStringsFromFile(ProgressFile, Lines) then begin
+        Tick := ReadValue(Lines, 'tick');
+        if Tick <> LastTick then begin
+          LastTick := Tick;
+          Quiet := 0;
+        end;
+        Stage := ReadValue(Lines, 'stage');
+        State := ReadValue(Lines, 'state');
+        Code := ReadValue(Lines, 'code');
+        Percent := StrToIntDef(ReadValue(Lines, 'percent'), 0);
+        PreparePage.SetText(ReadValue(Lines, 'text'), StageHint(Stage));
+        PreparePage.SetProgress(Percent, 100);
+        if (State = 'failed') or (State = 'cancelled') or ((Stage = 'done') and (State = 'ready')) then
+          Break;
+      end else
+        { Keeps the window responsive while the first report is on its way. }
+        PreparePage.SetProgress(PreparePage.ProgressBar.Position, 100);
+      if Quiet > StalePolls then begin
+        Log('The download stopped reporting; leaving it to the app.');
+        State := 'failed';
+        Break;
+      end;
+    until False;
+  finally
+    PreparePage.Hide;
+  end;
+  Log('Prepare ended: stage=' + Stage + ' state=' + State + ' code=' + Code);
+  if State = 'cancelled' then
+    PrepareNote := 'The speech model download was paused. {#AppName} continues it before your first transcription.'
+  else if Code = 'no_space' then
+    PrepareNote := 'There was not enough free disk space for the speech model (about 4 GB). Free some space; {#AppName} downloads it before your first transcription.'
+  else if State = 'failed' then begin
+    if Stage = 'gpu' then
+      PrepareNote := 'The speech model is ready. The GPU libraries could not be downloaded, so {#AppName} transcribes on the processor for now.'
+    else
+      PrepareNote := 'The speech model could not be downloaded now. {#AppName} tries again before your first transcription.';
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('speechmodel') then
+    RunPrepare;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and (PrepareNote <> '') then
+    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 + PrepareNote;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Home, What: String;
+begin
+  if (CurUninstallStep <> usPostUninstall) or UninstallSilent then
+    Exit;
+  Home := ExpandConstant('{localappdata}\upshot');
+  if not DirExists(Home + '\models') and not DirExists(Home + '\cuda') then
+    Exit;
+  What := 'the speech model (about 3 GB)';
+  if DirExists(Home + '\cuda') then
+    What := 'the speech model and the GPU libraries (about 5 GB)';
+  if MsgBox('Also remove ' + What + '?' + #13#10#13#10 +
+      'Your recordings, transcripts and settings are kept either way. Keep the model if you may reinstall {#AppName}.',
+      mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then begin
+    DelTree(Home + '\models', True, True, True);
+    DelTree(Home + '\cuda', True, True, True);
+  end;
+end;

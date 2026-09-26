@@ -209,6 +209,14 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
 
         index = arguments.index("--toast")
         return toast_main(arguments[index + 1 :])
+    if "--prepare" in arguments:
+        # The installer's download step: the speech model and, with a suitable NVIDIA
+        # GPU, the CUDA libraries (app/prepare.py). The installer reads its progress file.
+        from app.prepare import main as prepare_main
+
+        setup()
+        index = arguments.index("--prepare")
+        return prepare_main(arguments[index + 1 :])
     if "--bootstrap" in arguments:
         from app.bootstrap import run as bootstrap_run
 
