@@ -2,6 +2,11 @@
 
 A second launch exits 3 after opening the first one's page in the browser: the running
 instance records its port in the app home for exactly this.
+
+``upshot.exe --quit`` asks the running instance to quit, through a named event it waits
+on. The installer and the uninstaller call it: the tray app has no window, so Windows'
+Restart Manager could not close it, and the uninstaller left 57 files behind next to a
+running app while reporting success (job 022).
 """
 
 from __future__ import annotations
@@ -9,6 +14,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +27,7 @@ log = get(__name__)
 # Local\, not Global\: one instance per signed-in user. A Global\ name let one user's
 # Upshot stop every other user's on the same PC, each with their own app home.
 MUTEX_NAME = r"Local\upshot"
+QUIT_EVENT = r"Local\upshot-quit"
 ALREADY_RUNNING = 3
 PORT_FILE = "server.port"
 
@@ -51,6 +59,42 @@ def show_running(home: Path | None = None, *, opener: Any = None) -> bool:
         opener = webbrowser.open
     opener(f"http://127.0.0.1:{port}/")
     return True
+
+
+def request_quit(name: str = QUIT_EVENT) -> bool:
+    """Tell the running instance to quit. False when none is listening (or not Windows)."""
+    if sys.platform != "win32":
+        return False
+    import win32api  # pragma: no cover - Windows only
+    import win32event
+
+    try:
+        handle = win32event.OpenEvent(win32event.EVENT_MODIFY_STATE, False, name)
+    except Exception:  # pywintypes.error: no such event, so nothing is running
+        return False
+    try:
+        win32event.SetEvent(handle)
+    finally:
+        win32api.CloseHandle(handle)
+    return True
+
+
+def watch_quit(on_quit: Callable[[], None], name: str = QUIT_EVENT) -> threading.Thread | None:
+    """Call ``on_quit`` once ``request_quit`` is heard. Nothing to watch off Windows."""
+    if sys.platform != "win32":
+        return None
+    import win32event  # pragma: no cover - Windows only
+
+    event = win32event.CreateEvent(None, False, False, name)
+
+    def wait() -> None:
+        win32event.WaitForSingleObject(event, win32event.INFINITE)
+        log.info("asked to quit (the installer or the uninstaller)")
+        on_quit()
+
+    thread = threading.Thread(target=wait, name="quit-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 class SingleInstance:

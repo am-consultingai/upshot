@@ -197,6 +197,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         # Windowed: no stderr for the model download's progress bars to write to. Set
         # before huggingface_hub is imported, which reads it once.
         os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    if "--quit" in arguments:
+        # The installer and the uninstaller close a running copy this way (app/instance.py).
+        from app.instance import request_quit
+
+        return 0 if request_quit() else 1
     if "--selftest" in arguments:
         from app.selftest import main as selftest_main
 
@@ -257,11 +262,12 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     start_background(services)
     from app import paths
     from app.api.security import write_launcher_key
-    from app.instance import record_port
+    from app.instance import record_port, watch_quit
 
     write_launcher_key(services.auth, paths.app_home())
     record_port(server.bound_port)
     tray = TrayApp(services)
+    watch_quit(tray.stop)
     try:
         tray.run()
     finally:
