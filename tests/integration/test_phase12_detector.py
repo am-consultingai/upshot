@@ -323,11 +323,15 @@ def test_shadow_mode_commits_nothing(tmp_path: Path) -> None:
     assert events[0].peak_score >= 9
     assert h.detector.state is DetectorState.IDLE
     assert h.recorder.armed is False
+    # Detect and notify (D64): the user is told, once, that the call is not recorded.
+    toasts = [t for t in h.notifier.shown if t.key.startswith("call:")]
+    assert [t.title for t in toasts] == ["Zoom Meeting started in Zoom"]
     # and it does not re-open the streams every few seconds while the mic stays held
     h.seconds(30)
     assert h.detector.state is DetectorState.IDLE
     assert len(h.dao.detector_events()) == 1
     assert data_root_files(h) == []
+    assert len([t for t in h.notifier.shown if t.key.startswith("call:")]) == 1
 
 
 def test_off_mode_does_nothing(tmp_path: Path) -> None:

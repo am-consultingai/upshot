@@ -1,110 +1,70 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { useI18n, type MessageKey } from "../i18n";
-import AudioDeviceSettings from "../components/AudioDeviceSettings";
-import BusyButton from "../components/BusyButton";
-import { PinnedContext, SettingGroup } from "../components/SettingRow";
-import { ComputeDeviceRow, SpeechModelRow, useModelStatus } from "../components/SpeechSettings";
-
-/** One numbered step: the heading says what it is, the rows below do it. */
-function Step({ n, title, hint, children }: { n: number; title: MessageKey; hint?: MessageKey; children: React.ReactNode }) {
-  const { t } = useI18n();
-  return (
-    <section data-testid={`welcome-step-${n}`} className="mb-8">
-      <h2 className="mb-1.5 flex items-baseline gap-2 px-1 text-sm font-medium">
-        <span className="text-tertiary tabular-nums">{n}</span>
-        <span>{t(title)}</span>
-      </h2>
-      {hint && <p className="mb-2 max-w-prose px-1 text-xs leading-relaxed text-tertiary">{t(hint)}</p>}
-      <SettingGroup>{children}</SettingGroup>
-    </section>
-  );
-}
+import SetupFlow from "../setup/SetupFlow";
+import { SetupBackendContext } from "../setup/backend";
+import { ApiSetupBackend } from "../setup/apiBackend";
 
 /**
- * First-run setup (ClickUp z8tj1had06).
+ * First-run setup (epic z8tj1hb01k): Welcome → Google Calendar → AI summaries → Sound
+ * check → Done, with the speech model first when the installer could not fetch it.
  *
- * A stranger installing Upshot on Windows had no speech model on disk and no way to learn
- * that until their first meeting sat "transcribing" for minutes. This screen asks the
- * three things that decide whether the first meeting works: the model is downloaded, the
- * devices are tested, and the device plan says how long a transcript will take. There is
- * no language question: one model transcribes Hebrew and English alike (D60), and the
- * meeting's language is read from its transcript.
- *
- * There is no AI provider step and no calendar step, deliberately: both are optional to
- * a working transcript, both live in Settings with their own "!" until set up, and a
- * first-run screen that asks for an API key is one people close.
- *
- * Every control applies the moment it changes, like Settings. "Done" and "Skip" both mark
- * setup finished (`setup.done`); nothing else is saved by either.
+ * The screens are the ones confirmed on the mock (Setup 0); this route gives them the
+ * real backend. What the machine already has — a model, a calendar, a signed-in CLI, a
+ * saved step to resume on — is read once before the first screen, because it decides
+ * which steps there are. Finishing saves the choices and `setup.done`, and opens the
+ * Timeline.
  */
 export default function Welcome() {
-  const { t } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const model = useModelStatus();
+  const [backend, setBackend] = useState<ApiSetupBackend | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const finish = useMutation({
-    mutationFn: (values: Record<string, unknown>) =>
-      api.putSettings({ ...values, "setup.done": true }),
-    onSuccess: (next) => {
-      // Set rather than invalidated: the shell reads this to decide whether to send the
-      // next screen back here, and a refetch in flight would briefly say "not done".
-      queryClient.setQueryData(["settings"], next);
-      navigate("/", { replace: true });
-    },
-  });
+  useEffect(() => {
+    let live: ApiSetupBackend | null = null;
+    let gone = false;
+    ApiSetupBackend.create()
+      .then((created) => {
+        if (gone) {
+          created.dispose();
+          return;
+        }
+        live = created;
+        setBackend(created);
+      })
+      .catch((reason: unknown) => setError(String(reason)));
+    return () => {
+      gone = true;
+      live?.dispose();
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <p data-testid="welcome-error" className="text-sm text-danger">
+        {error}
+      </p>
+    );
+  }
+  if (!backend) return null;
 
   return (
-    <PinnedContext.Provider value={settings.data?.pinned ?? {}}>
-      <section data-testid="welcome-page">
-        <h1 className="display mb-2 text-2xl">{t("welcome.title")}</h1>
-        <p className="mb-8 max-w-prose text-sm text-secondary">{t("welcome.intro")}</p>
-
-        <Step n={1} title="speech.model">
-          <SpeechModelRow />
-        </Step>
-
-        <Step n={2} title="welcome.audio" hint="welcome.audioHint">
-          <AudioDeviceSettings />
-        </Step>
-
-        <Step n={3} title="welcome.device">
-          <ComputeDeviceRow />
-        </Step>
-
-        {model.data && model.data.state !== "ready" && (
-          <p data-testid="welcome-model-later" className="mb-4 max-w-prose text-xs text-tertiary">
-            {t("welcome.modelLater")}
-          </p>
-        )}
-        <div className="flex items-center gap-3">
-          <BusyButton
-            data-testid="welcome-done"
-            busy={finish.isPending}
-            onClick={() => finish.mutate({})}
-            className="rounded bg-accent px-3 py-1.5 text-sm text-on-accent"
-          >
-            {t("welcome.done")}
-          </BusyButton>
-          <button
-            type="button"
-            data-testid="welcome-skip"
-            disabled={finish.isPending}
-            onClick={() => finish.mutate({})}
-            className="rounded px-3 py-1.5 text-sm text-secondary hover:bg-a-200 active:bg-a-300"
-          >
-            {t("welcome.skip")}
-          </button>
-        </div>
-        {finish.error && (
-          <p data-testid="welcome-error" className="mt-2 text-xs text-danger">
-            {String(finish.error.message)}
-          </p>
-        )}
+    <SetupBackendContext.Provider value={backend}>
+      <section data-testid="welcome-page" className="flex min-w-0 flex-1">
+        <SetupFlow
+          onFinished={async () => {
+            // Set rather than invalidated: the shell reads this to decide whether to send
+            // the next screen back here, and a refetch in flight would briefly say "not done".
+            queryClient.setQueryData(["settings"], await api.settings());
+            await queryClient.invalidateQueries({ queryKey: ["llm-status"] });
+            // The shell sees this once and celebrates (Confetti); it is cleared straight
+            // after, so a reload does not do it again.
+            navigate("/", { replace: true, state: { celebrate: true } });
+          }}
+        />
       </section>
-    </PinnedContext.Provider>
+    </SetupBackendContext.Provider>
   );
 }

@@ -126,7 +126,7 @@ describe("locale labels", () => {
   });
 });
 
-import { allDayKeys, isHappening, recordedIds, timedEvents } from "../src/lib/calendar";
+import { allDayKeys, isHappening, recordedIds, timedEvents, workingHours } from "../src/lib/calendar";
 
 describe("calendar events on the grid", () => {
   const base = {
@@ -188,5 +188,18 @@ describe("the grid opens on the working day", () => {
 
   it("ignores a start it cannot read", () => {
     expect(firstMinute(["not a date"])).toBe(8 * 60);
+  });
+});
+
+describe("workingHours", () => {
+  it("defaults to 08:00–18:00", () => {
+    expect(workingHours(undefined)).toEqual({ start: 8, end: 18 });
+    expect(workingHours({})).toEqual({ start: 8, end: 18 });
+  });
+  it("reads what Settings saved", () => {
+    expect(workingHours({ calendar: { work_start: 9, work_end: 17 } })).toEqual({ start: 9, end: 17 });
+  });
+  it("ignores a day that runs backwards", () => {
+    expect(workingHours({ calendar: { work_start: 18, work_end: 8 } })).toEqual({ start: 8, end: 18 });
   });
 });
