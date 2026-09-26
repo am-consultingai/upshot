@@ -63,8 +63,9 @@ try {
     Good 'Windows Sandbox is installed'
     $open = Sandbox-Windows
     if ($open.Count -gt 0) {
-        Warn 'A sandbox is already open. Only one can run at a time, and closing it discards what is in it.'
-        if (-not (Ask 'Close it and continue?')) { throw 'Stopped: a sandbox is already open.' }
+        # Only one sandbox can run at a time. Closing it discards everything in it, including
+        # an Upshot installed there, which is what a fresh run wants anyway.
+        Warn 'a sandbox is already open; closing it (everything in it is discarded)'
         $open | ForEach-Object { [void]$_.CloseMainWindow() }
         Start-Sleep -Seconds 20
         Get-Process -Name 'WindowsSandbox*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
