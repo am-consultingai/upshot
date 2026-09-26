@@ -41,6 +41,8 @@ projects/upshot/
 
 A `job.md` states: the goal, the commit (`git rev-parse origin/main` at posting), the steps, what "pass" means, the time budget, and the evidence wanted. `result.json` is described in `prompt-b.md`. Large files (installers) go with a `.sha256`; B verifies it before use.
 
+**Posting a job**: push the whole folder to `staging/<NNN-slug>/`, check every file arrived, then `drive.py mv staging/<NNN-slug> jobs` (one parent change, so B never sees half a job). B also skips a job folder that has no `job.md` yet (job 015 was claimed while its zip was still uploading).
+
 ## Clean-machine jobs: Windows Sandbox on B (proved by job 001, 2026-09-23)
 
 - B has `WindowsSandbox.exe` but **no `wsb.exe`** CLI, so there is no start/stop/list by id. A job ships a `.wsb` with two mapped folders (`C:\upshot-work\<job>\in` read-only → `C:\in`, `…\out` writable → `C:\out`) and a `LogonCommand` of `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\in\<script>.ps1`.

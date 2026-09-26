@@ -120,7 +120,8 @@ def claude(prompt: str, cwd: Path, settings: Path, logfile: Path, timeout: int) 
 def next_job() -> str | None:
     jobs = sorted(c["name"] for c in drive.ls("jobs") if c["mimeType"] == drive.FOLDER)
     for job in jobs:
-        if not drive.resolve(f"results/{job}/result.json"):
+        # A job folder without job.md is still being uploaded (job 015 was claimed half-way).
+        if drive.resolve(f"jobs/{job}/job.md") and not drive.resolve(f"results/{job}/result.json"):
             return job
     return None
 
