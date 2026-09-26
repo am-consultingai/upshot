@@ -1,0 +1,20 @@
+<Configuration>
+  <!-- Double-click on machine B to click through an Upshot install yourself (the wizard waits for you).
+       C:\upshot-work\sandbox-watch must hold: this file, sandbox-test.ps1, and an in\ folder
+       with Upshot-<ver>-installer.zip, its .sha256 and upshot-test-signing.cer.
+       Results land in C:\upshot-work\sandbox-watch\out on the host. -->
+  <Networking>Enable</Networking>
+  <VGpu>Disable</VGpu>
+  <AudioInput>Disable</AudioInput>
+  <MemoryInMB>6144</MemoryInMB>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\upshot-work\sandbox-watch</HostFolder>
+      <SandboxFolder>C:\watch</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -NoExit -ExecutionPolicy Bypass -File C:\watch\sandbox-test.ps1 -Mode watch -In C:\watch\in -Out C:\watch\out</Command>
+  </LogonCommand>
+</Configuration>
