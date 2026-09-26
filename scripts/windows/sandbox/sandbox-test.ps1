@@ -116,11 +116,12 @@ try {
         Say "(Ticking 'Launch Upshot' on the last page is fine; this script carries on after it closes.)" 'Yellow'
         $installArgs = @('/CURRENTUSER', "/LOG=`"$installLog`"")
     } elseif ($visible) {
-        Doing "installing: the installer's progress window, no questions (/SILENT)"
+        Doing "installing: the installer's progress window, no questions (/SILENT), and the speech model download (about 3 GB, several minutes)"
         $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/LOG=`"$installLog`"")
     } else {
-        Doing 'installing silently (/VERYSILENT)'
-        $installArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/LOG=`"$installLog`"")
+        # The runner's jobs skip the 3 GB speech model: they test the install, not the download.
+        Doing 'installing silently (/VERYSILENT), without the speech model download'
+        $installArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/MERGETASKS="!speechmodel"', "/LOG=`"$installLog`"")
     }
     $t0 = Get-Date
     # Setup.exe waits for its own .tmp stage and returns that exit code, so wait for Setup.exe
@@ -136,6 +137,14 @@ try {
     $exeSig = Get-AuthenticodeSignature $exe
     Step 'app-signed' ($null -ne $exeSig.SignerCertificate) "status=$($exeSig.Status)"
     Step 'bootstrap' (Test-Path $home_) "app home exists=$(Test-Path $home_)"
+    # The installer's download step (app/prepare.py): the model is in place and verified.
+    if ($Mode -ne 'auto') {
+        $model = Join-Path $home_ 'models\asr\ivrit-ai__whisper-large-v3-ct2'
+        $verified = Test-Path (Join-Path $model '.upshot-verified')
+        $mb = if (Test-Path $model) { [int]((Get-ChildItem -Recurse -File $model | Measure-Object Length -Sum).Sum / 1MB) } else { 0 }
+        $note = (Select-String -Path $installLog -Pattern 'Prepare ended' -ErrorAction SilentlyContinue | Select-Object -Last 1).Line
+        Step 'speech-model' $verified "verified=$verified size=${mb} MB installer: $note"
+    }
 
     # The app's own log, live, in a window of its own.
     if ($visible) {
