@@ -10,6 +10,8 @@
   #define AppCommit "unknown"
 #endif
 #define AppExe "upshot.exe"
+; The running app's single-instance mutex (app/instance.py MUTEX_NAME).
+#define AppMutex "Local\upshot"
 
 [Setup]
 ; Never change the AppId: it is how an upgrade finds the installed copy.
@@ -86,12 +88,29 @@ var
 
 { Upshot runs in the tray with no window, so neither CloseApplications nor the
   uninstaller can ask it to close: job 022 found the uninstaller leaving 57 files and a
-  running upshot.exe behind while reporting success. Stop it outright. /T takes its
-  child processes (a notification being shown) with it. }
+  running upshot.exe behind while reporting success. First "upshot.exe --quit"
+  (app/instance.py), so a meeting being recorded is closed properly; once its
+  single-instance mutex has gone, or after 10 seconds, stop what is left outright. /T takes
+  its child processes (a notification being shown) with it. }
 procedure StopUpshot;
 var
-  ResultCode: Integer;
+  Exe: String;
+  ResultCode, I: Integer;
 begin
+  Exe := ExpandConstant('{app}\{#AppExe}');
+  if CheckForMutexes('{#AppMutex}') and FileExists(Exe) then begin
+    Log('Upshot is running; asking it to quit.');
+    Exec(Exe, '--quit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    I := 0;
+    while CheckForMutexes('{#AppMutex}') and (I < 50) do begin
+      Sleep(200);
+      I := I + 1;
+    end;
+    if I < 50 then
+      Log('Upshot quit.')
+    else
+      Log('Upshot did not quit within 10 seconds.');
+  end;
   if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
     { 0: stopped; 128: none was running }
     Log('taskkill {#AppExe}: exit ' + IntToStr(ResultCode));

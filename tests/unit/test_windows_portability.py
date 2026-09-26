@@ -103,6 +103,31 @@ def test_the_instance_mutex_is_per_user() -> None:
     assert instance.MUTEX_NAME.startswith("Local\\")
 
 
+def test_the_installer_and_uninstaller_close_the_running_app() -> None:
+    """The tray app has no window for the Restart Manager to close, so the uninstaller
+    left it running with 57 files behind (job 022). Both now ask it to quit first."""
+    iss = Path("packaging/installer.iss").read_text(encoding="utf-8")
+    assert f'#define AppMutex "{instance.MUTEX_NAME}"' in iss
+    assert "'--quit'" in iss
+    assert "function PrepareToInstall" in iss
+    assert "if CurUninstallStep = usUninstall then\n    StopUpshot;" in iss
+
+
+def test_quit_with_nothing_running_says_so() -> None:
+    assert instance.request_quit(r"Local\upshot-quit-test-nobody") is False
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="named events are Windows")
+def test_quit_reaches_the_running_instance() -> None:
+    import threading
+
+    heard = threading.Event()
+    name = r"Local\upshot-quit-test"
+    assert instance.watch_quit(heard.set, name) is not None
+    assert instance.request_quit(name)
+    assert heard.wait(5)
+
+
 def test_ffmpeg_runs_without_a_console_and_a_hang_is_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
