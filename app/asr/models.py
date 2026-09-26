@@ -143,6 +143,8 @@ def download_diarization(config: Config, *, timeout: float = 300.0) -> Diarizati
     """Fetch the two ONNX models. ~37 MB, no account, no token (DECISIONS.md D28)."""
     import urllib.request
 
+    from app.asr.model_manager import tls_context
+
     models = resolve_diarization(config)
     for target, url in ((models.segmentation, SEGMENTATION_URL), (models.embedding, EMBEDDING_URL)):
         if target.exists():
@@ -150,7 +152,10 @@ def download_diarization(config: Config, *, timeout: float = 300.0) -> Diarizati
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_suffix(target.suffix + ".part")
         log.info("downloading %s → %s", url.rsplit("/", 1)[-1], target)
-        with urllib.request.urlopen(url, timeout=timeout) as response, partial.open("wb") as out:
+        with (
+            urllib.request.urlopen(url, timeout=timeout, context=tls_context()) as response,
+            partial.open("wb") as out,
+        ):
             while chunk := response.read(1 << 20):
                 out.write(chunk)
         partial.replace(target)
