@@ -11,7 +11,7 @@ export type StepId = "welcome" | "calendar" | "ai" | "audio" | "capture" | "done
 /**
  * The steps, in order, for this machine.
  *
- * The speech model is not among them: fetching it is the installer's job, and setup
+ * The speech model is not among them: fetching it is the installer's job (D65), and setup
  * never asks for it. A build with no Google client cannot connect a calendar, so that
  * step is hidden, not shown broken. There is no CPU/GPU step: the device is chosen
  * automatically. How meetings are recorded comes last, once the user has seen what
