@@ -186,3 +186,74 @@ def test_status_survives_a_data_folder_on_a_missing_drive(tmp_path: Path, app_ho
     api.services.config.set("data_root", str(tmp_path / "unplugged" / "drive" / "meetings"))
     response = api.client().get("/api/status")
     assert response.status_code == 200
+
+
+# -- the real downloader, with the network faked ----------------------------------------
+
+def test_a_stopped_download_keeps_its_part_file_and_the_next_one_fetches_the_rest(
+    app_home: Path,
+) -> None:
+    """huggingface_hub 1.29 deletes a partial file on any failure, so a stopped 3 GB
+    download started again from zero. Ours continues from the .part file."""
+    from collections.abc import Callable
+
+    from app.asr.model_manager import DownloadCancelled, http_downloader
+
+    blobs = {"model.bin": MODEL, "config.json": CONFIG}
+    asked: list[tuple[str, int]] = []
+    stop_at: list[int | None] = [2048]
+
+    def fetch(url: str, dest: Path, on_bytes: Callable[[int], None], cancel: object) -> None:
+        name = url.rsplit("/", 1)[-1]
+        data = blobs[name]
+        start = dest.stat().st_size if dest.exists() else 0
+        asked.append((name, start))
+        with dest.open("ab") as out:
+            for at in range(start, len(data), 512):
+                if stop_at[0] is not None and at >= stop_at[0]:
+                    raise DownloadCancelled()
+                out.write(data[at : at + 512])
+                on_bytes(len(data[at : at + 512]))
+
+    first = ModelManager(REPO, home=app_home, lister=lister,
+                         downloader=http_downloader(lister, fetch))  # fmt: skip
+    first.start()
+    assert first.wait(5).state == "cancelled"
+    part = target_for(REPO, app_home) / "model.bin.part"
+    assert part.stat().st_size == 2048, "the partial file stays"
+
+    stop_at[0] = None
+    asked.clear()
+    second = ModelManager(REPO, home=app_home, lister=lister,
+                          downloader=http_downloader(lister, fetch))  # fmt: skip
+    status = second.start()
+    status = second.wait(5)
+    assert status.state == "ready", status.error
+    assert ("model.bin", 2048) in asked, "the second attempt asked only for the rest"
+    assert not part.exists()
+    assert (target_for(REPO, app_home) / "model.bin").read_bytes() == MODEL
+    assert status.done_bytes == status.total_bytes
+
+
+def test_a_part_file_longer_than_the_file_is_started_again(app_home: Path) -> None:
+    from collections.abc import Callable
+
+    from app.asr.model_manager import http_downloader
+
+    target = target_for(REPO, app_home)
+    target.mkdir(parents=True)
+    (target / "model.bin.part").write_bytes(b"x" * (len(MODEL) + 10))
+    blobs = {"model.bin": MODEL, "config.json": CONFIG}
+
+    def fetch(url: str, dest: Path, on_bytes: Callable[[int], None], cancel: object) -> None:
+        data = blobs[url.rsplit("/", 1)[-1]]
+        start = dest.stat().st_size if dest.exists() else 0
+        with dest.open("ab") as out:
+            out.write(data[start:])
+        on_bytes(len(data) - start)
+
+    manager = ModelManager(REPO, home=app_home, lister=lister,
+                           downloader=http_downloader(lister, fetch))  # fmt: skip
+    manager.start()
+    assert manager.wait(5).state == "ready"
+    assert (target / "model.bin").read_bytes() == MODEL
