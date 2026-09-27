@@ -174,3 +174,33 @@ def test_only_the_installed_app_sends_toasts_under_its_own_identity(
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     notifier.call_detected("Teams.exe", "Standup")
     assert json.loads(seen[-1][-1])["aumid"] == "Upshot.App"
+
+
+def test_a_start_that_cannot_record_says_why_and_leaves_nothing(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No microphone (machine B over Remote Desktop, D72): a 409 with a reason, no
+    meeting left behind, and from a notification, a notification saying why."""
+    from app.audio.devices import NoDeviceError
+
+    harness = build_harness(tmp_path)
+    notifier = FakeNotifier()
+    harness.services.notifier = notifier
+    recorder = harness.services.recorder
+    assert recorder is not None
+
+    def no_microphone(*_args: object, **_kwargs: object) -> None:
+        raise NoDeviceError("no default capture endpoint (no microphone)")
+
+    monkeypatch.setattr(recorder, "start", no_microphone)
+    response = _launcher(harness).post(ACTION_PATH, json={"action": "recording.start"})
+    assert response.status_code == 409
+    assert "No microphone" in response.json()["detail"]
+    assert all(m.state == MeetingState.DISCARDED for m in harness.services.dao.list_meetings())
+    assert notifier.titles()[-1] == "Upshot couldn't start recording"
+    assert "No microphone" in notifier.shown[-1].body
+
+    # From the window the error shows there, so no notification is added.
+    before = len(notifier.shown)
+    assert harness.client().post("/api/recording/start", json={}).status_code == 409
+    assert len(notifier.shown) == before
