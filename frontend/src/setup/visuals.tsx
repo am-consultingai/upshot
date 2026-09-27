@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useI18n, type MessageKey } from "../i18n";
+import { directionFor, useI18n, type MessageKey } from "../i18n";
 import type { CalendarPhase, SpeakerPhase } from "./backend";
 import type { CaptureMode } from "./flow";
 import "./setup.css";
@@ -135,112 +135,164 @@ export function HeroFlow() {
 
 /* ---------------------------------------------------------------- Calendar */
 
-/** Upshot's own window, small: the title bar with the mark. */
-function UpshotWindow({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+/** Google's "G", in its own colours: the one mark that says "this is Google's page". */
+function GoogleG({ size = 18 }: { size?: number }) {
   return (
-    <>
-      <rect x={x} y={y} width={w} height={h} rx="8" fill={C.raised} stroke={C.line} />
-      <path d={`M${x} ${y + 8}a8 8 0 0 1 8-8h${w - 16}a8 8 0 0 1 8 8v8H${x}z`} fill={C.surface3} />
-      <path d={`M${x + 8} ${y + 9}c2 0 2-3 4-3s2 3 4 3 2-3 4-3`} fill="none" stroke={C.accent} strokeWidth="1.6" />
-    </>
+    <svg viewBox="0 0 48 48" width={size} height={size} aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
   );
 }
 
-/** A calendar page: the one picture of "your calendar" in this step. */
-function CalendarGlyph({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+/** The pointer, its tip at the top-left corner of its box. */
+function Pointer({ className }: { className: string }) {
   return (
-    <g transform={`translate(${x} ${y}) scale(${s})`}>
-      <rect width="26" height="24" rx="4" fill={C.raised} stroke={C.accent} strokeWidth="1.5" />
-      <path d="M0 4a4 4 0 0 1 4-4h18a4 4 0 0 1 4 4v4H0z" fill={C.accent} />
-      {[0, 1, 2].map((col) => (
-        <rect key={col} x={4 + col * 7} y="12" width="4" height="3.5" rx="1" fill={C.quiet} />
-      ))}
-      {[0, 1].map((col) => (
-        <rect key={col} x={4 + col * 7} y="18" width="4" height="3.5" rx="1" fill={C.quiet} />
-      ))}
-    </g>
+    <svg viewBox="0 0 16 20" width="16" height="20" aria-hidden="true" className={`absolute start-0 top-0 ${className}`}>
+      <path d="M1 1l0 16 4.5-4 3 7 3-1.4-3-7 6-.4z" fill="white" stroke="#1f2328" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
   );
 }
 
 /**
- * Connecting Google Calendar, as the user does it: press Connect in Upshot, a browser
- * opens, pick the Google account, press Allow on Google's permission screen, and Upshot
- * is connected. One loop of about eight seconds (setup.css, "su-c-"); once connected, the
- * last frame holds.
+ * Connecting Google Calendar, as the user does it (D73): press Connect with Google in
+ * Upshot; Google's page opens in the browser; choose the account; on Google's consent
+ * screen, which asks to "View events on all your calendars", press Continue; the browser
+ * closes and Upshot shows the calendar connected. One ten-second loop (setup.css,
+ * "su-g-"). Once connected, only the last frame shows, with the real account.
+ *
+ * Unlike the other scenes this one holds words, because Google's pages are recognised by
+ * them. The stage is laid out left to right in every language (the pointer's path is
+ * fixed), and each text follows its own direction.
  */
-export function CalendarScene({ phase }: { phase: CalendarPhase }) {
-  const connected = phase === "connected";
-  return (
-    <Scene viewBox="0 0 300 120" className="mx-auto w-full max-w-md">
-      {/* Upshot, with the calendar it is about to be given. */}
-      <UpshotWindow x={8} y={14} w={122} h={94} />
-      <CalendarGlyph x={20} y={38} />
-      <rect x="54" y="42" width="62" height="4" rx="2" fill={C.tertiary} />
-      <rect x="54" y="52" width="44" height="4" rx="2" fill={C.strong} />
-      {connected ? (
-        <g>
-          <rect x="20" y="76" width="96" height="20" rx="5" fill={C.successQuiet} />
-          <Tick x={34} y={86} r={7} className="su-draw-tick" />
-          <rect x="46" y="84" width="56" height="4" rx="2" fill={C.success} />
-        </g>
-      ) : (
-        <>
-          <rect x="20" y="76" width="96" height="20" rx="5" fill={C.accent} className="su-c-connect" />
-          <g className="su-c-ok">
-            <rect x="20" y="76" width="96" height="20" rx="5" fill={C.successQuiet} />
-            <Tick x={34} y={86} r={7} />
-            <rect x="46" y="84" width="56" height="4" rx="2" fill={C.success} />
-          </g>
+/** Example accounts on Google's page before a real one is known: data, not text. */
+const SAMPLE_EMAIL = "you@gmail.com";
+const SAMPLE_WORK_EMAIL = "you@company.com";
 
-          {/* The browser Google's pages open in. */}
-          <g className="su-c-browser">
-            <rect x="146" y="6" width="148" height="108" rx="8" fill={C.raised} stroke={C.strong} />
-            <path d="M146 14a8 8 0 0 1 8-8h132a8 8 0 0 1 8 8v8H146z" fill={C.surface3} />
-            {[0, 1, 2].map((i) => (
-              <circle key={i} cx={155 + i * 7} cy="14" r="2" fill={C.strong} />
-            ))}
-            <rect x="180" y="10" width="106" height="8" rx="4" fill={C.raised} />
+export function CalendarScene({ phase, account }: { phase: CalendarPhase; account?: string }) {
+  const { t, locale } = useI18n();
+  // Each line takes the interface's direction: "Upshot wants…" in Hebrew starts with a
+  // Latin word, and dir="auto" would lay the whole sentence out left to right.
+  const dir = directionFor(locale);
+  const connected = phase === "connected";
+  const email = account || SAMPLE_EMAIL;
+  const upshotConnected = (
+    <div className={`absolute inset-x-3 bottom-3 top-10 flex flex-col gap-2 ${connected ? "" : "su-g-done"}`}>
+      <div className="flex items-center gap-2 rounded-lg bg-success-quiet px-2.5 py-2 text-xs font-semibold text-success">
+        <span className="grid size-5 place-items-center rounded-full bg-success text-[11px] text-on-accent">✓</span>
+        <span dir={dir} className="truncate">{t("firstRun.calendar.scene.connected")}</span>
+      </div>
+      <span dir="auto" className="truncate px-1 text-[11px] text-tertiary">{email}</span>
+      {["09:30", "14:00"].map((time, i) => (
+        <div key={time} className="flex items-center gap-2 rounded-md border border-line px-2 py-1.5 text-[11px]">
+          <span className="font-mono text-tertiary">{time}</span>
+          <span className="h-1.5 flex-1 rounded-full bg-line-strong" style={{ maxWidth: i ? 56 : 80 }} />
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div data-testid="scene-calendar" data-phase={phase} dir="ltr" className="relative mx-auto h-[240px] w-[540px] max-w-full select-none" aria-hidden="true">
+      {/* Upshot. */}
+      <div className="absolute start-0 top-5 h-[200px] w-[200px] overflow-hidden rounded-xl border border-line bg-raised shadow-sm">
+        <div className="flex h-7 items-center gap-1.5 bg-surface-3 px-2.5">
+          <svg viewBox="0 0 24 12" width="16" height="8" aria-hidden="true">
+            <path d="M1 7c2.5 0 2.5-5 5-5s2.5 5 5 5 2.5-5 5-5 2.5 5 5 5" fill="none" stroke="var(--color-accent)" strokeWidth="2.2" />
+          </svg>
+          <span className="text-[11px] font-semibold">{t("app.title")}</span>
+        </div>
+        {connected ? (
+          upshotConnected
+        ) : (
+          <>
+            <div className="su-g-ask absolute inset-x-3 top-10 flex flex-col gap-1.5">
+              <span dir={dir} className="text-[12px] font-semibold leading-tight">{t("firstRun.calendar.title")}</span>
+              <span dir={dir} className="text-[10px] leading-snug text-tertiary">{t("firstRun.calendar.lead")}</span>
+            </div>
+            <div className="su-g-connect absolute start-4 top-[150px] flex h-[30px] w-[168px] items-center justify-center gap-2 rounded-md bg-accent text-[11px] font-semibold text-on-accent">
+              <span className="grid size-4 place-items-center rounded-sm bg-[#fff]">
+                <GoogleG size={11} />
+              </span>
+              <span dir={dir}>{t("firstRun.calendar.connect")}</span>
+            </div>
+            {upshotConnected}
+          </>
+        )}
+      </div>
+
+      {!connected && (
+        <>
+          {/* The browser, on Google's pages. */}
+          <div className="su-g-browser absolute start-[220px] top-0 h-[240px] w-[320px] overflow-hidden rounded-xl border border-line-strong bg-[#fff] text-[#1f1f1f] shadow-md">
+            <div className="flex h-[26px] items-center gap-1.5 bg-[#f1f3f4] px-2.5">
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="size-2 rounded-full bg-[#c4c7c5]" />
+              ))}
+              <span className="ms-2 flex h-4 flex-1 items-center rounded-full bg-[#fff] px-2 text-[9px] text-[#444746]">
+                🔒 accounts.google.com
+              </span>
+            </div>
 
             {/* 1. Choose an account. */}
-            <g className="su-c-accounts">
-              <circle cx="220" cy="34" r="6" fill="none" stroke={C.tertiary} strokeWidth="2" />
+            <div className="su-g-accounts absolute inset-x-0 bottom-0 top-[26px] px-5 pt-3">
+              <div className="flex flex-col items-center gap-1">
+                <GoogleG size={20} />
+                <span dir={dir} className="text-[14px]">{t("firstRun.calendar.scene.choose")}</span>
+                <span dir={dir} className="text-[10px] text-[#444746]">{t("firstRun.calendar.scene.toContinue")}</span>
+              </div>
               {[0, 1].map((row) => (
-                <g key={row}>
-                  <rect
-                    x="160"
-                    y={48 + row * 24}
-                    width="120"
-                    height="20"
-                    rx="4"
-                    fill={row === 0 ? C.quiet : C.surface}
-                    className={row === 0 ? "su-c-pick" : undefined}
-                  />
-                  <circle cx="171" cy={58 + row * 24} r="5.5" fill={row === 0 ? C.accent : C.strong} />
-                  <rect x="182" y={53 + row * 24} width={row === 0 ? 70 : 56} height="3.5" rx="1.75" fill={C.tertiary} />
-                  <rect x="182" y={60 + row * 24} width={row === 0 ? 50 : 40} height="3" rx="1.5" fill={C.strong} />
-                </g>
+                <div
+                  key={row}
+                  className={`mt-2 flex h-10 items-center gap-2.5 rounded-lg border border-[#e3e3e3] px-2.5 ${row === 0 ? "su-g-pick" : ""}`}
+                >
+                  <span className={`grid size-6 place-items-center rounded-full text-[11px] font-semibold text-[#fff] ${row === 0 ? "bg-[#1a73e8]" : "bg-[#9aa0a6]"}`}>
+                    {row === 0 ? "Y" : "W"}
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span dir={dir} className="truncate text-[11px] font-medium">
+                      {row === 0 ? t("firstRun.calendar.scene.you") : t("firstRun.calendar.scene.work")}
+                    </span>
+                    <span dir={dir} className="truncate text-[9.5px] text-[#444746]">
+                      {row === 0 ? email : SAMPLE_WORK_EMAIL}
+                    </span>
+                  </span>
+                </div>
               ))}
-            </g>
+            </div>
 
-            {/* 2. Allow Upshot to see the calendar: read-only, one ticked permission. */}
-            <g className="su-c-consent">
-              <CalendarGlyph x={208} y={26} s={0.85} />
-              <rect x="160" y="58" width="120" height="16" rx="4" fill={C.surface} />
-              <rect x="165" y="62" width="8" height="8" rx="2" fill={C.accent} />
-              <path d="M166.5 66l1.7 1.8 3.3-3.6" fill="none" stroke={C.on} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              <rect x="179" y="64" width="72" height="4" rx="2" fill={C.tertiary} />
-              <rect x="190" y="88" width="40" height="16" rx="5" fill="none" stroke={C.strong} />
-              <rect x="236" y="88" width="44" height="16" rx="5" fill={C.accent} className="su-c-allow" />
-            </g>
-          </g>
+            {/* 2. Consent: what Upshot may see. */}
+            <div className="su-g-consent absolute inset-x-0 bottom-0 top-[26px] px-5 pt-3">
+              <div className="flex items-center gap-2">
+                <GoogleG size={16} />
+                <span dir="auto" className="rounded-full border border-[#e3e3e3] px-2 py-0.5 text-[9.5px] text-[#444746]">{email}</span>
+              </div>
+              <p dir={dir} className="mt-2 text-[13px] leading-snug">{t("firstRun.calendar.scene.wants")}</p>
+              <p dir={dir} className="mt-2 text-[10px] text-[#444746]">{t("firstRun.calendar.scene.allow")}</p>
+              <div className="mt-1.5 flex items-center gap-2 rounded-lg border border-[#e3e3e3] px-2.5 py-2">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <rect x="3" y="4" width="18" height="17" rx="2" fill="#fff" stroke="#1a73e8" strokeWidth="1.8" />
+                  <path d="M3 8h18" stroke="#1a73e8" strokeWidth="1.8" />
+                  <text x="12" y="18.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="#1a73e8">31</text>
+                </svg>
+                <span dir={dir} className="flex-1 text-[10.5px]">{t("firstRun.calendar.scene.permission")}</span>
+                <span className="grid size-4 place-items-center rounded-[3px] bg-[#1a73e8] text-[10px] text-[#fff]">✓</span>
+              </div>
+              <p dir={dir} className="mt-2 text-[9px] leading-snug text-[#444746]">{t("firstRun.calendar.scene.trust")}</p>
+              <div className="absolute bottom-3 end-4 flex gap-2">
+                <span dir={dir} className="rounded-full px-3 py-1.5 text-[10.5px] font-medium text-[#1a73e8]">{t("firstRun.calendar.scene.cancel")}</span>
+                <span dir={dir} className="su-g-continue rounded-full bg-[#1a73e8] px-3.5 py-1.5 text-[10.5px] font-medium text-[#fff]">
+                  {t("firstRun.calendar.scene.continue")}
+                </span>
+              </div>
+            </div>
+          </div>
 
-          {/* The pointer: Connect, the account, Allow. */}
-          <g className="su-c-pointer">
-            <path d="M0 0l0 16 4.5-4 3 7 3-1.4-3-7 6-.4z" fill={C.raised} stroke="var(--color-primary)" strokeWidth="1.2" strokeLinejoin="round" />
-          </g>
+          <Pointer className="su-g-pointer" />
         </>
       )}
-    </Scene>
+    </div>
   );
 }
 
