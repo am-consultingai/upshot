@@ -18,7 +18,11 @@ param(
     [Parameter(Mandatory = $true)] [string]$Work,
     [int]$TimeoutMinutes = 40,
     # No steps.log from the guest within this long means the sandbox did not start.
-    [int]$StartMinutes = 3
+    [int]$StartMinutes = 3,
+    # Keep a verified copy of the speech model here for install.wsb to map into the sandbox:
+    # fetched once from Hugging Face (each LFS file checked against its SHA-256), reused after.
+    [string]$ModelCache = '',
+    [string]$ModelRepo = 'ivrit-ai/whisper-large-v3-ct2'
 )
 $ErrorActionPreference = 'Continue'
 $out = Join-Path $Work 'out'
@@ -78,6 +82,38 @@ foreach ($zip in Get-ChildItem $in -Filter '*.zip') {
     $have = (Get-FileHash -Algorithm SHA256 $zip.FullName).Hash.ToLower()
     if ($want -ne $have) { Finish 'bad_input' 0 "$($zip.Name) does not match its .sha256" }
     Note "ok $($zip.Name) $have"
+}
+
+# 1b. The model cache, filled once.
+if ($ModelCache) {
+    $folder = Join-Path $ModelCache ($ModelRepo -replace '/', '__')
+    $verified = Join-Path $folder '.upshot-verified'
+    if (Test-Path $verified) {
+        Note "model cache ready: $folder"
+    } else {
+        Note "filling the model cache: $folder"
+        $times['cache_start'] = (Get-Date).ToUniversalTime().ToString('o')
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        $tree = Invoke-RestMethod -Uri "https://huggingface.co/api/models/$ModelRepo/tree/main" -TimeoutSec 60
+        foreach ($f in @($tree | Where-Object { $_.type -eq 'file' })) {
+            $dest = Join-Path $folder $f.path
+            $url = "https://huggingface.co/$ModelRepo/resolve/main/$($f.path)"
+            # curl.exe resumes a partial file (-C -) and follows the CDN redirect (-L). A file
+            # already whole is left alone: asking to resume it gets a 416 from the server.
+            if (-not ((Test-Path $dest) -and (Get-Item $dest).Length -eq [long]$f.size)) {
+                & (Join-Path $env:WINDIR 'System32\curl.exe') -sS -L -C - -o $dest $url
+            }
+            if ((Get-Item $dest).Length -ne [long]$f.size) { Finish 'bad_input' 0 "model file $($f.path) is $((Get-Item $dest).Length) bytes, not $($f.size)" }
+            if ($f.lfs -and $f.lfs.oid) {
+                $have = (Get-FileHash -Algorithm SHA256 $dest).Hash.ToLower()
+                if ($have -ne $f.lfs.oid) { Rename-Item $dest "$dest.bad"; Finish 'bad_input' 0 "model file $($f.path) does not match its SHA-256" }
+            }
+            Note "model file ok: $($f.path) $($f.size) bytes"
+        }
+        Set-Content -Path $verified -Value $ModelRepo -Encoding ascii -NoNewline
+        $times['cache_done'] = (Get-Date).ToUniversalTime().ToString('o')
+        Note 'model cache filled and verified'
+    }
 }
 
 # 2. No sandbox may be running; if one was, give Windows 3 minutes to tear it down.
