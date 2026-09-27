@@ -197,7 +197,7 @@ export const en = {
   "calendar.syncLabel": "Calendar sync",
   "calendar.syncedAt": "Last synced {time}, {count} events cached.",
   "calendar.notSyncedYet": "Not synced yet.",
-  "calendar.whatIsKept": "Kept on this computer: event titles, times, attendee names and meeting links for 30 days either side of today. Never attendee email addresses or event descriptions.",
+  "calendar.whatIsKept": "Kept on this computer: event titles, times, attendee names and meeting links for 30 days either side of today.",
   "calendar.syncNow": "Sync now",
   "calendar.deleteCache": "Delete cached events",
   "detector.nudgeStarting": "{title} is starting and is not being recorded",
