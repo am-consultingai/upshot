@@ -29,6 +29,10 @@ param(
     # shut itself down with Stop-Computer was followed, twice, by a next start that failed to
     # initialise until B restarted (jobs 023 and 026).
     [switch]$NoShutdown,
+    # A verified model folder (read-only, mapped from the host). The installer then skips
+    # its download (/MERGETASKS="!speechmodel") and the model is copied into place: the
+    # download is proven (jobs 025, 032), and this saves minutes per run.
+    [string]$ModelCache = '',
     # Save a picture of the sandbox's screen every this many seconds into <Out>\screens,
     # for whoever could not watch it happen. 0 = none.
     [int]$ScreenshotSeconds = 0
@@ -102,6 +106,22 @@ public static class Mouse {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
   public static void RightClick(int x, int y) { SetCursorPos(x, y); mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); }
+}
+public static class PopupMenu {
+  [DllImport("user32.dll")] static extern IntPtr FindWindow(string cls, string name);
+  [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr m);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuString(IntPtr m, uint id, System.Text.StringBuilder s, int max, uint flags);
+  // The open context menu (window class #32768): its items, read from the menu itself.
+  public static string[] Items() {
+    IntPtr w = FindWindow("#32768", null);
+    if (w == IntPtr.Zero) return new string[0];
+    IntPtr m = SendMessage(w, 0x01E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
+    int n = GetMenuItemCount(m);
+    var list = new System.Collections.Generic.List<string>();
+    for (int i = 0; i < n; i++) { var b = new System.Text.StringBuilder(256); GetMenuString(m, (uint)i, b, 256, 0x400); if (b.Length > 0) list.Add(b.ToString()); }
+    return list.ToArray();
+  }
 }
 "@
 # One JavaScript expression evaluated in the page Edge has open on <port> (DevTools protocol).
@@ -242,6 +262,9 @@ try {
         Say "The installer is opening. Click through it as a user would." 'Yellow'
         Say "(Ticking 'Launch Upshot' on the last page is fine; this script carries on after it closes.)" 'Yellow'
         $installArgs = @('/CURRENTUSER', "/LOG=`"$installLog`"")
+    } elseif ($visible -and $ModelCache) {
+        Doing "installing: the installer's progress window (/SILENT), without the model download (it comes from $ModelCache)"
+        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/MERGETASKS="!speechmodel"', "/LOG=`"$installLog`"")
     } elseif ($visible) {
         Doing "installing: the installer's progress window, no questions (/SILENT), and the speech model download (about 3 GB, several minutes)"
         $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/LOG=`"$installLog`"")
@@ -275,6 +298,14 @@ try {
     # The installer's download step (app/prepare.py): the model is in place and verified.
     if ($Mode -ne 'auto') {
         $model = Join-Path $home_ 'models\asr\ivrit-ai__whisper-large-v3-ct2'
+        if ($ModelCache) {
+            Doing "copying the speech model from $ModelCache"
+            $t = Get-Date
+            New-Item -ItemType Directory -Force -Path $model | Out-Null
+            Copy-Item -Path (Join-Path $ModelCache '*') -Destination $model -Recurse -Force
+            Copy-Item -Path (Join-Path $ModelCache '.upshot-verified') -Destination $model -Force -ErrorAction SilentlyContinue
+            Say "model copied in $([int]((Get-Date) - $t).TotalSeconds) s" 'DarkGray'
+        }
         $verified = Test-Path (Join-Path $model '.upshot-verified')
         $mb = if (Test-Path $model) { [int]((Get-ChildItem -Recurse -File $model | Measure-Object Length -Sum).Sum / 1MB) } else { 0 }
         $note = (Select-String -Path $installLog -Pattern 'Prepare ended' -ErrorAction SilentlyContinue | Select-Object -Last 1).Line
@@ -348,6 +379,12 @@ try {
             $b = (Get-Content -Raw -Encoding UTF8 (Join-Path $Out 'http_api_status.txt') | ConvertFrom-Json).build
             Say "Installed Upshot $($b.version), commit $($b.commit), built $($b.built)" 'White'
             if ($oldCommit) { Step 'upgraded-build' ($b.commit -ne $oldCommit) "was $oldCommit, now $($b.commit)" }
+            # The build carries the Google client, so Settings can connect a calendar.
+            try {
+                $cal = Invoke-RestMethod -Uri "$base/api/calendar/status" -TimeoutSec 20
+                $configured = if ($null -ne $cal.configured) { $cal.configured } else { $cal.auth.configured }
+                Step 'calendar-client' ([bool]$configured) "configured=$configured"
+            } catch { Step 'calendar-client' $false "$($_.Exception.Message)" }
         } catch { Say "skip build-info : $($_.Exception.Message)" 'DarkYellow' }
         # The UI renders (JavaScript ran, no blank page): headless Edge dumps the DOM. Its own
         # profile folder, so it never touches the visible window's. --timeout, not
@@ -401,8 +438,9 @@ try {
                 [Mouse]::RightClick([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
                 Start-Sleep -Seconds 2
                 Save-Screen 'tray-menu'
-                $AE = [System.Windows.Automation.AutomationElement]
-                $items = @($AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::MenuItem))) | ForEach-Object { $_.Current.Name })
+                # Read from the popup menu itself: UI Automation saw none of its items (job 032),
+                # though the screenshot showed them all.
+                $items = @([PopupMenu]::Items())
                 $want = @('Start recording', 'Stop recording', 'Open dashboard', 'Quit')
                 $missing = @($want | Where-Object { $items -notcontains $_ })
                 Step 'tray-menu' ($missing.Count -eq 0) "items: $($items -join ', ')$(if ($missing) { '; missing: ' + ($missing -join ', ') })"
