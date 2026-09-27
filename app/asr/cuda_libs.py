@@ -20,7 +20,7 @@ import json
 import shutil
 import threading
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -99,6 +99,29 @@ def ready(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> bool:
         return bool(json.loads(marker.read_text(encoding="utf-8")) == _versions(wheels))
     except (OSError, ValueError):
         return False
+
+
+def usable_elsewhere(
+    config: Config,
+    *,
+    search_path: Sequence[str] | None = None,
+    system_dirs: Sequence[str] | None = None,
+) -> Path | None:
+    """A folder the app already loads cuBLAS *and* cuDNN from, outside this app's own copy:
+    ``asr.cuda_dir``, NVIDIA's CUDA Toolkit, or wheels on the path. Then there is nothing to
+    download (a developer's machine would otherwise get a second 1.2 GB copy)."""
+    from app.asr.local import SYSTEM_CUDA_DIRS, cuda_library_dirs
+
+    dirs = cuda_library_dirs(
+        configured=config.get("asr.cuda_dir"),
+        app_home=Path("/nonexistent-app-home"),  # this app's own copy is ready(), not this
+        search_path=search_path,
+        system_dirs=SYSTEM_CUDA_DIRS if system_dirs is None else system_dirs,
+    )
+    for folder in dirs:
+        if any(folder.glob("cudnn64_9*.dll")) or any(folder.glob("libcudnn.so.9*")):
+            return folder
+    return None
 
 
 def wanted(config: Config, vram: VramQuery | None = None) -> tuple[bool, str]:
@@ -249,8 +272,11 @@ class CudaInstaller:
             with zipfile.ZipFile(wheel) as archive:
                 for member in archive.infolist():
                     parts = member.filename.split("/")
-                    if len(parts) == 4 and parts[0] == "nvidia" and parts[2] == "bin" and (
-                        parts[3].lower().endswith(".dll")
+                    if (
+                        len(parts) == 4
+                        and parts[0] == "nvidia"
+                        and parts[2] == "bin"
+                        and (parts[3].lower().endswith(".dll"))
                     ):
                         if self._cancel.is_set():
                             raise DownloadCancelled()
