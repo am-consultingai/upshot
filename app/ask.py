@@ -184,9 +184,11 @@ def ask(
         client = make_client(config, sensitive=any(m.sensitive for m in meetings))
     budget = CHAR_BUDGET.get(client.name, DEFAULT_CHAR_BUDGET)
     # The meeting asked about gets the larger share; related ones split the rest.
-    shares = [budget] if len(meetings) == 1 else [budget // 2] + [
-        (budget // 2) // (len(meetings) - 1)
-    ] * (len(meetings) - 1)
+    shares = (
+        [budget]
+        if len(meetings) == 1
+        else [budget // 2] + [(budget // 2) // (len(meetings) - 1)] * (len(meetings) - 1)
+    )
     context = "\n\n".join(
         section(m, transcripts[m.id], share) for m, share in zip(meetings, shares, strict=True)
     )

@@ -18,14 +18,15 @@ class RecorderState(StrEnum):
 
 
 class IconColor(StrEnum):
-    GREY = "grey"
+    #: Idle and ready: the brand's teal, so the icon reads as on rather than disabled.
+    IDLE = "idle"
     AMBER = "amber"
     RED = "red"
     BLUE = "blue"
 
 
 COLORS: dict[IconColor, tuple[int, int, int]] = {
-    IconColor.GREY: (150, 150, 155),
+    IconColor.IDLE: (15, 111, 104),
     IconColor.AMBER: (230, 160, 30),
     IconColor.RED: (215, 45, 45),
     IconColor.BLUE: (50, 110, 220),
@@ -37,7 +38,6 @@ class Action(StrEnum):
     STOP = "recording.stop"
     PAUSE = "recording.pause"
     OPEN = "dashboard.open"
-    MUTE_HOUR = "detector.mute_1h"
     QUIT = "app.quit"
 
 
@@ -49,7 +49,6 @@ class AppState:
     queue_depth: int = 0
     meeting_title: str | None = None
     detector_mode: str = "shadow"
-    detector_muted: bool = False
     worker_alive: bool = True
 
 
@@ -85,7 +84,7 @@ def _color(state: AppState) -> IconColor:
         return IconColor.AMBER
     if state.processing:
         return IconColor.BLUE
-    return IconColor.GREY
+    return IconColor.IDLE
 
 
 def _tooltip(state: AppState) -> str:
@@ -102,8 +101,6 @@ def _tooltip(state: AppState) -> str:
         return "The worker stopped — recording still works"
     if state.error:
         return "Something needs attention"
-    if state.detector_muted:
-        return "Idle — detection muted"
     return "Idle"
 
 
@@ -116,12 +113,6 @@ def menu_for(state: AppState) -> tuple[MenuItem, ...]:
         MenuItem("Stop recording", Action.STOP, enabled=active),
         MenuItem("Resume" if paused else "Pause", Action.PAUSE, enabled=active),
         MenuItem("Open Upshot", Action.OPEN, enabled=True, default=True),
-        MenuItem(
-            "Don't detect for 1 hour",
-            Action.MUTE_HOUR,
-            enabled=True,
-            checked=state.detector_muted,
-        ),
         MenuItem("Quit", Action.QUIT, enabled=True),
     )
 

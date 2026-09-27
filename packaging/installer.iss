@@ -70,7 +70,8 @@ Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--background"
 
 [Run]
-Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated
+; --setup-again: first-run setup opens after every install, on the saved choices (D69).
+Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap --setup-again"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
 
 ; User data (meetings, recordings, settings, the speech model) lives in

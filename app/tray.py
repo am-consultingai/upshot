@@ -16,7 +16,7 @@ from app import brand, window
 from app.instance import ALREADY_RUNNING, SingleInstance
 from app.log import get, setup
 from app.services import Services
-from app.tray_state import Action, AppState, IconSpec, MenuItem, RecorderState, icon_for
+from app.tray_state import Action, AppState, IconColor, IconSpec, MenuItem, RecorderState, icon_for
 
 log = get(__name__)
 
@@ -38,14 +38,35 @@ def register_app_user_model_id(app_id: str = APP_USER_MODEL_ID) -> bool:
         return False
 
 
-def render_icon(spec: IconSpec) -> Any:
+#: The idle teal on a dark taskbar: the brand's dark-theme accent, since the light-theme
+#: one (IconColor.IDLE) is too dark to read there. From frontend/src/tokens.css.
+IDLE_ON_DARK = (0x3D, 0xBD, 0xB0)
+
+
+def dark_taskbar() -> bool:
+    """Whether Windows draws the taskbar dark (the default on Windows 11)."""
+    try:  # pragma: no cover - Windows only
+        import importlib
+
+        winreg: Any = importlib.import_module("winreg")
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as key:
+            return bool(winreg.QueryValueEx(key, "SystemUsesLightTheme")[0] == 0)
+    except Exception:
+        return False
+
+
+def render_icon(spec: IconSpec, *, dark: bool = False) -> Any:
     """The mark in the state's colour, with a corner badge when needed.
 
     Every decision except the drawing still belongs to :func:`app.tray_state.icon_for`
     and the geometry belongs to :mod:`app.brand`; this function only puts the two
     together.
     """
-    return brand.render(ICON_SIZE, spec.rgb, badge=spec.badge)
+    rgb = IDLE_ON_DARK if dark and spec.color is IconColor.IDLE else spec.rgb
+    return brand.render(ICON_SIZE, rgb, badge=spec.badge)
 
 
 class TrayApp:
@@ -88,7 +109,6 @@ class TrayApp:
             queue_depth=depth,
             meeting_title=self._title(),
             detector_mode=str(self.services.config.get("detection.mode", "shadow")),
-            detector_muted=bool(self.services.extras.get("detector_muted", False)),
             worker_alive=worker is None or worker.is_alive(),
         )
         return self.state
@@ -106,7 +126,7 @@ class TrayApp:
     def refresh(self) -> IconSpec:
         spec = self.spec()
         if self.icon is not None:  # pragma: no cover - needs a desktop
-            self.icon.icon = render_icon(spec)
+            self.icon.icon = render_icon(spec, dark=dark_taskbar())
             self.icon.title = spec.tooltip
             self.icon.menu = self._menu(spec)
             self.icon.update_menu()
@@ -140,10 +160,6 @@ class TrayApp:
             # was spent by the first browser, so a second browser profile opened from
             # here used to be refused with nowhere to get another.
             self.show_window()
-        elif action is Action.MUTE_HOUR:
-            muted = not bool(services.extras.get("detector_muted", False))
-            services.extras["detector_muted"] = muted
-            services.events.publish("detector", muted=muted)
         elif action is Action.QUIT:
             self.stop()
         self.refresh()
@@ -194,7 +210,9 @@ class TrayApp:
 
         register_app_user_model_id()
         spec = self.spec()
-        self.icon = pystray.Icon("upshot", render_icon(spec), spec.tooltip, self._menu(spec))
+        self.icon = pystray.Icon(
+            "upshot", render_icon(spec, dark=dark_taskbar()), spec.tooltip, self._menu(spec)
+        )
         threading.Thread(target=self._poll, name="tray-poll", daemon=True).start()
         self.icon.run()
 
@@ -253,7 +271,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         # Windows' Startup apps list can switch off; a task would ignore that. Creating an
         # ONLOGON task also needs admin, so on a standard account it failed and took the
         # whole first run down with it (machine B).
-        report = bootstrap_run(register_task=False)
+        # The installer passes --setup-again: setup runs after every install (D69).
+        report = bootstrap_run(register_task=False, setup_again="--setup-again" in arguments)
         print(json.dumps(report.as_dict(), indent=2))
         return 0 if report.ok else 1
     setup()

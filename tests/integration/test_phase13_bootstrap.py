@@ -208,3 +208,25 @@ def test_packaging_files_exist() -> None:
     # Windows PowerShell 5.1 reads a BOM-less script as ANSI: one em dash broke the build.
     for script in ("build.ps1", "sign.ps1", "installer.iss"):
         assert Path("packaging", script).read_bytes().isascii(), f"{script} must stay ASCII"
+
+
+def test_an_install_sends_the_next_start_through_setup_again(
+    tmp_path: Path, app_home: Path
+) -> None:
+    """D69: setup runs after every install, on the choices already saved."""
+    from app.config import Config
+
+    config = default_config()
+    config.set("data_root", str(tmp_path / "meetings"))
+    bootstrap.run(config, register_task=False)
+    saved = Config.load(file=paths.config_path())
+    saved.set("setup.done", True)
+    saved.set("detection.mode", "on")
+    saved.save(paths.config_path())
+
+    report = bootstrap.run(config, register_task=False, setup_again=True)
+    assert "setup_again" in [step.name for step in report.steps]
+    after = Config.load(file=paths.config_path())
+    assert after.get("setup.done") is False
+    assert after.get("setup.step") == ""
+    assert after.get("detection.mode") == "on"

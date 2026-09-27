@@ -135,7 +135,7 @@ def test_never_guesses(text: str | None) -> None:
 
 
 def test_specific_beats_vague() -> None:
-    """"This week, by Thursday" means Thursday: the weekday is the more specific part."""
+    """ "This week, by Thursday" means Thursday: the weekday is the more specific part."""
     assert resolve_due("this week, by Thursday", WED) == date(2026, 9, 24)
 
 

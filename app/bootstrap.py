@@ -155,6 +155,7 @@ def run(
     allow_download: bool = True,
     register_task: bool = True,
     exe: Path | None = None,
+    setup_again: bool = False,
 ) -> BootstrapReport:
     """The whole first-run sequence. Safe to run on every launch."""
     home = paths.ensure_app_home()
@@ -219,11 +220,27 @@ def run(
         report.steps.append(Step("config_file", True, str(config_path), changed=True))
     else:
         report.steps.append(Step("config_file", True, f"{config_path} already exists"))
+        if setup_again:
+            report.steps.append(ask_setup_again(config_path))
 
     if not report.ok:
         failed = [step for step in report.steps if not step.ok]
         raise BootstrapError("; ".join(f"{step.name}: {step.detail}" for step in failed))
     return report
+
+
+def ask_setup_again(config_path: Path) -> Step:
+    """Send the next start through first-run setup again (D69: after every install).
+
+    Only the two setup keys change: every choice made before stays, so setup opens on
+    them (the calendar still connected, the same AI) and finishing it changes nothing
+    that was not changed on purpose.
+    """
+    saved = Config.load(file=config_path)
+    saved.set("setup.done", False)
+    saved.set("setup.step", "")
+    saved.save(config_path)
+    return Step("setup_again", True, "first-run setup opens at the next start", changed=True)
 
 
 def preflight(config: Config, *, min_free_bytes: int = 2 * 1024**3) -> list[str]:

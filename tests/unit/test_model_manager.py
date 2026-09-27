@@ -190,6 +190,7 @@ def test_status_survives_a_data_folder_on_a_missing_drive(tmp_path: Path, app_ho
 
 # -- the real downloader, with the network faked ----------------------------------------
 
+
 def test_a_stopped_download_keeps_its_part_file_and_the_next_one_fetches_the_rest(
     app_home: Path,
 ) -> None:

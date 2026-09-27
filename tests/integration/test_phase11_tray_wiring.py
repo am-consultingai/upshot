@@ -15,7 +15,7 @@ from tests.fixtures.api import build_harness
 def test_tray_reflects_the_recorder(tmp_path: Path, app_home: Path) -> None:
     harness = build_harness(tmp_path)
     tray = TrayApp(harness.services)
-    assert tray.spec().color is IconColor.GREY
+    assert tray.spec().color is IconColor.IDLE
 
     tray.dispatch(Action.START)
     assert tray.observe().recorder is RecorderState.RECORDING
@@ -86,16 +86,6 @@ def test_a_start_shows_the_window_unless_it_is_a_background_start(
     assert [item.action for item in defaults] == [Action.OPEN]
     tray.dispatch(Action.OPEN)
     assert len(opened) == 3
-
-
-def test_mute_toggle_is_reflected(tmp_path: Path, app_home: Path) -> None:
-    harness = build_harness(tmp_path)
-    tray = TrayApp(harness.services)
-    tray.dispatch(Action.MUTE_HOUR)
-    assert tray.observe().detector_muted is True
-    assert "muted" in tray.spec().tooltip
-    tray.dispatch(Action.MUTE_HOUR)
-    assert tray.observe().detector_muted is False
 
 
 def test_tray_survives_worker_crash(tmp_path: Path, app_home: Path) -> None:

@@ -63,9 +63,12 @@ def test_the_installer_runs_where_psreadline_cannot_shadow_its_types() -> None:
     # Only single quotes: the whole script crosses a Windows command line as one argument.
     assert '"' not in line
     # And the plan the Install button runs is built this way.
-    assert codex_cli.isolated(codex_cli.NATIVE_INSTALL) in codex_cli.install_console(
-        codex_cli.isolated(codex_cli.NATIVE_INSTALL), fallback=codex_cli._NATIVE_FALLBACK
-    )[-1]
+    assert (
+        codex_cli.isolated(codex_cli.NATIVE_INSTALL)
+        in codex_cli.install_console(
+            codex_cli.isolated(codex_cli.NATIVE_INSTALL), fallback=codex_cli._NATIVE_FALLBACK
+        )[-1]
+    )
 
 
 def test_sign_in_and_claude_windows_are_recorded_too(app_home: Path) -> None:

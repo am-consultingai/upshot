@@ -64,6 +64,7 @@ def test_any_browser_is_let_in_and_handed_the_csrf_cookie(api) -> None:  # type:
     )
     assert ok.status_code == 200
 
+
 def test_the_launcher_gets_a_fresh_link_with_its_key(api, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """A second browser profile needs its own link. The launcher asks for one with the
     key the app wrote to its home folder; nothing without the key gets one."""
