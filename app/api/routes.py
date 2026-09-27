@@ -348,7 +348,18 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
         )
     else:
         meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
-    svc.recorder.start(meeting.path, meeting.id)
+    from app.audio.devices import NoDeviceError
+
+    try:
+        svc.recorder.start(meeting.path, meeting.id)
+    except NoDeviceError as exc:
+        # No microphone (unplugged, or a Remote Desktop session that passes none
+        # through): say so, and leave no meeting behind that never recorded.
+        svc.meetings.discard(meeting.id)
+        log.warning("recording %s could not start: %s", meeting.id, exc)
+        raise HTTPException(
+            409, "No microphone or speakers were found to record from. Connect one, then try again."
+        ) from exc
     svc.recorder.start_thread()
     svc.meetings.committed(meeting, meeting.path)
     log.info("recording %s started from the interface", meeting.id)
@@ -415,7 +426,14 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
         )
         if event is not None and _event_store(svc).get(body.calendar_id, body.event_id) is None:
             event = None  # the event left the cache since the toast: record it unnamed
-        return recording_start(request, event)
+        try:
+            return recording_start(request, event)
+        except HTTPException as exc:
+            # The press came from a notification, so nobody is looking at Upshot to see
+            # an error: answer with another notification.
+            if svc.notifier is not None:
+                svc.notifier.could_not_start(str(exc.detail))
+            raise
     recording = svc.recorder is not None and svc.recorder.committed
     current = svc.recorder.meeting_id if svc.recorder is not None else None
     if body.action == "recording.stop":

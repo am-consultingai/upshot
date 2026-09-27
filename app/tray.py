@@ -248,6 +248,11 @@ def run_link(link: str, home: Any = None) -> int | None:
             return None  # not running: an ordinary start opens the window
         window.open_window(url)
         return 0
+    # A button on a notification: hand the focus back to the window it was pressed over
+    # before anything else, since the press took it (D72).
+    back = window.give_focus_back()
+    if back:
+        log.info("toast action %s: focus back to %r", parsed.action, back)
     if port is None:
         log.warning("toast action %s: Upshot is not running", parsed.action)
         return 1
