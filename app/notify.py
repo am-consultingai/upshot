@@ -20,11 +20,28 @@ DEBOUNCE_S = 5.0
 TOAST_TIMEOUT_S = 30.0
 
 
+#: A button that closes the toast and does nothing else (Windows' own Dismiss).
+DISMISS = "system.dismiss"
+
+
 @dataclass(frozen=True)
 class Button:
     label: str
-    action: str  # the API call the button performs
+    action: str  # what the button does: an app/actions.py action, or DISMISS
     meeting_id: str | None = None
+    #: The calendar event a "Start recording" is for, so the recording starts named.
+    calendar_id: str | None = None
+    event_id: str | None = None
+
+    def link(self) -> str | None:
+        """The ``upshot:`` link the button launches (app/actions.py); None for Dismiss."""
+        if self.action == DISMISS:
+            return None
+        from app import actions
+
+        return actions.url(
+            self.action, meeting=self.meeting_id, calendar=self.calendar_id, event=self.event_id
+        )
 
 
 @dataclass
@@ -33,6 +50,18 @@ class Toast:
     body: str = ""
     buttons: tuple[Button, ...] = ()
     key: str = ""
+    #: What clicking the notification itself does: show Upshot, at this meeting if any.
+    meeting_id: str | None = None
+    #: A meeting notice, not shown while Upshot's own window is in front: the bar at the
+    #: top of the app says the same there, and a toast over it is noise (D70).
+    quiet_in_front: bool = False
+
+    def link(self) -> str:
+        from app import actions
+
+        if self.meeting_id:
+            return actions.url("meeting.open", meeting=self.meeting_id)
+        return actions.url("open")
 
 
 class Notifier(Protocol):
@@ -46,14 +75,26 @@ class BaseNotifier:
 
     name = "base"
 
-    def __init__(self, *, debounce_s: float = DEBOUNCE_S, clock: Any = None) -> None:
+    def __init__(
+        self,
+        *,
+        debounce_s: float = DEBOUNCE_S,
+        clock: Any = None,
+        app_in_front: Callable[[], bool] | None = None,
+    ) -> None:
         self.debounce_s = debounce_s
         self._last: dict[str, float] = {}
         from app.clock import SystemClock
 
         self.clock = clock or SystemClock()
+        #: Whether Upshot's window is the one the user is looking at (app/window.py).
+        self.app_in_front = app_in_front or (lambda: False)
 
-    def _should_emit(self, key: str) -> bool:
+    def _should_emit(self, toast: Toast) -> bool:
+        if toast.quiet_in_front and self.app_in_front():
+            log.info("toast %r not shown: Upshot's window is in front", toast.key)
+            return False
+        key = toast.key
         if not key:
             return True
         now = self.clock.monotonic()
@@ -71,13 +112,15 @@ class BaseNotifier:
     def recording_started(self, meeting_id: str, title: str) -> None:
         self.show(
             Toast(
-                title=f"Recording — {title or 'meeting'}",
-                body="Both tracks are being captured.",
+                title=f"Recording started: {title or 'meeting'}",
+                body="Upshot is recording both sides of the call.",
                 buttons=(
                     Button("Stop", "recording.stop", meeting_id),
                     Button("Not a meeting", "meeting.discard", meeting_id),
                 ),
                 key=f"started:{meeting_id}",
+                meeting_id=meeting_id,
+                quiet_in_front=True,
             )
         )
 
@@ -87,6 +130,7 @@ class BaseNotifier:
                 title=f"Meeting ended — {minutes} min. Transcribing…",
                 buttons=(Button("Open", "meeting.open", meeting_id),),
                 key=f"ended:{meeting_id}",
+                meeting_id=meeting_id,
             )
         )
 
@@ -99,6 +143,7 @@ class BaseNotifier:
                     Button("Email", "meeting.email", meeting_id),
                 ),
                 key=f"summary:{meeting_id}",
+                meeting_id=meeting_id,
             )
         )
 
@@ -106,38 +151,61 @@ class BaseNotifier:
         self.show(
             Toast(
                 title=f"{stage.title()} failed — audio is safe",
-                buttons=(
-                    Button("Retry", "meeting.retry", meeting_id),
-                    Button("Open", "meeting.open", meeting_id),
-                ),
+                buttons=(Button("Open", "meeting.open", meeting_id),),
                 key=f"failed:{meeting_id}:{stage}",
+                meeting_id=meeting_id,
             )
         )
 
-    def meeting_starting(self, key: str, title: str) -> None:
+    def meeting_starting(
+        self,
+        key: str,
+        title: str,
+        *,
+        calendar_id: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
         """A calendar meeting is starting and nothing is recording. Said once per event."""
         self.show(
             Toast(
                 title=f"{title or 'A meeting'} is starting",
-                body="Upshot is not recording it. Open Upshot to record.",
+                body="Upshot isn't recording it.",
+                buttons=self._start_buttons(calendar_id, event_id),
                 key=f"starting:{key}",
+                quiet_in_front=True,
             )
         )
 
-    def call_detected(self, process: str, title: str | None) -> None:
+    def call_detected(
+        self,
+        process: str,
+        title: str | None,
+        *,
+        calendar_id: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
         """A call started and, in the default mode, nothing records it: say so (D64).
 
         "Detect and notify" is the default capture mode. Before this, a call noticed in
         that mode surfaced only inside Upshot's own window, which is exactly the window
-        nobody has open when a call starts.
+        nobody has open when a call starts. Start recording works from the toast (D70).
         """
         app = process.removesuffix(".exe") or "an app"
         self.show(
             Toast(
-                title=f"{title or 'A call'} started in {app}",
-                body="Upshot is not recording it. Open Upshot to record.",
+                title=f"Meeting started: {title or app}",
+                body="Upshot isn't recording it.",
+                buttons=self._start_buttons(calendar_id, event_id),
                 key=f"call:{process}",
+                quiet_in_front=True,
             )
+        )
+
+    @staticmethod
+    def _start_buttons(calendar_id: str | None, event_id: str | None) -> tuple[Button, ...]:
+        return (
+            Button("Start recording", "recording.start", None, calendar_id, event_id),
+            Button("Dismiss", DISMISS),
         )
 
     def near_miss(self, process: str, when: str) -> None:
@@ -165,15 +233,16 @@ class FakeNotifier(BaseNotifier):
         debounce_s: float = DEBOUNCE_S,
         clock: Any = None,
         on_action: Callable[[Button], None] | None = None,
+        app_in_front: Callable[[], bool] | None = None,
     ) -> None:
-        super().__init__(debounce_s=debounce_s, clock=clock)
+        super().__init__(debounce_s=debounce_s, clock=clock, app_in_front=app_in_front)
         self.shown = []
         self.activations = []
         self.on_action = on_action
         self.name = "fake"
 
     def show(self, toast: Toast) -> None:
-        if not self._should_emit(toast.key):
+        if not self._should_emit(toast):
             return
         self.shown.append(toast)
 
@@ -209,8 +278,13 @@ class WindowsToastNotifier(BaseNotifier):
         debounce_s: float = DEBOUNCE_S,
         clock: Any = None,
         spawn: Callable[[list[str]], Any] | None = None,
+        app_in_front: Callable[[], bool] | None = None,
     ) -> None:
-        super().__init__(debounce_s=debounce_s, clock=clock)
+        if app_in_front is None:
+            from app.window import in_front
+
+            app_in_front = in_front
+        super().__init__(debounce_s=debounce_s, clock=clock, app_in_front=app_in_front)
         self.app_id = app_id
         self.spawn = spawn or self._popen
 
@@ -220,8 +294,10 @@ class WindowsToastNotifier(BaseNotifier):
                 "app_id": self.app_id,
                 "title": toast.title,
                 "body": toast.body,
+                "launch": toast.link(),
                 "buttons": [
-                    {"label": button.label, "action": button.action} for button in toast.buttons
+                    {"label": button.label, "action": button.action, "launch": button.link()}
+                    for button in toast.buttons
                 ],
             }
         )
@@ -252,7 +328,7 @@ class WindowsToastNotifier(BaseNotifier):
         )
 
     def show(self, toast: Toast) -> None:
-        if not self._should_emit(toast.key):
+        if not self._should_emit(toast):
             return
         try:
             process = self.spawn(self.command(toast))

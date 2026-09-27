@@ -109,7 +109,7 @@ def test_toast_buttons_present() -> None:
     assert [button.label for button in ready.buttons] == ["Open", "Email"]
 
     notifier.failed("m1", "transcribe")
-    assert [button.label for button in notifier.shown[-1].buttons] == ["Retry", "Open"]
+    assert [button.label for button in notifier.shown[-1].buttons] == ["Open"]
     assert "audio is safe" in notifier.shown[-1].title
 
     notifier.near_miss("Teams.exe", "14:03")
@@ -258,6 +258,8 @@ def test_the_toast_process_falls_back_to_a_toast_without_buttons(monkeypatch) ->
     module.InteractableWindowsToaster = Interactable  # type: ignore[attr-defined]
     module.Toast = FakeToast  # type: ignore[attr-defined]
     module.ToastButton = lambda label, arguments: (label, arguments)  # type: ignore[attr-defined]
+    module.ToastSystemButton = lambda action, label: (action, label)  # type: ignore[attr-defined]
+    module.ToastSystemButtonAction = types.SimpleNamespace(Dismiss=1)  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "windows_toasts", module)
     monkeypatch.setattr(notify_toast, "SETTLE_S", 0)
 

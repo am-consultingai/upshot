@@ -69,6 +69,15 @@ Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 ; (app/window.py); every other start opens it.
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--background"
 
+[Registry]
+; The upshot: scheme, for this user only: a notification's buttons launch
+; "upshot:recording.start?..." and upshot.exe hands the action to the running app without
+; opening a window (app/actions.py, D70).
+Root: HKCU; Subkey: "Software\Classes\upshot"; ValueType: string; ValueName: ""; ValueData: "URL:Upshot"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\upshot"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\upshot\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"
+Root: HKCU; Subkey: "Software\Classes\upshot\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+
 [Run]
 ; --setup-again: first-run setup opens after every install, on the saved choices (D69).
 Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap --setup-again"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated
