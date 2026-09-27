@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
+import ServicesStep from "./ServicesStep";
 import { AudioStep, CaptureStep, DoneStep, WelcomeStep } from "./Steps";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import {
@@ -18,6 +19,7 @@ import {
 const LABEL: Record<StepId, MessageKey> = {
   welcome: "firstRun.step.welcome",
   calendar: "firstRun.step.calendar",
+  services: "firstRun.step.services",
   ai: "firstRun.step.ai",
   audio: "firstRun.step.audio",
   capture: "firstRun.step.capture",
@@ -25,8 +27,8 @@ const LABEL: Record<StepId, MessageKey> = {
 };
 
 /**
- * First-run setup: Welcome → Google Calendar → AI summaries → Sound check → Recording
- * → Done (epic z8tj1hb01k).
+ * First-run setup: Welcome → Google Calendar → AI services → Connect AI → Sound check →
+ * Recording → Done (epic z8tj1hb01k, D75).
  *
  * Which steps appear is decided once, when setup opens. The step reached is saved as it
  * changes, so an app closed half-way reopens where it was left.
@@ -62,6 +64,8 @@ export default function SetupFlow({
     if (snapshot.cliKnown && !touched) setTickedState(initialTicks(snapshot.cli));
     // Only when the facts arrive; later changes are the user's own doing.
   }, [snapshot.cliKnown]);
+  // Gemini is a key, not a subscription: chosen on the services step, set up on the next.
+  const [gemini, setGemini] = useState(false);
   const [finishing, setFinishing] = useState(false);
 
   useEffect(() => backend.saveStep(step), [backend, step]);
@@ -73,6 +77,9 @@ export default function SetupFlow({
   const index = steps.indexOf(step);
   const next = useCallback(() => setStep((s) => steps[Math.min(steps.indexOf(s) + 1, steps.length - 1)]), [steps]);
   const back = useCallback(() => setStep((s) => steps[Math.max(steps.indexOf(s) - 1, 0)]), [steps]);
+  // No service chosen: nothing to connect, so the connect step is passed over both ways.
+  const pastAi = useCallback(() => setStep(steps[Math.min(steps.indexOf("ai") + 1, steps.length - 1)]), [steps]);
+  const noService = !ticked.claude && !ticked.codex && !gemini;
 
   const noneTicked = !ticked.claude && !ticked.codex;
   const summarizer = chooseSummarizer(
@@ -168,8 +175,21 @@ export default function SetupFlow({
       <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-4">
       {step === "welcome" && <WelcomeStep onNext={next} />}
       {step === "calendar" && <CalendarStep onNext={next} onBack={back} />}
-      {step === "ai" && <AiStep ticked={ticked} setTicked={setTicked} onNext={next} onBack={back} />}
-      {step === "audio" && <AudioStep onNext={next} onBack={back} />}
+      {step === "services" && (
+        <ServicesStep
+          chosen={{ ...ticked, gemini }}
+          onChange={(next) => {
+            setTicked({ claude: next.claude, codex: next.codex });
+            setGemini(next.gemini);
+          }}
+          onNext={() => (noService ? pastAi() : next())}
+          onBack={back}
+        />
+      )}
+      {step === "ai" && <AiStep ticked={ticked} setTicked={setTicked} gemini={gemini} onNext={next} onBack={back} />}
+      {step === "audio" && (
+        <AudioStep onNext={next} onBack={() => (noService ? setStep("services") : back())} />
+      )}
       {step === "capture" && <CaptureStep mode={capture} onChange={setCapture} onNext={next} onBack={back} />}
       {step === "done" && (
         <DoneStep

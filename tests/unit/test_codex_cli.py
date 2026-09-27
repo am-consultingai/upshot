@@ -367,3 +367,37 @@ def test_selected_by_config_and_never_for_a_sensitive_meeting() -> None:
     assert make_client(config).name == "codex-subscription"
     assert make_client(config, sensitive=True).name == "ollama"
     assert default_config().get("llm.provider") != "codex-subscription", "never the default"
+
+
+def test_a_background_install_does_not_sign_in_or_keep_a_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First-run setup installs with no window (D75): the script must end by itself and
+    say by its exit code whether Codex is there; the page signs in afterwards, once."""
+    from app.llm import claude_cli
+
+    monkeypatch.setattr(codex_cli.sys, "platform", "win32")
+    monkeypatch.setattr(codex_cli, "powershell_language_mode", lambda: "FullLanguage")
+    plan = install_plan(sign_in=False)
+    assert plan is not None
+    assert "-NoExit" not in plan.argv
+    assert "login" not in plan.argv[-1]
+    assert "exit 1" in plan.argv[-1]
+
+    monkeypatch.setattr(claude_cli.sys, "platform", "win32")
+    monkeypatch.setattr(claude_cli, "powershell_language_mode", lambda: "FullLanguage")
+    claude = claude_cli.install_plan(sign_in=False)
+    assert claude is not None
+    assert "-NoExit" not in claude.argv
+    assert "auth login" not in claude.argv[-1]
+    assert "exit 1" in claude.argv[-1]
+    # Settings' install is unchanged: a window that installs and then signs in.
+    assert "auth login" in claude_cli.install_plan().argv[-1]  # type: ignore[union-attr]
+
+
+def test_claudes_login_link_is_recognised() -> None:
+    from app.llm import claude_cli
+
+    line = "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&x=1"
+    match = claude_cli.LOGIN_URL.search(line)
+    assert match and match.group(0).startswith("https://claude.com/cai/oauth/authorize")

@@ -223,7 +223,7 @@ def install_candidates() -> list[Path]:
     return found
 
 
-def install_plan() -> InstallPlan | None:
+def install_plan(*, sign_in: bool = True) -> InstallPlan | None:
     """What the Install button runs, or ``None`` when nothing here can install it.
 
     OpenAI's own installer wherever PowerShell can run it: it is what their README
@@ -244,15 +244,24 @@ def install_plan() -> InstallPlan | None:
             "native",
             NATIVE_INSTALL,
             install_console(
-                isolated(NATIVE_INSTALL), shown=NATIVE_INSTALL, fallback=_NATIVE_FALLBACK
+                isolated(NATIVE_INSTALL),
+                shown=NATIVE_INSTALL,
+                fallback=_NATIVE_FALLBACK,
+                sign_in=sign_in,
             ),
         )
     if shutil.which("npm") is not None:
         # `npm.cmd`, not `npm`: under Constrained Language Mode PowerShell would resolve
         # `npm` to the npm.ps1 shim, a script, which is the thing that mode restricts.
-        return InstallPlan("npm", NPM_INSTALL, install_console(f"npm.cmd install -g {NPM_PACKAGE}"))
+        return InstallPlan(
+            "npm",
+            NPM_INSTALL,
+            install_console(f"npm.cmd install -g {NPM_PACKAGE}", sign_in=sign_in),
+        )
     if winget_works():
-        return InstallPlan("winget", WINGET_INSTALL, install_console(WINGET_INSTALL))
+        return InstallPlan(
+            "winget", WINGET_INSTALL, install_console(WINGET_INSTALL, sign_in=sign_in)
+        )
     return None
 
 
@@ -327,7 +336,7 @@ _NATIVE_FALLBACK = (
 
 
 def install_console(
-    command: str, *, shown: str | None = None, fallback: str | None = None
+    command: str, *, shown: str | None = None, fallback: str | None = None, sign_in: bool = True
 ) -> list[str]:
     """Install, then sign in, in one visible window — recorded to ``logs/codex-install.log``.
 
@@ -351,6 +360,18 @@ def install_console(
             "Write-Host ($_ | Out-String); Write-Host $_.ScriptStackTrace; "
             f"{fallback} }}; "
         )
+    if not sign_in:
+        # First-run setup's background install (D75): no window, so no sign-in in it
+        # either. The page signs in afterwards, once, with the link in the browser. The
+        # exit code says whether Codex is there.
+        script = (
+            f"Write-Host 'Running: {shown or command}'; "
+            f"{run}"
+            f"{_FIND_CODEX}; "
+            "if ($c) { Write-Host ('Installed: ' + $c) } else { "
+            "Write-Host 'Codex was not found after installing.'; exit 1 }"
+        )
+        return ["powershell.exe", "-NoProfile", "-Command", transcribed(script, "codex-install")]
     script = (
         f"Write-Host 'Running: {shown or command}' -ForegroundColor Cyan; "
         f"{run}"
