@@ -41,15 +41,14 @@ def test_open_dashboard_hands_every_click_a_fresh_link(
 ) -> None:  # type: ignore[no-untyped-def]
     """The startup link is spent by the first browser. Opening from the tray in another
     browser profile must still work, so each click brings its own one-time link."""
-    import webbrowser
-
     from fastapi.testclient import TestClient
 
+    from app import window
     from app.main import create_app
 
     harness = build_harness(tmp_path)
     opened: list[str] = []
-    monkeypatch.setattr(webbrowser, "open", opened.append)
+    monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "app")
     tray = TrayApp(harness.services)
     tray.dispatch(Action.OPEN)
     tray.dispatch(Action.OPEN)
@@ -61,23 +60,32 @@ def test_open_dashboard_hands_every_click_a_fresh_link(
         assert browser.get(url.removeprefix(harness.base_url)).status_code == 200
 
 
-def test_a_start_opens_setup_until_it_is_done(tmp_path: Path, app_home: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The installer's "Launch Upshot" starts a tray app with no window: setup must come
-    up by itself, and once it is done a start stays quiet."""
-    import webbrowser
+def test_a_start_shows_the_window_unless_it_is_a_background_start(
+    tmp_path: Path, app_home: Path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """Launched by the user (the installer's "Launch Upshot", the Start menu) the window
+    opens; started at sign-in it stays in the tray, unless setup is still to be done."""
+    from app import window
 
     harness = build_harness(tmp_path)
     opened: list[str] = []
-    monkeypatch.setattr(webbrowser, "open", opened.append)
+    monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "app")
     tray = TrayApp(harness.services)
 
-    harness.services.config.set("setup.done", False)
-    assert tray.open_setup_if_pending() is True
+    harness.services.config.set("setup.done", True)
+    assert tray.on_start(background=False) is True
+    assert tray.on_start(background=True) is False
     assert len(opened) == 1 and "?k=" in opened[0]
 
-    harness.services.config.set("setup.done", True)
-    assert tray.open_setup_if_pending() is False
-    assert len(opened) == 1
+    harness.services.config.set("setup.done", False)
+    assert tray.on_start(background=True) is True
+    assert len(opened) == 2
+
+    # A left-click on the icon is the "Open Upshot" item.
+    defaults = [item for item in tray.spec().menu if item.default]
+    assert [item.action for item in defaults] == [Action.OPEN]
+    tray.dispatch(Action.OPEN)
+    assert len(opened) == 3
 
 
 def test_mute_toggle_is_reflected(tmp_path: Path, app_home: Path) -> None:

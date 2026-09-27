@@ -49,16 +49,45 @@ def recorded_port(home: Path | None = None) -> int | None:
 
 
 def show_running(home: Path | None = None, *, opener: Any = None) -> bool:
-    """Open the running instance's page, as a double-click on the icon is asking for."""
+    """Show the running instance's window, as a double-click on the icon is asking for.
+
+    This process does it rather than the running one: it was just started by the user,
+    so Windows lets it bring a window to the front, which a tray process is refused.
+    """
     port = recorded_port(home)
     if port is None:
         return False
     if opener is None:
-        import webbrowser
+        from app.window import open_window
 
-        opener = webbrowser.open
-    opener(f"http://127.0.0.1:{port}/")
+        opener = open_window
+    opener(fresh_link(port, home) or f"http://127.0.0.1:{port}/")
     return True
+
+
+def fresh_link(port: int, home: Path | None = None) -> str | None:
+    """A one-time link from the running instance, asked for with the key it left us.
+
+    A window opened in a browser profile that never had Upshot open would otherwise meet
+    the "how to authorize" page instead of the app.
+    """
+    import json
+    import urllib.request
+
+    from app.api.security import LAUNCHER_HEADER, LAUNCHER_KEY_FILE, LINK_PATH
+
+    try:
+        key = (home or paths.app_home()).joinpath(LAUNCHER_KEY_FILE).read_text("utf-8").strip()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}{LINK_PATH}",
+            method="POST",
+            headers={LAUNCHER_HEADER: key},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return str(json.load(response)["url"])
+    except Exception as exc:
+        log.info("no fresh link from the running instance: %s", exc)
+        return None
 
 
 def request_quit(name: str = QUIT_EVENT) -> bool:

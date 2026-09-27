@@ -9,11 +9,10 @@ import json
 import os
 import sys
 import threading
-import webbrowser
 from collections.abc import Callable
 from typing import Any
 
-from app import brand
+from app import brand, window
 from app.instance import ALREADY_RUNNING, SingleInstance
 from app.log import get, setup
 from app.services import Services
@@ -140,7 +139,7 @@ class TrayApp:
             # A fresh one-time link on every click. The single link minted at startup
             # was spent by the first browser, so a second browser profile opened from
             # here used to be refused with nowhere to get another.
-            webbrowser.open(self.open_link())
+            self.show_window()
         elif action is Action.MUTE_HOUR:
             muted = not bool(services.extras.get("detector_muted", False))
             services.extras["detector_muted"] = muted
@@ -149,18 +148,26 @@ class TrayApp:
             self.stop()
         self.refresh()
 
-    def open_setup_if_pending(self) -> bool:
-        """Open first-run setup in the browser while it is still to be done.
+    def show_window(self) -> str:
+        """Upshot's window (app/window.py): brought forward if open, opened if not."""
+        how = window.open_window(self.open_link())
+        log.info("window: %s", how)
+        return how
 
-        The app lives in the tray and opens no window of its own, so the installer's
-        "Launch Upshot" (and a first sign-in) used to start it with nothing on screen and
-        setup waiting behind the icon for someone to find it. Until setup is finished or
-        skipped, every start brings it up; after that a start stays quiet in the tray.
+    def setup_pending(self) -> bool:
+        return self.services.config.get("setup.done", True) is False
+
+    def on_start(self, *, background: bool) -> bool:
+        """What a start shows. True when it opened the window.
+
+        Started by the user (the Start menu, the installer's "Launch Upshot") the window
+        opens: the app was asked for. Started at sign-in (``--background``) it stays in
+        the tray, unless first-run setup is still to be done, which nobody would find
+        behind the icon.
         """
-        if self.services.config.get("setup.done", True) is not False:
+        if background and not self.setup_pending():
             return False
-        log.info("first-run setup is pending; opening it")
-        webbrowser.open(self.open_link())
+        self.show_window()
         return True
 
     # -- lifecycle ---------------------------------------------------------
@@ -173,6 +180,8 @@ class TrayApp:
                 item.label,
                 lambda *_args, action=item.action: self.on_action(action),
                 enabled=item.enabled,
+                # The default item is what a left-click on the icon does (Windows).
+                default=item.default,
                 checked=(lambda *_a, value=item.checked: bool(value))
                 if item.checked is not None
                 else None,
@@ -282,7 +291,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     record_port(server.bound_port)
     tray = TrayApp(services)
     watch_quit(tray.stop)
-    tray.open_setup_if_pending()
+    # The sign-in shortcut passes --background (packaging/installer.iss).
+    tray.on_start(background="--background" in arguments)
     try:
         tray.run()
     finally:
