@@ -44,6 +44,7 @@ def test_icon_state_table(
     spec = icon_for(state)
     assert spec.color is color
     assert tooltip_fragment in spec.tooltip
+    assert spec.tooltip.startswith("Upshot — ")
     assert spec.badge is badge
     assert len(spec.rgb) == 3
 
@@ -268,3 +269,11 @@ def test_the_toast_process_falls_back_to_a_toast_without_buttons(monkeypatch) ->
     assert built == ["interactable", "action", "plain", "shown"]
     assert notify_toast.main([]) == 2
     assert notify_toast.main(["not json"]) == 2
+
+
+def test_a_long_meeting_title_fits_the_windows_tooltip() -> None:
+    from app.tray_state import TOOLTIP_MAX
+
+    state = AppState(recorder=RecorderState.RECORDING, meeting_title="x" * 300)
+    tooltip = icon_for(state).tooltip
+    assert tooltip.startswith("Upshot — Recording") and len(tooltip) <= TOOLTIP_MAX

@@ -25,6 +25,10 @@ param(
     [int]$HoldSeconds = 60,
     # show: leave the sandbox open at the end instead of shutting it down.
     [switch]$StayOpen,
+    # Leave the shutdown to the host (run-sandbox-job.ps1 closes the window). A sandbox that
+    # shut itself down with Stop-Computer was followed, twice, by a next start that failed to
+    # initialise until B restarted (jobs 023 and 026).
+    [switch]$NoShutdown,
     # Save a picture of the sandbox's screen every this many seconds into <Out>\screens,
     # for whoever could not watch it happen. 0 = none.
     [int]$ScreenshotSeconds = 0
@@ -59,6 +63,47 @@ function Stop-EdgeProfile([string]$profileDir) {
         Where-Object { $_.CommandLine -like "*$profileDir*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
+function Save-Screen([string]$name) {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
+        $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+        $bmp.Save((Join-Path $Out "$name.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+        $g.Dispose(); $bmp.Dispose()
+    } catch { }
+}
+# The tray icon, by its tooltip ("Upshot - ..."): on the taskbar, or among the hidden icons,
+# which is where Windows 11 puts a new app's icon. Returns @(element, where) or $null.
+function Find-TrayIcon {
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+    $AE = [System.Windows.Automation.AutomationElement]
+    $scope = [System.Windows.Automation.TreeScope]::Descendants
+    $button = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+    $taskbar = $AE::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'Shell_TrayWnd')))
+    if (-not $taskbar) { return $null }
+    $buttons = @($taskbar.FindAll($scope, $button))
+    $hit = $buttons | Where-Object { $_.Current.Name -like 'Upshot*' } | Select-Object -First 1
+    if ($hit) { return @($hit, 'taskbar') }
+    $chevron = $buttons | Where-Object { $_.Current.Name -match 'hidden icons' } | Select-Object -First 1
+    if (-not $chevron) { return $null }
+    try { $chevron.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { return $null }
+    Start-Sleep -Milliseconds 1500
+    foreach ($w in $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+        $hit = @($w.FindAll($scope, $button)) | Where-Object { $_.Current.Name -like 'Upshot*' } | Select-Object -First 1
+        if ($hit) { return @($hit, "hidden icons ($($w.Current.ClassName))") }
+    }
+    return $null
+}
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class Mouse {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+  public static void RightClick(int x, int y) { SetCursorPos(x, y); mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); }
+}
+"@
 function Wait-Enter([int]$minutes) {
     $until = (Get-Date).AddMinutes($minutes)
     while ((Get-Date) -lt $until) {
@@ -292,6 +337,52 @@ try {
         $second = Start-Process -FilePath $exe -PassThru
         $exited = $second.WaitForExit(60000)
         Step 'second-launch' ($exited -and -not $app_p.HasExited) "secondExited=$exited exit=$(if ($exited) { $second.ExitCode }) firstAlive=$(-not $app_p.HasExited)"
+        # The tray: the icon is there, and its menu opens with the expected items.
+        if ($visible) {
+            $found = Find-TrayIcon
+            if ($found) {
+                $icon, $where = $found
+                Step 'tray-icon' $true "'$($icon.Current.Name)' in the $where"
+                $r = $icon.Current.BoundingRectangle
+                [Mouse]::RightClick([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+                Start-Sleep -Seconds 2
+                Save-Screen 'tray-menu'
+                $AE = [System.Windows.Automation.AutomationElement]
+                $items = @($AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::MenuItem))) | ForEach-Object { $_.Current.Name })
+                $want = @('Start recording', 'Stop recording', 'Open dashboard', 'Quit')
+                $missing = @($want | Where-Object { $items -notcontains $_ })
+                Step 'tray-menu' ($missing.Count -eq 0) "items: $($items -join ', ')$(if ($missing) { '; missing: ' + ($missing -join ', ') })"
+                Add-Type -AssemblyName System.Windows.Forms
+                [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+            } else {
+                Save-Screen 'tray-not-found'
+                Step 'tray-icon' $false 'no "Upshot" button on the taskbar or among the hidden icons (tray-not-found.png)'
+            }
+        }
+
+        # Transcription with the model the installer fetched: each clip in <In>\audio,
+        # compared with its reference (<name>.ref.txt) word by word.
+        $audioDir = Join-Path $In 'audio'
+        if ((Test-Path $audioDir) -and (Test-Path (Join-Path $In 'upshot-api.ps1'))) {
+            . (Join-Path $In 'upshot-api.ps1')
+            $client = New-UpshotClient $base
+            foreach ($clip in Get-ChildItem $audioDir -Filter '*.mp3') {
+                $name = $clip.BaseName
+                Doing "transcribing $($clip.Name) on this machine's CPU"
+                $t = Get-Date
+                try {
+                    $imported = Import-UpshotAudio $client $clip.FullName
+                    $m = Wait-UpshotMeeting $client $imported.meeting_id @('TRANSCRIBED', 'SUMMARIZED', 'RENDERED', 'DELIVERED') 1500
+                    $tr = Get-UpshotTranscript $client $imported.meeting_id
+                    $tr.Text | Out-File -Encoding utf8 (Join-Path $Out "transcript.$name.txt")
+                    $ref = Join-Path $audioDir "$name.ref.txt"
+                    $recall = if (Test-Path $ref) { Get-WordRecall (Read-ReferenceText $ref) $tr.Text } else { -1 }
+                    $ok = ($m.state -ne 'FAILED') -and $tr.Segments -gt 0 -and ($recall -lt 0 -or $recall -ge 0.6)
+                    Step "transcribe-$name" $ok "state=$($m.state) seconds=$([int]((Get-Date) - $t).TotalSeconds) audio=$($imported.duration_s)s segments=$($tr.Segments) language=$($tr.Language) recall=$recall"
+                } catch { Step "transcribe-$name" $false "$($_.Exception.Message)" }
+            }
+        }
+
         if (-not $visible) {
             Get-Process -Name msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         }
@@ -341,6 +432,8 @@ Say "Finished: $($steps.Count - $bad) ok, $bad failed. Results in $Out" $(if ($b
 "done $(Get-Date -Format o)" | Out-File -Encoding utf8 (Join-Path $Out 'DONE.txt')
 if ($watch -or $StayOpen) {
     Say 'The sandbox stays open. Close its window when you are done; everything in it is discarded.' 'Yellow'
+} elseif ($NoShutdown) {
+    Say 'Done; the host closes this sandbox.' 'DarkGray'
 } else {
     Start-Sleep -Seconds 5
     Stop-Computer -Force
