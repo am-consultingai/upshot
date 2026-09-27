@@ -65,7 +65,9 @@ Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 ; Always: Upshot notices meetings only while it runs (product owner, 2026-09-27: no
 ; "Select Additional Tasks" page; starting at sign-in and the model download are not asked).
 ; Windows' Startup apps (Task Manager, or Settings > Apps > Startup) can turn it off.
-Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; --background: at sign-in Upshot starts in the tray without opening its window
+; (app/window.py); every other start opens it.
+Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--background"
 
 [Run]
 Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated

@@ -59,6 +59,8 @@ class MenuItem:
     action: Action
     enabled: bool = True
     checked: bool | None = None
+    #: What a left-click on the tray icon does; one item has it.
+    default: bool = False
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,7 @@ def menu_for(state: AppState) -> tuple[MenuItem, ...]:
         MenuItem("Start recording", Action.START, enabled=not active),
         MenuItem("Stop recording", Action.STOP, enabled=active),
         MenuItem("Resume" if paused else "Pause", Action.PAUSE, enabled=active),
-        MenuItem("Open dashboard", Action.OPEN, enabled=True),
+        MenuItem("Open Upshot", Action.OPEN, enabled=True, default=True),
         MenuItem(
             "Don't detect for 1 hour",
             Action.MUTE_HOUR,
