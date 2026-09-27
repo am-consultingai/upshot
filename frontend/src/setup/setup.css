@@ -2,9 +2,12 @@
  * Motion for first-run setup's scenes (src/setup/visuals.tsx).
  *
  * Every scene loops on its own clock and explains one thing — what happens when you
- * install, what signing in looks like — so the text beside it can be one line. All of
- * it stops for anyone who asked their system for less motion: the scenes are drawn so
- * their last frame still says what they mean.
+ * install, what signing in looks like — so the text beside it can be one line.
+ *
+ * The scenes play whatever the system's reduced-motion setting says (product owner,
+ * 2026-09-27). Windows reports "reduce" whenever its animation effects are off, which
+ * performance settings, remote desktops and VMs do on their own, and on such a machine
+ * setup looked frozen: the motion is the explanation here, not decoration.
  *
  * The scenes hold no text, so right-to-left simply mirrors the whole drawing (`.su-scene`)
  * and every flow runs the way the reader reads.
@@ -125,12 +128,3 @@
   to { stroke-dashoffset: 0; }
 }
 .su-draw { stroke-dasharray: 48; animation: su-draw 0.6s 0.15s ease-out both; }
-
-@media (prefers-reduced-motion: reduce) {
-  .su-bar, .su-type, .su-pop, .su-flow, .su-carry, .su-window, .su-fill, .su-appear,
-  .su-pointer, .su-press, .su-return, .su-wave, .su-pulse, .su-draw, .su-toast, .su-blink {
-    animation: none;
-  }
-  .su-carry { transform: translate(var(--su-dx), var(--su-dy)); }
-  .su-return { transform: translateX(var(--su-return, 118px)); }
-}

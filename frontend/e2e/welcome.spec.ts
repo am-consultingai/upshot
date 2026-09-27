@@ -103,6 +103,18 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   await expect(page.getByText("How should Upshot record your meetings?")).toHaveCount(0);
 });
 
+test("setup_moves_even_when_the_system_asks_for_reduced_motion", async ({ page }) => {
+  // Windows reports "reduce" whenever its animation effects are off, which many machines
+  // are by default (a VM, remote desktop, performance settings); setup looked frozen there.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await gotoApp(page, "/welcome");
+  await expect(page.getByTestId("setup-step-welcome")).toBeVisible();
+  const running = await page.evaluate(
+    () => document.querySelector(".su-bar")?.getAnimations().filter((a) => a.playState === "running").length ?? 0,
+  );
+  expect(running).toBeGreaterThan(0);
+});
+
 test("closing_the_app_half_way_reopens_setup_where_it_was_left", async ({ page }) => {
   await gotoApp(page, "/welcome");
   await toAiStep(page);

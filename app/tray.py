@@ -149,6 +149,20 @@ class TrayApp:
             self.stop()
         self.refresh()
 
+    def open_setup_if_pending(self) -> bool:
+        """Open first-run setup in the browser while it is still to be done.
+
+        The app lives in the tray and opens no window of its own, so the installer's
+        "Launch Upshot" (and a first sign-in) used to start it with nothing on screen and
+        setup waiting behind the icon for someone to find it. Until setup is finished or
+        skipped, every start brings it up; after that a start stays quiet in the tray.
+        """
+        if self.services.config.get("setup.done", True) is not False:
+            return False
+        log.info("first-run setup is pending; opening it")
+        webbrowser.open(self.open_link())
+        return True
+
     # -- lifecycle ---------------------------------------------------------
 
     def _menu(self, spec: IconSpec) -> Any:  # pragma: no cover - needs pystray
@@ -226,10 +240,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         from app.bootstrap import run as bootstrap_run
 
         setup()
-        # No logon task here: autostart is the installer's opt-in "Start Upshot when I
-        # sign in" shortcut. A task would start the app even when the user unticked that,
-        # and creating an ONLOGON task needs admin, so on a standard account it failed
-        # and took the whole first run down with it (machine B).
+        # No logon task here: autostart is the installer's Startup-folder shortcut, which
+        # Windows' Startup apps list can switch off; a task would ignore that. Creating an
+        # ONLOGON task also needs admin, so on a standard account it failed and took the
+        # whole first run down with it (machine B).
         report = bootstrap_run(register_task=False)
         print(json.dumps(report.as_dict(), indent=2))
         return 0 if report.ok else 1
@@ -268,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     record_port(server.bound_port)
     tray = TrayApp(services)
     watch_quit(tray.stop)
+    tray.open_setup_if_pending()
     try:
         tray.run()
     finally:

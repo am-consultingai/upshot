@@ -61,6 +61,25 @@ def test_open_dashboard_hands_every_click_a_fresh_link(
         assert browser.get(url.removeprefix(harness.base_url)).status_code == 200
 
 
+def test_a_start_opens_setup_until_it_is_done(tmp_path: Path, app_home: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The installer's "Launch Upshot" starts a tray app with no window: setup must come
+    up by itself, and once it is done a start stays quiet."""
+    import webbrowser
+
+    harness = build_harness(tmp_path)
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    tray = TrayApp(harness.services)
+
+    harness.services.config.set("setup.done", False)
+    assert tray.open_setup_if_pending() is True
+    assert len(opened) == 1 and "?k=" in opened[0]
+
+    harness.services.config.set("setup.done", True)
+    assert tray.open_setup_if_pending() is False
+    assert len(opened) == 1
+
+
 def test_mute_toggle_is_reflected(tmp_path: Path, app_home: Path) -> None:
     harness = build_harness(tmp_path)
     tray = TrayApp(harness.services)
