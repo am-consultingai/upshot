@@ -175,6 +175,36 @@ def give_focus_back() -> str | None:
         return None
 
 
+def close_all() -> int:
+    """Close every Upshot window. How many were asked to close.
+
+    The window is a browser window, so it outlives the app: quitting (the tray, or the
+    installer stopping the app for an upgrade) left a dead page behind, and the next start
+    found that window and focused it instead of opening one, which showed nothing on
+    machine B (D74).
+    """
+    if sys.platform != "win32":
+        return 0
+    try:  # pragma: no cover - Windows only
+        import win32con
+        import win32gui
+
+        found: list[int] = []
+
+        def visit(hwnd: int, _: object) -> bool:
+            if _is_ours(win32gui, hwnd):
+                found.append(hwnd)
+            return True
+
+        win32gui.EnumWindows(visit, None)
+        for hwnd in found:
+            win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        return len(found)
+    except Exception as exc:
+        log.info("could not close the Upshot windows: %s", exc)
+        return 0
+
+
 def focus_existing() -> bool:
     """Bring an open Upshot window to the front. False when there is none."""
     if sys.platform != "win32":

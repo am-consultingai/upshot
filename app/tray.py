@@ -181,6 +181,11 @@ class TrayApp:
         the tray, unless first-run setup is still to be done, which nobody would find
         behind the icon.
         """
+        # A window still open now belongs to a run that has ended (a crash, or an upgrade
+        # that stopped the app): its page is dead. Close it rather than focus it (D74).
+        stale = window.close_all()
+        if stale:
+            log.info("closed %d Upshot window(s) left from an earlier run", stale)
         if background and not self.setup_pending():
             return False
         self.show_window()
@@ -221,6 +226,8 @@ class TrayApp:
             self.refresh()
 
     def stop(self) -> None:
+        # The window would otherwise stay open on a dead page (D74).
+        window.close_all()
         self._stop.set()
         if self.icon is not None:  # pragma: no cover - needs a desktop
             self.icon.stop()
