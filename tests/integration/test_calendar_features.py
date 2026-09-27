@@ -216,6 +216,23 @@ def test_a_revoked_token_stops_syncing(world: World) -> None:
     assert len(world.api.requests) == before, "nothing is sent until the user reconnects"
 
 
+def test_a_revoked_token_is_reported_once_not_every_tick(
+    world: World, caplog: pytest.LogCaptureFixture
+) -> None:
+    # What machine A had: a refresh token in the Windows credential store (it is per user,
+    # not per app home) and a build without the Google client file, so "connected" but
+    # every sync refused.
+    world.auth._client_loader = lambda: None
+    world.sync.kick()
+    with caplog.at_level("WARNING", logger="app.gcal.sync"):
+        for _ in range(20):
+            world.sync.tick()
+            world.clock.advance(5)
+    stopped = [r for r in caplog.records if "stopped until reconnect" in r.getMessage()]
+    assert len(stopped) == 1
+    assert world.sync.status()["sync_error"], "the reason stays for the Settings page"
+
+
 def test_timezones_all_day_and_recurrence(world: World) -> None:
     world.api.items = [
         # 09:00 in New York is 13:00 UTC, whatever the machine's zone.

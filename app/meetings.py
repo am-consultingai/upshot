@@ -261,7 +261,9 @@ class MeetingService:
             seconds = int((ended - parse_iso(meeting.started_at)).total_seconds())
         minimum = self.config.min_meeting_s
         self.dao.update_meeting(meeting_id, ended_at=iso(ended), duration_s=seconds)
-        if seconds < minimum:
+        # The minimum catches a recording started by accident. An imported file is one the
+        # user chose, however short: a 41-second clip used to vanish after "imported".
+        if seconds < minimum and meeting.source != "imported":
             log.info("meeting %s is %ss (< %ss) — discarding", meeting_id, seconds, minimum)
             return self.discard(meeting_id)
         updated = self.dao.set_state(meeting_id, MeetingState.RECORDED)

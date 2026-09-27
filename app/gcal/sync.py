@@ -73,6 +73,10 @@ class CalendarSync:
         self._next_near = 0.0
         self._next_wide = 0.0
         self._backoff = 0.0
+        # Set by an authorization failure and cleared by kick(), which reconnecting calls.
+        # Without it the loop asked again every few seconds and logged "stopped until
+        # reconnect" each time (178 lines in 15 minutes on machine A, 2026-09-27).
+        self._auth_stopped = False
         self._last_wall: float | None = None
         self._last_mono: float | None = None
         self._kick = threading.Event()
@@ -87,6 +91,7 @@ class CalendarSync:
 
     def kick(self) -> None:
         """Sync everything now: after connecting, and when the user asks."""
+        self._auth_stopped = False
         self._next_near = self._next_wide = 0.0
         self._backoff = 0.0
         self._kick.set()
@@ -111,7 +116,7 @@ class CalendarSync:
 
     def tick(self) -> bool:
         """Do whatever is due. True when something was synced."""
-        if not self.connected():
+        if self._auth_stopped or not self.connected():
             return False
         mono = self.clock.monotonic()
         self._notice_sleep(mono)
@@ -131,6 +136,7 @@ class CalendarSync:
                 self.last_error = None
         except CalendarAuthError as exc:
             self.last_error = str(exc)
+            self._auth_stopped = True
             log.warning("calendar sync stopped until reconnect: %s", exc)
             return False
         except CalendarUnavailable as exc:
