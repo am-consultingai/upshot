@@ -91,7 +91,8 @@ if ((Sandboxes).Count -gt 0) {
 $stepsLog = Join-Path $out 'steps.log'
 $done = Join-Path $out 'DONE.txt'
 for ($attempt = 1; $attempt -le 2; $attempt++) {
-    Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
+    # Set a used out\ aside rather than delete it: nothing is deleted on B's host.
+    if (Test-Path $out) { Rename-Item $out ("out-" + (Get-Date).ToString('HHmmss')) }
     New-Item -ItemType Directory -Force -Path $out | Out-Null
     Note "start attempt $attempt"
     $times["start_$attempt"] = (Get-Date).ToUniversalTime().ToString('o')
@@ -119,7 +120,9 @@ if (-not (Test-Path $done)) {
     Finish 'timeout' $attempt "no DONE.txt after $TimeoutMinutes minutes"
 }
 $times['guest_done'] = (Get-Date).ToUniversalTime().ToString('o')
-for ($i = 0; $i -lt 180 -and (Sandboxes).Count -gt 0; $i++) { Start-Sleep -Seconds 1 }
-if ((Sandboxes).Count -gt 0) { Close-Sandboxes }
+# The guest either shuts itself down or (-NoShutdown) leaves it to us: give it 15 s, then
+# close the window from here.
+for ($i = 0; $i -lt 15 -and (Sandboxes).Count -gt 0; $i++) { Start-Sleep -Seconds 1 }
+if ((Sandboxes).Count -gt 0) { Note 'closing the sandbox from the host'; Close-Sandboxes }
 $times['closed'] = (Get-Date).ToUniversalTime().ToString('o')
 Finish 'done' $attempt 'the guest finished; see out\steps.json'
