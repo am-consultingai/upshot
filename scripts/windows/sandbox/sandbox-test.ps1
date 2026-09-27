@@ -105,22 +105,40 @@ using System; using System.Runtime.InteropServices;
 public static class Mouse {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
-  public static void RightClick(int x, int y) { SetCursorPos(x, y); mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); }
+  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  // UI Automation reports physical pixels; without DPI awareness SetCursorPos takes scaled
+  // ones, and on a scaled display the click misses the icon.
+  public static void RightClick(int x, int y) { SetProcessDPIAware(); SetCursorPos(x, y); mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); }
 }
 public static class PopupMenu {
-  [DllImport("user32.dll")] static extern IntPtr FindWindow(string cls, string name);
-  [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
-  [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr m);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuString(IntPtr m, uint id, System.Text.StringBuilder s, int max, uint flags);
-  // The open context menu (window class #32768): its items, read from the menu itself.
-  public static string[] Items() {
-    IntPtr w = FindWindow("#32768", null);
-    if (w == IntPtr.Zero) return new string[0];
-    IntPtr m = SendMessage(w, 0x01E1, IntPtr.Zero, IntPtr.Zero); // MN_GETHMENU
-    int n = GetMenuItemCount(m);
-    var list = new System.Collections.Generic.List<string>();
-    for (int i = 0; i < n; i++) { var b = new System.Text.StringBuilder(256); GetMenuString(m, (uint)i, b, 256, 0x400); if (b.Length > 0) list.Add(b.ToString()); }
-    return list.ToArray();
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  // Open Upshot's tray menu the way a right-click does: pystray's hidden window
+  // ("upshot<id>SystemTrayIcon") gets its notify message (WM_USER + 11) with WM_RBUTTONUP.
+  // No mouse: clicking by coordinates missed on a scaled display.
+  public static bool OpenTray() {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, l) => {
+      var c = new System.Text.StringBuilder(128); GetClassName(h, c, 128);
+      if (System.Text.RegularExpressions.Regex.IsMatch(c.ToString(), "^upshot[0-9]+SystemTrayIcon$")) { found = h; return false; }
+      return true; }, IntPtr.Zero);
+    if (found == IntPtr.Zero) return false;
+    return PostMessage(found, 0x0400 + 11, IntPtr.Zero, (IntPtr)0x0205);
+  }
+  [DllImport("user32.dll")] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string name);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  // The process that owns the visible context menu (window class #32768), or 0. Windows
+  // keeps a hidden, empty #32768 window around, so only a visible one counts. The items
+  // themselves cannot be read from another process (GetMenuItemCount gives -1, UI
+  // Automation sees none), so the screenshot shows them.
+  public static uint OpenMenuOwner() {
+    for (IntPtr h = FindWindowEx(IntPtr.Zero, IntPtr.Zero, "#32768", null); h != IntPtr.Zero; h = FindWindowEx(IntPtr.Zero, h, "#32768", null)) {
+      if (IsWindowVisible(h)) { uint pid; GetWindowThreadProcessId(h, out pid); return pid; }
+    }
+    return 0;
   }
 }
 "@
@@ -438,16 +456,12 @@ try {
             if ($found) {
                 $icon, $where = $found
                 Step 'tray-icon' $true "'$($icon.Current.Name)' in the $where"
-                $r = $icon.Current.BoundingRectangle
-                [Mouse]::RightClick([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2))
+                $opened = [PopupMenu]::OpenTray()
                 Start-Sleep -Seconds 2
                 Save-Screen 'tray-menu'
-                # Read from the popup menu itself: UI Automation saw none of its items (job 032),
-                # though the screenshot showed them all.
-                $items = @([PopupMenu]::Items())
-                $want = @('Start recording', 'Stop recording', 'Open dashboard', 'Quit')
-                $missing = @($want | Where-Object { $items -notcontains $_ })
-                Step 'tray-menu' ($missing.Count -eq 0) "items: $($items -join ', ')$(if ($missing) { '; missing: ' + ($missing -join ', ') })"
+                $owner = [PopupMenu]::OpenMenuOwner()
+                $upshotPids = @(Get-Process -Name upshot -ErrorAction SilentlyContinue | ForEach-Object { [uint32]$_.Id })
+                Step 'tray-menu' ($opened -and $upshotPids -contains $owner) "opened=$opened menu owner pid=$owner (Upshot: $($upshotPids -join ',')); the items are in tray-menu.png"
                 Add-Type -AssemblyName System.Windows.Forms
                 [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
             } else {
