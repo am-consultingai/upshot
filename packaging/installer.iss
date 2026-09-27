@@ -23,6 +23,9 @@ AppPublisher=AM Consulting
 AppPublisherURL=https://www.amconsultingai.com
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription={#AppName} installer ({#AppCommit})
+VersionInfoCompany=AM Consulting
+VersionInfoProductName={#AppName}
+VersionInfoProductVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\Upshot
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -69,6 +72,8 @@ Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
 ; (app/window.py); every other start opens it.
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--background"
 
+#ifndef NoLinkScheme
+; /DNoLinkScheme builds an installer without it, for the Defender A/B test (D71).
 [Registry]
 ; The upshot: scheme, for this user only: a notification's buttons launch
 ; "upshot:recording.start?..." and upshot.exe hands the action to the running app without
@@ -77,6 +82,7 @@ Root: HKCU; Subkey: "Software\Classes\upshot"; ValueType: string; ValueName: "";
 Root: HKCU; Subkey: "Software\Classes\upshot"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\upshot\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"",0"
 Root: HKCU; Subkey: "Software\Classes\upshot\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+#endif
 
 [Run]
 ; --setup-again: first-run setup opens after every install, on the saved choices (D69).
