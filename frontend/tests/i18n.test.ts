@@ -33,6 +33,9 @@ describe("catalogue parity", () => {
     "assistant.provider.gemini",
     "firstRun.ai.claude.name",
     "firstRun.ai.codex.name",
+    "firstRun.services.claude.name",
+    "firstRun.services.codex.name",
+    "firstRun.services.gemini.name",
     "firstRun.done.sum.claude-subscription",
     "firstRun.done.sum.codex-subscription",
     // Each language named in itself, in both catalogues.

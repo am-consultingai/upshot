@@ -9,7 +9,15 @@ const free: CliFacts = { installed: true, signedIn: true, plan: "free" };
 
 describe("stepsFor", () => {
   it("asks how to record last, and never about the model or the CPU/GPU", () => {
-    expect(stepsFor({ calendarAvailable: true })).toEqual(["welcome", "calendar", "ai", "audio", "capture", "done"]);
+    expect(stepsFor({ calendarAvailable: true })).toEqual([
+      "welcome",
+      "calendar",
+      "services",
+      "ai",
+      "audio",
+      "capture",
+      "done",
+    ]);
   });
 
   it("hides the calendar step in a build that cannot connect one", () => {

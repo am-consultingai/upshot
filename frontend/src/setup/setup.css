@@ -158,48 +158,150 @@
 }
 .su-g-pointer { transform-origin: 0 0; animation-name: su-g-pointer; }
 
-/* Install: a window opens, fills, and closes; the app is left behind, ticked. */
-@keyframes su-window {
-  0%, 5% { transform: scale(0.6); opacity: 0; }
-  14%, 70% { transform: scale(1); opacity: 1; }
-  80%, 100% { transform: scale(0.6); opacity: 0; }
+/*
+ * AI sign-in: Claude or ChatGPT, as the user does it (D75), on one 12-second clock.
+ *   0-10%   the pointer presses "Sign in with …" in Upshot
+ *   10-18%  an arrow draws and the browser opens on the vendor's page
+ *   18-40%  log in: click the email field, it types itself, press Continue
+ *   40-62%  allow the access: press Authorize (Claude) or Continue (ChatGPT)
+ *   62-80%  Claude: press Copy on the code page; ChatGPT: "signed in"
+ *   80-100% the browser closes and Upshot shows the service ready
+ */
+.su-v-ask, .su-v-connect, .su-v-done, .su-v-link, .su-v-link-head, .su-v-browser,
+.su-v-page1, .su-v-page2, .su-v-page3, .su-v-type, .su-v-press1, .su-v-press2,
+.su-v-press3, .su-v-pointer-claude, .su-v-pointer-codex {
+  animation-duration: 12s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
 }
-.su-window { transform-box: fill-box; transform-origin: center; animation: su-window 4s ease-in-out infinite; }
 
-@keyframes su-fill {
-  0%, 14% { transform: scaleX(0); }
-  66%, 100% { transform: scaleX(1); }
+@keyframes su-v-ask {
+  0%, 80% { opacity: 1; }
+  84%, 97% { opacity: 0; }
+  100% { opacity: 1; }
 }
-.su-fill { transform-box: fill-box; transform-origin: left center; animation: su-fill 4s ease-in-out infinite; }
+.su-v-ask { animation-name: su-v-ask; }
 
-@keyframes su-appear {
-  0%, 76% { transform: scale(0.4); opacity: 0; }
-  86%, 100% { transform: scale(1); opacity: 1; }
+@keyframes su-v-connect {
+  0%, 7.5% { opacity: 1; transform: scale(1); filter: none; }
+  8.5% { opacity: 1; transform: scale(0.96); filter: brightness(0.85); }
+  10%, 80% { opacity: 1; transform: scale(1); filter: none; }
+  84%, 97% { opacity: 0; }
+  100% { opacity: 1; }
 }
-.su-appear { transform-box: fill-box; transform-origin: center; animation: su-appear 4s ease-out infinite; }
+.su-v-connect { animation-name: su-v-connect; }
 
-/* Sign in: the pointer presses the button; the code (or a tick) comes back to Upshot. */
-@keyframes su-pointer {
-  0% { transform: translate(28px, 30px); }
-  30%, 42% { transform: translate(0, 0); }
-  46% { transform: translate(0, 0) scale(0.85); }
-  52%, 100% { transform: translate(0, 0); }
+@keyframes su-v-done {
+  0%, 82% { opacity: 0; transform: translateY(6px); }
+  88%, 97% { opacity: 1; transform: none; }
+  100% { opacity: 0; }
 }
-.su-pointer { animation: su-pointer 4.4s ease-in-out infinite; }
+.su-v-done { animation-name: su-v-done; }
 
-@keyframes su-press {
-  0%, 44% { opacity: 1; }
-  47% { opacity: 0.55; }
-  52%, 100% { opacity: 1; }
+@keyframes su-v-link {
+  0%, 10% { stroke-dashoffset: 130; opacity: 1; }
+  16%, 78% { stroke-dashoffset: 0; opacity: 1; }
+  84%, 100% { stroke-dashoffset: 0; opacity: 0; }
 }
-.su-press { animation: su-press 4.4s linear infinite; }
+.su-v-link { stroke-dasharray: 130; animation-name: su-v-link; }
 
-@keyframes su-return {
-  0%, 52% { transform: translateX(0); opacity: 0; }
-  58% { opacity: 1; }
-  82%, 100% { transform: translateX(var(--su-return, 118px)); opacity: 1; }
+@keyframes su-v-link-head {
+  0%, 15% { opacity: 0; }
+  17%, 78% { opacity: 1; }
+  84%, 100% { opacity: 0; }
 }
-.su-return { animation: su-return 4.4s ease-in-out infinite; }
+.su-v-link-head { animation-name: su-v-link-head; }
+
+@keyframes su-v-browser {
+  0%, 14% { opacity: 0; transform: translateX(-8px) scale(0.94); }
+  19%, 78% { opacity: 1; transform: none; }
+  85%, 100% { opacity: 0; transform: translateX(-140px) scale(0.55); }
+}
+.su-v-browser { transform-origin: left center; animation-name: su-v-browser; }
+
+@keyframes su-v-page1 {
+  0%, 39% { opacity: 1; transform: none; }
+  42%, 100% { opacity: 0; transform: translateX(-14px); }
+}
+.su-v-page1 { animation-name: su-v-page1; }
+
+@keyframes su-v-page2 {
+  0%, 39% { opacity: 0; transform: translateX(14px); }
+  43%, 61% { opacity: 1; transform: none; }
+  64%, 100% { opacity: 0; transform: translateX(-14px); }
+}
+.su-v-page2 { animation-name: su-v-page2; }
+
+@keyframes su-v-page3 {
+  0%, 61% { opacity: 0; transform: translateX(14px); }
+  65%, 100% { opacity: 1; transform: none; }
+}
+.su-v-page3 { animation-name: su-v-page3; }
+
+@keyframes su-v-type {
+  0%, 23% { max-width: 0; }
+  32%, 100% { max-width: 200px; }
+}
+.su-v-type { animation-name: su-v-type; animation-timing-function: steps(13, end); }
+
+@keyframes su-v-press1 { 0%, 35% { filter: none; } 36.5% { filter: brightness(0.7); } 38%, 100% { filter: none; } }
+@keyframes su-v-press2 { 0%, 55% { filter: none; } 56.5% { filter: brightness(0.7); } 58%, 100% { filter: none; } }
+@keyframes su-v-press3 { 0%, 71% { filter: none; } 72.5% { filter: brightness(0.7); } 74%, 100% { filter: none; } }
+.su-v-press1 { animation-name: su-v-press1; }
+.su-v-press2 { animation-name: su-v-press2; }
+.su-v-press3 { animation-name: su-v-press3; }
+
+/* The pointer's tip is its box's corner, so a press scales around the point it presses. */
+@keyframes su-v-pointer-claude {
+  0% { transform: translate(140px, 245px); opacity: 0; }
+  3% { transform: translate(140px, 245px); opacity: 1; }
+  7.5% { transform: translate(95px, 190px); }
+  8.5% { transform: translate(95px, 190px) scale(0.85); }
+  10% { transform: translate(95px, 190px); }
+  20% { transform: translate(400px, 132px); }
+  21% { transform: translate(400px, 132px) scale(0.85); }
+  22% { transform: translate(400px, 132px); }
+  32% { transform: translate(400px, 132px); }
+  35% { transform: translate(528px, 232px); }
+  36.5% { transform: translate(528px, 232px) scale(0.85); }
+  38% { transform: translate(528px, 232px); }
+  55% { transform: translate(528px, 232px); }
+  56.5% { transform: translate(528px, 232px) scale(0.85); }
+  58% { transform: translate(528px, 232px); }
+  71% { transform: translate(528px, 232px); }
+  72.5% { transform: translate(528px, 232px) scale(0.85); }
+  74% { transform: translate(528px, 232px); opacity: 1; }
+  79%, 100% { transform: translate(528px, 232px); opacity: 0; }
+}
+.su-v-pointer-claude { transform-origin: 0 0; animation-name: su-v-pointer-claude; }
+
+@keyframes su-v-pointer-codex {
+  0% { transform: translate(140px, 245px); opacity: 0; }
+  3% { transform: translate(140px, 245px); opacity: 1; }
+  7.5% { transform: translate(95px, 190px); }
+  8.5% { transform: translate(95px, 190px) scale(0.85); }
+  10% { transform: translate(95px, 190px); }
+  20% { transform: translate(400px, 132px); }
+  21% { transform: translate(400px, 132px) scale(0.85); }
+  22% { transform: translate(400px, 132px); }
+  32% { transform: translate(400px, 132px); }
+  35% { transform: translate(528px, 232px); }
+  36.5% { transform: translate(528px, 232px) scale(0.85); }
+  38% { transform: translate(528px, 232px); }
+  55% { transform: translate(528px, 232px); }
+  56.5% { transform: translate(528px, 232px) scale(0.85); }
+  58% { transform: translate(528px, 232px); opacity: 1; }
+  64%, 100% { transform: translate(528px, 232px); opacity: 0; }
+}
+.su-v-pointer-codex { transform-origin: 0 0; animation-name: su-v-pointer-codex; }
+
+/* A background install has no progress to report: a bar that keeps moving says it runs. */
+@keyframes su-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.su-indeterminate { animation: su-indeterminate 1.6s ease-in-out infinite; }
+[dir="rtl"] .su-indeterminate { animation-direction: reverse; }
 
 /* Speakers: waves leave the speaker while the test sound plays. */
 @keyframes su-wave {

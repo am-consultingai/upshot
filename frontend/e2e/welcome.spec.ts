@@ -32,11 +32,14 @@ test.afterEach(async ({ page, request }) => {
   await reset(request);
 });
 
-/** From the welcome to the AI step, skipping what can be skipped. */
+/** From the welcome to the AI step: calendar skipped, Gemini chosen as the service (D75). */
 async function toAiStep(page: Page): Promise<void> {
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-calendar")).toBeVisible();
   await page.getByTestId("setup-skip").click();
+  await expect(page.getByTestId("setup-step-services")).toBeVisible();
+  await page.getByTestId("service-gemini").click();
+  await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
 }
 
@@ -214,7 +217,8 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
   });
   const first = await where();
   await page.getByTestId("setup-next").click();
-  for (const step of ["calendar", "ai", "audio", "capture"]) {
+  // "None of these" on the services step passes the connect step over (D75).
+  for (const step of ["calendar", "services", "audio", "capture"]) {
     await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
     const now = await where();
     expect(now.track.y).toBe(first.track.y);

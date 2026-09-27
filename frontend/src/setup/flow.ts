@@ -6,7 +6,7 @@
  * the summaries. What the user confirms on the mock is what ships.
  */
 
-export type StepId = "welcome" | "calendar" | "ai" | "audio" | "capture" | "done";
+export type StepId = "welcome" | "calendar" | "services" | "ai" | "audio" | "capture" | "done";
 
 /**
  * The steps, in order, for this machine.
@@ -21,6 +21,8 @@ export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
   return [
     "welcome",
     ...(machine.calendarAvailable ? (["calendar"] as const) : []),
+    // Which AI services the user pays for, before any is set up (D75).
+    "services",
     "ai",
     "audio",
     "capture",

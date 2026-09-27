@@ -357,6 +357,11 @@
       },
       "ProviderPost": {
         "properties": {
+          "background": {
+            "default": false,
+            "title": "Background",
+            "type": "boolean"
+          },
           "provider": {
             "anyOf": [
               {
@@ -407,6 +412,30 @@
           }
         },
         "title": "SettingsPut",
+        "type": "object"
+      },
+      "SigninCodePost": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SigninCodePost",
         "type": "object"
       },
       "StartPost": {
@@ -1589,6 +1618,47 @@
           }
         },
         "summary": "Llm Signin Cancel"
+      }
+    },
+    "/api/llm/signin/code": {
+      "post": {
+        "description": "Pass the code the provider's page shows to the windowless sign-in (Claude, D75).",
+        "operationId": "llm_signin_code_api_llm_signin_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SigninCodePost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Signin Code Api Llm Signin Code Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Llm Signin Code"
       }
     },
     "/api/llm/signout": {
