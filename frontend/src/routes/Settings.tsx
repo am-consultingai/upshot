@@ -115,7 +115,12 @@ export default function Settings() {
          * "CPU acceleration": greedy decoding on the CPU (asr.cpu_fast). The GPU always
          * uses full quality, so the switch only matters on a machine without one.
          */}
-        <SettingRow label={t("settings.cpuFast")} htmlFor="cpu-fast" configKey="asr.cpu_fast">
+        <SettingRow
+          label={t("settings.cpuFast")}
+          htmlFor="cpu-fast"
+          configKey="asr.cpu_fast"
+          description={<span data-testid="cpu-fast-hint">{t("settings.cpuFastHint")}</span>}
+        >
           <Tooltip label={t("settings.cpuFast")} hint={t("settings.cpuFastHint")} side="bottom">
             <input
               id="cpu-fast"
