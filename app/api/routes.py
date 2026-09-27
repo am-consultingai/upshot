@@ -112,6 +112,14 @@ class SecretsPut(BaseModel):
 
 class ProviderPost(BaseModel):
     provider: str | None = None
+    #: First-run setup (D75): install with no window and no sign-in in it, and sign in
+    #: with no window, the page taking Claude's code. Settings still opens windows.
+    background: bool = False
+
+
+class SigninCodePost(BaseModel):
+    provider: str | None = None
+    code: str
 
 
 class IgnorePost(BaseModel):
@@ -1776,7 +1784,11 @@ def signin_url(provider: str) -> str:
 
 
 def launch_console(
-    command: list[str], failure: str, *, provider: str = "claude-subscription"
+    command: list[str],
+    failure: str,
+    *,
+    provider: str = "claude-subscription",
+    visible: bool = True,
 ) -> dict[str, Any]:
     r"""Run an interactive command in a console of its own, and report what ran.
 
@@ -1818,7 +1830,9 @@ def launch_console(
                 argv,
                 cwd=where,
                 env=child_env(),
-                creationflags=creation_flags(visible=True),
+                # Setup installs in the background (D75): no window to take the focus
+                # or to frighten anyone; the page shows the progress instead.
+                creationflags=creation_flags(visible=visible),
             )
         except Exception as exc:
             problems.append(f"{argv[0]}: {exc}")
@@ -1876,7 +1890,7 @@ def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, 
             f"{product} is not installed. Install it, then sign in — the app never "
             "handles your credentials.",
         )
-    if not getattr(module, "SIGNIN_CONSOLE", True):
+    if (body is not None and body.background) or not getattr(module, "SIGNIN_CONSOLE", True):
         return hidden_signin(provider, client.login_command(), module)
     return launch_console(
         module.login_console(client.login_command()),
@@ -1954,6 +1968,21 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
     return {"signed_out": True}
 
 
+@router.post("/llm/signin/code")
+def llm_signin_code(body: SigninCodePost) -> dict[str, Any]:
+    """Pass the code the provider's page shows to the windowless sign-in (Claude, D75)."""
+    provider = chosen_cli(ProviderPost(provider=body.provider))
+    login = _LOGINS.get(provider)
+    if login is None or not login.running():
+        raise HTTPException(409, "No sign-in is waiting for a code. Start it again.")
+    if not body.code.strip():
+        raise HTTPException(400, "The code is empty.")
+    if not login.send(body.code):
+        raise HTTPException(500, "Could not pass the code to the sign-in.")
+    log.info("sign-in code passed to %s", provider)
+    return {"sent": True}
+
+
 @router.post("/llm/signin/cancel")
 def llm_signin_cancel(body: ProviderPost | None = None) -> dict[str, Any]:
     """Stop a windowless sign-in: it holds a port and would otherwise wait forever."""
@@ -1975,11 +2004,15 @@ def llm_install(body: ProviderPost | None = None) -> dict[str, Any]:
     """
     provider = chosen_cli(body)
     module = cli_module(provider)
-    plan = module.install_plan()
+    background = body is not None and body.background
+    plan = module.install_plan(sign_in=not background)
     if plan is None:
         return {"launched": False, "command": "", "docs": module.INSTALL_DOCS_URL}
     result = launch_console(
-        plan.argv, f"could not start the {plan.method} install", provider=provider
+        plan.argv,
+        f"could not start the {plan.method} install",
+        provider=provider,
+        visible=not background,
     )
     result["command"] = plan.display  # the line the user was shown, not the wrapper
     result["docs"] = module.INSTALL_DOCS_URL

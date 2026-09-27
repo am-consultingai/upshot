@@ -4,9 +4,11 @@ import { Spinner } from "../components/BusyButton";
 import { useSetupBackend, useSetupSnapshot, type CliSnapshot } from "./backend";
 import { chooseSummarizer, cliUsable, type CliId, type KeyProviderId } from "./flow";
 import { Badge, Note, PRIMARY, QUIET, SECONDARY, StepFrame, fill, type Tone } from "./ui";
-import { InstallScene, SignInScene, StageTrack } from "./visuals";
+import { VendorLogo } from "./logos";
+import { StageTrack, VendorSignInScene } from "./visuals";
 
 const NAME: Record<CliId, MessageKey> = { claude: "firstRun.ai.claude.name", codex: "firstRun.ai.codex.name" };
+const INTRO: Record<CliId, MessageKey> = { claude: "firstRun.ai.intro.claude", codex: "firstRun.ai.intro.codex" };
 const BY: Record<CliId, MessageKey> = { claude: "firstRun.ai.claude.by", codex: "firstRun.ai.codex.by" };
 const BUSY = new Set(["installing", "signing-in", "testing"]);
 
@@ -20,24 +22,23 @@ function status(cli: CliSnapshot): { tone: Tone; label: MessageKey } {
 }
 
 /**
- * Setup 3: the AI that writes summaries, on a subscription the user already pays for.
+ * Setup: connect the AI services chosen on the step before (D75).
  *
- * Ticking a card is the only click it takes: an absent CLI starts installing at once,
- * and sign-in follows the install by itself; an installed one goes straight to
- * sign-in. The only thing left to the user is the provider's own page (and, for
- * Claude, pasting its code back). Each stage is shown, not described.
- *
- * Ticking neither offers a key (Setup 6); a card started and abandoned does not stop
- * anyone moving on, it just does not count (Setup 8).
+ * Each chosen subscription gets a card that works through it on its own: its helper
+ * installs in the background at once, with no window; then the card says what signing
+ * in involves, shows it, and waits for the user to press Sign in, which opens the
+ * vendor's page in the browser once. Claude's code is pasted back here. Gemini, chosen,
+ * is a key. A card left unfinished does not stop anyone moving on; it just is not used.
  */
 export default function AiStep({
   ticked,
-  setTicked,
+  gemini,
   onNext,
   onBack,
 }: {
   ticked: Record<CliId, boolean>;
-  setTicked: (next: Record<CliId, boolean>) => void;
+  setTicked?: (next: Record<CliId, boolean>) => void;
+  gemini: boolean;
   onNext: () => void;
   onBack: () => void;
 }) {
@@ -54,24 +55,28 @@ export default function AiStep({
       setInstalledAtStart({ claude: snapshot.cli.claude.installed, codex: snapshot.cli.codex.installed });
     }
   }, [snapshot.cliKnown, snapshot.cli, installedAtStart]);
-  const noneTicked = !ticked.claude && !ticked.codex;
-  const checkedKey = snapshot.key.phase === "valid" ? snapshot.key.provider : null;
-  const chosen = chooseSummarizer(ticked, snapshot.cli, noneTicked ? checkedKey : null);
-  const unfinished = (["claude", "codex"] as const).filter((id) => {
-    const cli = snapshot.cli[id];
-    return ticked[id] && !cliUsable(cli) && !BUSY.has(cli.phase) && !(cli.signedIn === true && cli.plan === "free");
-  });
-
-  const toggle = (id: CliId) => {
-    const cli = snapshot.cli[id];
-    if (ticked[id]) {
-      if (cli.phase !== "idle") backend.cancel(id);
-    } else if (cli.phase === "idle") {
-      if (!cli.installed) backend.install(id);
-      else if (cli.signedIn !== true) backend.signIn(id);
+  // A chosen service that is not installed starts installing as soon as this step opens,
+  // once each: a failed install waits for Try again rather than starting over by itself.
+  const started = useRef(new Set<CliId>());
+  useEffect(() => {
+    if (!snapshot.cliKnown) return;
+    for (const id of ["claude", "codex"] as const) {
+      const cli = snapshot.cli[id];
+      if (ticked[id] && !cli.installed && cli.phase === "idle" && !started.current.has(id)) {
+        started.current.add(id);
+        backend.install(id);
+      }
     }
-    setTicked({ ...ticked, [id]: !ticked[id] });
-  };
+  }, [snapshot.cliKnown, snapshot.cli, ticked, backend]);
+
+  const chosenCli = (["claude", "codex"] as const).filter((id) => ticked[id]);
+  const noneTicked = chosenCli.length === 0;
+  const checkedKey = snapshot.key.phase === "valid" ? snapshot.key.provider : null;
+  const chosen = chooseSummarizer(ticked, snapshot.cli, noneTicked || gemini ? checkedKey : null);
+  const unfinished = chosenCli.filter((id) => {
+    const cli = snapshot.cli[id];
+    return !cliUsable(cli) && !BUSY.has(cli.phase) && !(cli.signedIn === true && cli.plan === "free");
+  });
 
   return (
     <StepFrame
@@ -105,16 +110,14 @@ export default function AiStep({
         </>
       }
     >
-      <div className="grid items-start gap-3 sm:grid-cols-2">
-        {(["claude", "codex"] as const).map((id) => (
+      <div className="space-y-3">
+        {chosenCli.map((id) => (
           <CliCard
             key={id}
             id={id}
             cli={snapshot.cli[id]}
-            ticked={ticked[id]}
             known={snapshot.cliKnown}
             skipInstall={installedAtStart?.[id] ?? false}
-            onToggle={() => toggle(id)}
           />
         ))}
       </div>
@@ -128,7 +131,7 @@ export default function AiStep({
         ))}
       </div>
 
-      {noneTicked && snapshot.cliKnown && <KeyOffer />}
+      {(gemini || noneTicked) && snapshot.cliKnown && <KeyOffer />}
     </StepFrame>
   );
 }
@@ -136,56 +139,30 @@ export default function AiStep({
 function CliCard({
   id,
   cli,
-  ticked,
   known,
   skipInstall,
-  onToggle,
 }: {
   id: CliId;
   cli: CliSnapshot;
-  ticked: boolean;
   /** False while the machine is still being asked what is installed. */
   known: boolean;
   skipInstall: boolean;
-  onToggle: () => void;
 }) {
   const { t } = useI18n();
   const badge = status(cli);
   return (
-    <div
-      data-testid={`ai-card-${id}`}
-      data-ticked={ticked}
-      className={`rounded-xl bg-raised shadow-sm ring-inset ${ticked ? "ring-2 ring-accent" : "ring-1 ring-line-subtle"}`}
-    >
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={ticked}
-        aria-busy={!known}
-        disabled={!known}
-        data-testid={`ai-tick-${id}`}
-        onClick={onToggle}
-        className="flex w-full items-center gap-3 rounded-xl px-4 py-3.5 text-start hover:bg-a-100"
-      >
-        <span
-          aria-hidden="true"
-          className={`grid size-5 shrink-0 place-items-center rounded-md text-xs ${
-            ticked ? "bg-accent text-on-accent" : "ring-1 ring-line-strong"
-          }`}
-        >
-          {ticked ? "✓" : ""}
-        </span>
+    <div data-testid={`ai-card-${id}`} className="rounded-xl bg-raised shadow-sm ring-1 ring-inset ring-line-subtle">
+      <div className="flex items-center gap-3 px-4 py-3.5">
+        <VendorLogo vendor={id} size={26} />
         <span className="min-w-0 flex-1">
           <span className="block text-base font-medium">{t(NAME[id])}</span>
           <span className="block text-xs text-tertiary">{t(BY[id])}</span>
         </span>
         {known ? <Badge tone={badge.tone}>{t(badge.label)}</Badge> : <Spinner className="text-tertiary" />}
-      </button>
-      {ticked && (
-        <div className="space-y-3 border-t border-line-subtle px-4 pb-4 pt-3">
-          <CliProgress id={id} cli={cli} skipInstall={skipInstall} />
-        </div>
-      )}
+      </div>
+      <div className="space-y-3 border-t border-line-subtle px-4 pb-4 pt-3">
+        <CliProgress id={id} cli={cli} skipInstall={skipInstall} />
+      </div>
     </div>
   );
 }
@@ -202,7 +179,9 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
       return (
         <>
           <StageTrack current="install" />
-          <InstallScene />
+          <div className="h-1.5 overflow-hidden rounded-full bg-surface-3" aria-hidden="true">
+            <div className="su-indeterminate h-full w-1/3 rounded-full bg-accent" />
+          </div>
           <Busy testId={`ai-installing-${id}`}>{fill(t("firstRun.ai.installing"), { name })}</Busy>
         </>
       );
@@ -257,23 +236,32 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
       </>
     );
   }
-  // Cancelled half-way: the same action again, one click.
+  if (cli.installed) {
+    // Installed and not signed in: say what signing in involves, show it, then let the
+    // user start it, so the browser opening is expected rather than sprung on them.
+    return (
+      <div data-testid={`ai-signin-intro-${id}`} className="space-y-3">
+        <StageTrack current="signin" skipInstall={skipInstall} />
+        <p className="text-sm text-secondary">{t(INTRO[id])}</p>
+        <VendorSignInScene vendor={id} />
+        <button type="button" data-testid={`ai-signin-${id}`} className={PRIMARY} onClick={() => backend.signIn(id)}>
+          {fill(t("firstRun.ai.signinButton"), { name })}
+        </button>
+      </div>
+    );
+  }
+  // Not installed and not installing: the install was cancelled or never started.
   return (
-    <button
-      type="button"
-      data-testid={`ai-resume-${id}`}
-      className={PRIMARY}
-      onClick={() => (cli.installed ? backend.signIn(id) : backend.install(id))}
-    >
-      {cli.installed ? t("firstRun.ai.stage.signin") : t("firstRun.ai.stage.install")}
+    <button type="button" data-testid={`ai-resume-${id}`} className={PRIMARY} onClick={() => backend.install(id)}>
+      {t("firstRun.ai.stage.install")}
     </button>
   );
 }
 
 /**
- * Sign-in. The backend has already opened the provider's page; the scene shows what
+ * Sign-in. The vendor's tool has opened its page in the browser; the scene shows what
  * happens there. The link stays in reach in case the browser did not come forward, and
- * Claude's code is pasted back here — the one step no CLI lets us skip. Pasting it is
+ * Claude's code is pasted back here, where Upshot passes it on (D75). Pasting it is
  * enough: there is no button to find afterwards.
  */
 function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipInstall: boolean }) {
@@ -284,10 +272,8 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
   return (
     <div data-testid={`ai-signing-in-${id}`} className="space-y-3">
       <StageTrack current="signin" skipInstall={skipInstall} />
-      <SignInScene code={cli.signinNeedsCode} intoWindow={cli.codeInWindow} />
-      {cli.signinNeedsCode && cli.codeInWindow ? (
-        <Busy>{t("firstRun.ai.pasteInWindow")}</Busy>
-      ) : cli.signinNeedsCode ? (
+      <VendorSignInScene vendor={id} />
+      {cli.signinNeedsCode ? (
         <form
           className="space-y-1.5"
           onSubmit={(event) => {
@@ -296,7 +282,7 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
           }}
         >
           <label htmlFor={`ai-code-${id}`} className="block text-sm">
-            {t("firstRun.ai.signingIn")} {t("firstRun.ai.pasteCode")}
+            {t("firstRun.ai.pasteCodeHere")}
           </label>
           <div className="flex gap-2">
             <input

@@ -142,7 +142,9 @@ class HiddenLogin:
             list(argv),
             cwd=cwd,
             env=env,
-            stdin=subprocess.DEVNULL,
+            # Claude's login reads the code the browser shows from here (D75); Codex's
+            # never reads it.
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -176,6 +178,18 @@ class HiddenLogin:
 
     def running(self) -> bool:
         return self.process.poll() is None
+
+    def send(self, text: str) -> bool:
+        """Type ``text`` and Enter into the login: Claude's code, pasted in the page."""
+        if not self.running() or self.process.stdin is None:
+            return False
+        try:
+            self.process.stdin.write(text.strip() + "\n")
+            self.process.stdin.flush()
+        except OSError as exc:
+            log.warning("could not pass the code to the sign-in: %s", exc)
+            return False
+        return True
 
     def stop(self) -> None:
         """End the login and everything it started.

@@ -3,6 +3,8 @@ import { directionFor, useI18n, type MessageKey } from "../i18n";
 import type { CalendarPhase, SpeakerPhase } from "./backend";
 import type { CaptureMode } from "./flow";
 import "./setup.css";
+import { VendorLogo } from "./logos";
+import { fill } from "./ui";
 
 /**
  * The pictures first-run setup explains itself with (epic z8tj1hb01k).
@@ -306,90 +308,116 @@ export function CalendarScene({ phase, account }: { phase: CalendarPhase; accoun
   );
 }
 
-/* ---------------------------------------------------------------- AI: install */
-
-/** A window opens on the desktop, fills, closes by itself, and leaves the app ticked. */
-export function InstallScene() {
-  return (
-    <Scene viewBox="0 0 240 120" className="w-full max-w-xs">
-      <rect x="10" y="6" width="220" height="92" rx="8" fill={C.surface} stroke={C.line} />
-      <path d="M100 98l-6 14h52l-6-14" fill={C.surface3} />
-      <g className="su-window">
-        <rect x="50" y="22" width="140" height="60" rx="6" fill={C.raised} stroke={C.strong} />
-        <path d="M50 28a6 6 0 0 1 6-6h128a6 6 0 0 1 6 6v6H50z" fill={C.surface3} />
-        <rect x="60" y="42" width="70" height="4" rx="2" fill={C.tertiary} />
-        <rect x="60" y="51" width="48" height="4" rx="2" fill={C.tertiary} />
-        <rect x="60" y="66" width="120" height="6" rx="3" fill={C.surface3} />
-        <rect x="60" y="66" width="120" height="6" rx="3" fill={C.accent} className="su-fill" />
-      </g>
-      <g className="su-appear">
-        <rect x="100" y="30" width="40" height="40" rx="10" fill={C.quiet} stroke={C.accent} strokeWidth="1.5" />
-        <path d="M120 38l3 9 9 3-9 3-3 9-3-9-9-3 9-3z" fill={C.accent} />
-        <Tick x={138} y={32} r={8} />
-      </g>
-    </Scene>
-  );
-}
-
-/* ---------------------------------------------------------------- AI: sign in */
-
 /**
- * The provider's page in the browser, the pointer pressing its button, and what comes
- * back to Upshot: the code to paste (Claude) or simply a tick (Codex).
+ * Signing in to Claude or ChatGPT, as the user does it (D75): press Sign in in Upshot;
+ * that opens the browser on the vendor's page; log in and press Continue; allow the
+ * access; for Claude, copy the code it shows, which goes into Upshot; the browser closes
+ * and Upshot shows the service ready. One twelve-second loop (setup.css, "su-v-"), laid
+ * out like the calendar scene, words from the catalogue.
  */
-export function SignInScene({ code, intoWindow = false }: { code: boolean; intoWindow?: boolean }) {
+export function VendorSignInScene({ vendor }: { vendor: "claude" | "codex" }) {
+  const { t, locale } = useI18n();
+  const dir = directionFor(locale);
+  const claude = vendor === "claude";
+  const name = t(claude ? "firstRun.ai.claude.name" : "firstRun.ai.codex.name");
+  const ink = claude ? "#1f1e1d" : "#0d0d0d";
+  const button = (label: string, cls: string) => (
+    <span dir={dir} className={`${cls} absolute bottom-4 end-4 rounded-full px-4 py-1.5 text-[10.5px] font-medium text-[#fff]`} style={{ background: ink }}>
+      {label}
+    </span>
+  );
   return (
-    <Scene viewBox="0 0 290 120" className="w-full max-w-xs">
-      {/* The browser. */}
-      <rect x="6" y="8" width="160" height="104" rx="8" fill={C.raised} stroke={C.line} />
-      <path d="M6 16a8 8 0 0 1 8-8h144a8 8 0 0 1 8 8v8H6z" fill={C.surface3} />
-      {[0, 1, 2].map((i) => (
-        <circle key={i} cx={16 + i * 8} cy="16" r="2.2" fill={C.strong} />
-      ))}
-      <rect x="44" y="12" width="110" height="8" rx="4" fill={C.raised} />
-      <circle cx="86" cy="46" r="11" fill={C.surface3} />
-      <rect x="52" y="64" width="68" height="4" rx="2" fill={C.tertiary} />
-      <rect x="46" y="80" width="80" height="16" rx="5" fill={C.accent} className="su-press" />
+    <div data-testid={`scene-signin-${vendor}`} dir="ltr" className="relative mx-auto h-[250px] w-[560px] max-w-full select-none" aria-hidden="true">
+      {/* 1. Upshot, with its Sign in button. */}
+      <div className="absolute start-0 top-[25px] h-[200px] w-[190px] overflow-hidden rounded-xl border border-line bg-raised shadow-sm">
+        <div className="flex h-7 items-center gap-1.5 bg-surface-3 px-2.5">
+          <svg viewBox="0 0 24 12" width="16" height="8" aria-hidden="true">
+            <path d="M1 7c2.5 0 2.5-5 5-5s2.5 5 5 5 2.5-5 5-5 2.5 5 5 5" fill="none" stroke="var(--color-accent)" strokeWidth="2.2" />
+          </svg>
+          <span className="text-[11px] font-semibold">{t("app.title")}</span>
+        </div>
+        <div className="absolute inset-x-3 top-10 flex items-center gap-2">
+          <VendorLogo vendor={vendor} size={22} />
+          <span className="text-[12px] font-semibold">{name}</span>
+        </div>
+        <div className="su-v-ask absolute inset-x-3 top-[72px]">
+          <span dir={dir} className="block text-[10px] leading-snug text-tertiary">{t("firstRun.ai.scene.ask")}</span>
+        </div>
+        <div className="su-v-connect absolute start-3.5 top-[150px] flex h-[30px] w-[162px] items-center justify-center rounded-md bg-accent text-[11px] font-semibold text-on-accent">
+          <span dir={dir}>{fill(t("firstRun.ai.signinButton"), { name })}</span>
+        </div>
+        <div className="su-v-done absolute inset-x-3 top-[72px] flex flex-col gap-2">
+          {claude && (
+            <div className="flex items-center gap-2 rounded-md border border-line px-2 py-1.5 text-[10px]">
+              <span className="font-mono text-tertiary">8fJk…#Qw3…</span>
+              <span dir={dir} className="ms-auto text-success">{t("firstRun.ai.scene.pasted")}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 rounded-lg bg-success-quiet px-2.5 py-2 text-xs font-semibold text-success">
+            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-success text-[11px] text-on-accent">✓</span>
+            <span dir={dir}>{t("firstRun.ai.ready")}</span>
+          </div>
+        </div>
+      </div>
 
-      {/* The pointer. */}
-      <g transform="translate(96 88)">
-        <g className="su-pointer">
-          <path d="M0 0l0 16 4.5-4 3 7 3-1.4-3-7 6-.4z" fill={C.raised} stroke="var(--color-primary)" strokeWidth="1.2" strokeLinejoin="round" />
-        </g>
-      </g>
+      {/* 2. Pressing it opens the browser. */}
+      <svg viewBox="0 0 70 120" width="70" height="120" className="absolute start-[184px] top-[62px] overflow-visible" aria-hidden="true">
+        <path d="M4 112 C 30 112, 36 20, 62 12" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" className="su-v-link" />
+        <path d="M54 6 L 64 11 L 57 20" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="su-v-link-head" />
+      </svg>
+      <span dir={dir} className="su-v-link-head absolute start-[193px] top-[26px] w-[54px] text-center text-[9.5px] font-medium leading-tight text-accent">
+        {t("firstRun.calendar.scene.opens")}
+      </span>
 
-      {intoWindow ? (
-        <>
-          {/* The window the install opened, waiting for the code. */}
-          <rect x="196" y="8" width="88" height="104" rx="8" fill={C.surface} stroke={C.strong} />
-          <path d="M196 16a8 8 0 0 1 8-8h72a8 8 0 0 1 8 8v8h-88z" fill={C.surface3} />
-          <path d="M204 38l5 4-5 4" fill="none" stroke={C.tertiary} strokeWidth="2" strokeLinecap="round" />
-          <rect x="214" y="40" width="44" height="4" rx="2" fill={C.tertiary} />
-          <rect x="206" y="72" width="68" height="18" rx="4" fill={C.raised} stroke={C.line} />
-        </>
-      ) : (
-        <>
-          {/* Upshot. */}
-          <rect x="196" y="8" width="88" height="104" rx="8" fill={C.raised} stroke={C.line} />
-          <path d="M206 30c4 0 4-6 8-6s4 6 8 6 4-6 8-6" fill="none" stroke={C.accent} strokeWidth="2.5" />
-          <rect x="206" y="36" width="24" height="2.5" fill={C.accent} />
-          <rect x="206" y="72" width="68" height="18" rx="4" fill={C.surface} stroke={C.line} />
-        </>
-      )}
-
-      {code ? (
-        <g className="su-return" style={{ "--su-return": "150px" } as CSSProperties}>
-          <rect x="62" y="74" width="54" height="14" rx="4" fill={C.quiet} stroke={C.accent} strokeWidth="1.2" />
-          {[0, 1, 2, 3, 4].map((i) => (
-            <circle key={i} cx={72 + i * 8.5} cy="81" r="2" fill={C.accent} />
+      <div className="su-v-browser absolute start-[250px] top-0 h-[250px] w-[310px] overflow-hidden rounded-xl border border-line-strong bg-[#fff] text-[#1f1f1f] shadow-md">
+        <div className="flex h-[26px] items-center gap-1.5 bg-[#f1f3f4] px-2.5">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-2 rounded-full bg-[#c4c7c5]" />
           ))}
-        </g>
-      ) : (
-        <g className="su-return" style={{ "--su-return": "150px" } as CSSProperties}>
-          <Tick x={90} y={81} r={9} />
-        </g>
-      )}
-    </Scene>
+          <span className="ms-2 flex h-4 flex-1 items-center rounded-full bg-[#fff] px-2 text-[9px] text-[#444746]">
+            🔒 {claude ? "claude.ai" : "auth.openai.com"}
+          </span>
+        </div>
+
+        {/* 3. The vendor's log-in page: the email, then Continue. */}
+        <div className="su-v-page1 absolute inset-x-0 bottom-0 top-[26px] px-5 pt-4">
+          <VendorLogo vendor={vendor} size={22} />
+          <p dir={dir} className="mt-2 text-[16px]">{t(claude ? "firstRun.ai.scene.claudeLogin" : "firstRun.ai.scene.codexLogin")}</p>
+          <div className="mt-4 rounded-md border-2 px-2.5 pb-1.5 pt-1" style={{ borderColor: ink }}>
+            <span dir={dir} className="block text-[8.5px] text-[#444746]">{t("firstRun.calendar.scene.emailLabel")}</span>
+            <span className="su-v-type block overflow-hidden whitespace-nowrap text-[11px]">{SAMPLE_EMAIL}</span>
+          </div>
+          {button(t("firstRun.calendar.scene.continue"), "su-v-press1")}
+        </div>
+
+        {/* 4. Allow the access. */}
+        <div className="su-v-page2 absolute inset-x-0 bottom-0 top-[26px] px-5 pt-4">
+          <VendorLogo vendor={vendor} size={22} />
+          <p dir={dir} className="mt-2 text-[13px] leading-snug">{t(claude ? "firstRun.ai.scene.claudeAllow" : "firstRun.ai.scene.codexAllow")}</p>
+          <p dir="auto" className="mt-2 inline-block rounded-full border border-[#e3e3e3] px-2 py-0.5 text-[9.5px] text-[#444746]">{SAMPLE_EMAIL}</p>
+          {button(t(claude ? "firstRun.ai.scene.authorize" : "firstRun.calendar.scene.continue"), "su-v-press2")}
+        </div>
+
+        {/* 5. Claude: the code to copy into Upshot. ChatGPT: done. */}
+        <div className="su-v-page3 absolute inset-x-0 bottom-0 top-[26px] px-5 pt-4">
+          <VendorLogo vendor={vendor} size={22} />
+          {claude ? (
+            <>
+              <p dir={dir} className="mt-2 text-[13px] leading-snug">{t("firstRun.ai.scene.claudeCode")}</p>
+              <div className="mt-3 rounded-md bg-[#f5f4ef] px-3 py-2 font-mono text-[11px]">8fJk2x9Lm…#Qw3eRt…</div>
+              {button(t("firstRun.ai.scene.copy"), "su-v-press3")}
+            </>
+          ) : (
+            <>
+              <p dir={dir} className="mt-2 text-[13px] leading-snug">{t("firstRun.ai.scene.codexDone")}</p>
+              <span className="mt-4 grid size-8 place-items-center rounded-full bg-[#10a37f] text-[14px] text-[#fff]">✓</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      <Pointer className={claude ? "su-v-pointer-claude" : "su-v-pointer-codex"} />
+    </div>
   );
 }
 

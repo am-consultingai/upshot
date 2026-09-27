@@ -209,6 +209,13 @@ def winget_works() -> bool:
     return completed.returncode == 0 and completed.stdout.strip().startswith("v")
 
 
+#: The link ``claude auth login`` prints (and opens) when it runs with no window, as
+#: first-run setup runs it (D75): ``https://claude.com/cai/oauth/authorize?code=true&…``.
+#: The code the browser then shows is passed to the process's input, which it reads
+#: (checked on machine B, 2026-09-27: a wrong code there makes it exit 1).
+LOGIN_URL = re.compile(r"https://claude\.(?:com|ai)/\S*/authorize\?\S+")
+
+
 @dataclass(frozen=True)
 class InstallPlan:
     """How Claude Code gets installed here, and the exact line that does it."""
@@ -218,7 +225,7 @@ class InstallPlan:
     argv: list[str]  # what actually gets spawned
 
 
-def install_plan() -> InstallPlan | None:
+def install_plan(*, sign_in: bool = True) -> InstallPlan | None:
     r"""What the Install button runs, or ``None`` when nothing here can install it.
 
     Anthropic's own installer wherever it can run: it is what their documentation
@@ -237,13 +244,13 @@ def install_plan() -> InstallPlan | None:
         return None
     if powershell_language_mode() != "ConstrainedLanguage":
         command = "irm https://claude.ai/install.ps1 | iex"
-        return InstallPlan("native", command, _console(command, _QUIET_NOTE))
+        return InstallPlan("native", command, _console(command, _QUIET_NOTE, sign_in=sign_in))
     if winget_works():
         command = (
             f"winget install --id {WINGET_PACKAGE} "
             "--accept-source-agreements --accept-package-agreements"
         )
-        return InstallPlan("winget", command, _console(command))
+        return InstallPlan("winget", command, _console(command, sign_in=sign_in))
     return None
 
 
@@ -309,7 +316,7 @@ def login_console(argv: Sequence[str]) -> list[str]:
     ]
 
 
-def _console(command: str, note: str = "") -> list[str]:
+def _console(command: str, note: str = "", *, sign_in: bool = True) -> list[str]:
     r"""Install and then sign in, in one visible window.
 
     **The installer runs in the foreground, and must.** A previous version ran it under
@@ -345,6 +352,18 @@ def _console(command: str, note: str = "") -> list[str]:
     ``-ExecutionPolicy Bypass`` either — that governs script files, and this is
     ``-Command``.
     """
+    if not sign_in:
+        # First-run setup's background install (D75): no window and no sign-in in it; the
+        # page signs in afterwards and takes the code itself. Still in the foreground and
+        # still flat, for the reasons above. The exit code says whether Claude is there.
+        script = (
+            f"Write-Host 'Running: {command}'; "
+            f"{command}; "
+            f"{_FIND_CLAUDE}; "
+            "if ($c) { Write-Host ('Installed: ' + $c) } else { "
+            "Write-Host 'Claude Code was not found after installing.'; exit 1 }"
+        )
+        return ["powershell.exe", "-NoProfile", "-Command", transcribed(script, "claude-install")]
     script = (
         f"Write-Host 'Running: {command}' -ForegroundColor Cyan; "
         f"{note}"

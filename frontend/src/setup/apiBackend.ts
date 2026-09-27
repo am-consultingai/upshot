@@ -7,9 +7,9 @@ import { CLI_PROVIDER, type CliId, type KeyProviderId, type SetupChoices, type S
  * First-run setup on the real application (epic z8tj1hb01k): the same screens the mock
  * was confirmed on, driven by `/calendar/*`, `/llm/*` and the settings.
  *
- * Nothing here is new server behaviour. Install and sign-in are the windows Settings
- * already opens; this chains them, so ticking a card is the only click — a CLI that
- * finishes installing is signed in next, and one that signs in is tested next — by
+ * Install and sign-in run with no window (D75): the install in the background while the
+ * page shows its progress, the sign-in as the vendor's own tool, which opens the
+ * browser once. Claude's code is pasted in the page and passed on. Progress is read by
  * polling the status Settings already reads.
  */
 
@@ -39,9 +39,9 @@ function cliFacts(row: LlmProvider | undefined, id: CliId): Omit<CliSnapshot, "p
     account: row?.account,
     installCommand: row?.install_command ?? "",
     signinUrl: row?.signin_url || undefined,
-    // Claude Code's own login ends on a code, typed into its window; Codex's does not.
+    // Claude Code's login ends on a code, pasted in the page (D75); Codex's does not.
     signinNeedsCode: id === "claude",
-    codeInWindow: id === "claude",
+    codeInWindow: false,
   };
 }
 
@@ -171,7 +171,7 @@ export class ApiSetupBackend implements SetupBackend {
     this.setCli(id, { phase: "installing" });
     this.started.set(id, Date.now());
     void api
-      .llmInstall(CLI_PROVIDER[id])
+      .llmInstall(CLI_PROVIDER[id], true)
       .then((result) => {
         if (!result.launched) {
           this.setCli(id, { phase: "install-failed" });
@@ -186,33 +186,34 @@ export class ApiSetupBackend implements SetupBackend {
     this.setCli(id, { phase: "signing-in" });
     this.started.set(id, Date.now());
     void api
-      .llmSignin(CLI_PROVIDER[id])
+      .llmSignin(CLI_PROVIDER[id], true)
       .then((result) => {
-        if (result.url) {
-          this.setCli(id, { signinUrl: result.url });
-          window.open(result.url, "_blank");
-        }
+        // The vendor's tool opens the browser itself: opening the link here too gave
+        // the user two sign-in pages (machine B, D75). It stays in reach as a link.
+        if (result.url) this.setCli(id, { signinUrl: result.url });
         this.watch(id);
       })
       .catch(() => this.setCli(id, { phase: "signin-failed" }));
   }
 
-  /** Claude Code reads its code in its own window; there is nothing to send from here. */
-  submitCode(): void {}
+  /** Claude's code, pasted in the page, goes to its windowless sign-in (D75). */
+  submitCode(id: CliId, code: string): void {
+    void api.llmSigninCode(CLI_PROVIDER[id], code).catch(() => this.setCli(id, { phase: "signin-failed" }));
+  }
 
   cancel(id: CliId): void {
     this.stop(`cli-${id}`);
-    if (this.state.cli[id].phase === "signing-in" && id === "codex") {
+    if (this.state.cli[id].phase === "signing-in") {
       void api.llmSigninCancel(CLI_PROVIDER[id]).catch(() => undefined);
     }
     this.setCli(id, { phase: "idle" });
   }
 
   /**
-   * Follow a card from install to ready. Installed while installing means sign-in is
-   * next — Claude Code's install window goes on to sign in by itself; Codex's sign-in is
-   * started here. Signed in means one tiny test prompt, then ready. A window closed
-   * before its job was done ends the wait as a failure, as does ten minutes of nothing.
+   * Follow a card from install to ready. An install is done when its background process
+   * has ended: installed, the card waits for the user to press Sign in (the page explains
+   * what happens first); not installed, it failed. Signed in means one tiny test prompt,
+   * then ready. A sign-in that ends without signing in, or ten minutes of nothing, fails.
    */
   private watch(id: CliId): void {
     const provider = CLI_PROVIDER[id];
@@ -226,13 +227,9 @@ export class ApiSetupBackend implements SetupBackend {
       this.setCli(id, { ...facts, signinUrl: facts.signinUrl ?? this.state.cli[id].signinUrl });
 
       if (phase === "installing") {
-        if (facts.installed) {
-          if (id === "codex") {
-            this.signIn(id);
-            return true; // signIn watches from here
-          }
-          this.setCli(id, { phase: "signing-in" });
-          return false;
+        if (windowGone && facts.installed) {
+          this.setCli(id, { phase: "idle" });
+          return true;
         }
         if (windowGone || overdue) {
           this.setCli(id, { phase: "install-failed" });

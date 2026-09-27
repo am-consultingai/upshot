@@ -447,11 +447,17 @@ export const api = {
       },
     ),
   /** Which subscription CLI; the server defaults to Claude for callers that do not say. */
-  llmSignin: (provider = "claude-subscription") =>
+  llmSignin: (provider = "claude-subscription", background = false) =>
     request<{ launched: boolean; command: string; log?: string; url?: string }>(
       "/api/llm/signin",
-      { method: "POST", body: JSON.stringify({ provider }) },
+      { method: "POST", body: JSON.stringify({ provider, background }) },
     ),
+  /** The code Claude's page shows, passed to its windowless sign-in (D75). */
+  llmSigninCode: (provider: string, code: string) =>
+    request<{ sent: boolean }>("/api/llm/signin/code", {
+      method: "POST",
+      body: JSON.stringify({ provider, code }),
+    }),
   /** Sign the CLI out with its own logout command. */
   llmSignout: (provider: string) =>
     request<{ signed_out: boolean }>("/api/llm/signout", {
@@ -474,10 +480,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ provider }),
     }),
-  llmInstall: (provider = "claude-subscription") =>
+  /** `background`: first-run setup's install, with no window and no sign-in in it (D75). */
+  llmInstall: (provider = "claude-subscription", background = false) =>
     request<{ launched: boolean; command: string; docs: string; log?: string }>("/api/llm/install", {
       method: "POST",
-      body: JSON.stringify({ provider }),
+      body: JSON.stringify({ provider, background }),
     }),
   calendarStatus: () => request<CalendarStatus>("/api/calendar/status"),
   calendarConnect: () =>

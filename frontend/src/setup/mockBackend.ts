@@ -194,7 +194,8 @@ export class MockSetupBackend implements SetupBackend {
     this.setCli(id, { phase: "installing" });
     this.later(6000, () => {
       if (this.outcomes.install === "fail") this.setCli(id, { phase: "install-failed" });
-      else this.signIn(id, true);
+      // Installed in the background; the user presses Sign in next (D75).
+      else this.setCli(id, { phase: "idle", installed: true, signedIn: false });
     });
   }
 
