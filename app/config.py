@@ -72,6 +72,10 @@ DEFAULTS: dict[str, Any] = {
         "compute_type": "auto",
         "device": "auto",
         "beam_size": 5,
+        # "CPU acceleration" in Settings: on the CPU, greedy decoding (beam 1) instead of
+        # beam_size. Measured on a 103 s Hebrew clip: half the time, the same words
+        # (2026-09-27). The GPU always uses beam_size, where the extra beams cost little.
+        "cpu_fast": False,
         "remote_url": None,
         "initial_prompt_max_tokens": 200,
         "diarization": "off",  # off|onnx|fake — splits THEM into THEM_1/2/3

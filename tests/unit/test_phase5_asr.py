@@ -195,6 +195,48 @@ def test_transcribe_params_are_the_tuned_set(tmp_path: Path) -> None:
     assert call["beam_size"] == 5
 
 
+@pytest.mark.parametrize(
+    ("device", "cpu_fast", "beam"),
+    [("cpu", False, 5), ("cpu", True, 1), ("cuda", False, 5), ("cuda", True, 5)],
+)
+def test_cpu_acceleration_is_greedy_on_the_cpu_only(
+    tmp_path: Path, device: str, cpu_fast: bool, beam: int
+) -> None:
+    """The Settings switch trades quality for time on the CPU; the GPU keeps beam 5."""
+    models: list[RecordingModel] = []
+
+    def factory(**kwargs: object) -> RecordingModel:
+        model = RecordingModel(**kwargs)
+        models.append(model)
+        return model
+
+    config = default_config()
+    config.set("asr.cpu_fast", cpu_fast)
+    backend = LocalAsr(config, model_factory=factory)
+    backend.load()
+    backend.device = device
+    backend.transcribe(make_wav(tmp_path / "them" / "0001.wav", 2), language="he")
+    assert models[-1].calls[-1]["beam_size"] == beam
+
+
+def test_cpu_acceleration_applies_without_a_restart(tmp_path: Path) -> None:
+    models: list[RecordingModel] = []
+
+    def factory(**kwargs: object) -> RecordingModel:
+        model = RecordingModel(**kwargs)
+        models.append(model)
+        return model
+
+    config = default_config()
+    backend = LocalAsr(config, model_factory=factory)
+    backend.load()
+    backend.device = "cpu"
+    backend.transcribe(make_wav(tmp_path / "them" / "0001.wav", 2), language="he")
+    config.set("asr.cpu_fast", True)
+    backend.transcribe(make_wav(tmp_path / "them" / "0002.wav", 2), language="he")
+    assert [call["beam_size"] for call in models[-1].calls[-2:]] == [5, 1]
+
+
 def test_initial_prompt_passed(tmp_path: Path) -> None:
     models: list[RecordingModel] = []
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type Locale } from "../i18n";
@@ -8,6 +9,7 @@ import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
 import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
+import Tooltip from "../components/Tooltip";
 import { useSetupWarnings } from "../lib/setup";
 
 /** Language endonyms are data, not copy: they are never translated. */
@@ -17,6 +19,7 @@ interface ConfigShape {
   ui?: { language?: string };
   summary?: { language?: string };
   detection?: { mode?: string };
+  asr?: { cpu_fast?: boolean };
 }
 
 /** What the three detection modes mean, said in terms of what happens to you. */
@@ -52,6 +55,9 @@ export default function Settings() {
   });
 
   const config = (settings.data?.config ?? {}) as ConfigShape;
+  // What the switch shows while its save is on the way: it flips on the click, as the
+  // tooltips switch does, rather than after the round trip.
+  const [cpuFast, setCpuFast] = useState<boolean | null>(null);
 
   // Keys the environment is holding down. Handed to every row, so a control a launcher
   // has pinned admits it rather than saving, reading back, and reverting on the next
@@ -103,6 +109,28 @@ export default function Settings() {
               </option>
             ))}
           </select>
+        </SettingRow>
+
+        {/*
+         * "CPU acceleration": greedy decoding on the CPU (asr.cpu_fast). The GPU always
+         * uses full quality, so the switch only matters on a machine without one.
+         */}
+        <SettingRow label={t("settings.cpuFast")} htmlFor="cpu-fast" configKey="asr.cpu_fast">
+          <Tooltip label={t("settings.cpuFast")} hint={t("settings.cpuFastHint")} side="bottom">
+            <input
+              id="cpu-fast"
+              data-testid="cpu-fast"
+              type="checkbox"
+              role="switch"
+              aria-description={t("settings.cpuFastHint")}
+              checked={cpuFast ?? config.asr?.cpu_fast ?? false}
+              onChange={(event) => {
+                setCpuFast(event.target.checked);
+                save.mutate({ "asr.cpu_fast": event.target.checked });
+              }}
+              className="size-4 accent-[var(--accent)]"
+            />
+          </Tooltip>
         </SettingRow>
       </SettingGroup>
       )}
