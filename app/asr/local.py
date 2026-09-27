@@ -384,9 +384,19 @@ class LocalAsr:
             vad_filter=True,
             word_timestamps=word_timestamps,
             condition_on_previous_text=False,  # the repetition-loop guard; do not remove
-            beam_size=int(self.config.get("asr.beam_size", 5)),
+            beam_size=self.beam_size(),
         )
         return list(segments)
+
+    def beam_size(self) -> int:
+        """asr.beam_size, except on the CPU with "CPU acceleration" on: greedy (1).
+
+        Read at every transcription, so the Settings switch applies to the next meeting
+        without a restart. The GPU never gets the faster, rougher setting.
+        """
+        if self.device == "cpu" and bool(self.config.get("asr.cpu_fast", False)):
+            return 1
+        return int(self.config.get("asr.beam_size", 5))
 
     def transcribe(
         self,

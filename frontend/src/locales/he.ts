@@ -495,6 +495,8 @@ export const he: Record<MessageKey, string> = {
   "actions.ofItems": "מתוך {n} משימות",
   "setup.calendarMissing": "לא חובר יומן",
   "setup.summariesMissing": "לא הוגדר סוכן AI: הוסיפו מפתח API או התחברו",
+  "settings.cpuFast": "האצת מעבד",
+  "settings.cpuFastHint": "הפעלה עלולה לפגוע באיכות התמלול, אבל מקצרת את זמן התמלול בכ-30%. חל רק כשהתמלול רץ על המעבד; כרטיס גרפי משתמש תמיד באיכות המלאה.",
   "settings.tooltipsOff": "כיבוי הסברים צצים",
   "settings.tooltipsOffHint": "הסתרת ההסברים שמופיעים כשמרחפים מעל כפתורים ותכונות.",
   "help.aiAgents": "כאן מגדירים את ה-AI שמסכם תמלילים, מוציא משימות ועונה על שאלות על הפגישות — עם מפתח API, או בהתחברות למנוי שכבר יש לכם.",
