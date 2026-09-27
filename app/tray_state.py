@@ -124,11 +124,22 @@ def menu_for(state: AppState) -> tuple[MenuItem, ...]:
     )
 
 
+#: A Windows tray tooltip holds 127 characters (NOTIFYICONDATA.szTip); a long meeting title
+#: in "Recording — <title>" must not overflow it.
+TOOLTIP_MAX = 127
+
+
+def _fit(text: str) -> str:
+    return text if len(text) <= TOOLTIP_MAX else text[: TOOLTIP_MAX - 1] + "…"
+
+
 def icon_for(state: AppState) -> IconSpec:
     """(AppState) -> IconSpec. The whole tray behaviour, as one pure function."""
     return IconSpec(
         color=_color(state),
-        tooltip=_tooltip(state),
+        # The app's name first: the tray shows only the tooltip, and "Idle" on its own
+        # did not say whose icon it was (found looking for it in a clean Windows).
+        tooltip=_fit(f"Upshot — {_tooltip(state)}"),
         badge=state.error or not state.worker_alive,
         menu=menu_for(state),
     )
