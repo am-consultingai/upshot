@@ -383,6 +383,32 @@ def test_import_creates_a_meeting(api, tmp_path: Path) -> None:  # type: ignore[
     assert body["chunks"] >= 2 and body["duration_s"] == 130
 
 
+def test_a_short_import_is_kept_not_discarded(api, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """The two-minute minimum is for recordings started by accident. A 41-second file the
+    user chose to import used to be discarded right after the import said it worked."""
+    import wave
+
+    import numpy as np
+
+    wav = tmp_path / "voice-memo.wav"
+    payload = np.round(
+        np.sin(2 * np.pi * 220 * np.arange(16000 * 41) / 16000) * 0.3 * 32767
+    ).astype("<i2")
+    with wave.open(str(wav), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(payload.tobytes())
+
+    with wav.open("rb") as handle:
+        response = api.client().post("/api/import", files={"file": ("voice-memo.wav", handle)})
+    body = response.json()
+    assert response.status_code == 200, body
+    assert body["duration_s"] == 41
+    assert body["state"] != "DISCARDED"
+    assert api.services.dao.require_meeting(body["meeting_id"]).state != "DISCARDED"
+
+
 def test_import_rejects_a_file_it_cannot_decode(api, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     bogus = tmp_path / "broken.wav"
     bogus.write_bytes(b"RIFF....WAVEfmt ")

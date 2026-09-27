@@ -51,7 +51,7 @@ function Wait-UpshotMeeting($Client, [string]$Id, [string[]]$States, [int]$Timeo
     $until = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $until) {
         $m = Invoke-Upshot $Client 'GET' "/api/meetings/$Id"
-        if ($States -contains $m.state -or $m.state -eq 'FAILED') { return $m }
+        if ($States -contains $m.state -or $m.state -in @('FAILED', 'DISCARDED', 'INTERRUPTED')) { return $m }
         Start-Sleep -Seconds 3
     }
     return (Invoke-Upshot $Client 'GET' "/api/meetings/$Id")
