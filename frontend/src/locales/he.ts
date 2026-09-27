@@ -195,7 +195,7 @@ export const he: Record<MessageKey, string> = {
   "calendar.syncLabel": "סנכרון היומן",
   "calendar.syncedAt": "סונכרן לאחרונה {time}, {count} אירועים שמורים.",
   "calendar.notSyncedYet": "עדיין לא סונכרן.",
-  "calendar.whatIsKept": "נשמרים במחשב הזה: כותרות אירועים, שעות, שמות המוזמנים וקישורי פגישה, 30 יום לפני היום ואחריו. אף פעם לא כתובות מייל של מוזמנים או תיאורי אירועים.",
+  "calendar.whatIsKept": "נשמרים במחשב הזה: כותרות אירועים, שעות, שמות המוזמנים וקישורי פגישה, 30 יום לפני היום ואחריו.",
   "calendar.syncNow": "לסנכרן עכשיו",
   "calendar.deleteCache": "מחיקת האירועים השמורים",
   "detector.nudgeStarting": "{title} מתחילה ואינה מוקלטת",
