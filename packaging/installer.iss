@@ -80,9 +80,74 @@ const
   { Polls (200 ms each) without a new report before the download counts as dead: 2 minutes. }
   StalePolls = 600;
 
+  { The least physical memory Upshot installs on (product owner, 2026-09-27): 12 GB. The
+    CPU speech model peaks at about 4.4 GB on a 100-second clip (measured, build 19), and
+    an 8 GB machine ran out of memory with Windows and a browser beside it. A PC sold as
+    "12 GB" reports a little less (graphics memory is taken out), so the bar is 11.5 GB of
+    what Windows reports. /NORAMCHECK=1 skips it: the test sandboxes top out near 10 GB. }
+  MinRamMB = 11776;
+
+type
+  TMemoryStatusEx = record
+    dwLength: Cardinal;
+    dwMemoryLoad: Cardinal;
+    ullTotalPhys: Int64;
+    ullAvailPhys: Int64;
+    ullTotalPageFile: Int64;
+    ullAvailPageFile: Int64;
+    ullTotalVirtual: Int64;
+    ullAvailVirtual: Int64;
+    ullAvailExtendedVirtual: Int64;
+  end;
+
+function GlobalMemoryStatusEx(var Buffer: TMemoryStatusEx): Boolean;
+  external 'GlobalMemoryStatusEx@kernel32.dll stdcall';
+
 var
   PreparePage: TOutputProgressWizardPage;
   PrepareNote: String;
+
+function TotalRamMB: Int64;
+var
+  Status: TMemoryStatusEx;
+begin
+  Status.dwLength := 64;
+  if GlobalMemoryStatusEx(Status) then
+    Result := Status.ullTotalPhys div (1024 * 1024)
+  else
+    Result := -1;
+end;
+
+function RamCheckSkipped: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/NORAMCHECK=1') = 0 then
+      Result := True;
+end;
+
+{ Before anything is copied: refuse a machine without the memory to transcribe. }
+function InitializeSetup: Boolean;
+var
+  Ram: Int64;
+  Gb: String;
+begin
+  Result := True;
+  Ram := TotalRamMB;
+  Log('Physical memory: ' + IntToStr(Ram) + ' MB (minimum ' + IntToStr(MinRamMB) + ' MB)');
+  if RamCheckSkipped then begin
+    Log('Memory check skipped (/NORAMCHECK=1)');
+    Exit;
+  end;
+  if (Ram > 0) and (Ram < MinRamMB) then begin
+    Gb := Format('%.1f', [Ram / 1024.0]);
+    SuppressibleMsgBox('{#AppName} needs a computer with at least 12 GB of memory to transcribe meetings on it.' + #13#10#13#10 +
+      'This computer has ' + Gb + ' GB, so {#AppName} will not be installed.', mbCriticalError, MB_OK, IDOK);
+    Result := False;
+  end;
+end;
 
 { Upshot runs in the tray with no window, so neither CloseApplications nor the
   uninstaller can ask it to close: job 022 found the uninstaller leaving 57 files and a
