@@ -302,3 +302,32 @@ def test_the_pinned_wheels_are_the_ones_proven_on_a_gpu() -> None:
     for wheel in cuda_libs.WHEELS:
         assert wheel.url.startswith("https://files.pythonhosted.org/")
         assert wheel.url.endswith("win_amd64.whl") and len(wheel.sha256) == 64
+
+
+def test_libraries_already_on_the_machine_are_used_not_downloaded_again(tmp_path: Path) -> None:
+    """A CUDA Toolkit, or a folder named in asr.cuda_dir, with cuBLAS and cuDNN: no 1.2 GB."""
+    toolkit = tmp_path / "toolkit" / "bin"
+    toolkit.mkdir(parents=True)
+    (toolkit / "cublas64_12.dll").write_bytes(b"x")
+    config = default_config()
+    config.set("asr.cuda_dir", str(toolkit))
+    assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) is None, (
+        "cuBLAS without cuDNN is not enough"
+    )
+    (toolkit / "cudnn64_9.dll").write_bytes(b"x")
+    assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) == toolkit
+
+
+def test_prepare_skips_the_download_when_the_libraries_are_already_there(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cuda_libs, "usable_elsewhere", lambda config: tmp_path)
+    texts: list[str] = []
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    original = progress.write
+    progress.write = lambda **f: (original(**f), texts.append(str(f.get("text"))))  # type: ignore[method-assign,func-returns-value]
+    code = run(default_config(), progress, model=model_manager(app_home),
+               gpu_wanted=(True, "NVIDIA GPU with 8192 MB"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert "GPU libraries: already on this computer" in texts
+    assert not target_dir(app_home).exists()
