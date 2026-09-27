@@ -43,88 +43,92 @@
 .su-flow { stroke-dasharray: 4 4; animation: su-flow 0.8s linear infinite; }
 
 /*
- * Calendar: connecting Google, the way the user does it, on one 8-second clock.
- *   0-14%   the pointer presses Connect in Upshot
- *   14-46%  a browser opens on Google's account chooser; the pointer picks an account
- *   46-72%  Google's permission screen; the pointer presses Allow
- *   72-100% the browser closes back into Upshot, which shows the tick
+ * Calendar: connecting Google as the user does it (D73), on one 10-second clock.
+ *   0-16%   the pointer presses "Connect with Google" in Upshot
+ *   16-48%  the browser opens on Google's "Choose an account"; the pointer picks one
+ *   48-76%  Google's consent screen; the pointer presses Continue
+ *   76-100% the browser closes and Upshot shows the calendar connected
  */
-.su-c-connect, .su-c-ok, .su-c-browser, .su-c-accounts, .su-c-consent, .su-c-pick,
-.su-c-allow, .su-c-pointer { animation-duration: 8s; animation-iteration-count: infinite; }
-
-@keyframes su-c-connect {
-  0%, 10% { opacity: 1; }
-  12% { opacity: 0.55; }
-  15%, 72% { opacity: 1; }
-  78%, 100% { opacity: 0; }
+.su-g-ask, .su-g-connect, .su-g-done, .su-g-browser, .su-g-accounts, .su-g-consent,
+.su-g-pick, .su-g-continue, .su-g-pointer {
+  animation-duration: 10s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
 }
-.su-c-connect { animation-name: su-c-connect; }
 
-@keyframes su-c-ok {
-  0%, 76% { opacity: 0; }
-  82%, 96% { opacity: 1; }
-  100% { opacity: 0; }
-}
-.su-c-ok { animation-name: su-c-ok; }
-
-@keyframes su-c-browser {
-  0%, 13% { transform: scale(0.85); opacity: 0; }
-  18%, 70% { transform: scale(1); opacity: 1; }
-  78%, 100% { transform: translateX(-70px) scale(0.5); opacity: 0; }
-}
-.su-c-browser { transform-box: fill-box; transform-origin: center; animation-name: su-c-browser; animation-timing-function: ease-in-out; }
-
-@keyframes su-c-accounts {
-  0%, 44% { opacity: 1; }
-  47%, 100% { opacity: 0; }
-}
-.su-c-accounts { animation-name: su-c-accounts; }
-
-@keyframes su-c-consent {
-  0%, 44% { opacity: 0; }
-  47%, 100% { opacity: 1; }
-}
-.su-c-consent { animation-name: su-c-consent; }
-
-@keyframes su-c-pick {
-  0%, 33% { opacity: 0.35; }
-  35%, 44% { opacity: 1; }
+@keyframes su-g-ask {
+  0%, 78% { opacity: 1; }
+  82%, 97% { opacity: 0; }
   100% { opacity: 1; }
 }
-.su-c-pick { animation-name: su-c-pick; }
+.su-g-ask { animation-name: su-g-ask; }
 
-@keyframes su-c-allow {
-  0%, 62% { opacity: 1; }
-  64% { opacity: 0.55; }
-  67%, 100% { opacity: 1; }
+@keyframes su-g-connect {
+  0%, 11% { opacity: 1; transform: scale(1); }
+  13% { opacity: 1; transform: scale(0.96); filter: brightness(0.85); }
+  15%, 78% { opacity: 1; transform: scale(1); filter: none; }
+  82%, 97% { opacity: 0; }
+  100% { opacity: 1; }
 }
-.su-c-allow { animation-name: su-c-allow; }
+.su-g-connect { animation-name: su-g-connect; }
 
-/* The pointer's tip is its origin, so a press scales around the point it presses. */
-@keyframes su-c-pointer {
-  0% { transform: translate(96px, 112px); opacity: 0; }
-  4% { transform: translate(96px, 112px); opacity: 1; }
-  10% { transform: translate(66px, 86px); }
-  12% { transform: translate(66px, 86px) scale(0.85); }
-  14% { transform: translate(66px, 86px); }
-  27% { transform: translate(206px, 58px); }
-  33% { transform: translate(206px, 58px); }
-  35% { transform: translate(206px, 58px) scale(0.85); }
-  37% { transform: translate(206px, 58px); }
-  55% { transform: translate(258px, 96px); }
-  62% { transform: translate(258px, 96px); }
-  64% { transform: translate(258px, 96px) scale(0.85); }
-  66% { transform: translate(258px, 96px); opacity: 1; }
-  72%, 100% { transform: translate(258px, 96px); opacity: 0; }
+@keyframes su-g-done {
+  0%, 80% { opacity: 0; transform: translateY(6px); }
+  86%, 97% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; }
 }
-.su-c-pointer { animation-name: su-c-pointer; animation-timing-function: ease-in-out; }
+.su-g-done { animation-name: su-g-done; }
 
-/* Connected: the tick is drawn once and the frame holds. */
-@keyframes su-draw-tick {
-  from { transform: scale(0); }
-  to { transform: scale(1); }
+@keyframes su-g-browser {
+  0%, 15% { opacity: 0; transform: translateY(10px) scale(0.96); }
+  20%, 74% { opacity: 1; transform: none; }
+  82%, 100% { opacity: 0; transform: translateX(-120px) scale(0.6); }
 }
-.su-draw-tick { transform-box: fill-box; transform-origin: center; animation: su-draw-tick 0.4s ease-out both; }
+.su-g-browser { transform-origin: left center; animation-name: su-g-browser; }
+
+@keyframes su-g-accounts {
+  0%, 46% { opacity: 1; }
+  49%, 100% { opacity: 0; }
+}
+.su-g-accounts { animation-name: su-g-accounts; }
+
+@keyframes su-g-consent {
+  0%, 46% { opacity: 0; transform: translateX(14px); }
+  50%, 100% { opacity: 1; transform: none; }
+}
+.su-g-consent { animation-name: su-g-consent; }
+
+@keyframes su-g-pick {
+  0%, 35% { background: transparent; }
+  37%, 100% { background: #e8f0fe; }
+}
+.su-g-pick { animation-name: su-g-pick; }
+
+@keyframes su-g-continue {
+  0%, 67% { filter: none; }
+  69% { filter: brightness(0.8); }
+  71%, 100% { filter: none; }
+}
+.su-g-continue { animation-name: su-g-continue; }
+
+/* The pointer's tip is its box's corner, so a press scales around the point it presses. */
+@keyframes su-g-pointer {
+  0% { transform: translate(150px, 236px); opacity: 0; }
+  4% { transform: translate(150px, 236px); opacity: 1; }
+  11% { transform: translate(100px, 185px); }
+  13% { transform: translate(100px, 185px) scale(0.85); }
+  15% { transform: translate(100px, 185px); }
+  30% { transform: translate(360px, 126px); }
+  35% { transform: translate(360px, 126px); }
+  36.5% { transform: translate(360px, 126px) scale(0.85); }
+  38% { transform: translate(360px, 126px); }
+  60% { transform: translate(506px, 222px); }
+  67% { transform: translate(506px, 222px); }
+  68.5% { transform: translate(506px, 222px) scale(0.85); }
+  70% { transform: translate(506px, 222px); opacity: 1; }
+  75%, 100% { transform: translate(506px, 222px); opacity: 0; }
+}
+.su-g-pointer { transform-origin: 0 0; animation-name: su-g-pointer; }
 
 /* Install: a window opens, fills, and closes; the app is left behind, ticked. */
 @keyframes su-window {
