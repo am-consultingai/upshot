@@ -72,8 +72,12 @@ def test_a_start_shows_the_window_unless_it_is_a_background_start(
     monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "app")
     tray = TrayApp(harness.services)
 
+    closed: list[int] = []
+    monkeypatch.setattr(window, "close_all", lambda: closed.append(1) or 0)
     harness.services.config.set("setup.done", True)
     assert tray.on_start(background=False) is True
+    # A start closes any window left from an earlier run before opening its own (D74).
+    assert closed == [1]
     assert tray.on_start(background=True) is False
     assert len(opened) == 1 and "?k=" in opened[0]
 
