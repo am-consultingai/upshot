@@ -94,6 +94,26 @@ def app_browser() -> str | None:
     return _edge()
 
 
+def _is_ours(win32gui: Any, hwnd: int) -> bool:  # pragma: no cover - Windows only
+    return bool(
+        hwnd
+        and win32gui.GetClassName(hwnd) == CHROMIUM_CLASS
+        and win32gui.GetWindowText(hwnd) == WINDOW_TITLE
+    )
+
+
+def in_front() -> bool:
+    """Whether Upshot's window is the one the user is looking at (the foreground)."""
+    if sys.platform != "win32":
+        return False
+    try:  # pragma: no cover - Windows only
+        import win32gui
+
+        return _is_ours(win32gui, win32gui.GetForegroundWindow())
+    except Exception:
+        return False
+
+
 def focus_existing() -> bool:
     """Bring an open Upshot window to the front. False when there is none."""
     if sys.platform != "win32":
@@ -104,11 +124,7 @@ def focus_existing() -> bool:
     found: list[int] = []
 
     def visit(hwnd: int, _: object) -> bool:
-        if (
-            win32gui.IsWindowVisible(hwnd)
-            and win32gui.GetClassName(hwnd) == CHROMIUM_CLASS
-            and win32gui.GetWindowText(hwnd) == WINDOW_TITLE
-        ):
+        if win32gui.IsWindowVisible(hwnd) and _is_ours(win32gui, hwnd):
             found.append(hwnd)
         return True
 

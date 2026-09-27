@@ -12,7 +12,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from app import brand, window
+from app import actions, brand, window
 from app.instance import ALREADY_RUNNING, SingleInstance
 from app.log import get, setup
 from app.services import Services
@@ -226,6 +226,34 @@ class TrayApp:
             self.icon.stop()
 
 
+def run_link(link: str, home: Any = None) -> int | None:
+    """Carry out an ``upshot:`` link. None means "start Upshot normally" instead.
+
+    Run from a toast, this process has the right to take the foreground and the tray one
+    has not, so it opens a page itself. Everything else it hands to the running instance
+    and exits without a window: pressing Start recording must not move the user's focus.
+    """
+    from app import paths
+    from app.instance import fresh_link, recorded_port
+
+    parsed = actions.parse(link)
+    if parsed is None:
+        log.warning("ignoring a link that is not one of Upshot's: %r", link)
+        return 2
+    home = home or paths.app_home()
+    port = recorded_port(home)
+    if parsed.action in actions.PAGES:
+        url = fresh_link(port, home, actions.page(parsed)) if port else None
+        if url is None:
+            return None  # not running: an ordinary start opens the window
+        window.open_window(url)
+        return 0
+    if port is None:
+        log.warning("toast action %s: Upshot is not running", parsed.action)
+        return 1
+    return 0 if actions.forward(parsed, port, home) else 1
+
+
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
     """The frozen executable's entry point.
 
@@ -275,6 +303,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         report = bootstrap_run(register_task=False, setup_again="--setup-again" in arguments)
         print(json.dumps(report.as_dict(), indent=2))
         return 0 if report.ok else 1
+    link = actions.link_argument(arguments)
+    if link:
+        # A toast button or a click on a notification (app/actions.py, D70).
+        setup()
+        code = run_link(link)
+        if code is not None:
+            return code
     setup()
     from app.version import build_info
 

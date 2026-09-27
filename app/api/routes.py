@@ -118,6 +118,13 @@ class IgnorePost(BaseModel):
     process: str
 
 
+class LauncherAction(BaseModel):
+    action: str
+    meeting_id: str | None = None
+    calendar_id: str | None = None
+    event_id: str | None = None
+
+
 class StartPost(BaseModel):
     title: str | None = None
     #: "Record this one" on an upcoming calendar event: the recording starts already
@@ -382,6 +389,50 @@ def recording_stop(request: Request) -> dict[str, Any]:
         "duration_s": duration_s,
         "chunks": len(result.records),
     }
+
+
+@router.post("/launcher/action")
+def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
+    """A toast button, pressed (D70). The caller is ``upshot.exe "upshot:..."``, which
+    proves itself with the launcher key: CSRF lets this one path through on it, so it is
+    checked again here rather than trusted from the middleware alone.
+
+    Each action takes the same path as its button in the window. Stop and "Not a meeting"
+    name their meeting, so a notification left in the Action Center cannot stop a later
+    recording than the one it was about.
+    """
+    from app.api.security import LAUNCHER_HEADER
+
+    svc = services_of(request)
+    if not svc.auth.valid_launcher(request.headers.get(LAUNCHER_HEADER)):
+        raise HTTPException(401, "not the launcher")
+    log.info("toast button: %s (meeting %s)", body.action, body.meeting_id or "-")
+    if body.action == "recording.start":
+        event = (
+            StartPost(calendar_id=body.calendar_id, event_id=body.event_id)
+            if body.calendar_id and body.event_id
+            else None
+        )
+        if event is not None and _event_store(svc).get(body.calendar_id, body.event_id) is None:
+            event = None  # the event left the cache since the toast: record it unnamed
+        return recording_start(request, event)
+    recording = svc.recorder is not None and svc.recorder.committed
+    current = svc.recorder.meeting_id if svc.recorder is not None else None
+    if body.action == "recording.stop":
+        if body.meeting_id and body.meeting_id != current:
+            raise HTTPException(409, "that meeting is no longer recording")
+        return recording_stop(request)
+    if body.action == "meeting.discard":
+        if not body.meeting_id:
+            raise HTTPException(400, "name the meeting")
+        if recording and body.meeting_id == current:
+            recording_stop(request)
+        # Stopping may have discarded it already (too short to be a meeting).
+        if svc.dao.require_meeting(body.meeting_id).state != MeetingState.DISCARDED:
+            svc.meetings.discard(body.meeting_id)
+        svc.events.publish("meeting", meeting_id=body.meeting_id, action="patched")
+        return {"meeting_id": body.meeting_id, "state": MeetingState.DISCARDED}
+    raise HTTPException(400, f"unknown action {body.action!r}")
 
 
 @router.post("/recording/pause")
