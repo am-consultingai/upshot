@@ -15,7 +15,9 @@ function palette(): string[] {
 /**
  * A burst of confetti over the whole window, once: the app's welcome after first-run
  * setup is finished. Drawn on a canvas that takes no clicks and removes itself.
- * Nobody who asked their system for less motion gets it.
+ * It plays whatever the system's reduced-motion setting says, like setup's scenes
+ * (src/setup/setup.css): Windows reports "reduce" whenever its animation effects are off,
+ * which many machines are without anyone having asked, and the welcome went missing.
  */
 export default function Confetti({ onDone }: { onDone: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -23,7 +25,7 @@ export default function Confetti({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     const node = canvas.current;
     const context = node?.getContext("2d");
-    if (!node || !context || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (!node || !context) {
       onDone();
       return;
     }

@@ -30,7 +30,7 @@ param(
     # initialise until B restarted (jobs 023 and 026).
     [switch]$NoShutdown,
     # A verified model folder (read-only, mapped from the host). The installer then skips
-    # its download (/MERGETASKS="!speechmodel") and the model is copied into place: the
+    # its download (/NOMODEL=1) and the model is copied into place: the
     # download is proven (jobs 025, 032), and this saves minutes per run.
     [string]$ModelCache = '',
     # Save a picture of the sandbox's screen every this many seconds into <Out>\screens,
@@ -257,7 +257,7 @@ try {
         $prevDir = Join-Path $env:TEMP 'previous'
         Expand-Archive -Path $previousZip -DestinationPath $prevDir -Force
         $prevSetup = Get-ChildItem $prevDir -Filter 'Upshot-*-Setup.exe' | Select-Object -First 1
-        $pp = Start-Process -FilePath $prevSetup.FullName -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/MERGETASKS="!speechmodel"', "/LOG=`"$(Join-Path $Out 'install-previous.log')`"") -PassThru
+        $pp = Start-Process -FilePath $prevSetup.FullName -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$(Join-Path $Out 'install-previous.log')`"") -PassThru
         $null = $pp.Handle
         $pp.WaitForExit()
         $oldProc = Start-Process -FilePath $exe -PassThru
@@ -282,14 +282,14 @@ try {
         $installArgs = @('/CURRENTUSER', '/NORAMCHECK=1', "/LOG=`"$installLog`"")
     } elseif ($visible -and $ModelCache) {
         Doing "installing: the installer's progress window (/SILENT), without the model download (it comes from $ModelCache)"
-        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/MERGETASKS="!speechmodel"', "/LOG=`"$installLog`"")
+        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$installLog`"")
     } elseif ($visible) {
         Doing "installing: the installer's progress window, no questions (/SILENT), and the speech model download (about 3 GB, several minutes)"
         $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', "/LOG=`"$installLog`"")
     } else {
         # The runner's jobs skip the 3 GB speech model: they test the install, not the download.
         Doing 'installing silently (/VERYSILENT), without the speech model download'
-        $installArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/MERGETASKS="!speechmodel"', "/LOG=`"$installLog`"")
+        $installArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$installLog`"")
     }
     # The installer refuses a machine under 12 GB (packaging/installer.iss). On one, try it
     # first without the test override: it must stop and install nothing.
