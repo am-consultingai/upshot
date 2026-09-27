@@ -104,6 +104,39 @@ public static class Mouse {
   public static void RightClick(int x, int y) { SetCursorPos(x, y); mouse_event(0x0008, 0, 0, 0, IntPtr.Zero); mouse_event(0x0010, 0, 0, 0, IntPtr.Zero); }
 }
 "@
+# One JavaScript expression evaluated in the page Edge has open on <port> (DevTools protocol).
+function Invoke-PageJs([int]$Port, [string]$Expression) {
+    $targets = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json" -TimeoutSec 10
+    $page = @($targets | Where-Object { $_.type -eq 'page' }) | Select-Object -First 1
+    $ws = New-Object System.Net.WebSockets.ClientWebSocket
+    $ws.ConnectAsync([Uri]$page.webSocketDebuggerUrl, [Threading.CancellationToken]::None).Wait()
+    try {
+        $message = @{ id = 1; method = 'Runtime.evaluate'; params = @{ expression = $Expression; returnByValue = $true } } | ConvertTo-Json -Depth 5 -Compress
+        $bytes = [Text.Encoding]::UTF8.GetBytes($message)
+        $ws.SendAsync((New-Object ArraySegment[byte] (, $bytes)), 'Text', $true, [Threading.CancellationToken]::None).Wait()
+        $buffer = New-Object byte[] 65536
+        $text = ''
+        do {
+            $r = $ws.ReceiveAsync((New-Object ArraySegment[byte] (, $buffer)), [Threading.CancellationToken]::None).Result
+            $text += [Text.Encoding]::UTF8.GetString($buffer, 0, $r.Count)
+        } while (-not $r.EndOfMessage)
+        return (($text | ConvertFrom-Json).result.result.value)
+    } finally { $ws.Dispose() }
+}
+# One move through first-run setup, as a person would make it: pick "notify me" on the
+# recording step, then Finish, else Skip, else Next. Says what it did.
+$SetupMove = @'
+(() => {
+  const flow = document.querySelector('[data-testid=setup-flow]');
+  if (!flow) return 'left:' + location.pathname;
+  const step = flow.dataset.step;
+  const q = (id) => document.querySelector('[data-testid=' + id + ']');
+  if (step === 'capture' && q('capture-shadow')) q('capture-shadow').click();
+  const b = q('setup-finish') || q('setup-skip') || q('setup-next');
+  if (b && !b.disabled) { b.click(); return 'clicked:' + step + ':' + b.dataset.testid; }
+  return 'waiting:' + step;
+})()
+'@
 function Wait-Enter([int]$minutes) {
     $until = (Get-Date).AddMinutes($minutes)
     while ((Get-Date) -lt $until) {
@@ -337,6 +370,27 @@ try {
         $second = Start-Process -FilePath $exe -PassThru
         $exited = $second.WaitForExit(60000)
         Step 'second-launch' ($exited -and -not $app_p.HasExited) "secondExited=$exited exit=$(if ($exited) { $second.ExitCode }) firstAlive=$(-not $app_p.HasExited)"
+        # First-run setup, clicked through in a visible Edge the way a new user would.
+        if ($visible -and $edge) {
+            Doing 'clicking through first-run setup in Edge'
+            $cdp = Start-Process -FilePath $edge -ArgumentList @('--no-first-run', '--no-default-browser-check', '--start-maximized', '--remote-debugging-port=9222', "--user-data-dir=$env:TEMP\edge-setup", "$base/welcome") -PassThru
+            $moves = @()
+            try {
+                Start-Sleep -Seconds 6
+                for ($i = 0; $i -lt 40; $i++) {
+                    $move = Invoke-PageJs 9222 $SetupMove
+                    if ($moves.Count -eq 0 -or $moves[-1] -ne $move) { $moves += $move }
+                    if ("$move" -like 'left:*') { break }
+                    Start-Sleep -Milliseconds 1500
+                }
+                Save-Screen 'setup-finished'
+            } catch { $moves += "error: $($_.Exception.Message)" }
+            $settings = Invoke-RestMethod -Uri "$base/api/settings" -TimeoutSec 20
+            $done = $settings.config.setup.done
+            $left = ("$($moves[-1])" -like 'left:*') -and ("$($moves[-1])" -notlike '*welcome*')
+            Step 'setup-clickthrough' ($left -and [bool]$done) "setup.done=$done path: $($moves -join ' > ')"
+        }
+
         # The tray: the icon is there, and its menu opens with the expected items.
         if ($visible) {
             $found = Find-TrayIcon
