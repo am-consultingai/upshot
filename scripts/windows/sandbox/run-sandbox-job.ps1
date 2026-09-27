@@ -96,7 +96,10 @@ for ($attempt = 1; $attempt -le 2; $attempt++) {
     New-Item -ItemType Directory -Force -Path $out | Out-Null
     Note "start attempt $attempt"
     $times["start_$attempt"] = (Get-Date).ToUniversalTime().ToString('o')
-    Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsSandbox.exe') -ArgumentList "`"$wsb`"" | Out-Null
+    # Through Explorer, as a double-click does. Started directly from the runner's process
+    # tree (WSL, a headless console), Sandbox failed to initialise on every start from the
+    # evening of 2026-09-26, while the same machine opened it fine from the Start menu.
+    Start-Process -FilePath (Join-Path $env:WINDIR 'explorer.exe') -ArgumentList "`"$wsb`"" | Out-Null
     $deadline = (Get-Date).AddMinutes($StartMinutes)
     while ((Get-Date) -lt $deadline -and -not (Test-Path $stepsLog)) { Start-Sleep -Seconds 2 }
     if (Test-Path $stepsLog) {
