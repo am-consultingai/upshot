@@ -500,6 +500,8 @@ export const en = {
   "actions.ofItems": "of {n} items",
   "setup.calendarMissing": "No calendar is connected",
   "setup.summariesMissing": "No AI agent is set up: add an API key or sign in",
+  "settings.cpuFast": "CPU acceleration",
+  "settings.cpuFastHint": "Turning this on may lower transcription quality, but cuts the time to transcribe by about 30%. It only applies when transcribing on the processor; a graphics card always uses full quality.",
   "settings.tooltipsOff": "Turn off tooltips",
   "settings.tooltipsOffHint": "Hide the explanations that appear when you hover over buttons and features.",
   "help.aiAgents": "Set up the AI that summarizes transcripts, pulls out action items and answers questions about your meetings — with an API key, or by signing in to a subscription you already have.",
