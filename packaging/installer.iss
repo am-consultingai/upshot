@@ -71,7 +71,7 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait pos
 [Code]
 { The speech model (and, with a suitable NVIDIA GPU, the CUDA libraries) is fetched
   during the install by "upshot.exe --prepare" (app/prepare.py), which does the work and
-  the checks; this page only shows the progress file it writes and asks it to stop.
+  the checks; this page only shows the progress file it writes.
   A download that fails or is stopped never fails the install: the app fetches a
   missing model before the first transcription, and runs on the CPU without the GPU
   libraries. }
@@ -82,8 +82,6 @@ const
 
 var
   PreparePage: TOutputProgressWizardPage;
-  LaterButton: TNewButton;
-  LaterClicked: Boolean;
   PrepareNote: String;
 
 { Upshot runs in the tray with no window, so neither CloseApplications nor the
@@ -126,24 +124,10 @@ begin
   Result := '';
 end;
 
-procedure LaterButtonClick(Sender: TObject);
-begin
-  LaterClicked := True;
-  LaterButton.Enabled := False;
-  LaterButton.Caption := 'Stopping...';
-end;
-
 procedure InitializeWizard;
 begin
   PreparePage := CreateOutputProgressPage('Getting {#AppName} ready to transcribe',
     '{#AppName} transcribes on this computer, so it needs its speech model. This is a one-time download.');
-  LaterButton := TNewButton.Create(PreparePage);
-  LaterButton.Caption := 'Download later';
-  LaterButton.Top := PreparePage.ProgressBar.Top + PreparePage.ProgressBar.Height + ScaleY(16);
-  LaterButton.Width := ScaleX(130);
-  LaterButton.Height := WizardForm.CancelButton.Height;
-  LaterButton.OnClick := @LaterButtonClick;
-  LaterButton.Parent := PreparePage.Surface;
 end;
 
 function ReadValue(const Lines: TArrayOfString; const Key: String): String;
@@ -168,13 +152,12 @@ end;
 
 procedure RunPrepare;
 var
-  ProgressFile, CancelFile, Params, Stage, State, Code, Error, Tick, LastTick: String;
+  ProgressFile, Params, Stage, State, Code, Error, Tick, LastTick: String;
   Lines: TArrayOfString;
   ResultCode, Percent, Quiet: Integer;
 begin
   ProgressFile := ExpandConstant('{tmp}\prepare-progress.txt');
-  CancelFile := ExpandConstant('{tmp}\prepare-cancel');
-  Params := '--prepare --progress-file "' + ProgressFile + '" --cancel-file "' + CancelFile + '"';
+  Params := '--prepare --progress-file "' + ProgressFile + '"';
   Log('Running upshot.exe ' + Params);
   { As the signed-in user, not an elevated one: the model belongs in their profile. }
   if not ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), Params, '', SW_HIDE, ewNoWait, ResultCode) then begin
@@ -194,8 +177,6 @@ begin
     repeat
       Sleep(200);
       Quiet := Quiet + 1;
-      if LaterClicked and not FileExists(CancelFile) then
-        SaveStringToFile(CancelFile, 'cancel', False);
       if LoadStringsFromFile(ProgressFile, Lines) then begin
         Tick := ReadValue(Lines, 'tick');
         if Tick <> LastTick then begin
