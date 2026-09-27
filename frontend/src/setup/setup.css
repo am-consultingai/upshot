@@ -43,15 +43,17 @@
 .su-flow { stroke-dasharray: 4 4; animation: su-flow 0.8s linear infinite; }
 
 /*
- * Calendar: connecting Google as the user does it (D73), on one 10-second clock.
- *   0-16%   the pointer presses "Connect with Google" in Upshot
- *   16-48%  the browser opens on Google's "Choose an account"; the pointer picks one
- *   48-76%  Google's consent screen; the pointer presses Continue
+ * Calendar: connecting Google as the user does it (D73), on one 11-second clock.
+ *   0-12%   the pointer presses "Connect with Google" in Upshot
+ *   12-20%  an arrow draws from the button and the browser opens beside Upshot
+ *   20-46%  Google's sign-in: the email types itself; the pointer presses Next
+ *   46-76%  Google's consent screen; the pointer presses Continue
  *   76-100% the browser closes and Upshot shows the calendar connected
  */
-.su-g-ask, .su-g-connect, .su-g-done, .su-g-browser, .su-g-accounts, .su-g-consent,
-.su-g-pick, .su-g-continue, .su-g-pointer {
-  animation-duration: 10s;
+.su-g-ask, .su-g-connect, .su-g-done, .su-g-link, .su-g-link-head, .su-g-link-label,
+.su-g-browser, .su-g-signin, .su-g-type, .su-g-next, .su-g-consent, .su-g-continue,
+.su-g-pointer {
+  animation-duration: 11s;
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;
 }
@@ -64,9 +66,9 @@
 .su-g-ask { animation-name: su-g-ask; }
 
 @keyframes su-g-connect {
-  0%, 11% { opacity: 1; transform: scale(1); }
-  13% { opacity: 1; transform: scale(0.96); filter: brightness(0.85); }
-  15%, 78% { opacity: 1; transform: scale(1); filter: none; }
+  0%, 10% { opacity: 1; transform: scale(1); filter: none; }
+  11.5% { opacity: 1; transform: scale(0.96); filter: brightness(0.85); }
+  13%, 78% { opacity: 1; transform: scale(1); filter: none; }
   82%, 97% { opacity: 0; }
   100% { opacity: 1; }
 }
@@ -79,18 +81,47 @@
 }
 .su-g-done { animation-name: su-g-done; }
 
+/* The arrow from Connect to the browser: drawn, held while the browser is open. */
+@keyframes su-g-link {
+  0%, 12% { stroke-dashoffset: 130; opacity: 1; }
+  18%, 74% { stroke-dashoffset: 0; opacity: 1; }
+  80%, 100% { stroke-dashoffset: 0; opacity: 0; }
+}
+.su-g-link { stroke-dasharray: 130; animation-name: su-g-link; }
+
+@keyframes su-g-link-head {
+  0%, 17% { opacity: 0; }
+  19%, 74% { opacity: 1; }
+  80%, 100% { opacity: 0; }
+}
+.su-g-link-head, .su-g-link-label { animation-name: su-g-link-head; }
+
 @keyframes su-g-browser {
-  0%, 15% { opacity: 0; transform: translateY(10px) scale(0.96); }
-  20%, 74% { opacity: 1; transform: none; }
-  82%, 100% { opacity: 0; transform: translateX(-120px) scale(0.6); }
+  0%, 16% { opacity: 0; transform: translateX(-8px) scale(0.94); }
+  21%, 74% { opacity: 1; transform: none; }
+  82%, 100% { opacity: 0; transform: translateX(-140px) scale(0.55); }
 }
 .su-g-browser { transform-origin: left center; animation-name: su-g-browser; }
 
-@keyframes su-g-accounts {
-  0%, 46% { opacity: 1; }
-  49%, 100% { opacity: 0; }
+@keyframes su-g-signin {
+  0%, 45% { opacity: 1; transform: none; }
+  48%, 100% { opacity: 0; transform: translateX(-14px); }
 }
-.su-g-accounts { animation-name: su-g-accounts; }
+.su-g-signin { animation-name: su-g-signin; }
+
+/* The email types itself in: its width grows in steps, one per character. */
+@keyframes su-g-type {
+  0%, 25% { max-width: 0; }
+  34%, 100% { max-width: 200px; }
+}
+.su-g-type { animation-name: su-g-type; animation-timing-function: steps(13, end); }
+
+@keyframes su-g-next {
+  0%, 39% { filter: none; }
+  40.5% { filter: brightness(0.8); }
+  42%, 100% { filter: none; }
+}
+.su-g-next { animation-name: su-g-next; }
 
 @keyframes su-g-consent {
   0%, 46% { opacity: 0; transform: translateX(14px); }
@@ -98,35 +129,32 @@
 }
 .su-g-consent { animation-name: su-g-consent; }
 
-@keyframes su-g-pick {
-  0%, 35% { background: transparent; }
-  37%, 100% { background: #e8f0fe; }
-}
-.su-g-pick { animation-name: su-g-pick; }
-
 @keyframes su-g-continue {
-  0%, 67% { filter: none; }
-  69% { filter: brightness(0.8); }
+  0%, 68% { filter: none; }
+  69.5% { filter: brightness(0.8); }
   71%, 100% { filter: none; }
 }
 .su-g-continue { animation-name: su-g-continue; }
 
 /* The pointer's tip is its box's corner, so a press scales around the point it presses. */
 @keyframes su-g-pointer {
-  0% { transform: translate(150px, 236px); opacity: 0; }
-  4% { transform: translate(150px, 236px); opacity: 1; }
-  11% { transform: translate(100px, 185px); }
-  13% { transform: translate(100px, 185px) scale(0.85); }
-  15% { transform: translate(100px, 185px); }
-  30% { transform: translate(360px, 126px); }
-  35% { transform: translate(360px, 126px); }
-  36.5% { transform: translate(360px, 126px) scale(0.85); }
-  38% { transform: translate(360px, 126px); }
-  60% { transform: translate(506px, 222px); }
-  67% { transform: translate(506px, 222px); }
-  68.5% { transform: translate(506px, 222px) scale(0.85); }
-  70% { transform: translate(506px, 222px); opacity: 1; }
-  75%, 100% { transform: translate(506px, 222px); opacity: 0; }
+  0% { transform: translate(140px, 245px); opacity: 0; }
+  4% { transform: translate(140px, 245px); opacity: 1; }
+  10% { transform: translate(95px, 190px); }
+  11.5% { transform: translate(95px, 190px) scale(0.85); }
+  13% { transform: translate(95px, 190px); }
+  22% { transform: translate(400px, 152px); }
+  23.5% { transform: translate(400px, 152px) scale(0.85); }
+  25% { transform: translate(400px, 152px); }
+  34% { transform: translate(400px, 152px); }
+  39% { transform: translate(525px, 233px); }
+  40.5% { transform: translate(525px, 233px) scale(0.85); }
+  42% { transform: translate(525px, 233px); }
+  62% { transform: translate(526px, 229px); }
+  68% { transform: translate(526px, 229px); }
+  69.5% { transform: translate(526px, 229px) scale(0.85); }
+  71% { transform: translate(526px, 229px); opacity: 1; }
+  76%, 100% { transform: translate(526px, 229px); opacity: 0; }
 }
 .su-g-pointer { transform-origin: 0 0; animation-name: su-g-pointer; }
 
