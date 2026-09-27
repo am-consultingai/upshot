@@ -22,7 +22,7 @@ from app.tray_state import (
 @pytest.mark.parametrize(
     ("state", "color", "tooltip_fragment", "badge"),
     [
-        (AppState(), IconColor.GREY, "Idle", False),
+        (AppState(), IconColor.IDLE, "Idle", False),
         (AppState(recorder=RecorderState.ARMED), IconColor.AMBER, "Evaluating", False),
         (
             AppState(recorder=RecorderState.RECORDING, meeting_title="Weekly Sync"),
@@ -33,9 +33,8 @@ from app.tray_state import (
         (AppState(recorder=RecorderState.PAUSED), IconColor.AMBER, "Paused", False),
         (AppState(processing=True, queue_depth=3), IconColor.BLUE, "Processing 3 jobs", False),
         (AppState(processing=True, queue_depth=1), IconColor.BLUE, "Processing 1 job", False),
-        (AppState(error=True), IconColor.GREY, "attention", True),
-        (AppState(worker_alive=False), IconColor.GREY, "worker stopped", True),
-        (AppState(detector_muted=True), IconColor.GREY, "muted", False),
+        (AppState(error=True), IconColor.IDLE, "attention", True),
+        (AppState(worker_alive=False), IconColor.IDLE, "worker stopped", True),
     ],
 )
 def test_icon_state_table(
@@ -62,7 +61,8 @@ def test_menu_items_enabled() -> None:
     assert idle[Action.START].enabled is True
     assert idle[Action.STOP].enabled is False
     assert idle[Action.PAUSE].enabled is False
-    assert Action.MUTE_HOUR in idle, "the mute button is always present"
+    # The mute item did nothing (the detector never read it) and was removed.
+    assert "detector.mute_1h" not in {str(action) for action in idle}
 
     recording = {item.action: item for item in menu_for(AppState(recorder=RecorderState.RECORDING))}
     assert recording[Action.START].enabled is False
@@ -74,14 +74,11 @@ def test_menu_items_enabled() -> None:
     assert paused[Action.PAUSE].label == "Resume"
     assert paused[Action.STOP].enabled is True
 
-    muted = {item.action: item for item in menu_for(AppState(detector_muted=True))}
-    assert muted[Action.MUTE_HOUR].checked is True
-
 
 def test_every_state_produces_a_menu() -> None:
     for recorder in RecorderState:
         spec = icon_for(AppState(recorder=recorder))
-        assert len(spec.menu) == 6
+        assert len(spec.menu) == 5
         assert spec.tooltip
 
 

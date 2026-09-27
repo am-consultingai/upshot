@@ -44,6 +44,7 @@ SPARE_BYTES = 1 << 30
 #: Written into the model folder once every file has matched the repo's listing.
 VERIFIED = ".upshot-verified"
 
+
 @dataclass(frozen=True)
 class RemoteFile:
     size: int

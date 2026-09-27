@@ -159,9 +159,7 @@ def test_speaker_names_merge(api) -> None:  # type: ignore[no-untyped-def]
     assert body["speaker_names"] == {"ME": "Avi"}
     listed = client.get("/api/meetings").json()["meetings"][0]
     assert listed["speaker_names"] == {"ME": "Avi"}, "an object in the list too, not a string"
-    assert (
-        client.patch("/api/meetings/m-a", json={"speaker_names": {"": "x"}}).status_code == 422
-    )
+    assert client.patch("/api/meetings/m-a", json={"speaker_names": {"": "x"}}).status_code == 422
 
 
 def test_chapters_come_from_the_notes(api) -> None:  # type: ignore[no-untyped-def]
@@ -257,9 +255,7 @@ def test_ask_is_given_the_names_and_the_related_meetings(api) -> None:  # type: 
 
     api.services.llm = FakeLlm()
     _transcribed(api, "m-a", "Kubernetes costs", [(0, "THEM", "The kubernetes bill doubled.")])
-    _transcribed(
-        api, "m-b", "Kubernetes plan", [(5000, "THEM", "The migration finishes Friday.")]
-    )
+    _transcribed(api, "m-b", "Kubernetes plan", [(5000, "THEM", "The migration finishes Friday.")])
     api.services.dao.update_meeting("m-a", speaker_names=json.dumps({"THEM": "Dana"}))
     client = api.client()
     body = client.post(

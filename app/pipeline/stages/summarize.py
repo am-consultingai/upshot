@@ -193,7 +193,7 @@ def meeting_context(ctx: StageContext) -> str | None:
 
 
 def date_context(started_at: str) -> str | None:
-    """"Date: 2026-09-23 (Wednesday), 14:00 local time." — the anchor for deadlines."""
+    """ "Date: 2026-09-23 (Wednesday), 14:00 local time." — the anchor for deadlines."""
     from datetime import datetime
 
     try:
@@ -203,7 +203,7 @@ def date_context(started_at: str) -> str | None:
     local = when.astimezone() if when.tzinfo else when
     return (
         f"Date: {local.date().isoformat()} ({local:%A}), {local:%H:%M} local time. "
-        "Spoken deadlines such as \"by Thursday\" count from this day."
+        'Spoken deadlines such as "by Thursday" count from this day.'
     )
 
 

@@ -171,8 +171,7 @@ def related(dao: Dao, meeting_id: str, *, limit: int = MAX_RELATED) -> list[Rela
     others = [
         m
         for m in everything
-        if m.id != target.id
-        and m.state not in (MeetingState.RECORDING, MeetingState.DISCARDED)
+        if m.id != target.id and m.state not in (MeetingState.RECORDING, MeetingState.DISCARDED)
     ]
     if not others:
         return []

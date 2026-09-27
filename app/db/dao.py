@@ -889,9 +889,7 @@ class Dao:
         return self.action_item(item_id)
 
     def delete_action_item(self, item_id: int) -> bool:
-        return bool(
-            self.conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,)).rowcount
-        )
+        return bool(self.conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,)).rowcount)
 
     def action_items(
         self,
