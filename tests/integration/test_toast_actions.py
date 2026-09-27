@@ -155,3 +155,22 @@ def test_a_link_opens_pages_itself_and_hands_the_rest_on(
     assert tray.run_link("upshot:recording.stop?meeting=m1", tmp_path) == 0
     assert forwarded == [actions.Link("recording.stop", {"meeting": "m1"})]
     assert len(opened) == 1, "an action opens no window"
+
+
+def test_only_the_installed_app_sends_toasts_under_its_own_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """D72: Windows ignores link buttons under the fallback identity, and never shows a
+    toast under an unregistered one, which only the installer registers."""
+    import json
+    import sys
+
+    from app.notify import WindowsToastNotifier
+
+    seen: list[list[str]] = []
+    notifier = WindowsToastNotifier(spawn=lambda c: seen.append(c), app_in_front=lambda: False)
+    notifier.call_detected("Zoom.exe", "Standup")
+    assert json.loads(seen[-1][-1])["aumid"] is None
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    notifier.call_detected("Teams.exe", "Standup")
+    assert json.loads(seen[-1][-1])["aumid"] == "Upshot.App"

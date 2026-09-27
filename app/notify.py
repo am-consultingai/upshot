@@ -292,6 +292,9 @@ class WindowsToastNotifier(BaseNotifier):
         payload = json.dumps(
             {
                 "app_id": self.app_id,
+                # Only an installed app has its identity registered (the installer's
+                # Start-menu shortcut); a toast under an unregistered one never appears.
+                "aumid": self.app_id if getattr(sys, "frozen", False) else None,
                 "title": toast.title,
                 "body": toast.body,
                 "launch": toast.link(),

@@ -38,10 +38,21 @@ def show(payload: dict[str, Any]) -> None:
     )
 
     buttons = list(payload.get("buttons") or [])
+    # The installed app's own identity (D72): the installer registers "Upshot.App" on the
+    # Start-menu shortcut, so the toast is headed "Upshot" with its icon, and Windows
+    # carries out its link buttons. Under the fallback identity (Command Prompt's, all a
+    # source run has) Windows shows the buttons but ignores every press (machine B).
+    aumid = payload.get("aumid")
     # WindowsToaster drops actions with a warning, so anything with buttons has to go
     # through the interactable one (DETECTION.md §6: the buttons are the mechanism).
-    builder = InteractableWindowsToaster if buttons else WindowsToaster
-    toaster = builder(str(payload.get("app_id") or APP_ID))
+    if buttons:
+        toaster = (
+            InteractableWindowsToaster("Upshot", notifierAUMID=str(aumid))
+            if aumid
+            else InteractableWindowsToaster(str(payload.get("app_id") or APP_ID))
+        )
+    else:
+        toaster = WindowsToaster(str(aumid or payload.get("app_id") or APP_ID))
     toast = Toast()
     toast.text_fields = [str(payload.get("title", "")), str(payload.get("body", ""))]
     # Each press launches an upshot: link, which the installer registers and a short
@@ -49,9 +60,9 @@ def show(payload: dict[str, Any]) -> None:
     # process has gone, from the Action Center too, and takes nobody's focus.
     if payload.get("launch"):
         toast.launch_action = str(payload["launch"])
-    if buttons:
-        # The interactable toaster names its sender in a small attribution line, from
-        # the app id ("Upshot.App") unless told otherwise.
+    if buttons and not aumid:
+        # Under the fallback identity the header says "Command Prompt"; the attribution
+        # line is the only place left to say who sent it.
         toast.attribution_text = "Upshot"
     for button in buttons:
         if button.get("action") == "system.dismiss":

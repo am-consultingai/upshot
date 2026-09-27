@@ -64,7 +64,10 @@ BeveledLabel=Powered by AM Consulting
 Source: "..\dist\upshot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; AppUserModelID registers Upshot's notification identity (D72): without it toasts come
+; from "Command Prompt" and Windows ignores presses on their buttons. It must match
+; app/tray.py APP_USER_MODEL_ID and app/notify.py.
+Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "Upshot.App"
 ; Always: Upshot notices meetings only while it runs (product owner, 2026-09-27: no
 ; "Select Additional Tasks" page; starting at sign-in and the model download are not asked).
 ; Windows' Startup apps (Task Manager, or Settings > Apps > Startup) can turn it off.
