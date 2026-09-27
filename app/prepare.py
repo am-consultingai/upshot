@@ -165,7 +165,12 @@ def run(
         from app.asr import cuda_libs
 
         want, why = gpu_wanted if gpu_wanted is not None else cuda_libs.wanted(config)
-        if cuda is None and want and cuda_libs.ready():
+        elsewhere = cuda_libs.usable_elsewhere(config) if cuda is None and want else None
+        if elsewhere is not None:
+            progress.write(stage="gpu", state="skipped", percent=100,
+                           text="GPU libraries: already on this computer")  # fmt: skip
+            log.info("prepare: CUDA libraries already usable in %s; nothing to download", elsewhere)
+        elif cuda is None and want and cuda_libs.ready():
             progress.write(stage="gpu", state="skipped", percent=100,
                            text="GPU libraries: already on this computer")  # fmt: skip
         elif not want:

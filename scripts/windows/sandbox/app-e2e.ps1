@@ -16,12 +16,14 @@ param(
     [string]$Exe = 'C:\upshot-build\dist\upshot\upshot.exe',
     [Parameter(Mandatory = $true)] [string]$ModelPath,
     [Parameter(Mandatory = $true)] [string]$Out,
-    # name=audio file=reference transcript; the reference may be ''.
+    # name=audio|reference, several separated by ';'; the reference may be left out.
     [string[]]$Clips = @(),
     [string[]]$Providers = @('claude-subscription', 'codex-subscription'),
     [double]$MinRecall = 0.6
 )
 $ErrorActionPreference = 'Stop'
+# powershell -File hands a list over as one string: separate clips with ';' as well.
+$Clips = @($Clips | ForEach-Object { $_ -split ';' } | Where-Object { $_ })
 . (Join-Path $PSScriptRoot 'upshot-api.ps1')
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $log = Join-Path $Out 'steps.log'
