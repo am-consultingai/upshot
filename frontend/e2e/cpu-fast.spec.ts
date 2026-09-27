@@ -8,9 +8,11 @@ test("cpu_acceleration_switch_saves_and_explains_itself", async ({ page }) => {
   await expect(toggle).toBeVisible();
   await expect(toggle).not.toBeChecked();
   await expect(page.getByText("CPU acceleration").first()).toBeVisible();
+  // Explained in the row, as every setting is, whether or not tooltips are on.
+  await expect(page.getByTestId("cpu-fast-hint")).toContainText("about 30%");
 
   await toggle.hover();
-  await expect(page.getByText(/cuts the time to transcribe by about 30%/)).toBeVisible();
+  await expect(page.getByRole("tooltip").filter({ hasText: "about 30%" })).toBeVisible();
 
   await toggle.check();
   await expect

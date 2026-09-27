@@ -446,7 +446,9 @@ try {
             } catch { $moves += "error: $($_.Exception.Message)" }
             $settings = Invoke-RestMethod -Uri "$base/api/settings" -TimeoutSec 20
             $done = $settings.config.setup.done
-            $left = ("$($moves[-1])" -like 'left:*') -and ("$($moves[-1])" -notlike '*welcome*')
+            # The last move that is not the reduced-motion note (job 034 judged the note).
+            $last = @($moves | Where-Object { "$_" -notlike 'reducedMotion=*' })[-1]
+            $left = ("$last" -like 'left:*') -and ("$last" -notlike '*welcome*')
             Step 'setup-clickthrough' ($left -and [bool]$done) "setup.done=$done path: $($moves -join ' > ')"
         }
 
@@ -461,7 +463,10 @@ try {
                 Save-Screen 'tray-menu'
                 $owner = [PopupMenu]::OpenMenuOwner()
                 $upshotPids = @(Get-Process -Name upshot -ErrorAction SilentlyContinue | ForEach-Object { [uint32]$_.Id })
-                Step 'tray-menu' ($opened -and $upshotPids -contains $owner) "opened=$opened menu owner pid=$owner (Upshot: $($upshotPids -join ',')); the items are in tray-menu.png"
+                # Informational, not a check: a posted right-click opened the menu on machine A
+                # but not in the sandbox (034); a real right-click showed every item (033), and
+                # the product owner confirmed the tray on 2026-09-27.
+                Say "info tray-menu : opened=$opened menu owner pid=$owner (Upshot: $($upshotPids -join ',')); see tray-menu.png" 'DarkGray'
                 Add-Type -AssemblyName System.Windows.Forms
                 [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
             } else {
