@@ -147,9 +147,7 @@ _TODAY_RE = re.compile(
     re.IGNORECASE,
 )
 _TOMORROW_RE = re.compile(rf"\btomorrow\b|{_B}{_HE_PREFIX}מחר{_E}", re.IGNORECASE)
-_DAY_AFTER_RE = re.compile(
-    rf"\bday after tomorrow\b|{_B}{_HE_PREFIX}מחרתיים{_E}", re.IGNORECASE
-)
+_DAY_AFTER_RE = re.compile(rf"\bday after tomorrow\b|{_B}{_HE_PREFIX}מחרתיים{_E}", re.IGNORECASE)
 _NEXT_WEEK_RE = re.compile(
     rf"\bnext week\b|\bend of next week\b|{_B}{_HE_PREFIX}שבוע הבא{_E}"
     rf"|{_B}{_HE_PREFIX}סוף השבוע הבא{_E}",

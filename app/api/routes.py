@@ -745,9 +745,7 @@ def ask_meeting(request: Request, meeting_id: str, body: AskPost) -> dict[str, A
     if body.scope not in ("meeting", "related"):
         raise HTTPException(422, 'scope is "meeting" or "related"')
     try:
-        answer = ask(
-            svc.dao, svc.config, meeting, body.question, scope=body.scope, client=svc.llm
-        )
+        answer = ask(svc.dao, svc.config, meeting, body.question, scope=body.scope, client=svc.llm)
     except AskError as exc:
         raise HTTPException(502, str(exc)) from exc
     return answer.as_api()
@@ -1328,9 +1326,7 @@ def chosen_cli(body: ProviderPost | None) -> str:
     """Which CLI a sign-in, install or update is for. Claude when unsaid, as it always was."""
     provider = (body.provider if body else None) or "claude-subscription"
     if provider not in CLI_PROVIDERS:
-        raise HTTPException(
-            400, f"{provider!r} is not a provider this app installs or signs in to"
-        )
+        raise HTTPException(400, f"{provider!r} is not a provider this app installs or signs in to")
     return provider
 
 
@@ -1626,9 +1622,7 @@ def llm_status(request: Request) -> dict[str, Any]:
         # you use" but keeps OpenAI's brands out of the app's own name (D58). This names
         # the program actually run, Codex CLI, and the plan it spends — the way D46 names
         # "Claude Agent" rather than presenting the row as Claude Code itself.
-        providers.append(
-            cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)")
-        )
+        providers.append(cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)"))
     providers.append(
         {
             "id": "ollama",
