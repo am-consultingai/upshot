@@ -135,59 +135,110 @@ export function HeroFlow() {
 
 /* ---------------------------------------------------------------- Calendar */
 
+/** Upshot's own window, small: the title bar with the mark. */
+function UpshotWindow({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  return (
+    <>
+      <rect x={x} y={y} width={w} height={h} rx="8" fill={C.raised} stroke={C.line} />
+      <path d={`M${x} ${y + 8}a8 8 0 0 1 8-8h${w - 16}a8 8 0 0 1 8 8v8H${x}z`} fill={C.surface3} />
+      <path d={`M${x + 8} ${y + 9}c2 0 2-3 4-3s2 3 4 3 2-3 4-3`} fill="none" stroke={C.accent} strokeWidth="1.6" />
+    </>
+  );
+}
+
+/** A calendar page: the one picture of "your calendar" in this step. */
+function CalendarGlyph({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <rect width="26" height="24" rx="4" fill={C.raised} stroke={C.accent} strokeWidth="1.5" />
+      <path d="M0 4a4 4 0 0 1 4-4h18a4 4 0 0 1 4 4v4H0z" fill={C.accent} />
+      {[0, 1, 2].map((col) => (
+        <rect key={col} x={4 + col * 7} y="12" width="4" height="3.5" rx="1" fill={C.quiet} />
+      ))}
+      {[0, 1].map((col) => (
+        <rect key={col} x={4 + col * 7} y="18" width="4" height="3.5" rx="1" fill={C.quiet} />
+      ))}
+    </g>
+  );
+}
+
 /**
- * A calendar on one side, a recording on the other. Before connecting, the meeting's
- * name travels across to the recording, which is the whole point of the step; while
- * waiting, the line between them runs; once connected, the name stays put and ticks.
+ * Connecting Google Calendar, as the user does it: press Connect in Upshot, a browser
+ * opens, pick the Google account, press Allow on Google's permission screen, and Upshot
+ * is connected. One loop of about eight seconds (setup.css, "su-c-"); once connected, the
+ * last frame holds.
  */
 export function CalendarScene({ phase }: { phase: CalendarPhase }) {
   const connected = phase === "connected";
-  const waiting = phase === "waiting";
   return (
-    <Scene viewBox="0 0 300 110" className="mx-auto w-full max-w-md">
-      {/* The calendar. */}
-      <rect x="8" y="10" width="96" height="90" rx="10" fill={C.raised} stroke={C.line} />
-      <path d="M8 20a10 10 0 0 1 10-10h76a10 10 0 0 1 10 10v8H8z" fill={C.accent} />
-      {[0, 1, 2].map((row) =>
-        [0, 1, 2, 3].map((col) => (
-          <rect key={`${row}-${col}`} x={18 + col * 20} y={38 + row * 20} width="12" height="10" rx="2" fill={C.surface3} />
-        )),
-      )}
-      <rect x="18" y="56" width="52" height="14" rx="3" fill={C.quiet} stroke={C.accent} strokeWidth="1.5" />
-
-      {/* The line between them. */}
-      <path
-        d="M110 55H190"
-        stroke={connected ? C.accent : C.strong}
-        strokeWidth="2.5"
-        strokeDasharray={connected ? undefined : "4 4"}
-        className={waiting ? "su-flow" : undefined}
-      />
-
-      {/* The recording. */}
-      <rect x="196" y="10" width="96" height="90" rx="10" fill={C.raised} stroke={C.line} />
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-        <rect key={i} x={208 + i * 9} y={62 - (i % 4) * 5} width="4" height={16 + (i % 4) * 10} rx="2" fill={C.accent} opacity="0.55" />
-      ))}
-      <rect x="206" y="22" width="52" height="14" rx="3" fill={C.surface3} />
-
-      {/* The meeting's name: carried across, or already there. */}
+    <Scene viewBox="0 0 300 120" className="mx-auto w-full max-w-md">
+      {/* Upshot, with the calendar it is about to be given. */}
+      <UpshotWindow x={8} y={14} w={122} h={94} />
+      <CalendarGlyph x={20} y={38} />
+      <rect x="54" y="42" width="62" height="4" rx="2" fill={C.tertiary} />
+      <rect x="54" y="52" width="44" height="4" rx="2" fill={C.strong} />
       {connected ? (
-        <>
-          <rect x="206" y="22" width="52" height="14" rx="3" fill={C.quiet} stroke={C.accent} strokeWidth="1.5" />
-          <Tick x={282} y={20} r={10} />
-        </>
+        <g>
+          <rect x="20" y="76" width="96" height="20" rx="5" fill={C.successQuiet} />
+          <Tick x={34} y={86} r={7} className="su-draw-tick" />
+          <rect x="46" y="84" width="56" height="4" rx="2" fill={C.success} />
+        </g>
       ) : (
-        <rect
-          x="18"
-          y="56"
-          width="52"
-          height="14"
-          rx="3"
-          fill={C.accent}
-          className="su-carry"
-          style={{ "--su-dx": "188px", "--su-dy": "-34px" } as CSSProperties}
-        />
+        <>
+          <rect x="20" y="76" width="96" height="20" rx="5" fill={C.accent} className="su-c-connect" />
+          <g className="su-c-ok">
+            <rect x="20" y="76" width="96" height="20" rx="5" fill={C.successQuiet} />
+            <Tick x={34} y={86} r={7} />
+            <rect x="46" y="84" width="56" height="4" rx="2" fill={C.success} />
+          </g>
+
+          {/* The browser Google's pages open in. */}
+          <g className="su-c-browser">
+            <rect x="146" y="6" width="148" height="108" rx="8" fill={C.raised} stroke={C.strong} />
+            <path d="M146 14a8 8 0 0 1 8-8h132a8 8 0 0 1 8 8v8H146z" fill={C.surface3} />
+            {[0, 1, 2].map((i) => (
+              <circle key={i} cx={155 + i * 7} cy="14" r="2" fill={C.strong} />
+            ))}
+            <rect x="180" y="10" width="106" height="8" rx="4" fill={C.raised} />
+
+            {/* 1. Choose an account. */}
+            <g className="su-c-accounts">
+              <circle cx="220" cy="34" r="6" fill="none" stroke={C.tertiary} strokeWidth="2" />
+              {[0, 1].map((row) => (
+                <g key={row}>
+                  <rect
+                    x="160"
+                    y={48 + row * 24}
+                    width="120"
+                    height="20"
+                    rx="4"
+                    fill={row === 0 ? C.quiet : C.surface}
+                    className={row === 0 ? "su-c-pick" : undefined}
+                  />
+                  <circle cx="171" cy={58 + row * 24} r="5.5" fill={row === 0 ? C.accent : C.strong} />
+                  <rect x="182" y={53 + row * 24} width={row === 0 ? 70 : 56} height="3.5" rx="1.75" fill={C.tertiary} />
+                  <rect x="182" y={60 + row * 24} width={row === 0 ? 50 : 40} height="3" rx="1.5" fill={C.strong} />
+                </g>
+              ))}
+            </g>
+
+            {/* 2. Allow Upshot to see the calendar: read-only, one ticked permission. */}
+            <g className="su-c-consent">
+              <CalendarGlyph x={208} y={26} s={0.85} />
+              <rect x="160" y="58" width="120" height="16" rx="4" fill={C.surface} />
+              <rect x="165" y="62" width="8" height="8" rx="2" fill={C.accent} />
+              <path d="M166.5 66l1.7 1.8 3.3-3.6" fill="none" stroke={C.on} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              <rect x="179" y="64" width="72" height="4" rx="2" fill={C.tertiary} />
+              <rect x="190" y="88" width="40" height="16" rx="5" fill="none" stroke={C.strong} />
+              <rect x="236" y="88" width="44" height="16" rx="5" fill={C.accent} className="su-c-allow" />
+            </g>
+          </g>
+
+          {/* The pointer: Connect, the account, Allow. */}
+          <g className="su-c-pointer">
+            <path d="M0 0l0 16 4.5-4 3 7 3-1.4-3-7 6-.4z" fill={C.raised} stroke="var(--color-primary)" strokeWidth="1.2" strokeLinejoin="round" />
+          </g>
+        </>
       )}
     </Scene>
   );
