@@ -49,6 +49,10 @@ def show(payload: dict[str, Any]) -> None:
     # process has gone, from the Action Center too, and takes nobody's focus.
     if payload.get("launch"):
         toast.launch_action = str(payload["launch"])
+    if buttons:
+        # The interactable toaster names its sender in a small attribution line, from
+        # the app id ("Upshot.App") unless told otherwise.
+        toast.attribution_text = "Upshot"
     for button in buttons:
         if button.get("action") == "system.dismiss":
             toast.AddAction(
