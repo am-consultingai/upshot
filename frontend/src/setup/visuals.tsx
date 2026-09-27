@@ -9,8 +9,8 @@ import "./setup.css";
  *
  * Each scene shows one process — what installing does, what signing in looks like,
  * where the calendar's names go — so the words beside it can shrink to a line. They are
- * drawn in the app's own tokens, hold no text (so they mirror cleanly for Hebrew), and
- * stop moving for anyone who asked for reduced motion; the motion is in setup.css.
+ * drawn in the app's own tokens and hold no text (so they mirror cleanly for Hebrew);
+ * the motion is in setup.css.
  */
 
 const C = {
