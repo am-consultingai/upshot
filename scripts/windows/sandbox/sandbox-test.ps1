@@ -421,6 +421,10 @@ try {
                     Start-Sleep -Milliseconds 1500
                 }
                 Save-Screen 'setup-finished'
+                # The welcome confetti stays still when the system asks for less motion
+                # (Confetti.tsx); Sandbox and Remote Desktop turn animations off.
+                $reduced = Invoke-PageJs 9222 "matchMedia('(prefers-reduced-motion: reduce)').matches"
+                $moves += "reducedMotion=$reduced" 
             } catch { $moves += "error: $($_.Exception.Message)" }
             $settings = Invoke-RestMethod -Uri "$base/api/settings" -TimeoutSec 20
             $done = $settings.config.setup.done
