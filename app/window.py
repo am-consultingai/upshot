@@ -15,6 +15,7 @@ neither, the page opens as an ordinary tab.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import webbrowser
@@ -112,6 +113,66 @@ def in_front() -> bool:
         return _is_ours(win32gui, win32gui.GetForegroundWindow())
     except Exception:
         return False
+
+
+#: Windows that are the desktop or the shell, never "the window the user was in".
+SHELL_CLASSES = frozenset({"Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW"})
+
+
+def give_focus_back() -> str | None:
+    """After a notification button: focus the window the user was in. Its title, or None.
+
+    Clicking a toast takes the foreground, and when the toast closes Windows hands it to
+    nobody, so the call the user was in stops taking keystrokes (machine B, D72). This
+    process was started by that click, which lets it set the foreground: it gives it to
+    the topmost ordinary window, which is the one the toast was shown over.
+    """
+    if sys.platform != "win32":
+        return None
+    try:  # pragma: no cover - Windows only
+        import ctypes
+
+        import win32con
+        import win32gui
+
+        def cloaked(hwnd: int) -> bool:
+            value = ctypes.c_int(0)
+            ctypes.windll.dwmapi.DwmGetWindowAttribute(  # type: ignore[attr-defined,unused-ignore]
+                hwnd, 14, ctypes.byref(value), ctypes.sizeof(value)
+            )
+            return value.value != 0
+
+        current = win32gui.GetForegroundWindow()
+        if current and win32gui.GetWindowText(current) not in ("", "New notification"):
+            return None  # someone already has it: leave it alone
+        found: list[int] = []
+
+        def visit(hwnd: int, _: object) -> bool:
+            if found:
+                return False
+            style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            if (
+                win32gui.IsWindowVisible(hwnd)
+                and not win32gui.IsIconic(hwnd)
+                and win32gui.GetWindowText(hwnd)
+                and not win32gui.GetWindow(hwnd, win32con.GW_OWNER)
+                and not style & win32con.WS_EX_TOOLWINDOW
+                and win32gui.GetClassName(hwnd) not in SHELL_CLASSES
+                and not cloaked(hwnd)
+            ):
+                found.append(hwnd)
+            return True
+
+        # EnumWindows reports the early stop as an error.
+        with contextlib.suppress(Exception):
+            win32gui.EnumWindows(visit, None)
+        if not found:
+            return None
+        win32gui.SetForegroundWindow(found[0])
+        return str(win32gui.GetWindowText(found[0]))
+    except Exception as exc:
+        log.info("could not give the focus back: %s", exc)
+        return None
 
 
 def focus_existing() -> bool:

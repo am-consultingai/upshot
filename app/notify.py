@@ -201,6 +201,16 @@ class BaseNotifier:
             )
         )
 
+    def could_not_start(self, reason: str) -> None:
+        """A Start pressed on a notification failed: the only place to say so is another."""
+        self.show(
+            Toast(
+                title="Upshot couldn't start recording",
+                body=reason,
+                key=f"could_not_start:{reason}",
+            )
+        )
+
     @staticmethod
     def _start_buttons(calendar_id: str | None, event_id: str | None) -> tuple[Button, ...]:
         return (
