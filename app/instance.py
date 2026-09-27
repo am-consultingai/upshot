@@ -65,13 +65,14 @@ def show_running(home: Path | None = None, *, opener: Any = None) -> bool:
     return True
 
 
-def fresh_link(port: int, home: Path | None = None) -> str | None:
+def fresh_link(port: int, home: Path | None = None, path: str = "/") -> str | None:
     """A one-time link from the running instance, asked for with the key it left us.
 
     A window opened in a browser profile that never had Upshot open would otherwise meet
     the "how to authorize" page instead of the app.
     """
     import json
+    import urllib.parse
     import urllib.request
 
     from app.api.security import LAUNCHER_HEADER, LAUNCHER_KEY_FILE, LINK_PATH
@@ -84,7 +85,8 @@ def fresh_link(port: int, home: Path | None = None) -> str | None:
             headers={LAUNCHER_HEADER: key},
         )
         with urllib.request.urlopen(request, timeout=5) as response:
-            return str(json.load(response)["url"])
+            link = str(json.load(response)["url"])
+        return urllib.parse.urlsplit(link)._replace(path=path).geturl()
     except Exception as exc:
         log.info("no fresh link from the running instance: %s", exc)
         return None

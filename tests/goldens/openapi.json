@@ -249,6 +249,52 @@
         "title": "IgnorePost",
         "type": "object"
       },
+      "LauncherAction": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "calendar_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar Id"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "meeting_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "LauncherAction",
+        "type": "object"
+      },
       "MeetingPatch": {
         "properties": {
           "discard": {
@@ -1337,6 +1383,47 @@
           }
         },
         "summary": "Import Audio"
+      }
+    },
+    "/api/launcher/action": {
+      "post": {
+        "description": "A toast button, pressed (D70). The caller is ``upshot.exe \"upshot:...\"``, which\nproves itself with the launcher key: CSRF lets this one path through on it, so it is\nchecked again here rather than trusted from the middleware alone.\n\nEach action takes the same path as its button in the window. Stop and \"Not a meeting\"\nname their meeting, so a notification left in the Action Center cannot stop a later\nrecording than the one it was about.",
+        "operationId": "launcher_action_api_launcher_action_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LauncherAction"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Launcher Action Api Launcher Action Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Launcher Action"
       }
     },
     "/api/llm/install": {

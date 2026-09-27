@@ -218,7 +218,10 @@ class Detector:
         log.info("calendar: %s is starting and nothing is recording", title or "a meeting")
         self._publish("upcoming", event=title, starts_at=event.start.isoformat())
         if self.notifier is not None:
-            self.notifier.meeting_starting(":".join(event.key), title)
+            calendar_id, event_id = event.key
+            self.notifier.meeting_starting(
+                ":".join(event.key), title, calendar_id=calendar_id, event_id=event_id
+            )
 
     def score(self, evidence: list[Evidence]) -> int:
         return ev.score(evidence, self.config.detection_weights)
@@ -392,7 +395,12 @@ class Detector:
             # Detect and notify (D64): the nudge above reaches an open window; this
             # reaches everyone else.
             if self.notifier is not None:
-                self.notifier.call_detected(wake.process, event.title if event else wake.title)
+                self.notifier.call_detected(
+                    wake.process,
+                    event.title if event else wake.title,
+                    calendar_id=event.calendar_id if event else None,
+                    event_id=event.event_id if event else None,
+                )
             return
         meeting = self.meetings.create(
             source="detected",

@@ -26,6 +26,10 @@ MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 LINK_PATH = "/api/auth/link"
 LAUNCHER_HEADER = "x-upshot-launcher"
 LAUNCHER_KEY_FILE = "launcher.key"
+#: A toast button's action, carried here by the short-lived ``upshot:`` process
+#: (app/actions.py). It proves itself with the launcher key and has no cookie to
+#: double-submit, so CSRF lets exactly this path through on that key and nothing else.
+ACTION_PATH = "/api/launcher/action"
 
 
 @dataclass
@@ -245,6 +249,10 @@ class CsrfMiddleware:
             and scope.get("method") in MUTATING
             and not _is_mcp(str(scope.get("path", "")))
             and not self.auth.valid_csrf(_header(scope, CSRF_HEADER))
+            and not (
+                scope.get("path") == ACTION_PATH
+                and self.auth.valid_launcher(_header(scope, LAUNCHER_HEADER))
+            )
         ):
             await JSONResponse({"detail": "missing or invalid CSRF token"}, 403)(
                 scope, receive, send

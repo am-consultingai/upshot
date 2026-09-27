@@ -28,7 +28,14 @@ SETTLE_S = 0.5
 
 def show(payload: dict[str, Any]) -> None:
     """Raises whatever the notification stack raises; ``main`` decides what that means."""
-    from windows_toasts import InteractableWindowsToaster, Toast, ToastButton, WindowsToaster
+    from windows_toasts import (
+        InteractableWindowsToaster,
+        Toast,
+        ToastButton,
+        ToastSystemButton,
+        ToastSystemButtonAction,
+        WindowsToaster,
+    )
 
     buttons = list(payload.get("buttons") or [])
     # WindowsToaster drops actions with a warning, so anything with buttons has to go
@@ -37,8 +44,20 @@ def show(payload: dict[str, Any]) -> None:
     toaster = builder(str(payload.get("app_id") or APP_ID))
     toast = Toast()
     toast.text_fields = [str(payload.get("title", "")), str(payload.get("body", ""))]
+    # Each press launches an upshot: link, which the installer registers and a short
+    # process hands to the running app (app/actions.py, D70): it works long after this
+    # process has gone, from the Action Center too, and takes nobody's focus.
+    if payload.get("launch"):
+        toast.launch_action = str(payload["launch"])
     for button in buttons:
-        toast.AddAction(ToastButton(str(button["label"]), arguments=str(button["action"])))
+        if button.get("action") == "system.dismiss":
+            toast.AddAction(
+                ToastSystemButton(ToastSystemButtonAction.Dismiss, str(button["label"]))
+            )
+        elif button.get("launch"):
+            toast.AddAction(ToastButton(str(button["label"]), launch=str(button["launch"])))
+        else:
+            toast.AddAction(ToastButton(str(button["label"]), arguments=str(button["action"])))
     toaster.show_toast(toast)
     time.sleep(SETTLE_S)
 
