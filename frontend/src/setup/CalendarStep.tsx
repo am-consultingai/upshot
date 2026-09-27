@@ -65,6 +65,11 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
     >
       <div className="space-y-4 rounded-xl bg-raised px-5 py-5 shadow-sm">
         <CalendarScene phase={phase} account={calendar.account} />
+        {phase !== "connected" && (
+          <p data-testid="calendar-how" className="text-center text-sm text-secondary">
+            {t("firstRun.calendar.how")}
+          </p>
+        )}
         {phase === "connected" ? (
           <Note tone="good" testId="calendar-connected">
             {fill(t("firstRun.calendar.connectedAs"), { account: calendar.account ?? "" })}
