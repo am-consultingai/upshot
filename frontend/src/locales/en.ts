@@ -588,6 +588,8 @@ export const en = {
   "settings.signinCopy": "Copy link",
   "settings.signinCopied": "Copied",
   "settings.signinCancel": "Cancel",
+  "settings.signinCodePlaceholder": "Code from the browser, if it shows one",
+  "settings.signinSubmitCode": "Done",
   "settings.signinLog": "The sign-in's output is recorded to",
 
   "firstRun.languageEnglish": "English",

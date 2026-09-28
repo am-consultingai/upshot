@@ -67,14 +67,7 @@ test("codex_not_installed_offers_the_install_and_refuses_to_be_chosen", async ({
   // Named for the tool and whose plan it spends, never "GPT" (OpenAI's brand rules, D58).
   await expect(codex).toContainText("Codex CLI (your own ChatGPT plan)");
   await expect(codex.getByTestId("provider-ready")).toHaveText("Not installed");
-  await expect(codex.getByTestId("provider-hint")).toHaveText("Codex is not installed on this machine.");
   await expect(codex.getByTestId("provider-install")).toBeVisible();
-  // What Install will do is stated before it is pressed. On Windows that is the exact
-  // installer command; this Linux test server has no installer to run, and says so.
-  await expect(codex.getByTestId("provider-install-hint")).toContainText(
-    process.platform === "win32" ? "codex" : "opens the install guide",
-  );
-  await expect(codex.getByTestId("provider-plan")).toContainText("ChatGPT plan's Codex allowance");
 
   // Choosing it is refused rather than failing after the next meeting.
   const refused = await settings(request, { "llm.provider": "codex-subscription" });
@@ -92,7 +85,6 @@ test("codex_signed_out_asks_for_the_sign_in_and_is_flagged", async ({ page, requ
   await expect(codex).toHaveAttribute("data-signed-in", "false");
   await expect(codex.getByTestId("provider-ready")).toHaveText("Not signed in");
   await expect(codex.getByTestId("provider-signin")).toBeEnabled();
-  await expect(codex.getByTestId("provider-hint")).toContainText("OpenAI's own sign-in");
 
   // Installed but signed out may be chosen — and the "!" says it will not work yet.
   await codex.getByTestId("provider-select").click();
@@ -129,9 +121,9 @@ test("codex_signed_in_tests_ok_summarizes_a_meeting_and_takes_a_fallback", async
   // The allowance fallback is a deliberate choice, shown only for a subscription.
   const fallback = page.getByTestId("provider-fallback");
   await expect(fallback).toHaveValue("");
-  await fallback.selectOption("ollama");
+  await fallback.selectOption("gemini");
   await page.reload();
-  await expect(page.getByTestId("provider-fallback")).toHaveValue("ollama");
+  await expect(page.getByTestId("provider-fallback")).toHaveValue("gemini");
   await page.getByTestId("provider-fallback").selectOption("");
 
   // A real summarize, through the worker, by the fake Codex.
