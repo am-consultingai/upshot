@@ -133,6 +133,43 @@ test("a_google_ai_plan_gets_its_own_card_and_the_key_only_follows_if_it_is_not_s
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
 });
 
+test("the_services_button_says_what_it_will_install", async ({ page }) => {
+  await gotoApp(page, "/welcome");
+  await toServices(page);
+  await page.getByTestId("service-claude").click();
+  await expect(page.getByTestId("setup-next")).toHaveText("Install Claude");
+  await page.getByTestId("service-antigravity").click();
+  await page.getByTestId("service-codex").click();
+  await expect(page.getByTestId("setup-next")).toHaveText("Install Claude, ChatGPT, and Gemini");
+  await page.getByTestId("setup-language-he").click();
+  await expect(page.getByTestId("setup-next")).toContainText("התקנת");
+});
+
+test("continue_waits_while_a_helper_installs_and_says_so", async ({ page }) => {
+  // An install that is still running: launched, its window not yet closed.
+  await page.route("**/api/llm/install", (route) =>
+    route.fulfill({ json: { launched: true, command: "irm …", docs: "", log: "" } }),
+  );
+  await page.unroute("**/api/llm/status");
+  await page.route("**/api/llm/status", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.providers = body.providers.map((p: { needs: string }) =>
+      p.needs === "cli" ? { ...p, ready: false, signed_in: null, account: undefined, console_open: true } : p,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await gotoApp(page, "/welcome");
+  await toAiStep(page);
+  await expect(page.getByTestId("ai-installing-antigravity")).toBeVisible();
+  const next = page.getByTestId("setup-next");
+  await expect(next).toHaveAttribute("aria-disabled", "true");
+  // Playwright will not press an aria-disabled button; a person's mouse does.
+  await next.click({ force: true });
+  await expect(page.getByTestId("ai-wait-install")).toHaveText("Let's wait until the installation finishes.");
+  await expect(page.getByTestId("setup-step-ai")).toBeVisible();
+});
+
 test("a_signed_in_subscription_passes_the_key_step_over", async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.route("**/api/llm/status", async (route) => {
