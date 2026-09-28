@@ -1903,7 +1903,11 @@ def cli_row(svc: Services, provider: str, label: str) -> dict[str, Any]:
         "install_docs": module.INSTALL_DOCS_URL,
         "update_hint": module.update_command(cli.path) if cli.installed else "",
         # False for a CLI with no way to sign out from outside it (Antigravity, D78).
-        "can_sign_out": cli_client(svc, provider).logout_command() is not None,
+        "can_sign_out": cli_client(svc, provider).logout_command() is not None
+        or hasattr(module, "logout_console"),
+        # Sign out opens a window where the user types the CLI's own command (Antigravity).
+        "signout_in_window": cli_client(svc, provider).logout_command() is None
+        and hasattr(module, "logout_console"),
         # The window Install or Sign in opened is still there; closing it ends the wait.
         "console_open": console_open(provider),
         # A windowless sign-in's link, for the page to offer in the browser it runs in.
@@ -2118,10 +2122,18 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
         login.stop()
     argv = client.logout_command()
     if argv is None:
-        raise HTTPException(
-            409,
-            f"{product} cannot be signed out from here. Run it in a terminal and type /logout.",
-        )
+        module = cli_module(provider)
+        if not hasattr(module, "logout_console"):
+            raise HTTPException(
+                409,
+                f"{product} cannot be signed out from here. Run it in a terminal and type /logout.",
+            )
+        # Its sign-out only works typed into the program itself (Antigravity, D78): a
+        # window that runs it and says what to type. The row watches the window close.
+        path = client.resolve() or client.executable
+        return launch_console(
+            module.logout_console(path), f"could not start {product}", provider=provider
+        ) | {"signed_out": False, "log": console_log(provider, "signout")}
     try:
         code, out, err = client.runner(argv, "", 60.0)
     except Exception as exc:
@@ -2136,11 +2148,20 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
 
 
 @router.post("/llm/signin/code")
-def llm_signin_code(body: SigninCodePost) -> dict[str, Any]:
-    """Pass the code the provider's page shows to the windowless sign-in (Claude, D75)."""
+def llm_signin_code(request: Request, body: SigninCodePost) -> dict[str, Any]:
+    """Pass the code the provider's page shows to the windowless sign-in (Claude, D75).
+
+    Claude Code can finish by itself once the browser approves, before anyone pastes
+    the code the page also shows (machine B, 2026-09-28): a code that arrives after that
+    is answered "already signed in", not refused. Refusing it marked a sign-in that had
+    worked as failed, and the user signed in twice more.
+    """
     provider = chosen_cli(ProviderPost(provider=body.provider))
     login = _LOGINS.get(provider)
     if login is None or not login.running():
+        if cli_client(services_of(request), provider).status().signed_in is True:
+            log.info("sign-in code for %s arrived after the sign-in finished", provider)
+            return {"sent": False, "signed_in": True}
         raise HTTPException(409, "No sign-in is waiting for a code. Start it again.")
     if not body.code.strip():
         raise HTTPException(400, "The code is empty.")

@@ -274,6 +274,8 @@ export interface LlmProvider {
   update_hint?: string;
   /** False for a CLI that cannot be signed out from outside it (Antigravity, D78). */
   can_sign_out?: boolean;
+  /** Sign out opens a window where the CLI's own /logout is typed (Antigravity, D78). */
+  signout_in_window?: boolean;
   /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */
   console_open?: boolean;
   /** A windowless sign-in's link, while it waits for the browser. */
@@ -475,13 +477,13 @@ export const api = {
     ),
   /** The code Claude's page shows, passed to its windowless sign-in (D75). */
   llmSigninCode: (provider: string, code: string) =>
-    request<{ sent: boolean }>("/api/llm/signin/code", {
+    request<{ sent: boolean; signed_in?: boolean }>("/api/llm/signin/code", {
       method: "POST",
       body: JSON.stringify({ provider, code }),
     }),
   /** Sign the CLI out with its own logout command. */
   llmSignout: (provider: string) =>
-    request<{ signed_out: boolean }>("/api/llm/signout", {
+    request<{ signed_out: boolean; launched?: boolean }>("/api/llm/signout", {
       method: "POST",
       body: JSON.stringify({ provider }),
     }),
