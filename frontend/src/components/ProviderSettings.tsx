@@ -8,29 +8,6 @@ import { PinnedContext } from "./SettingRow";
 import Tooltip from "./Tooltip";
 import { VendorLogo, type VendorId } from "../setup/logos";
 
-/**
- * The words that differ between the two subscription CLIs. The flow is one flow —
- * install, sign in in a console of its own, watch for it to finish, test — and only
- * what it is called, whose sign-in page opens and what plan it needs are different.
- */
-const CLI_COPY: Record<string, { missing: MessageKey; signIn: MessageKey; plan: MessageKey }> = {
-  "claude-subscription": {
-    missing: "settings.cliMissing",
-    signIn: "settings.signInHint",
-    plan: "settings.cliPlanNote",
-  },
-  "codex-subscription": {
-    missing: "settings.codexMissing",
-    signIn: "settings.codexSignInHint",
-    plan: "settings.codexPlanNote",
-  },
-  "antigravity-subscription": {
-    missing: "settings.antigravityMissing",
-    signIn: "settings.antigravitySignInHint",
-    plan: "settings.antigravityPlanNote",
-  },
-};
-
 /** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
 const LOGO: Record<string, VendorId | undefined> = {
   "claude-subscription": "claude",
@@ -57,9 +34,7 @@ function readyLabel(provider: LlmProvider): MessageKey {
     if (provider.signed_in === false) return "settings.cliNotSignedIn";
     return "settings.cliInstalled";
   }
-  if (provider.needs === "key") return provider.ready ? "settings.keySet" : "settings.keyMissing";
-  if (provider.needs === "none") return "settings.noneReady";
-  return "settings.localReady";
+  return provider.ready ? "settings.keySet" : "settings.keyMissing";
 }
 
 /** Green only when the provider would actually work right now. */
@@ -69,19 +44,11 @@ function readyTone(provider: LlmProvider): string {
 }
 
 /**
- * How the providers are grouped on screen, in the order they appear.
- *
- * A subscription you already pay for costs nothing extra to use, so it goes first;
- * a key you have to create and fund goes second; a model on this machine is neither
- * and gets its own frame rather than being filed under one of them.
+ * How the providers are grouped on screen, in the order they appear: a subscription you
+ * already pay for first, a key you have to create and fund second. "Transcripts only" and
+ * the local model are not offered here for now (product owner, 2026-09-28).
  */
 const GROUPS = [
-  {
-    id: "none",
-    label: "settings.groupNone",
-    hint: "settings.groupNoneHint",
-    holds: (provider: LlmProvider) => provider.needs === "none",
-  },
   {
     id: "subscription",
     label: "settings.groupSubscription",
@@ -94,12 +61,6 @@ const GROUPS = [
     hint: "settings.groupApiKeysHint",
     holds: (provider: LlmProvider) => provider.needs === "key",
   },
-  {
-    id: "local",
-    label: "settings.groupLocalModel",
-    hint: "settings.groupLocalModelHint",
-    holds: (provider: LlmProvider) => !["cli", "key", "none"].includes(provider.needs),
-  },
 ] as const satisfies readonly {
   id: string;
   label: MessageKey;
@@ -107,10 +68,18 @@ const GROUPS = [
   holds: (provider: LlmProvider) => boolean;
 }[];
 
+/** Not rows here: summaries off is simply no row chosen, and the local model is set aside. */
+const NOT_LISTED = new Set(["none", "ollama"]);
+
+/** A sign-in that ends on a code pasted back (Claude's may, Antigravity's does, D75, D78). */
+const TAKES_CODE = new Set(["claude-subscription", "antigravity-subscription"]);
+
+const BUTTON = "rounded border border-line px-2 py-1 text-sm disabled:opacity-40";
+
 /**
- * Whether the wait on an Install or Sign in window is over: the CLI reports signed in, or
- * a status fetched after the launch says the window is gone (the user closed it). An
- * older server that does not report the window leaves only the timeout to end it.
+ * Whether the wait on an install or sign-in is over: the CLI reports signed in, or a
+ * status fetched after the launch says the process is gone. An older server that does not
+ * report it leaves only the timeout to end it.
  */
 export function watchFinished(state: {
   signedIn: boolean;
@@ -122,22 +91,28 @@ export function watchFinished(state: {
   return state.consoleOpen === false && state.checkedAt > state.launchedAt;
 }
 
+/**
+ * Settings → AI: one line per provider — its mark, its name, whether it is ready, the one
+ * action it needs, and Test (product owner, 2026-09-28: no explanations under each). A
+ * second line appears only while something waits on the user (a sign-in's link and code)
+ * or went wrong.
+ *
+ * Install and sign-in run with no window, as setup's do (D75): the vendor's tool opens its
+ * page in the default browser, and a code, where there is one, is pasted in the row.
+ * Antigravity's sign-out is the exception: it only works typed into agy (D78).
+ */
 export default function ProviderSettings() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [keys, setKeys] = useState<Record<string, string>>({});
+  const [codes, setCodes] = useState<Record<string, string>>({});
   // The radio must respond to the click immediately, not after the server round-trip —
   // otherwise it visibly snaps back and the UI reads as broken.
   const [pendingProvider, setPendingProvider] = useState<string | null>(null);
   const [tested, setTested] = useState<Record<string, { ok: boolean; detail: string }>>({});
-  // Installing and signing in both happen in a console of their own, minutes after the
-  // request that launched them returns. Invalidating on that response asks the server
-  // before anything has happened; the answer only changes later, so the row has to keep
-  // looking until it does.
-  // Which CLI's console is being waited on, or null.
+  // Which CLI's install or sign-in is being waited on, or null, and since when: a status
+  // fetched before the launch says nothing about it.
   const [watching, setWatching] = useState<string | null>(null);
-  // When the watched console was launched: a status fetched before then says nothing
-  // about the window it opened.
   const since = useRef(0);
   const watch = (provider: string) => {
     since.current = Date.now();
@@ -173,8 +148,7 @@ export default function ProviderSettings() {
     onSettled: () => setPendingProvider(null),
   });
   const saveKey = useMutation({
-    mutationFn: ({ name, value }: { name: string; value: string }) =>
-      api.putSecrets({ [name]: value }),
+    mutationFn: ({ name, value }: { name: string; value: string }) => api.putSecrets({ [name]: value }),
     onSuccess: invalidate,
   });
   const test = useMutation({
@@ -186,11 +160,16 @@ export default function ProviderSettings() {
       })),
   });
   const signin = useMutation({
-    mutationFn: (provider: string) => api.llmSignin(provider),
+    // `background`: no window, as setup does it (D75).
+    mutationFn: (provider: string) => api.llmSignin(provider, true),
     onSuccess: (result, provider) => {
       if (result.launched) watch(provider);
       invalidate();
     },
+  });
+  const sendCode = useMutation({
+    mutationFn: ({ provider, code }: { provider: string; code: string }) => api.llmSigninCode(provider, code),
+    onSuccess: invalidate,
   });
   const signout = useMutation({
     mutationFn: (provider: string) => api.llmSignout(provider),
@@ -209,14 +188,9 @@ export default function ProviderSettings() {
       invalidate();
     },
   });
-  // Which row's sign-in link was just copied, for a moment's acknowledgement.
-  const [copied, setCopied] = useState<string | null>(null);
-  const update = useMutation({
-    mutationFn: (provider: string) => api.llmUpdate(provider),
-    onSuccess: invalidate,
-  });
   const install = useMutation({
-    mutationFn: (provider: string) => api.llmInstall(provider),
+    // `background`: installed with no window; Sign in is the next press (D75).
+    mutationFn: (provider: string) => api.llmInstall(provider, true),
     onSuccess: (result, provider) => {
       // Nothing was launched only when no installer can run; then the guide is the answer.
       if (!result.launched && result.docs) window.open(result.docs, "_blank", "noreferrer");
@@ -229,17 +203,11 @@ export default function ProviderSettings() {
     onSuccess: invalidate,
   });
 
-  // Any of the three console-launching actions can fail server-side; silence would read
-  // as an unresponsive button, which is precisely how the last one was reported. Each
-  // row shows only the failure of its own CLI.
-
-  // Signed in is the finish line, not installed. The Install button carries straight on
-  // into the login, so stopping at "the binary exists" would stop watching in the middle
-  // of the very step the user is still completing.
+  // Signed in is the finish line of a sign-in; the process ending is the finish line of
+  // an install (which no longer signs in by itself) and of an abandoned sign-in.
   const cli = (status.data?.providers ?? []).find((provider) => provider.id === watching);
-  const signedIn = cli?.signed_in === true;
   const finished = watchFinished({
-    signedIn,
+    signedIn: cli?.signed_in === true,
     consoleOpen: cli?.console_open,
     checkedAt: status.dataUpdatedAt,
     launchedAt: since.current,
@@ -250,24 +218,23 @@ export default function ProviderSettings() {
       setWatching(null);
       return undefined;
     }
-    // Give up rather than poll for the rest of the session: the login may be abandoned,
-    // and an old build can never report success however long we wait.
-    const timer = window.setTimeout(() => setWatching(null), 180_000);
+    // Give up rather than poll for the rest of the session: the login may be abandoned.
+    const timer = window.setTimeout(() => setWatching(null), 600_000);
     return () => window.clearTimeout(timer);
   }, [watching, finished]);
 
   const active = pendingProvider ?? status.data?.active;
+  const rows = (status.data?.providers ?? []).filter((provider) => !NOT_LISTED.has(provider.id));
   /*
    * `llm.provider` can hold a value that is not one of the rows — "fake", which the
    * demo launcher pins, or a provider that has since been removed. Every radio then
    * renders unchecked and the screen silently claims nothing is selected, which is
    * the one thing it must not do: summaries *are* being produced by something.
+   * "none" is the exception: no row chosen is exactly what it means.
    */
   const pinnedBy = useContext(PinnedContext)["llm.provider"];
   const unlisted =
-    active && !(status.data?.providers ?? []).some((provider) => provider.id === active)
-      ? active
-      : null;
+    active && active !== "none" && !rows.some((provider) => provider.id === active) ? active : null;
 
   return (
     <section data-testid="provider-settings" className="mt-6">
@@ -286,7 +253,7 @@ export default function ProviderSettings() {
       )}
       <div className="grid gap-4">
         {GROUPS.map((group) => {
-          const members = (status.data?.providers ?? []).filter(group.holds);
+          const members = rows.filter(group.holds);
           if (members.length === 0) return null;
           return (
             <fieldset
@@ -297,297 +264,210 @@ export default function ProviderSettings() {
             >
               {/* The group's explanation is a sentence, on the tooltip primitive. */}
               <Tooltip label={t(group.label)} hint={t(group.hint)}>
-                <legend
-                  data-testid="provider-group-label"
-                  className="cursor-help px-1 text-xs font-medium text-secondary"
-                >
+                <legend data-testid="provider-group-label" className="cursor-help px-1 text-xs font-medium text-secondary">
                   {t(group.label)}
                 </legend>
               </Tooltip>
-              <div className="grid gap-2">
-        {members.map((provider: LlmProvider) => {
-          const secret = SECRET_FOR[provider.id];
-          const result = tested[provider.id];
-          const copy = CLI_COPY[provider.id] ?? CLI_COPY["claude-subscription"];
-          const mine = watching === provider.id;
-          const failure =
-            (install.variables === provider.id && install.error) ||
-            (signin.variables === provider.id && signin.error) ||
-            (signout.variables === provider.id && signout.error) ||
-            (update.variables === provider.id && update.error) ||
-            null;
-          return (
-            <article
-              key={provider.id}
-              data-testid="provider-row"
-              data-provider={provider.id}
-              data-ready={provider.ready}
-              data-signed-in={String(provider.signed_in)}
-              data-active={provider.id === active}
-              className={`rounded border p-3 ${
-                provider.id === active ? "border-accent" : "border-line-subtle"
-              } bg-raised`}
-            >
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="llm-provider"
-                  data-testid="provider-select"
-                  checked={provider.id === active}
-                  onChange={() => {
-                    setPendingProvider(provider.id);
-                    select.mutate(provider.id);
-                  }}
-                />
-                {LOGO[provider.id] && <VendorLogo vendor={LOGO[provider.id]!} size={18} />}
-                <span className="font-medium">{provider.label}</span>
-                <span
-                  data-testid="provider-ready"
-                  className={`rounded px-2 py-0.5 text-xs ${readyTone(provider)}`}
-                >
-                  {t(readyLabel(provider))}
-                </span>
-              </label>
-
-              {secret && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <input
-                    type="password"
-                    data-testid="provider-key"
-                    placeholder={t("settings.apiKey")}
-                    value={keys[provider.id] ?? ""}
-                    onChange={(event) =>
-                      setKeys((previous) => ({ ...previous, [provider.id]: event.target.value }))
-                    }
-                    className="w-72 rounded border border-line px-2 py-1"
-                  />
-                  <BusyButton
-                    data-testid="provider-save-key"
-                    busy={saveKey.isPending && saveKey.variables?.name === secret}
-                    onClick={() => saveKey.mutate({ name: secret, value: keys[provider.id] ?? "" })}
-                    className="rounded bg-accent px-2 py-1 text-sm text-on-accent"
-                  >
-                    {t("settings.saveKey")}
-                  </BusyButton>
-                  {provider.console && (
-                    <a
-                      data-testid="provider-console"
-                      href={provider.console}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm underline"
+              <div className="grid gap-1.5">
+                {members.map((provider: LlmProvider) => {
+                  const secret = SECRET_FOR[provider.id];
+                  const result = tested[provider.id];
+                  const mine = watching === provider.id;
+                  const signingIn = mine && !!provider.signin_url;
+                  const failure =
+                    (install.variables === provider.id && install.error) ||
+                    (signin.variables === provider.id && signin.error) ||
+                    (signout.variables === provider.id && signout.error) ||
+                    (sendCode.variables?.provider === provider.id && sendCode.error) ||
+                    null;
+                  return (
+                    <article
+                      key={provider.id}
+                      data-testid="provider-row"
+                      data-provider={provider.id}
+                      data-ready={provider.ready}
+                      data-signed-in={String(provider.signed_in)}
+                      data-active={provider.id === active}
+                      className={`rounded border px-3 py-2 ${
+                        provider.id === active ? "border-accent" : "border-line-subtle"
+                      } bg-raised`}
                     >
-                      {t("settings.getKey")}
-                    </a>
-                  )}
-                </div>
-              )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="flex min-w-0 items-center gap-2">
+                          <input
+                            type="radio"
+                            name="llm-provider"
+                            data-testid="provider-select"
+                            checked={provider.id === active}
+                            onChange={() => {
+                              setPendingProvider(provider.id);
+                              select.mutate(provider.id);
+                            }}
+                          />
+                          {LOGO[provider.id] && <VendorLogo vendor={LOGO[provider.id]!} size={18} />}
+                          <span className="font-medium">{provider.label}</span>
+                        </label>
+                        <span data-testid="provider-ready" className={`rounded px-2 py-0.5 text-xs ${readyTone(provider)}`}>
+                          {t(readyLabel(provider))}
+                        </span>
 
-              {provider.needs === "cli" && (
-                <div className="mt-2 grid gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {!provider.ready && (
-                      <BusyButton
-                        data-testid="provider-install"
-                        busy={(install.isPending && install.variables === provider.id) || mine}
-                        onClick={() => install.mutate(provider.id)}
-                        className="rounded border border-line px-2 py-1 text-sm"
-                      >
-                        {t("settings.install")}
-                      </BusyButton>
-                    )}
-                    {/* One button that flips: Sign out once signed in, Sign in otherwise.
-                        A CLI that cannot be signed out from here says how instead (D78). */}
-                    {provider.signed_in === true && provider.can_sign_out === false && (
-                      <span data-testid="provider-signout-hint" className="text-xs text-tertiary">
-                        {t("settings.signOutInCli")}
-                      </span>
-                    )}
-                    {provider.signed_in === true && provider.can_sign_out !== false && (
-                      <BusyButton
-                        data-testid="provider-signout"
-                        busy={(signout.isPending && signout.variables === provider.id) || signingOut === provider.id}
-                        onClick={() => signout.mutate(provider.id)}
-                        className="rounded border border-line px-2 py-1 text-sm"
-                      >
-                        {t("settings.signOut")}
-                      </BusyButton>
-                    )}
-                    {signingOut === provider.id && (
-                      <span data-testid="provider-signout-window" className="text-xs text-secondary">
-                        {t("settings.signOutInWindow")}
-                      </span>
-                    )}
-                    {provider.signed_in !== true && (
-                      <BusyButton
-                        data-testid="provider-signin"
-                        busy={(signin.isPending && signin.variables === provider.id) || (mine && provider.ready)}
-                        disabled={!provider.ready}
-                        onClick={() => signin.mutate(provider.id)}
-                        className="rounded border border-line px-2 py-1 text-sm disabled:opacity-40"
-                      >
-                        {t("settings.signIn")}
-                      </BusyButton>
-                    )}
-                    <span className="text-xs text-secondary" data-testid="provider-hint">
-                      {!provider.ready
-                        ? t(copy.missing)
-                        : provider.signed_in === true
-                          ? t("settings.signedInHint")
-                          : t(copy.signIn)}
-                    </span>
-                  </div>
+                        <span className="ms-auto flex flex-wrap items-center gap-2">
+                          {secret && (
+                            <>
+                              <input
+                                type="password"
+                                data-testid="provider-key"
+                                placeholder={t("settings.apiKey")}
+                                value={keys[provider.id] ?? ""}
+                                onChange={(event) =>
+                                  setKeys((previous) => ({ ...previous, [provider.id]: event.target.value }))
+                                }
+                                className="w-48 rounded border border-line px-2 py-1 text-sm"
+                              />
+                              <BusyButton
+                                data-testid="provider-save-key"
+                                busy={saveKey.isPending && saveKey.variables?.name === secret}
+                                disabled={!(keys[provider.id] ?? "").trim()}
+                                onClick={() => saveKey.mutate({ name: secret, value: keys[provider.id] ?? "" })}
+                                className={BUTTON}
+                              >
+                                {t("settings.saveKey")}
+                              </BusyButton>
+                              {provider.console && (
+                                <a
+                                  data-testid="provider-console"
+                                  href={provider.console}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sm underline"
+                                >
+                                  {t("settings.getKey")}
+                                </a>
+                              )}
+                            </>
+                          )}
 
-                  {/* The exact command, stated before the button is clicked - which is
-                      what makes running it on click disclosure rather than a surprise. */}
-                  {!provider.ready && (
-                    <span className="text-xs text-tertiary" data-testid="provider-install-hint">
-                      {provider.can_install
-                        ? t("settings.installHint")
-                        : t("settings.installDocsHint")}{" "}
-                      {provider.install_command && <code>{provider.install_command}</code>}
-                    </span>
-                  )}
-                  {install.isPending && install.variables === provider.id && (
-                    <span className="text-xs text-secondary" data-testid="provider-starting">
-                      {t("settings.starting")}
-                    </span>
-                  )}
-                  {mine && !install.isPending && provider.signin_url && (
-                    // A sign-in with no window: the link is the whole interface. The CLI has
-                    // already opened it in the default browser, which may not be this one.
-                    <div className="grid gap-1" data-testid="provider-signin-link">
-                      <span className="text-xs text-secondary">{t("settings.signinOpened")}</span>
-                      <div className="flex flex-wrap items-center gap-3 text-sm">
-                        <a
-                          data-testid="provider-signin-open"
-                          href={provider.signin_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline"
-                        >
-                          {t("settings.signinOpenHere")}
-                        </a>
-                        <button
-                          type="button"
-                          data-testid="provider-signin-copy"
-                          className="underline"
-                          onClick={() => {
-                            void navigator.clipboard
-                              .writeText(provider.signin_url ?? "")
-                              .then(() => setCopied(provider.id));
+                          {provider.needs === "cli" && !provider.ready && (
+                            <BusyButton
+                              data-testid="provider-install"
+                              busy={(install.isPending && install.variables === provider.id) || mine}
+                              onClick={() => install.mutate(provider.id)}
+                              className={BUTTON}
+                            >
+                              {t("settings.install")}
+                            </BusyButton>
+                          )}
+                          {provider.needs === "cli" && provider.ready && provider.signed_in === true && (
+                            <BusyButton
+                              data-testid="provider-signout"
+                              busy={(signout.isPending && signout.variables === provider.id) || signingOut === provider.id}
+                              disabled={provider.can_sign_out === false}
+                              onClick={() => signout.mutate(provider.id)}
+                              className={BUTTON}
+                            >
+                              {t("settings.signOut")}
+                            </BusyButton>
+                          )}
+                          {provider.needs === "cli" && provider.ready && provider.signed_in !== true && (
+                            <BusyButton
+                              data-testid="provider-signin"
+                              busy={(signin.isPending && signin.variables === provider.id) || (mine && !signingIn)}
+                              onClick={() => (signingIn ? undefined : signin.mutate(provider.id))}
+                              className={BUTTON}
+                            >
+                              {t("settings.signIn")}
+                            </BusyButton>
+                          )}
+
+                          <BusyButton
+                            data-testid="provider-test"
+                            busy={test.isPending && test.variables === provider.id}
+                            onClick={() => test.mutate(provider.id)}
+                            className={BUTTON}
+                          >
+                            {t("settings.test")}
+                          </BusyButton>
+                          {result && (
+                            <span
+                              data-testid="provider-test-result"
+                              data-ok={result.ok}
+                              title={result.detail}
+                              className={`text-sm ${result.ok ? "text-success" : "text-danger"}`}
+                            >
+                              {result.ok ? t("settings.testOk") : t("settings.testFailed")}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+
+                      {/* Only while a sign-in waits on the user: its page, and the code box. */}
+                      {signingIn && (
+                        <form
+                          data-testid="provider-signin-link"
+                          className="mt-2 flex flex-wrap items-center gap-2 text-sm"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            const code = (codes[provider.id] ?? "").trim();
+                            if (code) sendCode.mutate({ provider: provider.id, code });
                           }}
                         >
-                          {copied === provider.id
-                            ? t("settings.signinCopied")
-                            : t("settings.signinCopy")}
-                        </button>
-                        <BusyButton
-                          data-testid="provider-signin-cancel"
-                          busy={cancelSignin.isPending && cancelSignin.variables === provider.id}
-                          onClick={() => cancelSignin.mutate(provider.id)}
-                          className="rounded border border-line px-2 py-1 text-sm"
-                        >
-                          {t("settings.signinCancel")}
-                        </BusyButton>
-                      </div>
-                    </div>
-                  )}
-                  {mine && !install.isPending && !provider.signin_url && (
-                    <span className="text-xs text-secondary" data-testid="provider-watching">
-                      {t("settings.watching")}
-                    </span>
-                  )}
-                  {/* Where the window just opened is recorded, for when it goes wrong. */}
-                  {(() => {
-                    const log =
-                      (install.variables === provider.id && install.data?.log) ||
-                      (signin.variables === provider.id && signin.data?.log);
-                    // A windowless sign-in answers with its link; there was no window to show.
-                    const windowless =
-                      signin.variables === provider.id && signin.data?.url !== undefined;
-                    return log ? (
-                      <span className="text-xs text-tertiary" data-testid="provider-console-log">
-                        {t(windowless ? "settings.signinLog" : "settings.consoleLog")}{" "}
-                        <code className="select-all">{log}</code>
-                      </span>
-                    ) : null;
-                  })()}
-                  {failure && (
-                    <span className="text-xs text-danger" data-testid="provider-error">
-                      {failure instanceof Error ? failure.message : String(failure)}
-                    </span>
-                  )}
-                  <span className="text-xs text-tertiary" data-testid="provider-plan">
-                    {t(copy.plan)}
-                  </span>
-                  {provider.quota && (
-                    <span className="text-xs text-secondary" data-testid="provider-quota">
-                      {provider.quota}
-                    </span>
-                  )}
-
-                  {/* Pinned to the resolved binary: a bare `claude update` would upgrade
-                      whichever install the user's PATH happens to favour. */}
-                  {provider.ready && provider.path && (
-                    <span className="text-xs text-tertiary" data-testid="provider-path">
-                      {provider.path}
-                    </span>
-                  )}
-                  {/* Only state worth a button: the app is already saying something is
-                      wrong, and an install that updates itself never lands here. */}
-                  {provider.signed_in === null && provider.ready && provider.update_hint && (
-                    <span
-                      className="flex flex-wrap items-center gap-2 text-xs text-secondary"
-                      data-testid="provider-too-old"
-                    >
-                      {t("settings.cliUnknownSignin")}
-                      <BusyButton
-                        data-testid="provider-update"
-                        busy={update.isPending && update.variables === provider.id}
-                        onClick={() => update.mutate(provider.id)}
-                        className="rounded border border-line px-2 py-0.5 text-xs"
-                      >
-                        {t("settings.update")}
-                      </BusyButton>
-                      <code>{provider.update_hint}</code>
-                    </span>
-                  )}
-                  {provider.account && (
-                    <span className="text-xs text-secondary" data-testid="provider-account">
-                      {provider.account}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-2 flex items-center gap-2">
-                <BusyButton
-                  data-testid="provider-test"
-                  busy={test.isPending && test.variables === provider.id}
-                  onClick={() => test.mutate(provider.id)}
-                  className="rounded border border-line px-2 py-1 text-sm"
-                >
-                  {t("settings.test")}
-                </BusyButton>
-                {result && (
-                  <span
-                    data-testid="provider-test-result"
-                    data-ok={result.ok}
-                    className={`text-sm ${result.ok ? "text-success" : "text-danger"}`}
-                  >
-                    {result.ok ? t("settings.testOk") : t("settings.testFailed")}
-                  </span>
-                )}
-                {provider.detail && (
-                  <span className="text-xs text-tertiary" data-testid="provider-detail">
-                    {provider.detail}
-                  </span>
-                )}
-              </div>
-            </article>
-          );
-        })}
+                          {TAKES_CODE.has(provider.id) && (
+                            <>
+                              <input
+                                data-testid="provider-signin-code"
+                                dir="ltr"
+                                placeholder={t("settings.signinCodePlaceholder")}
+                                value={codes[provider.id] ?? ""}
+                                onChange={(event) =>
+                                  setCodes((previous) => ({ ...previous, [provider.id]: event.target.value }))
+                                }
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="w-64 rounded border border-line px-2 py-1 font-mono text-sm"
+                              />
+                              <BusyButton
+                                type="submit"
+                                data-testid="provider-signin-submit"
+                                busy={sendCode.isPending && sendCode.variables?.provider === provider.id}
+                                disabled={!(codes[provider.id] ?? "").trim()}
+                                className={BUTTON}
+                              >
+                                {t("settings.signinSubmitCode")}
+                              </BusyButton>
+                            </>
+                          )}
+                          <a
+                            data-testid="provider-signin-open"
+                            href={provider.signin_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline"
+                          >
+                            {t("settings.signinOpenHere")}
+                          </a>
+                          <button
+                            type="button"
+                            data-testid="provider-signin-cancel"
+                            onClick={() => cancelSignin.mutate(provider.id)}
+                            className="underline"
+                          >
+                            {t("settings.signinCancel")}
+                          </button>
+                        </form>
+                      )}
+                      {signingOut === provider.id && (
+                        <p data-testid="provider-signout-window" className="mt-2 text-xs text-secondary">
+                          {t("settings.signOutInWindow")}
+                        </p>
+                      )}
+                      {failure && (
+                        <p data-testid="provider-error" className="mt-2 text-xs text-danger">
+                          {failure instanceof Error ? failure.message : String(failure)}
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             </fieldset>
           );
@@ -600,28 +480,27 @@ export default function ProviderSettings() {
        * never a silent substitution — a transcript leaving the machine for a provider
        * nobody picked is exactly the surprise this app exists to avoid.
        */}
-      {status.data &&
-        (status.data.providers ?? []).some((provider) => provider.id === active && provider.needs === "cli") && (
-          <label className="mt-4 flex flex-wrap items-center gap-2 text-sm" htmlFor="llm-fallback">
-            <span className="text-secondary">{t("settings.fallbackLabel")}</span>
-            <select
-              id="llm-fallback"
-              data-testid="provider-fallback"
-              value={status.data.fallback ?? ""}
-              onChange={(event) => fallback.mutate(event.target.value)}
-              className="rounded-md border border-line bg-raised px-2 py-1 text-sm"
-            >
-              <option value="">{t("settings.fallbackNone")}</option>
-              {(status.data.providers ?? [])
-                .filter((provider) => provider.id !== active)
-                .map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label}
-                  </option>
-                ))}
-            </select>
-          </label>
-        )}
+      {status.data && rows.some((provider) => provider.id === active && provider.needs === "cli") && (
+        <label className="mt-4 flex flex-wrap items-center gap-2 text-sm" htmlFor="llm-fallback">
+          <span className="text-secondary">{t("settings.fallbackLabel")}</span>
+          <select
+            id="llm-fallback"
+            data-testid="provider-fallback"
+            value={status.data.fallback ?? ""}
+            onChange={(event) => fallback.mutate(event.target.value)}
+            className="rounded-md border border-line bg-raised px-2 py-1 text-sm"
+          >
+            <option value="">{t("settings.fallbackNone")}</option>
+            {rows
+              .filter((provider) => provider.id !== active)
+              .map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+          </select>
+        </label>
+      )}
     </section>
   );
 }
