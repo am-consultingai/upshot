@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { directionFor, useI18n, type MessageKey } from "../i18n";
 import type { CalendarPhase, SpeakerPhase } from "./backend";
-import type { CaptureMode } from "./flow";
+import type { CaptureMode, CliId } from "./flow";
 import "./setup.css";
 import { VendorLogo } from "./logos";
 import { fill } from "./ui";
@@ -315,12 +315,14 @@ export function CalendarScene({ phase, account }: { phase: CalendarPhase; accoun
  * and Upshot shows the service ready. One twelve-second loop (setup.css, "su-v-"), laid
  * out like the calendar scene, words from the catalogue.
  */
-export function VendorSignInScene({ vendor }: { vendor: "claude" | "codex" }) {
+export function VendorSignInScene({ vendor }: { vendor: CliId }) {
   const { t, locale } = useI18n();
   const dir = directionFor(locale);
-  const claude = vendor === "claude";
-  const name = t(claude ? "firstRun.ai.claude.name" : "firstRun.ai.codex.name");
-  const ink = claude ? "#1f1e1d" : "#0d0d0d";
+  const page = SCENE[vendor];
+  // Claude and Google end on a code to paste into Upshot; ChatGPT finishes by itself.
+  const code = vendor !== "codex";
+  const name = t(page.name);
+  const ink = page.ink;
   const button = (label: string, cls: string) => (
     <span dir={dir} className={`${cls} absolute bottom-4 end-4 rounded-full px-4 py-1.5 text-[10.5px] font-medium text-[#fff]`} style={{ background: ink }}>
       {label}
@@ -347,7 +349,7 @@ export function VendorSignInScene({ vendor }: { vendor: "claude" | "codex" }) {
           <span dir={dir}>{fill(t("firstRun.ai.signinButton"), { name })}</span>
         </div>
         <div className="su-v-done absolute inset-x-3 top-[72px] flex flex-col gap-2">
-          {claude && (
+          {code && (
             <div className="flex items-center gap-2 rounded-md border border-line px-2 py-1.5 text-[10px]">
               <span className="font-mono text-tertiary">8fJk…#Qw3…</span>
               <span dir={dir} className="ms-auto text-success">{t("firstRun.ai.scene.pasted")}</span>
@@ -375,14 +377,14 @@ export function VendorSignInScene({ vendor }: { vendor: "claude" | "codex" }) {
             <span key={i} className="size-2 rounded-full bg-[#c4c7c5]" />
           ))}
           <span className="ms-2 flex h-4 flex-1 items-center rounded-full bg-[#fff] px-2 text-[9px] text-[#444746]">
-            🔒 {claude ? "claude.ai" : "auth.openai.com"}
+            🔒 {page.domain}
           </span>
         </div>
 
         {/* 3. The vendor's log-in page: the email, then Continue. */}
         <div className="su-v-page1 absolute inset-x-0 bottom-0 top-[26px] px-5 pt-4">
           <VendorLogo vendor={vendor} size={22} />
-          <p dir={dir} className="mt-2 text-[16px]">{t(claude ? "firstRun.ai.scene.claudeLogin" : "firstRun.ai.scene.codexLogin")}</p>
+          <p dir={dir} className="mt-2 text-[16px]">{t(page.login)}</p>
           <div className="mt-4 rounded-md border-2 px-2.5 pb-1.5 pt-1" style={{ borderColor: ink }}>
             <span dir={dir} className="block text-[8.5px] text-[#444746]">{t("firstRun.calendar.scene.emailLabel")}</span>
             <span className="su-v-type block overflow-hidden whitespace-nowrap text-[11px]">{SAMPLE_EMAIL}</span>
@@ -393,17 +395,17 @@ export function VendorSignInScene({ vendor }: { vendor: "claude" | "codex" }) {
         {/* 4. Allow the access. */}
         <div className="su-v-page2 absolute inset-x-0 bottom-0 top-[26px] px-5 pt-4">
           <VendorLogo vendor={vendor} size={22} />
-          <p dir={dir} className="mt-2 text-[13px] leading-snug">{t(claude ? "firstRun.ai.scene.claudeAllow" : "firstRun.ai.scene.codexAllow")}</p>
+          <p dir={dir} className="mt-2 text-[13px] leading-snug">{t(page.allow)}</p>
           <p dir="auto" className="mt-2 inline-block rounded-full border border-[#e3e3e3] px-2 py-0.5 text-[9.5px] text-[#444746]">{SAMPLE_EMAIL}</p>
-          {button(t(claude ? "firstRun.ai.scene.authorize" : "firstRun.calendar.scene.continue"), "su-v-press2")}
+          {button(t(page.allowButton), "su-v-press2")}
         </div>
 
-        {/* 5. Claude: the code to copy into Upshot. ChatGPT: done. */}
+        {/* 5. Claude and Google: the code to copy into Upshot. ChatGPT: done. */}
         <div className="su-v-page3 absolute inset-x-0 bottom-0 top-[26px] px-5 pt-4">
           <VendorLogo vendor={vendor} size={22} />
-          {claude ? (
+          {code ? (
             <>
-              <p dir={dir} className="mt-2 text-[13px] leading-snug">{t("firstRun.ai.scene.claudeCode")}</p>
+              <p dir={dir} className="mt-2 text-[13px] leading-snug">{t(page.codeText)}</p>
               <div className="mt-3 rounded-md bg-[#f5f4ef] px-3 py-2 font-mono text-[11px]">8fJk2x9Lm…#Qw3eRt…</div>
               {button(t("firstRun.ai.scene.copy"), "su-v-press3")}
             </>
@@ -416,10 +418,46 @@ export function VendorSignInScene({ vendor }: { vendor: "claude" | "codex" }) {
         </div>
       </div>
 
-      <Pointer className={claude ? "su-v-pointer-claude" : "su-v-pointer-codex"} />
+      <Pointer className={code ? "su-v-pointer-claude" : "su-v-pointer-codex"} />
     </div>
   );
 }
+
+/** Each vendor's sign-in pages, as the scene draws them: their words, domain and colour. */
+const SCENE: Record<
+  CliId,
+  { name: MessageKey; domain: string; ink: string; login: MessageKey; allow: MessageKey; allowButton: MessageKey; codeText: MessageKey }
+> = {
+  claude: {
+    name: "firstRun.ai.claude.name",
+    domain: "claude.ai",
+    ink: "#1f1e1d",
+    login: "firstRun.ai.scene.claudeLogin",
+    allow: "firstRun.ai.scene.claudeAllow",
+    allowButton: "firstRun.ai.scene.authorize",
+    codeText: "firstRun.ai.scene.claudeCode",
+  },
+  codex: {
+    name: "firstRun.ai.codex.name",
+    domain: "auth.openai.com",
+    ink: "#0d0d0d",
+    login: "firstRun.ai.scene.codexLogin",
+    allow: "firstRun.ai.scene.codexAllow",
+    allowButton: "firstRun.calendar.scene.continue",
+    codeText: "firstRun.ai.scene.codexDone",
+  },
+  // Google's consent page, then antigravity.google's page with the code (machine B,
+  // 2026-09-28).
+  antigravity: {
+    name: "firstRun.ai.antigravity.name",
+    domain: "accounts.google.com",
+    ink: "#1a73e8",
+    login: "firstRun.ai.scene.googleLogin",
+    allow: "firstRun.ai.scene.googleAllow",
+    allowButton: "firstRun.calendar.scene.continue",
+    codeText: "firstRun.ai.scene.googleCode",
+  },
+};
 
 /* ---------------------------------------------------------------- AI: stages */
 

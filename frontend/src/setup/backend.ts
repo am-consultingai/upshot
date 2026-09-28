@@ -31,7 +31,7 @@ export interface CliSnapshot extends CliFacts {
   installCommand: string;
   /** The provider's sign-in page, shown in the page while sign-in waits. */
   signinUrl?: string;
-  /** Claude's sign-in ends with a code the user pastes back; Codex's does not. */
+  /** Claude's and Antigravity's sign-ins end with a code the user pastes back; Codex's does not. */
   signinNeedsCode: boolean;
   /**
    * Where that code goes: into this page, or into the window the install or sign-in

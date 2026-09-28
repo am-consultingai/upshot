@@ -1,13 +1,15 @@
 import { useI18n, type MessageKey } from "../i18n";
 import { useSetupSnapshot } from "./backend";
-import { cliUsable } from "./flow";
-import { VendorLogo, type VendorId } from "./logos";
+import { CLI_IDS, cliUsable, type CliId } from "./flow";
+import { VendorLogo } from "./logos";
 import { Badge, PRIMARY, QUIET, StepFrame } from "./ui";
 
-const VENDORS: { id: VendorId; name: MessageKey; plan: MessageKey }[] = [
+const VENDORS: { id: CliId; name: MessageKey; plan: MessageKey }[] = [
   { id: "claude", name: "firstRun.services.claude.name", plan: "firstRun.services.claude.plan" },
   { id: "codex", name: "firstRun.services.codex.name", plan: "firstRun.services.codex.plan" },
-  { id: "gemini", name: "firstRun.services.gemini.name", plan: "firstRun.services.gemini.plan" },
+  // Named for what the user pays for, a Google AI plan; the next step installs the
+  // Antigravity CLI that spends it (D78).
+  { id: "antigravity", name: "firstRun.services.gemini.name", plan: "firstRun.services.gemini.plan" },
 ];
 
 /**
@@ -21,16 +23,15 @@ export default function ServicesStep({
   onNext,
   onBack,
 }: {
-  chosen: Record<VendorId, boolean>;
-  onChange: (next: Record<VendorId, boolean>) => void;
+  chosen: Record<CliId, boolean>;
+  onChange: (next: Record<CliId, boolean>) => void;
   onNext: () => void;
   onBack: () => void;
 }) {
   const { t } = useI18n();
   const snapshot = useSetupSnapshot();
-  const any = chosen.claude || chosen.codex || chosen.gemini;
-  const ready = (id: VendorId) =>
-    id !== "gemini" && snapshot.cliKnown && cliUsable(snapshot.cli[id]);
+  const any = CLI_IDS.some((id) => chosen[id]);
+  const ready = (id: CliId) => snapshot.cliKnown && cliUsable(snapshot.cli[id]);
 
   return (
     <StepFrame

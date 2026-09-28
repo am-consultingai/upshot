@@ -871,6 +871,7 @@ function problemOf(message: UIMessage): string | null {
 const PROVIDER_NAMES: Record<string, MessageKey> = {
   "claude-subscription": "assistant.provider.claude",
   "codex-subscription": "assistant.provider.codex",
+  "antigravity-subscription": "assistant.provider.antigravity",
   anthropic: "assistant.provider.anthropic",
   openai: "assistant.provider.openai",
   gemini: "assistant.provider.gemini",

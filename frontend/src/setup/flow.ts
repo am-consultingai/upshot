@@ -6,7 +6,7 @@
  * the summaries. What the user confirms on the mock is what ships.
  */
 
-export type StepId = "welcome" | "calendar" | "services" | "ai" | "audio" | "capture" | "done";
+export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "audio" | "capture" | "done";
 
 /**
  * The steps, in order, for this machine.
@@ -24,6 +24,8 @@ export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
     // Which AI services the user pays for, before any is set up (D75).
     "services",
     "ai",
+    // An API key, only when no subscription was signed in (`withoutUnneeded`).
+    "key",
     "audio",
     "capture",
     "done",
@@ -45,19 +47,46 @@ export interface SetupChoices {
   capture: CaptureMode;
 }
 
+/**
+ * The steps as the user walks them now. The key step is offered only when none of the
+ * subscriptions ticked is signed in and working — ticking nothing counts as none
+ * (product owner, 2026-09-28). The connect step is passed over when nothing is ticked.
+ */
+export function withoutUnneeded(
+  steps: StepId[],
+  ticked: Record<CliId, boolean>,
+  clis: Record<CliId, CliFacts>,
+): StepId[] {
+  const anyTicked = CLI_IDS.some((id) => ticked[id]);
+  const anyUsable = CLI_IDS.some((id) => ticked[id] && cliUsable(clis[id]));
+  return steps.filter((step) => (step === "ai" ? anyTicked : step === "key" ? !anyUsable : true));
+}
+
 /** Where to reopen setup: the saved step if it still exists here, else the start. */
 export function resumeAt(steps: StepId[], saved: StepId | null | undefined): StepId {
   return saved && steps.includes(saved) ? saved : steps[0];
 }
 
-export type CliId = "claude" | "codex";
+/** The subscription CLIs, in the order setup prefers them when more than one works. */
+export const CLI_IDS = ["claude", "codex", "antigravity"] as const;
+export type CliId = (typeof CLI_IDS)[number];
 export type KeyProviderId = "gemini" | "anthropic" | "openai";
-export type ProviderId = "claude-subscription" | "codex-subscription" | KeyProviderId | "none";
+export type ProviderId =
+  | "claude-subscription"
+  | "codex-subscription"
+  | "antigravity-subscription"
+  | KeyProviderId
+  | "none";
 
 export const CLI_PROVIDER: Record<CliId, ProviderId> = {
   claude: "claude-subscription",
   codex: "codex-subscription",
+  // A Google AI plan, through Google's Antigravity CLI (D78).
+  antigravity: "antigravity-subscription",
 };
+
+/** Every CLI off: the starting point before anything is known or ticked. */
+export const NO_CLIS: Record<CliId, boolean> = { claude: false, codex: false, antigravity: false };
 
 /** What setup knows about one subscription CLI on this machine. */
 export interface CliFacts {
@@ -88,16 +117,17 @@ export interface Summarizer {
  * Which provider writes the summaries once setup finishes (Setup 8, settled with the
  * user on 2026-09-26).
  *
- * Only a subscription that is ticked and usable counts. Claude before Codex when both
- * are, with Codex as the fallback. With neither, a key that passed its check. With
- * nothing, `none`: the meeting stops at its transcript, which is a choice, not an error.
+ * Only a subscription that is ticked and usable counts, in `CLI_IDS` order: Claude, then
+ * Codex, then Antigravity, the next one usable as the fallback. With none, a key that
+ * passed its check. With nothing, `none`: the meeting stops at its transcript, which is
+ * a choice, not an error.
  */
 export function chooseSummarizer(
   ticked: Record<CliId, boolean>,
   clis: Record<CliId, CliFacts>,
   checkedKey: KeyProviderId | null,
 ): Summarizer {
-  const usable = (["claude", "codex"] as const).filter((id) => ticked[id] && cliUsable(clis[id]));
+  const usable = CLI_IDS.filter((id) => ticked[id] && cliUsable(clis[id]));
   if (usable.length > 0) {
     return { provider: CLI_PROVIDER[usable[0]], fallback: usable[1] ? CLI_PROVIDER[usable[1]] : "" };
   }
@@ -106,5 +136,9 @@ export function chooseSummarizer(
 
 /** Pre-tick a card when its CLI already works: there is nothing to ask. */
 export function initialTicks(clis: Record<CliId, CliFacts>): Record<CliId, boolean> {
-  return { claude: cliUsable(clis.claude), codex: cliUsable(clis.codex) };
+  return {
+    claude: cliUsable(clis.claude),
+    codex: cliUsable(clis.codex),
+    antigravity: cliUsable(clis.antigravity),
+  };
 }

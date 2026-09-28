@@ -3,9 +3,18 @@ import { expect, gotoSettings, test } from "./fixtures";
 test("provider_settings_list_every_option", async ({ page }) => {
   await gotoSettings(page, "summaries");
   const rows = page.getByTestId("provider-row");
-  await expect(rows).toHaveCount(7);
+  await expect(rows).toHaveCount(8);
   // "none" is transcripts only (D63), offered alongside the summarizers.
-  for (const id of ["none", "anthropic", "gemini", "openai", "claude-subscription", "codex-subscription", "ollama"]) {
+  for (const id of [
+    "none",
+    "anthropic",
+    "gemini",
+    "openai",
+    "claude-subscription",
+    "codex-subscription",
+    "antigravity-subscription",
+    "ollama",
+  ]) {
     await expect(page.locator(`[data-provider="${id}"]`)).toBeVisible();
   }
 });

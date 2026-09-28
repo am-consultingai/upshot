@@ -65,6 +65,7 @@ def test_llm_status_lists_every_provider(api) -> None:  # type: ignore[no-untype
         "openai",
         "claude-subscription",
         "codex-subscription",
+        "antigravity-subscription",
         "ollama",
     }
     by_id = {provider["id"]: provider for provider in body["providers"]}

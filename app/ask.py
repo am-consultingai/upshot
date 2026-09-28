@@ -36,6 +36,7 @@ CHAR_BUDGET: dict[str, int] = {
     "anthropic": 400_000,
     "claude-subscription": 400_000,
     "codex-subscription": 300_000,
+    "antigravity-subscription": 300_000,
     "gemini": 400_000,
     "openai": 300_000,
 }

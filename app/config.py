@@ -175,7 +175,8 @@ DEFAULTS: dict[str, Any] = {
         "title_patterns": ["zoom meeting", "microsoft teams", "meet -", "meet –", "webex"],
     },
     "llm": {
-        # none|anthropic|openai|gemini|claude-subscription|codex-subscription|ollama|fake
+        # none|anthropic|openai|gemini|claude-subscription|codex-subscription|
+        # antigravity-subscription|ollama|fake
         # `none` is the default: a meeting is recorded and transcribed and stops there,
         # which is a choice rather than a failure. First-run setup offers the rest (D63).
         # `claude-subscription` runs through the Claude Code CLI on this machine, using
@@ -209,6 +210,13 @@ DEFAULTS: dict[str, Any] = {
         "codex_cli_path": "codex",
         "codex_cli_timeout_s": 600,
         "codex_cli_args": [],
+        # `antigravity-subscription`: Google's Antigravity CLI (`agy`), on the signed-in
+        # user's own Google AI plan. Never the default; Google has published nothing on
+        # third parties driving it on a plan (DECISIONS D78). An empty model is agy's own.
+        "antigravity_cli_path": "agy",
+        "antigravity_cli_timeout_s": 600,
+        "antigravity_cli_args": [],
+        "antigravity_model": "",
         # Who summarizes when a subscription provider reports its plan allowance used up
         # (and only then). Empty means nobody: the summary waits for the reset and the
         # transcript does not leave the machine. A deliberate choice, never a default.
@@ -286,6 +294,7 @@ LLM_PROVIDERS: tuple[str, ...] = (
     "gemini",
     "claude-subscription",
     "codex-subscription",
+    "antigravity-subscription",
     "ollama",
     "fake",
 )
