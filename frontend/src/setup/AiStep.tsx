@@ -87,6 +87,18 @@ export default function AiStep({
     const cli = snapshot.cli[id];
     return !cliUsable(cli) && !BUSY.has(cli.phase) && !(cli.signedIn === true && cli.plan === "free");
   });
+  // Moving on mid-install would leave a helper half there (product owner, 2026-09-28):
+  // Continue is greyed out while any chosen one installs, and says why when pressed.
+  const installing = chosenCli.some((id) => snapshot.cli[id].phase === "installing");
+  const [waitNote, setWaitNote] = useState(false);
+  useEffect(() => {
+    if (!waitNote) return;
+    const timer = setTimeout(() => setWaitNote(false), 4000);
+    return () => clearTimeout(timer);
+  }, [waitNote]);
+  useEffect(() => {
+    if (!installing) setWaitNote(false);
+  }, [installing]);
 
   return (
     <StepFrame
@@ -105,9 +117,28 @@ export default function AiStep({
       }
       footer={
         <>
-          <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
-            {t("firstRun.continue")}
-          </button>
+          <span className="relative">
+            {/* aria-disabled, not disabled: a disabled button never hears the press it
+                has to answer. */}
+            <button
+              type="button"
+              data-testid="setup-next"
+              aria-disabled={installing}
+              className={`${PRIMARY} ${installing ? "cursor-not-allowed opacity-50 hover:bg-accent" : ""}`}
+              onClick={() => (installing ? setWaitNote(true) : onNext())}
+            >
+              {t("firstRun.continue")}
+            </button>
+            {waitNote && (
+              <span
+                role="status"
+                data-testid="ai-wait-install"
+                className="absolute bottom-full end-0 mb-2 w-max max-w-64 rounded-lg bg-raised px-3 py-2 text-sm shadow-md ring-1 ring-line-subtle"
+              >
+                {t("firstRun.ai.waitInstall")}
+              </span>
+            )}
+          </span>
           <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
             {t("firstRun.back")}
           </button>
