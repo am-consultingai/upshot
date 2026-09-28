@@ -119,7 +119,10 @@ def test_tray_survives_worker_crash(tmp_path: Path, app_home: Path) -> None:
 
 
 def test_a_discarded_meeting_says_so_on_disk(tmp_path: Path, app_home: Path) -> None:
-    """Too short to keep: the folder's meta.json agrees with the database (machine B, job 014)."""
+    """Discarded: the folder's meta.json agrees with the database (machine B, job 014).
+
+    A recording the user started is kept however short (D76), so it is discarded here
+    the way the user does it, with "Not a meeting"."""
     from app import meta
 
     harness = build_harness(tmp_path)
@@ -127,6 +130,8 @@ def test_a_discarded_meeting_says_so_on_disk(tmp_path: Path, app_home: Path) -> 
     meeting_id = client.post("/api/recording/start", json={}).json()["meeting_id"]
     harness.emit(seconds=1)
     client.post("/api/recording/stop")
+    assert harness.services.dao.require_meeting(meeting_id).state == MeetingState.RECORDED
+    client.patch(f"/api/meetings/{meeting_id}", json={"discard": True})
 
     meeting = harness.services.dao.require_meeting(meeting_id)
     assert meeting.state == MeetingState.DISCARDED

@@ -40,6 +40,8 @@ class Services:
     #: Injected in tests; otherwise built from ``llm.fallback_provider`` when needed.
     fallback_llm: Any = None
     detector: Any = None
+    #: app.prompts.Prompts: the offer to record that the banner and the toasts share.
+    prompts: Any = None
     calendar: Any = None  # app.gcal.oauth.CalendarAuth
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
     calendar_invites: Any = None  # app.gcal.invite.InviteReader
@@ -105,6 +107,9 @@ def build(
     from app.notify import make_notifier
 
     services.notifier = make_notifier(cfg, events=events)
+    from app.prompts import Prompts
+
+    services.prompts = Prompts(events)
     if with_recorder:
         from app.audio.factory import make_capture
 
@@ -126,6 +131,7 @@ def build(
             notifier=services.notifier,
             events=events,
             calendar=calendar_now,
+            prompts=services.prompts,
         )
     if with_worker:
         from app.pipeline.stages import registry

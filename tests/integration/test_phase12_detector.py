@@ -401,7 +401,10 @@ def test_a_manual_recording_survives_the_detector_waking_on_it(tmp_path: Path) -
     h.recorder.start(folder, "manual")
     h.seconds(30)
 
-    assert h.detector.state is DetectorState.IDLE, "the wake was dropped, not decided"
+    # The wake was dropped, not decided, and the recording adopted so the same end
+    # signals end it (D76).
+    assert h.detector.state is DetectorState.RECORDING
+    assert h.detector.recording_process == "Zoom.exe"
     assert h.recorder.committed, "the recording is still running"
     assert h.dao.detector_events() == [], "nothing was scored through someone else's recording"
     result = h.recorder.stop()
@@ -623,3 +626,140 @@ def test_every_verdict_reaches_the_log_file(tmp_path: Path, caplog) -> None:  # 
     assert str(events[0].peak_score) in verdict
     # The evidence is summarised on the line, not just stored in the row.
     assert any(item["code"] in verdict for item in events[0].evidence_list)
+
+
+# ------------------------------------------------------------------ D76: every recording ends
+
+
+class FakeCalendar:
+    """The calendar cache, reduced to one meeting."""
+
+    def __init__(self, event: object) -> None:
+        self.event = event
+
+    def current(self, now: object, *, lead_s: float = 120.0) -> object:
+        e = self.event
+        return e if e.start - timedelta(seconds=lead_s) <= now < e.end else None  # type: ignore[attr-defined,operator]
+
+    def soon(self, now: object, *, ahead_s: float) -> list[object]:
+        e = self.event
+        return [e] if e.start < now + timedelta(seconds=ahead_s) and e.end > now else []  # type: ignore[attr-defined,operator]
+
+
+def calendar_meeting(h: Harness, *, starts_in_s: float, minutes: int, url: str | None = None):  # type: ignore[no-untyped-def]
+    from app.gcal.events import Attendee, CalendarEvent
+
+    start = h.clock.now() + timedelta(seconds=starts_in_s)
+    event = CalendarEvent(
+        calendar_id="primary",
+        event_id="weekly",
+        title="Weekly sync",
+        start=start,
+        end=start + timedelta(minutes=minutes),
+        attendees=(Attendee(name="Dana"),),
+        attendee_count=1,
+        conference_url=url,
+    )
+    h.detector.calendar = FakeCalendar(event)
+    return event
+
+
+def start_by_hand(h: Harness) -> str:
+    meeting = h.detector.meetings.create(source="manual")
+    h.recorder.start(meeting.path, meeting.id)
+    h.detector.meetings.committed(meeting, meeting.path)
+    return meeting.id
+
+
+def test_a_recording_started_by_hand_ends_when_the_call_app_lets_go(tmp_path: Path) -> None:
+    """Before D76 only the detector's own recordings ended by themselves: one started from
+    a notification or the page ran until the four-hour cap."""
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.hold("Zoom.exe")
+    h.vad.set(me=True, them=True)
+    meeting_id = start_by_hand(h)
+    h.seconds(3)
+    assert h.detector.state is DetectorState.RECORDING
+    assert h.detector.recording_process == "Zoom.exe"
+
+    h.mic.release()
+    h.seconds(h.detector.grace_s + 3)
+    assert not h.recorder.committed, "leaving the call ended it"
+    assert h.dao.require_meeting(meeting_id).state == MeetingState.RECORDED
+    ended = [t for t in h.notifier.shown if t.title.startswith("Meeting ended")]
+    assert ended and "You left the call" in ended[-1].body
+
+
+def test_a_recording_with_no_call_app_is_not_ended_by_the_microphone(tmp_path: Path) -> None:
+    """An in-person meeting recorded by hand: no app to watch, so only silence, the
+    calendar and the cap can end it."""
+    h = build(tmp_path, detection__mode="shadow")
+    h.vad.set(me=True, them=True)
+    start_by_hand(h)
+    h.seconds(120)
+    assert h.recorder.committed
+    assert h.detector.recording_process is None
+
+
+def test_a_recording_stopped_elsewhere_is_let_go(tmp_path: Path) -> None:
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.hold("Zoom.exe")
+    h.vad.set(me=True, them=True)
+    meeting_id = start_by_hand(h)
+    h.seconds(3)
+    h.recorder.stop()
+    h.detector.meetings.finish(meeting_id, duration_s=3)
+    h.seconds(2)
+    assert h.detector.state is DetectorState.IDLE
+    assert h.detector.meeting_id is None
+
+
+def test_a_calendar_meeting_is_reminded_then_offered_once_each(tmp_path: Path) -> None:
+    from app.prompts import Prompts
+
+    h = build(tmp_path, detection__mode="shadow")
+    h.detector.prompts = Prompts()
+    calendar_meeting(h, starts_in_s=600, minutes=30, url="https://meet.google.com/abc")
+    h.seconds(200, audio=False)
+    assert not any("starts in" in t.title for t in h.notifier.shown), "not yet five minutes"
+    h.seconds(150, audio=False)
+    soon = [t for t in h.notifier.shown if "starts in" in t.title]
+    assert len(soon) == 1 and [b.label for b in soon[0].buttons] == ["Join"]
+    assert soon[0].buttons[0].link() == "https://meet.google.com/abc"
+    h.seconds(260, audio=False)
+    started = [t for t in h.notifier.shown if "has started" in t.title]
+    assert len(started) == 1
+    assert [b.label for b in started[0].buttons] == [
+        "Join and record",
+        "Start recording",
+        "Dismiss",
+    ]
+    offer = h.detector.prompts.snapshot()
+    assert offer is not None and offer["kind"] == "calendar" and offer["title"] == "Weekly sync"
+    # Recording withdraws the offer, and nothing more is offered for the meeting.
+    start_by_hand(h)
+    h.seconds(2, audio=False)
+    assert h.detector.prompts.snapshot() is None
+
+
+def test_a_meeting_first_seen_after_its_start_is_still_offered(tmp_path: Path) -> None:
+    """Machine B, 2026-09-28: a meeting that had started five minutes earlier was
+    synced and never announced."""
+    h = build(tmp_path, detection__mode="shadow")
+    calendar_meeting(h, starts_in_s=-300, minutes=30)
+    h.seconds(2, audio=False)
+    started = [t for t in h.notifier.shown if "started" in t.title]
+    assert len(started) == 1 and "started 5 min ago" in started[0].title
+
+
+def test_a_recording_past_its_scheduled_end_asks_once(tmp_path: Path) -> None:
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.hold("Zoom.exe")
+    h.vad.set(me=True, them=True)
+    calendar_meeting(h, starts_in_s=-60, minutes=3)
+    start_by_hand(h)
+    h.seconds(150)
+    overrun = [t for t in h.notifier.shown if "scheduled to end" in t.title]
+    assert len(overrun) == 1
+    assert [b.label for b in overrun[0].buttons] == ["Stop recording", "Keep recording"]
+    assert h.recorder.committed, "an overrun is asked about, never cut"

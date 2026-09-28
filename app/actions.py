@@ -32,6 +32,8 @@ REMOTE = frozenset({"recording.start", "recording.stop", "meeting.discard"})
 PAGES = {"open": "/", "meeting.open": "/m/{meeting}", "meeting.email": "/m/{meeting}"}
 #: Query keys a link may carry, and the request fields they become.
 FIELDS = {"meeting": "meeting_id", "calendar": "calendar_id", "event": "event_id"}
+#: "Join and record": the meeting link, opened by the link process itself (D76).
+JOIN_KEY = "join"
 
 
 @dataclass(frozen=True)
@@ -58,7 +60,7 @@ def parse(link: str) -> Link | None:
     params = {
         key: values[0]
         for key, values in urllib.parse.parse_qs(query).items()
-        if key in FIELDS and values
+        if (key in FIELDS or key == JOIN_KEY) and values
     }
     return Link(action, params)
 
@@ -71,6 +73,12 @@ def link_argument(arguments: list[str]) -> str | None:
     return None
 
 
+def join_url(link: Link) -> str | None:
+    """The meeting link to open, if the link carries one and it is a web address."""
+    url = link.params.get(JOIN_KEY, "")
+    return url if url.lower().startswith("https://") else None
+
+
 def page(link: Link) -> str:
     template = PAGES.get(link.action, "/")
     meeting = link.params.get("meeting", "")
@@ -81,7 +89,9 @@ def forward(link: Link, port: int, home: Path) -> bool:
     """Hand a remote action to the running instance. False when it refused or is gone."""
     from app.api.security import ACTION_PATH, LAUNCHER_HEADER, LAUNCHER_KEY_FILE
 
-    body = {"action": link.action} | {FIELDS[key]: value for key, value in link.params.items()}
+    body = {"action": link.action} | {
+        FIELDS[key]: value for key, value in link.params.items() if key in FIELDS
+    }
     try:
         key = (home / LAUNCHER_KEY_FILE).read_text(encoding="utf-8").strip()
         request = urllib.request.Request(

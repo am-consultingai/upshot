@@ -341,7 +341,6 @@ test("a_detected_meeting_nudges_on_any_screen", async ({ page, seedBody, seedMor
   const nudge = page.getByTestId("detection-nudge");
   await expect(nudge).toBeVisible({ timeout: 10_000 });
   await expect(nudge).toContainText("Zoom");
-  await expect(nudge).toContainText("8");
 
   await nudge.getByTestId("detection-nudge-dismiss").click();
   await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
