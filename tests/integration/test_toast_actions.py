@@ -243,3 +243,26 @@ def test_the_calendar_test_hook_is_off_unless_the_machine_turns_it_on(
 
     stored = EventStore(harness.services.conn).get("upshot-test", "t1")
     assert stored is not None and stored.title == "Harness meeting"
+
+
+def test_a_start_that_names_no_meeting_records_the_one_on_offer(
+    tmp_path: Path, app_home: Path
+) -> None:
+    """Machine B: a call started from its toast was filed as "meeting"."""
+    from datetime import UTC, datetime
+
+    from app.prompts import Prompt
+
+    harness = build_harness(tmp_path)
+    harness.services.prompts.offer(
+        Prompt(
+            kind="detected", title="Meet - Weekly sync", at=datetime.now(UTC), process="chrome.exe"
+        ),
+        recording=False,
+    )
+    started = _launcher(harness).post(ACTION_PATH, json={"action": "recording.start"})
+    assert started.status_code == 200, started.text
+    meeting = harness.services.dao.require_meeting(started.json()["meeting_id"])
+    assert meeting.title == "Meet - Weekly sync"
+    assert harness.services.prompts.snapshot() is None
+    harness.services.recorder.stop()  # type: ignore[union-attr]

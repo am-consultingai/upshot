@@ -140,9 +140,10 @@ class BaseNotifier:
             "both tracks were silent": "Nobody spoke for 5 minutes, so Upshot stopped recording.",
             "the maximum meeting duration was reached": "The recording reached its length limit.",
         }.get(reason, "")
+        length = f"{minutes} min" if minutes >= 1 else "under a minute"
         self.show(
             Toast(
-                title=f"Meeting ended — {minutes} min. Transcribing…",
+                title=f"Meeting ended — {length}. Transcribing…",
                 body=why,
                 buttons=(Button("Open", "meeting.open", meeting_id),),
                 key=f"ended:{meeting_id}",
