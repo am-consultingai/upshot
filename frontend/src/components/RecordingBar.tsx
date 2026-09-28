@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { formatElapsed } from "../lib/format";
@@ -24,6 +24,11 @@ export default function RecordingBar() {
     enabled: meetingId !== null,
   });
   const { stop } = useRecordingControls();
+  const queryClient = useQueryClient();
+  const keep = useMutation({
+    mutationFn: api.keepRecording,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["status"] }),
+  });
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -34,6 +39,38 @@ export default function RecordingBar() {
 
   if (meetingId === null || !recorder) return null;
   const paused = recorder.paused;
+  // The call's app let go (D77): say so at once and count down to the save, with the two
+  // ways out, instead of a bar that looks exactly like one that noticed nothing.
+  const ending = recorder.ending;
+  if (ending) {
+    const left = Math.max(0, Math.ceil((Date.parse(ending.ends_at) - now) / 1000));
+    return (
+      <div data-testid="recording-bar" data-ending="true" className="border-b border-warning bg-warning-quiet">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2">
+          <span data-testid="recording-bar-ending" className="font-medium text-warning">
+            {t("recording.callEnded").replace("{seconds}", String(left))}
+          </span>
+          <div className="flex-1" />
+          <BusyButton
+            data-testid="recording-bar-keep"
+            busy={keep.isPending}
+            onClick={() => keep.mutate()}
+            className="rounded px-3 py-1 text-sm text-warning underline"
+          >
+            {t("recording.keep")}
+          </BusyButton>
+          <BusyButton
+            data-testid="recording-bar-stop"
+            busy={stop.isPending}
+            onClick={() => stop.mutate()}
+            className="rounded bg-danger px-3 py-1 text-sm text-on-solid"
+          >
+            {t("recording.stopNow")}
+          </BusyButton>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div data-testid="recording-bar" data-paused={paused} className="border-b border-danger bg-danger-quiet">

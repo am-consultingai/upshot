@@ -118,6 +118,13 @@ class Detector:
         self.event_end: datetime | None = None
         self.event_title: str = ""
         self.overrun_said = False
+        #: When a recording whose call just ended saves itself, if nothing changes (D77).
+        self.ending_at: datetime | None = None
+        #: "Keep recording": the user says the meeting goes on without the call's app.
+        self.keep_going = False
+        #: The detector's tick runs on its own thread; Stop now and Keep recording come
+        #: from the page or a toast. One at a time, so a recording is never ended twice.
+        self._lock = threading.RLock()
         #: Holders that are Upshot itself, never a meeting (see ``own_executables``).
         self.own = own_executables()
         self.state = DetectorState.IDLE
@@ -290,6 +297,10 @@ class Detector:
 
     def tick(self) -> DetectorState:
         """One second of the detector's life."""
+        with self._lock:
+            return self._tick()
+
+    def _tick(self) -> DetectorState:
         if self.mode == "off":
             return self.state
         holders = [
@@ -392,7 +403,40 @@ class Detector:
         if event is not None:
             self.event_end, self.event_title = event.end, event.title or ""
 
+    def keep(self, meeting_id: str | None) -> bool:
+        """ "Keep recording": the meeting goes on though the call's app let go (D77).
+
+        What was heard since is written, and the microphone no longer ends this
+        recording; silence, the calendar and the cap still can.
+        """
+        with self._lock:
+            if meeting_id is not None and meeting_id != self.meeting_id:
+                return False
+            if self.state is DetectorState.GRACE:
+                self.recorder.release_hold(keep=True)
+                self.state = DetectorState.RECORDING
+                self.released_at = None
+            self.ending_at = None
+            self.keep_going = True
+            self.recording_process = None
+            log.info("recording %s: kept going by the user", self.meeting_id)
+            self._publish("recording", meeting_id=self.meeting_id)
+            return True
+
+    def end_now(self, meeting_id: str | None, why: str) -> str | None:
+        """Stop now, from the page or a toast, for a recording this detector follows."""
+        with self._lock:
+            if self.meeting_id is None or (
+                meeting_id is not None and meeting_id != self.meeting_id
+            ):
+                return None
+            if self.state not in (DetectorState.RECORDING, DetectorState.GRACE):
+                return None
+            return self.end(why)
+
     def _forget_recording(self) -> None:
+        self.ending_at = None
+        self.keep_going = False
         self.meeting_id = None
         self.recording_process = None
         self.state = DetectorState.IDLE
@@ -602,16 +646,34 @@ class Detector:
     def _tick_recording(self, process: str) -> None:
         now = self.clock.monotonic()
         if self.recording_process is None:
-            pass  # no call app to watch (adopted with none): the other signals decide
+            pass  # no call app to watch (adopted with none, or kept going): other signals
         elif process:
             if self.state is DetectorState.GRACE:
+                # Back in the call (a rejoin, a dropped connection): the same meeting goes
+                # on. The dead air between is not written; the timeline keeps its length.
                 log.info("microphone re-acquired inside the grace window; same meeting")
+                self.recorder.release_hold(keep=False)
                 self.state = DetectorState.RECORDING
                 self.released_at = None
+                self.ending_at = None
+                self._publish("recording", meeting_id=self.meeting_id)
         else:
             if self.released_at is None:
+                # The call's app let go: most likely the user hung up. Say so at once and
+                # stop writing, so the file ends here; wait out the grace before saving,
+                # in case the call comes back (D77).
                 self.released_at = now
                 self.state = DetectorState.GRACE
+                self.recorder.hold()
+                self.ending_at = self.clock.now() + timedelta(seconds=self.grace_s)
+                log.info("the call's app let go of the microphone; saving in %.0f s", self.grace_s)
+                self._publish(
+                    "ending", meeting_id=self.meeting_id, ends_at=self.ending_at.isoformat()
+                )
+                if self.notifier is not None and self.meeting_id:
+                    self.notifier.call_ended(
+                        self.meeting_id, self.event_title, seconds=int(self.grace_s)
+                    )
             elif now - self.released_at >= self.grace_s:
                 self.end("the microphone was released")
                 return

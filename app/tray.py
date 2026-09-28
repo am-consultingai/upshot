@@ -109,6 +109,7 @@ class TrayApp:
             queue_depth=depth,
             meeting_title=self._title(),
             detector_mode=str(self.services.config.get("detection.mode", "shadow")),
+            ending=bool(recorder is not None and recorder.holding),
             worker_alive=worker is None or worker.is_alive(),
         )
         return self.state
