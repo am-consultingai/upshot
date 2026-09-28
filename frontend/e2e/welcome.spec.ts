@@ -65,10 +65,14 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   await expect(page.getByTestId("device-plan")).toHaveCount(0);
 
   await toKeyStep(page);
-  // Nothing ticked: no connect step, and a key is offered on a step of its own.
-  await expect(page.getByTestId("setup-crumb-ai")).toHaveCount(0);
+  // Nothing ticked: no connect step, and a key is offered on a step of its own — which the
+  // track shows as part of "AI setup", not a stop of its own.
+  await expect(page.getByTestId("setup-crumb-aiSetup")).toHaveAttribute("aria-current", "step");
+  await expect(page.getByTestId("setup-crumb-key")).toHaveCount(0);
   await expect(page.getByTestId("key-offer")).toBeVisible();
   await expect(page.getByTestId("key-get-gemini")).toHaveAttribute("href", "https://aistudio.google.com/apikey");
+  // Gemini's key only: other providers' keys are for Settings.
+  await expect(page.getByTestId("key-provider-anthropic")).toHaveCount(0);
   await page.getByTestId("setup-skip").click();
 
   // The sound check runs by itself: the microphone meter moves on the synthetic tone,
@@ -84,17 +88,13 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   await expect(page.getByTestId("speaker-test")).not.toHaveAttribute("data-phase", "playing", {
     timeout: 10_000,
   });
-  await page.getByTestId("setup-next").click();
 
-  // How to record comes last, with detect and notify already chosen (D64).
-  await expect(page.getByTestId("setup-step-capture")).toBeVisible();
+  // How to record is on the same step, with detect and notify already chosen (D64), and
+  // its Done finishes setup: there is no summary screen after it.
   await expect(page.getByTestId("capture-lead")).toContainText("notice when a meeting starts");
   await expect(page.getByTestId("capture-off")).toHaveCount(0);
   await expect(page.getByTestId("capture-shadow")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("setup-next").click();
-
-  await expect(page.getByTestId("done-summaries")).toContainText("Transcripts only");
-  await expect(page.getByTestId("done-capture")).toContainText("Notify me when a call starts");
+  await expect(page.getByTestId("setup-finish")).toHaveText("Done");
   await page.getByTestId("setup-finish").click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("rail")).toBeVisible();
@@ -302,13 +302,16 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     title: (await page.locator("[data-testid^=setup-step-] h1").boundingBox())!,
     // The step's main content — cards, panels, choices — starts on the same line too.
     content: (await page.getByTestId("setup-content").boundingBox())!,
-    forward: (await page.getByTestId("setup-next").or(page.getByTestId("setup-skip")).first().boundingBox())!,
+    forward: (await forwardButton().boundingBox())!,
   });
+  const forwardButton = () =>
+    page.getByTestId("setup-next").or(page.getByTestId("setup-skip")).or(page.getByTestId("setup-finish")).first();
   const first = await where();
   await page.getByTestId("setup-next").click();
   // "None of these" on the services step passes the connect step over (D75) and offers
-  // the key on a step of its own.
-  for (const step of ["calendar", "services", "key", "audio", "capture"]) {
+  // the key on a step of its own; the sound check is last, and its forward is Done.
+  const steps = ["calendar", "services", "key", "audio"];
+  for (const step of steps) {
     await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
     const now = await where();
     expect(now.track.y).toBe(first.track.y);
@@ -320,7 +323,6 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     const endEdge = (box: { x: number; width: number }) => Math.round(box.x + box.width);
     expect(Math.abs(endEdge(now.forward) - endEdge(first.forward))).toBeLessThan(2);
     expect(endEdge(now.forward)).toBeLessThan(width);
-    const forward = page.getByTestId("setup-next").or(page.getByTestId("setup-skip")).first();
-    await forward.click();
+    if (step !== steps.at(-1)) await forwardButton().click();
   }
 });

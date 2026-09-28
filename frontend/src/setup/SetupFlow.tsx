@@ -4,40 +4,40 @@ import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
 import KeyStep from "./KeyStep";
 import ServicesStep from "./ServicesStep";
-import { AudioStep, CaptureStep, DoneStep, WelcomeStep } from "./Steps";
+import { AudioStep, WelcomeStep } from "./Steps";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import {
   DEFAULT_CAPTURE,
   NO_CLIS,
   chooseSummarizer,
+  crumbOf,
   initialTicks,
   resumeAt,
   stepsFor,
   withoutUnneeded,
   type CaptureMode,
   type CliId,
+  type CrumbId,
   type StepId,
 } from "./flow";
 
-const LABEL: Record<StepId, MessageKey> = {
+const LABEL: Record<CrumbId, MessageKey> = {
   welcome: "firstRun.step.welcome",
   calendar: "firstRun.step.calendar",
-  services: "firstRun.step.services",
-  ai: "firstRun.step.ai",
-  key: "firstRun.step.key",
+  aiSetup: "firstRun.step.aiSetup",
   audio: "firstRun.step.audio",
-  capture: "firstRun.step.capture",
-  done: "firstRun.step.done",
 };
 
 /**
- * First-run setup: Welcome → Google Calendar → AI services → Connect AI → API key → Sound
- * check → Recording → Done (epic z8tj1hb01k, D75).
+ * First-run setup: Welcome → Google Calendar → AI setup (services, connecting them, and a
+ * key when none connected) → Sound check and recording, ending on Done (epic z8tj1hb01k,
+ * D75, D78).
  *
  * Which steps exist is decided once, when setup opens. Two of them follow the AI choices
  * as they change: Connect AI appears once a service is ticked, and API key only while no
- * ticked service is signed in (`withoutUnneeded`). The step reached is saved as it
- * changes, so an app closed half-way reopens where it was left.
+ * ticked service is signed in (`withoutUnneeded`). The progress track shows the three AI
+ * screens as one stop. The step reached is saved as it changes, so an app closed
+ * half-way reopens where it was left.
  */
 export default function SetupFlow({
   onFinished,
@@ -86,6 +86,14 @@ export default function SetupFlow({
   const index = walk.indexOf(step);
   const next = () => setStep(walk[Math.min(index + 1, walk.length - 1)]);
   const back = () => setStep(walk[Math.max(index - 1, 0)]);
+  // The track: each stop once, the AI screens as one. A stop reached earlier opens on
+  // its first screen.
+  const crumbs = [...new Set(allSteps.map(crumbOf))];
+  const crumbAt = crumbs.indexOf(crumbOf(step));
+  const openCrumb = (crumb: CrumbId) => {
+    const first = walk.find((s) => crumbOf(s) === crumb);
+    if (first) setStep(first);
+  };
 
   // A key counts only where the key step is offered: a subscription that works wins.
   const summarizer = chooseSummarizer(
@@ -117,8 +125,8 @@ export default function SetupFlow({
       <header className="flex shrink-0 flex-col items-center gap-3 px-6 pt-8 pb-2">
       <nav aria-label={t("firstRun.progress")}>
         <ol className="flex flex-wrap items-center justify-center gap-x-1 gap-y-2 text-xs">
-          {walk.map((id, i) => {
-            const state = i < index ? "done" : i === index ? "current" : "todo";
+          {crumbs.map((id, i) => {
+            const state = i < crumbAt ? "done" : i === crumbAt ? "current" : "todo";
             return (
               <li key={id} className="flex items-center gap-1">
                 {i > 0 && <span aria-hidden="true" className="h-px w-5 bg-line" />}
@@ -127,7 +135,7 @@ export default function SetupFlow({
                   data-testid={`setup-crumb-${id}`}
                   aria-current={state === "current" ? "step" : undefined}
                   disabled={state === "todo"}
-                  onClick={() => setStep(id)}
+                  onClick={() => openCrumb(id)}
                   className={`flex h-7 items-center gap-1.5 rounded-full px-2 ${
                     state === "current"
                       ? "bg-accent-quiet font-medium text-primary"
@@ -186,12 +194,10 @@ export default function SetupFlow({
       )}
       {step === "ai" && <AiStep ticked={ticked} onNext={next} onBack={back} />}
       {step === "key" && <KeyStep onNext={next} onBack={back} />}
-      {step === "audio" && <AudioStep onNext={next} onBack={back} />}
-      {step === "capture" && <CaptureStep mode={capture} onChange={setCapture} onNext={next} onBack={back} />}
-      {step === "done" && (
-        <DoneStep
-          summarizer={summarizer}
-          capture={capture}
+      {step === "audio" && (
+        <AudioStep
+          mode={capture}
+          onChange={setCapture}
           finishing={finishing}
           onFinish={() => void finish()}
           onBack={back}
