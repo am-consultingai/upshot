@@ -1517,17 +1517,22 @@ CLI_PROVIDERS: dict[str, str] = {
     for provider, product in (
         ("claude-subscription", "Claude Code"),
         ("codex-subscription", "Codex"),
+        ("antigravity-subscription", "Antigravity CLI"),
     )
     if provider in LLM_PROVIDERS
 }
 
 
 def cli_client(svc: Services, provider: str) -> Any:
-    """The CLI-backed client for ``provider``: Claude Code's or Codex's."""
+    """The CLI-backed client for ``provider``: Claude Code's, Codex's or Antigravity's."""
     if provider == "codex-subscription":
         from app.llm.codex_cli import CodexCliClient
 
         return CodexCliClient(svc.config)
+    if provider == "antigravity-subscription":
+        from app.llm.antigravity_cli import AntigravityCliClient
+
+        return AntigravityCliClient(svc.config)
     from app.llm.claude_cli import ClaudeCliClient
 
     return ClaudeCliClient(svc.config)
@@ -1539,6 +1544,10 @@ def cli_module(provider: str) -> Any:
         from app.llm import codex_cli
 
         return codex_cli
+    if provider == "antigravity-subscription":
+        from app.llm import antigravity_cli
+
+        return antigravity_cli
     from app.llm import claude_cli
 
     return claude_cli
@@ -1845,6 +1854,12 @@ def llm_status(request: Request) -> dict[str, Any]:
         # the program actually run, Codex CLI, and the plan it spends — the way D46 names
         # "Claude Agent" rather than presenting the row as Claude Code itself.
         providers.append(cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)"))
+    if "antigravity-subscription" in CLI_PROVIDERS:
+        # Named the way Codex's row is (D58, D78): the program actually run and the plan
+        # it spends, with no Google mark and nothing that reads as a Google product.
+        providers.append(
+            cli_row(svc, "antigravity-subscription", "Antigravity CLI (your own Google AI plan)")
+        )
     providers.append(
         {
             "id": "ollama",
@@ -1887,6 +1902,8 @@ def cli_row(svc: Services, provider: str, label: str) -> dict[str, Any]:
         "install_method": plan.method if plan else "",
         "install_docs": module.INSTALL_DOCS_URL,
         "update_hint": module.update_command(cli.path) if cli.installed else "",
+        # False for a CLI with no way to sign out from outside it (Antigravity, D78).
+        "can_sign_out": cli_client(svc, provider).logout_command() is not None,
         # The window Install or Sign in opened is still there; closing it ends the wait.
         "console_open": console_open(provider),
         # A windowless sign-in's link, for the page to offer in the browser it runs in.
@@ -2100,6 +2117,11 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
     if login is not None:
         login.stop()
     argv = client.logout_command()
+    if argv is None:
+        raise HTTPException(
+            409,
+            f"{product} cannot be signed out from here. Run it in a terminal and type /logout.",
+        )
     try:
         code, out, err = client.runner(argv, "", 60.0)
     except Exception as exc:

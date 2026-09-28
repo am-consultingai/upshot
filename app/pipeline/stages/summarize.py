@@ -40,6 +40,8 @@ WINDOW_TOKENS_BY_PROVIDER: dict[str, int] = {
     # Estimated at 2 chars/token (no token endpoint behind a CLI), so this is ~300k
     # characters: comfortably inside the Codex models' context.
     "codex-subscription": 150_000,
+    # The same estimate; Antigravity's Gemini models take far more than this.
+    "antigravity-subscription": 150_000,
     "gemini": 150_000,
     "openai": 100_000,
 }

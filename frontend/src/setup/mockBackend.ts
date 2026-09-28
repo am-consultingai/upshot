@@ -73,16 +73,25 @@ export const OUTCOME_CHOICES: { [K in keyof Outcomes]: Outcomes[K][] } = {
 const ACCOUNT = "dana.levi@example.com";
 const STEP_KEY = "upshot.setupMock.step";
 
+const INSTALL: Record<CliId, string> = {
+  claude: "irm https://claude.ai/install.ps1 | iex",
+  codex: "irm https://chatgpt.com/codex/install.ps1 | iex",
+  antigravity: "irm https://antigravity.google/cli/install.ps1 | iex",
+};
+
+const SIGNIN_URL: Record<CliId, string> = {
+  claude: "https://claude.ai/oauth/authorize?code=true&client_id=…",
+  codex: "https://auth.openai.com/oauth/authorize?client_id=…",
+  antigravity: "https://accounts.google.com/o/oauth2/auth?client_id=…",
+};
+
 function cli(id: CliId, over: Partial<CliSnapshot> = {}): CliSnapshot {
   return {
     installed: false,
     signedIn: null,
     phase: "idle",
-    installCommand:
-      id === "claude"
-        ? "irm https://claude.ai/install.ps1 | iex"
-        : "irm https://chatgpt.com/codex/install.ps1 | iex",
-    signinNeedsCode: id === "claude",
+    installCommand: INSTALL[id],
+    signinNeedsCode: id !== "codex",
     ...over,
   };
 }
@@ -93,7 +102,7 @@ const ready = (plan: "paid" | "free" = "paid") =>
 export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
   const base: SetupSnapshot = {
     calendar: { available: true, phase: "idle" },
-    cli: { claude: cli("claude"), codex: cli("codex") },
+    cli: { claude: cli("claude"), codex: cli("codex"), antigravity: cli("antigravity") },
     cliKnown: true,
     key: { provider: "gemini", phase: "idle" },
     speakers: { phase: "idle", level: 0 },
@@ -105,13 +114,14 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
     case "claude-ready":
       return { ...base, cli: { ...base.cli, claude: cli("claude", ready()) } };
     case "both-ready":
-      return { ...base, cli: { claude: cli("claude", ready()), codex: cli("codex", ready()) } };
+      return { ...base, cli: { ...base.cli, claude: cli("claude", ready()), codex: cli("codex", ready()) } };
     case "installed-signed-out":
       return {
         ...base,
         cli: {
           claude: cli("claude", { installed: true, signedIn: false }),
           codex: cli("codex", { installed: true, signedIn: false }),
+          antigravity: cli("antigravity", { installed: true, signedIn: false }),
         },
       };
     case "old-cli":
@@ -170,6 +180,7 @@ export class MockSetupBackend implements SetupBackend {
       cli: {
         claude: { ...kept.cli.claude, phase: "idle", signinUrl: undefined },
         codex: { ...kept.cli.codex, phase: "idle", signinUrl: undefined },
+        antigravity: { ...kept.cli.antigravity, phase: "idle", signinUrl: undefined },
       },
     });
   }
@@ -203,12 +214,10 @@ export class MockSetupBackend implements SetupBackend {
     this.setCli(id, {
       ...(afterInstall ? { installed: true, signedIn: false } : {}),
       phase: "signing-in",
-      signinUrl:
-        id === "claude"
-          ? "https://claude.ai/oauth/authorize?code=true&client_id=…"
-          : "https://auth.openai.com/oauth/authorize?client_id=…",
+      signinUrl: SIGNIN_URL[id],
     });
-    // Codex notices the browser finishing by itself; Claude waits for the pasted code.
+    // Codex notices the browser finishing by itself; Claude and Antigravity wait for the
+    // pasted code.
     if (id === "codex") this.later(6000, () => this.completeSignIn(id));
   }
 
