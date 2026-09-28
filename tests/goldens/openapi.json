@@ -2838,6 +2838,27 @@
         "summary": "Prompt Dismiss"
       }
     },
+    "/api/recording/keep": {
+      "post": {
+        "description": "\"Keep recording\" while the call looks over: the meeting goes on (D77).",
+        "operationId": "recording_keep_api_recording_keep_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Recording Keep Api Recording Keep Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recording Keep"
+      }
+    },
     "/api/recording/levels": {
       "get": {
         "description": "Both tracks' levels while a meeting records, for the live waveform.\n\nDeliberately not ``/audio/level``: that one falls back to opening a preview stream the\nmoment the recording ends, so a waveform left on screen would take the microphone.\nThis one only ever reads the recorder, and says it is done when the recording is.",
