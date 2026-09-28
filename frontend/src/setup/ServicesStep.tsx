@@ -2,7 +2,7 @@ import { useI18n, type MessageKey } from "../i18n";
 import { useSetupSnapshot } from "./backend";
 import { CLI_IDS, cliUsable, type CliId } from "./flow";
 import { VendorLogo } from "./logos";
-import { Badge, PRIMARY, QUIET, StepFrame } from "./ui";
+import { Badge, PRIMARY, QUIET, StepFrame, fill } from "./ui";
 
 const VENDORS: { id: CliId; name: MessageKey; plan: MessageKey }[] = [
   { id: "claude", name: "firstRun.services.claude.name", plan: "firstRun.services.claude.plan" },
@@ -28,10 +28,18 @@ export default function ServicesStep({
   onNext: () => void;
   onBack: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const snapshot = useSetupSnapshot();
   const any = CLI_IDS.some((id) => chosen[id]);
   const ready = (id: CliId) => snapshot.cliKnown && cliUsable(snapshot.cli[id]);
+  // The button says what comes next: installing what was chosen and is not here yet
+  // (product owner, 2026-09-28). Nothing left to install is a plain Continue.
+  const toInstall = VENDORS.filter((v) => chosen[v.id] && !(snapshot.cliKnown && snapshot.cli[v.id].installed));
+  const forward = toInstall.length
+    ? fill(t("firstRun.services.install"), {
+        names: new Intl.ListFormat(locale, { type: "conjunction" }).format(toInstall.map((v) => t(v.name))),
+      })
+    : t("firstRun.continue");
 
   return (
     <StepFrame
@@ -42,7 +50,7 @@ export default function ServicesStep({
         <>
           {any ? (
             <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
-              {t("firstRun.continue")}
+              {forward}
             </button>
           ) : (
             <button type="button" data-testid="setup-skip" className={QUIET} onClick={onNext}>
