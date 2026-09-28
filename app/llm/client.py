@@ -479,4 +479,8 @@ def make_client(
         from app.llm.codex_cli import CodexCliClient
 
         return CodexCliClient(config)
+    if provider == "antigravity-subscription":
+        from app.llm.antigravity_cli import AntigravityCliClient
+
+        return AntigravityCliClient(config)
     return AnthropicClient(config)

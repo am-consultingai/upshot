@@ -2,14 +2,30 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import { Spinner } from "../components/BusyButton";
 import { useSetupBackend, useSetupSnapshot, type CliSnapshot } from "./backend";
-import { chooseSummarizer, cliUsable, type CliId, type KeyProviderId } from "./flow";
+import { CLI_IDS, chooseSummarizer, cliUsable, type CliId } from "./flow";
 import { Badge, Note, PRIMARY, QUIET, SECONDARY, StepFrame, fill, type Tone } from "./ui";
 import { VendorLogo } from "./logos";
 import { StageTrack, VendorSignInScene } from "./visuals";
 
-const NAME: Record<CliId, MessageKey> = { claude: "firstRun.ai.claude.name", codex: "firstRun.ai.codex.name" };
-const INTRO: Record<CliId, MessageKey> = { claude: "firstRun.ai.intro.claude", codex: "firstRun.ai.intro.codex" };
-const BY: Record<CliId, MessageKey> = { claude: "firstRun.ai.claude.by", codex: "firstRun.ai.codex.by" };
+const NAME: Record<CliId, MessageKey> = {
+  claude: "firstRun.ai.claude.name",
+  codex: "firstRun.ai.codex.name",
+  antigravity: "firstRun.ai.antigravity.name",
+};
+const INTRO: Record<CliId, MessageKey> = {
+  claude: "firstRun.ai.intro.claude",
+  codex: "firstRun.ai.intro.codex",
+  antigravity: "firstRun.ai.intro.antigravity",
+};
+const BY: Record<CliId, MessageKey> = {
+  claude: "firstRun.ai.claude.by",
+  codex: "firstRun.ai.codex.by",
+  antigravity: "firstRun.ai.antigravity.by",
+};
+
+function installedNow(cli: Record<CliId, CliSnapshot>): Record<CliId, boolean> {
+  return { claude: cli.claude.installed, codex: cli.codex.installed, antigravity: cli.antigravity.installed };
+}
 const BUSY = new Set(["installing", "signing-in", "testing"]);
 
 /** The badge in a card's corner: what is on this machine, before anything is done. */
@@ -27,18 +43,16 @@ function status(cli: CliSnapshot): { tone: Tone; label: MessageKey } {
  * Each chosen subscription gets a card that works through it on its own: its helper
  * installs in the background at once, with no window; then the card says what signing
  * in involves, shows it, and waits for the user to press Sign in, which opens the
- * vendor's page in the browser once. Claude's code is pasted back here. Gemini, chosen,
- * is a key. A card left unfinished does not stop anyone moving on; it just is not used.
+ * vendor's page in the browser once. Claude's and Antigravity's codes are pasted back
+ * here. A card left unfinished does not stop anyone moving on; it just is not used, and
+ * with none finished the next step offers an API key instead.
  */
 export default function AiStep({
   ticked,
-  gemini,
   onNext,
   onBack,
 }: {
   ticked: Record<CliId, boolean>;
-  setTicked?: (next: Record<CliId, boolean>) => void;
-  gemini: boolean;
   onNext: () => void;
   onBack: () => void;
 }) {
@@ -48,19 +62,17 @@ export default function AiStep({
   // Which CLIs were already here, so their track does not show an install that never
   // happened. Fixed when the facts arrive, not when an install later changes them.
   const [installedAtStart, setInstalledAtStart] = useState<Record<CliId, boolean> | null>(() =>
-    snapshot.cliKnown ? { claude: snapshot.cli.claude.installed, codex: snapshot.cli.codex.installed } : null,
+    snapshot.cliKnown ? installedNow(snapshot.cli) : null,
   );
   useEffect(() => {
-    if (snapshot.cliKnown && !installedAtStart) {
-      setInstalledAtStart({ claude: snapshot.cli.claude.installed, codex: snapshot.cli.codex.installed });
-    }
+    if (snapshot.cliKnown && !installedAtStart) setInstalledAtStart(installedNow(snapshot.cli));
   }, [snapshot.cliKnown, snapshot.cli, installedAtStart]);
   // A chosen service that is not installed starts installing as soon as this step opens,
   // once each: a failed install waits for Try again rather than starting over by itself.
   const started = useRef(new Set<CliId>());
   useEffect(() => {
     if (!snapshot.cliKnown) return;
-    for (const id of ["claude", "codex"] as const) {
+    for (const id of CLI_IDS) {
       const cli = snapshot.cli[id];
       if (ticked[id] && !cli.installed && cli.phase === "idle" && !started.current.has(id)) {
         started.current.add(id);
@@ -69,10 +81,8 @@ export default function AiStep({
     }
   }, [snapshot.cliKnown, snapshot.cli, ticked, backend]);
 
-  const chosenCli = (["claude", "codex"] as const).filter((id) => ticked[id]);
-  const noneTicked = chosenCli.length === 0;
-  const checkedKey = snapshot.key.phase === "valid" ? snapshot.key.provider : null;
-  const chosen = chooseSummarizer(ticked, snapshot.cli, noneTicked || gemini ? checkedKey : null);
+  const chosenCli = CLI_IDS.filter((id) => ticked[id]);
+  const chosen = chooseSummarizer(ticked, snapshot.cli, null);
   const unfinished = chosenCli.filter((id) => {
     const cli = snapshot.cli[id];
     return !cliUsable(cli) && !BUSY.has(cli.phase) && !(cli.signedIn === true && cli.plan === "free");
@@ -95,15 +105,9 @@ export default function AiStep({
       }
       footer={
         <>
-          {chosen.provider !== "none" || !noneTicked ? (
-            <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
-              {t("firstRun.continue")}
-            </button>
-          ) : (
-            <button type="button" data-testid="setup-skip" className={QUIET} onClick={onNext}>
-              {t("firstRun.skip")}
-            </button>
-          )}
+          <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
+            {t("firstRun.continue")}
+          </button>
           <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
             {t("firstRun.back")}
           </button>
@@ -130,8 +134,6 @@ export default function AiStep({
           </Note>
         ))}
       </div>
-
-      {(gemini || noneTicked) && snapshot.cliKnown && <KeyOffer />}
     </StepFrame>
   );
 }
@@ -282,7 +284,7 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
           }}
         >
           <label htmlFor={`ai-code-${id}`} className="block text-sm">
-            {t("firstRun.ai.pasteCodeHere")}
+            {t(id === "antigravity" ? "firstRun.ai.pasteCodeGoogle" : "firstRun.ai.pasteCodeHere")}
           </label>
           <div className="flex gap-2">
             <input
@@ -344,147 +346,5 @@ function Busy({ children, testId }: { children: React.ReactNode; testId?: string
       <Spinner className="text-accent" />
       {children}
     </p>
-  );
-}
-
-const KEY_PROVIDERS: { id: KeyProviderId; label: MessageKey; console: string }[] = [
-  { id: "gemini", label: "assistant.provider.gemini", console: "https://aistudio.google.com/apikey" },
-  { id: "anthropic", label: "assistant.provider.anthropic", console: "https://console.anthropic.com/settings/keys" },
-  { id: "openai", label: "assistant.provider.openai", console: "https://platform.openai.com/api-keys" },
-];
-
-/** A key looks pasted, not half-typed, once it is this long. */
-const KEY_MIN = 20;
-
-/**
- * Setup 6: no subscription is not the end of summaries.
- *
- * Gemini leads because anyone with a Google account can have a key in a minute at no
- * cost, and the button goes straight to the page that makes one. The key is checked the
- * moment it is pasted — there is no Check button to find. The free tier's terms let
- * Google use what is sent, and a meeting transcript is exactly what someone may not
- * want used, so the step says so beside the button rather than in a link.
- */
-function KeyOffer() {
-  const { t } = useI18n();
-  const backend = useSetupBackend();
-  const { key } = useSetupSnapshot();
-  const [value, setValue] = useState("");
-  const provider = KEY_PROVIDERS.find((p) => p.id === key.provider) ?? KEY_PROVIDERS[0];
-  const providerName = t(provider.label);
-
-  // Typed rather than pasted: check once the typing stops.
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const change = (next: string) => {
-    setValue(next);
-    clearTimeout(timer.current);
-    if (next.trim().length >= KEY_MIN) timer.current = setTimeout(() => backend.checkKey(provider.id, next), 700);
-  };
-
-  return (
-    <section data-testid="key-offer" className="mt-6 rounded-xl bg-raised px-5 py-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-medium">{t("firstRun.key.title")}</h2>
-          <p className="text-xs text-tertiary">{t("firstRun.key.lead")}</p>
-        </div>
-        <a
-          data-testid="key-get-gemini"
-          href={KEY_PROVIDERS[0].console}
-          target="_blank"
-          rel="noreferrer"
-          className={PRIMARY}
-          onClick={() => backend.chooseKeyProvider("gemini")}
-        >
-          {t("firstRun.key.getGemini")}
-        </a>
-      </div>
-
-      <form
-        className="mt-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          backend.checkKey(provider.id, value);
-        }}
-      >
-        <label htmlFor="setup-key" className="mb-1 block text-xs text-tertiary">
-          {fill(t("firstRun.key.paste"), { provider: providerName })}
-        </label>
-        <div className="relative">
-          <input
-            id="setup-key"
-            data-testid="key-input"
-            type="password"
-            dir="ltr"
-            value={value}
-            placeholder={t("firstRun.key.placeholder")}
-            onChange={(event) => change(event.target.value)}
-            onPaste={(event) => {
-              const pasted = event.clipboardData.getData("text").trim();
-              if (!pasted) return;
-              event.preventDefault();
-              clearTimeout(timer.current);
-              setValue(pasted);
-              backend.checkKey(provider.id, pasted);
-            }}
-            autoComplete="off"
-            spellCheck={false}
-            className={`h-10 w-full rounded-md bg-surface-2 px-3 font-mono text-sm text-primary ring-inset ${
-              key.phase === "valid" ? "ring-2 ring-success" : key.phase === "invalid" ? "ring-2 ring-danger" : ""
-            }`}
-          />
-          {key.phase === "checking" && (
-            <span className="absolute end-3 top-1/2 -translate-y-1/2">
-              <Spinner className="text-accent" />
-            </span>
-          )}
-        </div>
-      </form>
-
-      <div className="mt-2 space-y-1">
-        {key.phase === "checking" && <Note tone="neutral">{t("firstRun.key.checking")}</Note>}
-        {key.phase === "valid" && (
-          <Note tone="good" testId="key-valid">{fill(t("firstRun.key.valid"), { provider: providerName })}</Note>
-        )}
-        {key.phase === "invalid" && <Note tone="bad" testId="key-invalid">{t("firstRun.key.invalid")}</Note>}
-        <p className="text-xs text-tertiary">{t("firstRun.key.stored")}</p>
-      </div>
-
-      {provider.id === "gemini" && (
-        <p data-testid="key-free-tier" className="mt-3 rounded-md bg-warning-quiet px-3 py-2 text-xs">
-          {t("firstRun.key.freeTier")}{" "}
-          <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer" className="underline">
-            {t("firstRun.key.terms")}
-          </a>
-        </p>
-      )}
-
-      <details className="mt-4" open={provider.id !== "gemini"}>
-        <summary className="cursor-pointer text-xs font-medium text-secondary">{t("firstRun.key.other")}</summary>
-        <div className="mt-2 flex flex-wrap items-center gap-2" role="radiogroup">
-          {KEY_PROVIDERS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={p.id === provider.id}
-              data-testid={`key-provider-${p.id}`}
-              onClick={() => backend.chooseKeyProvider(p.id)}
-              className={`rounded-md px-3 py-1.5 text-xs ${
-                p.id === provider.id ? "bg-accent-quiet font-medium text-primary" : "bg-surface-2 text-secondary hover:bg-a-200"
-              }`}
-            >
-              {t(p.label)}
-            </button>
-          ))}
-          {provider.id !== "gemini" && (
-            <a href={provider.console} target="_blank" rel="noreferrer" className="text-xs text-accent underline">
-              {t("firstRun.key.console")}
-            </a>
-          )}
-        </div>
-      </details>
-    </section>
   );
 }

@@ -23,6 +23,11 @@ const CLI_COPY: Record<string, { missing: MessageKey; signIn: MessageKey; plan: 
     signIn: "settings.codexSignInHint",
     plan: "settings.codexPlanNote",
   },
+  "antigravity-subscription": {
+    missing: "settings.antigravityMissing",
+    signIn: "settings.antigravitySignInHint",
+    plan: "settings.antigravityPlanNote",
+  },
 };
 
 /** Which secret name each provider reads. `undefined` means it needs no key. */
@@ -357,8 +362,14 @@ export default function ProviderSettings() {
                         {t("settings.install")}
                       </BusyButton>
                     )}
-                    {/* One button that flips: Sign out once signed in, Sign in otherwise. */}
-                    {provider.signed_in === true && (
+                    {/* One button that flips: Sign out once signed in, Sign in otherwise.
+                        A CLI that cannot be signed out from here says how instead (D78). */}
+                    {provider.signed_in === true && provider.can_sign_out === false && (
+                      <span data-testid="provider-signout-hint" className="text-xs text-tertiary">
+                        {t("settings.signOutInCli")}
+                      </span>
+                    )}
+                    {provider.signed_in === true && provider.can_sign_out !== false && (
                       <BusyButton
                         data-testid="provider-signout"
                         busy={signout.isPending && signout.variables === provider.id}

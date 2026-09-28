@@ -32,15 +32,27 @@ test.afterEach(async ({ page, request }) => {
   await reset(request);
 });
 
-/** From the welcome to the AI step: calendar skipped, Gemini chosen as the service (D75). */
-async function toAiStep(page: Page): Promise<void> {
+/** From the welcome to the services step, the calendar skipped. */
+async function toServices(page: Page): Promise<void> {
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-calendar")).toBeVisible();
   await page.getByTestId("setup-skip").click();
   await expect(page.getByTestId("setup-step-services")).toBeVisible();
-  await page.getByTestId("service-gemini").click();
+}
+
+/** On to the AI step with a Google AI plan chosen (D75, D78). */
+async function toAiStep(page: Page): Promise<void> {
+  await toServices(page);
+  await page.getByTestId("service-antigravity").click();
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
+}
+
+/** Nothing chosen: the connect step is passed over and the key step comes next. */
+async function toKeyStep(page: Page): Promise<void> {
+  await toServices(page);
+  await page.getByTestId("setup-skip").click();
+  await expect(page.getByTestId("setup-step-key")).toBeVisible();
 }
 
 test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library", async ({ page }) => {
@@ -52,9 +64,9 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   // No CPU/GPU question any more: the device is chosen for the user.
   await expect(page.getByTestId("device-plan")).toHaveCount(0);
 
-  await toAiStep(page);
-  // The paid-plan notice comes first, and with nothing ticked a key is offered.
-  await expect(page.getByTestId("ai-notice")).toBeVisible();
+  await toKeyStep(page);
+  // Nothing ticked: no connect step, and a key is offered on a step of its own.
+  await expect(page.getByTestId("setup-crumb-ai")).toHaveCount(0);
   await expect(page.getByTestId("key-offer")).toBeVisible();
   await expect(page.getByTestId("key-get-gemini")).toHaveAttribute("href", "https://aistudio.google.com/apikey");
   await page.getByTestId("setup-skip").click();
@@ -106,6 +118,46 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   await expect(page.getByText("How should Upshot record your meetings?")).toHaveCount(0);
 });
 
+test("a_google_ai_plan_gets_its_own_card_and_the_key_only_follows_if_it_is_not_signed_in", async ({ page }) => {
+  await gotoApp(page, "/welcome");
+  await toAiStep(page);
+  // The Gemini card is a Google AI plan now: Antigravity CLI, installed and signed in here.
+  await expect(page.getByTestId("ai-card-antigravity")).toBeVisible();
+  await expect(page.getByTestId("ai-notice")).toBeVisible();
+  await expect(page.getByTestId("key-offer")).toHaveCount(0);
+  // Not signed in (this server cannot install it): the key step comes next.
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-key")).toBeVisible();
+  await expect(page.getByTestId("key-offer")).toBeVisible();
+  await page.getByTestId("setup-back").click();
+  await expect(page.getByTestId("setup-step-ai")).toBeVisible();
+});
+
+test("a_signed_in_subscription_passes_the_key_step_over", async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.route("**/api/llm/status", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.providers = body.providers.map((p: { id: string; needs: string }) =>
+      p.id === "antigravity-subscription"
+        ? { ...p, ready: true, signed_in: true, account: "Google account" }
+        : p.needs === "cli"
+          ? { ...p, ready: false, signed_in: null, account: undefined }
+          : p,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await gotoApp(page, "/welcome");
+  await toServices(page);
+  // Already working, so already ticked.
+  await expect(page.getByTestId("service-antigravity")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("ai-ready-antigravity")).toBeVisible();
+  await expect(page.getByTestId("setup-crumb-key")).toHaveCount(0);
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-audio")).toBeVisible();
+});
+
 test("setup_moves_even_when_the_system_asks_for_reduced_motion", async ({ page }) => {
   // Windows reports "reduce" whenever its animation effects are off, which many machines
   // are by default (a VM, remote desktop, performance settings); setup looked frozen there.
@@ -150,7 +202,7 @@ test("a_slow_device_list_is_not_reported_as_no_microphone", async ({ page }) => 
     await route.continue();
   });
   await gotoApp(page, "/welcome");
-  await toAiStep(page);
+  await toKeyStep(page);
   await page.getByTestId("setup-skip").click();
   await expect(page.getByTestId("setup-step-audio")).toBeVisible();
   await expect(page.getByTestId("setup-step-audio")).not.toContainText("No microphone found");
@@ -217,8 +269,9 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
   });
   const first = await where();
   await page.getByTestId("setup-next").click();
-  // "None of these" on the services step passes the connect step over (D75).
-  for (const step of ["calendar", "services", "audio", "capture"]) {
+  // "None of these" on the services step passes the connect step over (D75) and offers
+  // the key on a step of its own.
+  for (const step of ["calendar", "services", "key", "audio", "capture"]) {
     await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
     const now = await where();
     expect(now.track.y).toBe(first.track.y);

@@ -33,6 +33,7 @@ describe("catalogue parity", () => {
     "assistant.provider.gemini",
     "firstRun.ai.claude.name",
     "firstRun.ai.codex.name",
+    "firstRun.ai.antigravity.name",
     "firstRun.services.claude.name",
     "firstRun.services.codex.name",
     "firstRun.services.gemini.name",

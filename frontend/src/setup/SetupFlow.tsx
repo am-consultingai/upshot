@@ -2,15 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
+import KeyStep from "./KeyStep";
 import ServicesStep from "./ServicesStep";
 import { AudioStep, CaptureStep, DoneStep, WelcomeStep } from "./Steps";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import {
   DEFAULT_CAPTURE,
+  NO_CLIS,
   chooseSummarizer,
   initialTicks,
   resumeAt,
   stepsFor,
+  withoutUnneeded,
   type CaptureMode,
   type CliId,
   type StepId,
@@ -21,16 +24,19 @@ const LABEL: Record<StepId, MessageKey> = {
   calendar: "firstRun.step.calendar",
   services: "firstRun.step.services",
   ai: "firstRun.step.ai",
+  key: "firstRun.step.key",
   audio: "firstRun.step.audio",
   capture: "firstRun.step.capture",
   done: "firstRun.step.done",
 };
 
 /**
- * First-run setup: Welcome → Google Calendar → AI services → Connect AI → Sound check →
- * Recording → Done (epic z8tj1hb01k, D75).
+ * First-run setup: Welcome → Google Calendar → AI services → Connect AI → API key → Sound
+ * check → Recording → Done (epic z8tj1hb01k, D75).
  *
- * Which steps appear is decided once, when setup opens. The step reached is saved as it
+ * Which steps exist is decided once, when setup opens. Two of them follow the AI choices
+ * as they change: Connect AI appears once a service is ticked, and API key only while no
+ * ticked service is signed in (`withoutUnneeded`). The step reached is saved as it
  * changes, so an app closed half-way reopens where it was left.
  */
 export default function SetupFlow({
@@ -45,15 +51,15 @@ export default function SetupFlow({
   const backend = useSetupBackend();
   const snapshot = useSetupSnapshot();
 
-  const [steps] = useState(() => stepsFor({ calendarAvailable: snapshot.calendar.available }));
+  const [allSteps] = useState(() => stepsFor({ calendarAvailable: snapshot.calendar.available }));
   const [capture, setCapture] = useState<CaptureMode>(DEFAULT_CAPTURE);
-  const [step, setStep] = useState<StepId>(() => resumeAt(steps, startAt ?? snapshot.savedStep));
+  const [step, setStep] = useState<StepId>(() => resumeAt(allSteps, startAt ?? snapshot.savedStep));
   // Said once, on the step setup reopened on, and gone as soon as the user moves.
-  const [resumed, setResumed] = useState(() => !startAt && step !== steps[0]);
+  const [resumed, setResumed] = useState(() => !startAt && step !== allSteps[0]);
   // Pre-ticked from what already works — once that is known, and only if the user has
   // not ticked anything themselves by then.
   const [ticked, setTickedState] = useState<Record<CliId, boolean>>(() =>
-    snapshot.cliKnown ? initialTicks(snapshot.cli) : { claude: false, codex: false },
+    snapshot.cliKnown ? initialTicks(snapshot.cli) : NO_CLIS,
   );
   const [touched, setTouched] = useState(false);
   const setTicked = useCallback((next: Record<CliId, boolean>) => {
@@ -64,8 +70,6 @@ export default function SetupFlow({
     if (snapshot.cliKnown && !touched) setTickedState(initialTicks(snapshot.cli));
     // Only when the facts arrive; later changes are the user's own doing.
   }, [snapshot.cliKnown]);
-  // Gemini is a key, not a subscription: chosen on the services step, set up on the next.
-  const [gemini, setGemini] = useState(false);
   const [finishing, setFinishing] = useState(false);
 
   useEffect(() => backend.saveStep(step), [backend, step]);
@@ -74,18 +78,20 @@ export default function SetupFlow({
     if (step !== opened) setResumed(false);
   }, [step, opened]);
 
-  const index = steps.indexOf(step);
-  const next = useCallback(() => setStep((s) => steps[Math.min(steps.indexOf(s) + 1, steps.length - 1)]), [steps]);
-  const back = useCallback(() => setStep((s) => steps[Math.max(steps.indexOf(s) - 1, 0)]), [steps]);
-  // No service chosen: nothing to connect, so the connect step is passed over both ways.
-  const pastAi = useCallback(() => setStep(steps[Math.min(steps.indexOf("ai") + 1, steps.length - 1)]), [steps]);
-  const noService = !ticked.claude && !ticked.codex && !gemini;
+  // The steps as they stand now: whether Connect AI and API key are needed changes with
+  // what is ticked and signed in. The step on screen stays in the walk even while it drops
+  // out (a sign-in finishing under it), so Back and Continue still know where they are.
+  const steps = withoutUnneeded(allSteps, ticked, snapshot.cli);
+  const walk = allSteps.filter((s) => s === step || steps.includes(s));
+  const index = walk.indexOf(step);
+  const next = () => setStep(walk[Math.min(index + 1, walk.length - 1)]);
+  const back = () => setStep(walk[Math.max(index - 1, 0)]);
 
-  const noneTicked = !ticked.claude && !ticked.codex;
+  // A key counts only where the key step is offered: a subscription that works wins.
   const summarizer = chooseSummarizer(
     ticked,
     snapshot.cli,
-    noneTicked && snapshot.key.phase === "valid" ? snapshot.key.provider : null,
+    snapshot.key.phase === "valid" ? snapshot.key.provider : null,
   );
 
   const finish = async () => {
@@ -111,7 +117,7 @@ export default function SetupFlow({
       <header className="flex shrink-0 flex-col items-center gap-3 px-6 pt-8 pb-2">
       <nav aria-label={t("firstRun.progress")}>
         <ol className="flex flex-wrap items-center justify-center gap-x-1 gap-y-2 text-xs">
-          {steps.map((id, i) => {
+          {walk.map((id, i) => {
             const state = i < index ? "done" : i === index ? "current" : "todo";
             return (
               <li key={id} className="flex items-center gap-1">
@@ -176,20 +182,11 @@ export default function SetupFlow({
       {step === "welcome" && <WelcomeStep onNext={next} />}
       {step === "calendar" && <CalendarStep onNext={next} onBack={back} />}
       {step === "services" && (
-        <ServicesStep
-          chosen={{ ...ticked, gemini }}
-          onChange={(next) => {
-            setTicked({ claude: next.claude, codex: next.codex });
-            setGemini(next.gemini);
-          }}
-          onNext={() => (noService ? pastAi() : next())}
-          onBack={back}
-        />
+        <ServicesStep chosen={ticked} onChange={setTicked} onNext={next} onBack={back} />
       )}
-      {step === "ai" && <AiStep ticked={ticked} setTicked={setTicked} gemini={gemini} onNext={next} onBack={back} />}
-      {step === "audio" && (
-        <AudioStep onNext={next} onBack={() => (noService ? setStep("services") : back())} />
-      )}
+      {step === "ai" && <AiStep ticked={ticked} onNext={next} onBack={back} />}
+      {step === "key" && <KeyStep onNext={next} onBack={back} />}
+      {step === "audio" && <AudioStep onNext={next} onBack={back} />}
       {step === "capture" && <CaptureStep mode={capture} onChange={setCapture} onNext={next} onBack={back} />}
       {step === "done" && (
         <DoneStep

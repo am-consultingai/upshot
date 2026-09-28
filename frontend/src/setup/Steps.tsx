@@ -211,6 +211,7 @@ const CAPTURE_LABEL: Record<CaptureMode, MessageKey> = {
 const SUMMARY_LABEL: Record<Summarizer["provider"], MessageKey> = {
   "claude-subscription": "firstRun.done.sum.claude-subscription",
   "codex-subscription": "firstRun.done.sum.codex-subscription",
+  "antigravity-subscription": "firstRun.done.sum.antigravity-subscription",
   gemini: "firstRun.done.sum.gemini",
   anthropic: "firstRun.done.sum.anthropic",
   openai: "firstRun.done.sum.openai",

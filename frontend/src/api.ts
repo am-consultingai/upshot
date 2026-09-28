@@ -272,6 +272,8 @@ export interface LlmProvider {
   install_method?: string;
   install_docs?: string;
   update_hint?: string;
+  /** False for a CLI that cannot be signed out from outside it (Antigravity, D78). */
+  can_sign_out?: boolean;
   /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */
   console_open?: boolean;
   /** A windowless sign-in's link, while it waits for the browser. */

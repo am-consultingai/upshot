@@ -39,8 +39,9 @@ function cliFacts(row: LlmProvider | undefined, id: CliId): Omit<CliSnapshot, "p
     account: row?.account,
     installCommand: row?.install_command ?? "",
     signinUrl: row?.signin_url || undefined,
-    // Claude Code's login ends on a code, pasted in the page (D75); Codex's does not.
-    signinNeedsCode: id === "claude",
+    // Claude Code's and Antigravity's logins end on a code, pasted in the page (D75, D78);
+    // Codex's does not.
+    signinNeedsCode: id !== "codex",
     codeInWindow: false,
   };
 }
@@ -77,6 +78,7 @@ export class ApiSetupBackend implements SetupBackend {
       cli: {
         claude: { ...cliFacts(undefined, "claude"), phase: "idle" },
         codex: { ...cliFacts(undefined, "codex"), phase: "idle" },
+        antigravity: { ...cliFacts(undefined, "antigravity"), phase: "idle" },
       },
       cliKnown: false,
       key: { provider: "gemini", phase: "idle" },
@@ -94,13 +96,14 @@ export class ApiSetupBackend implements SetupBackend {
         .llmStatus()
         .then((status) => {
           const rows = status.providers;
+          const learned = (id: CliId): CliSnapshot => ({
+            ...this.state.cli[id],
+            ...cliFacts(rows.find((r) => r.id === CLI_PROVIDER[id]), id),
+          });
           this.set({
             ...this.state,
             cliKnown: true,
-            cli: {
-              claude: { ...this.state.cli.claude, ...cliFacts(rows.find((r) => r.id === CLI_PROVIDER.claude), "claude") },
-              codex: { ...this.state.cli.codex, ...cliFacts(rows.find((r) => r.id === CLI_PROVIDER.codex), "codex") },
-            },
+            cli: { claude: learned("claude"), codex: learned("codex"), antigravity: learned("antigravity") },
           });
         })
         .catch(() => (left > 0 ? setTimeout(() => attempt(left - 1), POLL_MS) : this.set({ ...this.state, cliKnown: true })));
@@ -196,7 +199,7 @@ export class ApiSetupBackend implements SetupBackend {
       .catch(() => this.setCli(id, { phase: "signin-failed" }));
   }
 
-  /** Claude's code, pasted in the page, goes to its windowless sign-in (D75). */
+  /** Claude's or Antigravity's code, pasted in the page, goes to its windowless sign-in (D75). */
   submitCode(id: CliId, code: string): void {
     void api.llmSigninCode(CLI_PROVIDER[id], code).catch(() => this.setCli(id, { phase: "signin-failed" }));
   }
