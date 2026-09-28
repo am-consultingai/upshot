@@ -103,6 +103,14 @@ class Prompts:
 
     def tick(self, now: datetime, *, recording: bool, holders: Iterable[str]) -> None:
         """Withdraw an offer that no longer holds. Called every second by the detector."""
+        holding = set(holders)
+        # "Not a meeting" on a call with no calendar meeting is about that call: once its
+        # app lets go of the microphone, the next call from the same app is a new one.
+        self.dismissed = {
+            key
+            for key in self.dismissed
+            if not key.startswith("process:") or key.removeprefix("process:") in holding
+        }
         current = self.current
         if current is None:
             return
@@ -111,9 +119,7 @@ class Prompts:
         elif current.until is not None and now >= current.until:
             self.withdraw("the meeting's time is up")
         elif (
-            current.kind == "detected"
-            and current.watch_process
-            and current.process not in set(holders)
+            current.kind == "detected" and current.watch_process and current.process not in holding
         ):
             self.withdraw("the app let go of the microphone")
 

@@ -62,3 +62,17 @@ def test_not_a_meeting_is_said_once_per_meeting() -> None:
     assert prompts.snapshot() is None
     assert prompts.offer(meeting(), recording=False) is False, "not offered again"
     assert prompts.offer(meeting(event_id="e2"), recording=False), "another meeting is"
+
+
+def test_not_a_meeting_on_a_call_lasts_until_its_app_lets_go() -> None:
+    """Keyed to the app, a dismissal used to mute that app's calls until a restart."""
+    prompts = Prompts()
+    call = meeting(
+        kind="detected", until=None, calendar_id=None, event_id=None, process="chrome.exe"
+    )
+    prompts.offer(call, recording=False)
+    prompts.dismiss()
+    prompts.tick(NOW, recording=False, holders=["chrome.exe"])
+    assert prompts.offer(call, recording=False) is False, "the same call, still dismissed"
+    prompts.tick(NOW, recording=False, holders=[])
+    assert prompts.offer(call, recording=False), "a new call from the same app is offered"
