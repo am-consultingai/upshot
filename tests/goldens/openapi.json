@@ -277,6 +277,11 @@
             ],
             "title": "Event Id"
           },
+          "joined": {
+            "default": false,
+            "title": "Joined",
+            "type": "boolean"
+          },
           "meeting_id": {
             "anyOf": [
               {
