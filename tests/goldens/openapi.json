@@ -490,6 +490,65 @@
         "title": "TagsPut",
         "type": "object"
       },
+      "TestCalendar": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TestEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "title": "TestCalendar",
+        "type": "object"
+      },
+      "TestEvent": {
+        "properties": {
+          "attendees": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Attendees",
+            "type": "array"
+          },
+          "conference_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conference Url"
+          },
+          "end": {
+            "title": "End",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "start",
+          "end"
+        ],
+        "title": "TestEvent",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1453,6 +1512,47 @@
           }
         },
         "summary": "Launcher Action"
+      }
+    },
+    "/api/launcher/test/calendar": {
+      "post": {
+        "description": "Test hook (D76): set the calendar meetings of the \"upshot-test\" calendar.\n\nFor machine B's scenario runs only: off unless ``testing.hooks`` is true in that\nmachine's own settings, and then only for the launcher key. The events go into the\ncache the way a sync leaves them, so reminders, matching and the scheduled end all see\nreal calendar meetings. An empty list clears them.",
+        "operationId": "launcher_test_calendar_api_launcher_test_calendar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestCalendar"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Launcher Test Calendar Api Launcher Test Calendar Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Launcher Test Calendar"
       }
     },
     "/api/llm/install": {
@@ -2715,6 +2815,27 @@
           }
         },
         "summary": "Model Download"
+      }
+    },
+    "/api/prompt/dismiss": {
+      "post": {
+        "description": "\"Not a meeting\" on the banner: the offer goes, and is not made again (D76).",
+        "operationId": "prompt_dismiss_api_prompt_dismiss_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Prompt Dismiss Api Prompt Dismiss Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Prompt Dismiss"
       }
     },
     "/api/recording/levels": {

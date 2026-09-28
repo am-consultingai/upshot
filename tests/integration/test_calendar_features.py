@@ -647,7 +647,10 @@ def test_an_event_alone_never_starts_a_recording_but_does_nudge(
     upcoming = [p for s, p in published if s == "upcoming"]
     assert len(upcoming) == 1, "said once, not once a second"
     assert upcoming[0]["event"] == "Design review"
-    assert any("Design review is starting" in t.title for t in h.notifier.shown)
+    titles = [t.title for t in h.notifier.shown]
+    # A reminder before it, and the offer at its start time (D76), each once.
+    assert sum("Design review starts in" in t for t in titles) == 1
+    assert sum("Design review has started" in t for t in titles) == 1
 
 
 def test_a_declined_event_contributes_nothing(world: World, tmp_path: Path) -> None:

@@ -41,8 +41,8 @@ class DetectorState(StrEnum):
     GRACE = "grace"  # mic released, waiting to see if it comes back
 
 
-#: A calendar meeting counts as *starting* for this long after its start time.
-STARTING_WINDOW_S = 300.0
+#: How long before a calendar meeting its reminder comes (D76).
+REMINDER_S = 300.0
 
 
 def _exe_key(path: str) -> str:
@@ -96,6 +96,7 @@ class Detector:
         notifier: Any = None,
         events: Any = None,
         calendar: Any = None,
+        prompts: Any = None,
     ) -> None:
         self.config = config
         self.dao = dao
@@ -107,8 +108,16 @@ class Detector:
         self.events = events
         #: ``app.gcal.source.CalendarNow``, or None. Read from the local cache only.
         self.calendar = calendar
-        #: Events already announced as starting, so each is said once.
+        #: ``app.prompts.Prompts``: the offer to record the banner and the toasts share.
+        self.prompts = prompts
+        #: Calendar meetings already reminded of, and already announced as started: each
+        #: is said once (D76).
+        self.reminded: set[tuple[str, str]] = set()
         self.announced: set[tuple[str, str]] = set()
+        #: The running recording's calendar meeting end, and whether its overrun was said.
+        self.event_end: datetime | None = None
+        self.event_title: str = ""
+        self.overrun_said = False
         #: Holders that are Upshot itself, never a meeting (see ``own_executables``).
         self.own = own_executables()
         self.state = DetectorState.IDLE
@@ -202,26 +211,69 @@ class Detector:
             log.exception("calendar lookup failed")
             return None
 
-    def announce_starting(self) -> None:
-        """A calendar meeting is starting and nothing is recording: say so, once.
+    def remind(self) -> None:
+        """Calendar meetings, by the clock alone (D76): a reminder five minutes before, and
+        at the start time an offer to record, with a toast.
 
-        This is a nudge and nothing more. It never arms or commits: a blocked-out hour is
-        not a call, and only a microphone can start a recording.
+        A meeting first seen after it started (the sync ran late, or the app was just
+        started) is still announced while it is on. Nothing here arms or commits: a
+        blocked-out hour is not a call, and only a microphone or the user starts one.
         """
-        event = self.calendar_event()
-        if event is None or event.key in self.announced:
+        if self.calendar is None:
             return
-        self.announced.add(event.key)
-        if (self.clock.now() - event.start).total_seconds() > STARTING_WINDOW_S:
-            return  # already well under way when first seen: not "starting"
-        title = event.title or ""
-        log.info("calendar: %s is starting and nothing is recording", title or "a meeting")
-        self._publish("upcoming", event=title, starts_at=event.start.isoformat())
-        if self.notifier is not None:
+        now = self.clock.now()
+        try:
+            events = self.calendar.soon(now, ahead_s=REMINDER_S + 60)
+        except Exception:  # the calendar is advisory; detection never fails on it
+            log.exception("calendar lookup failed")
+            return
+        recording = self.recorder.committed
+        for event in events:
+            to_start = (event.start - now).total_seconds()
+            title = event.title or ""
             calendar_id, event_id = event.key
-            self.notifier.meeting_starting(
-                ":".join(event.key), title, calendar_id=calendar_id, event_id=event_id
-            )
+            if 0 < to_start <= REMINDER_S and event.key not in self.reminded:
+                self.reminded.add(event.key)
+                log.info("calendar: %s starts in %d s", title or "a meeting", int(to_start))
+                if self.notifier is not None:
+                    self.notifier.meeting_soon(
+                        ":".join(event.key),
+                        title,
+                        minutes=max(1, round(to_start / 60)),
+                        conference_url=event.conference_url,
+                    )
+            if to_start <= 0 and now < event.end and event.key not in self.announced:
+                self.announced.add(event.key)
+                self.reminded.add(event.key)
+                if recording:
+                    continue  # already recording: most likely this very meeting
+                log.info("calendar: %s has started and nothing is recording", title or "a meeting")
+                offered = True
+                if self.prompts is not None:
+                    from app.prompts import Prompt
+
+                    offered = self.prompts.offer(
+                        Prompt(
+                            kind="calendar",
+                            title=title,
+                            at=now,
+                            calendar_id=calendar_id,
+                            event_id=event_id,
+                            conference_url=event.conference_url,
+                            until=event.end,
+                        ),
+                        recording=recording,
+                    )
+                self._publish("upcoming", event=title, starts_at=event.start.isoformat())
+                if offered and self.notifier is not None:
+                    self.notifier.meeting_starting(
+                        ":".join(event.key),
+                        title,
+                        calendar_id=calendar_id,
+                        event_id=event_id,
+                        minutes_ago=max(0, int(-to_start // 60)),
+                        conference_url=event.conference_url,
+                    )
 
     def score(self, evidence: list[Evidence]) -> int:
         return ev.score(evidence, self.config.detection_weights)
@@ -240,16 +292,6 @@ class Detector:
         """One second of the detector's life."""
         if self.mode == "off":
             return self.state
-        if self.recorder.committed and self.state in (DetectorState.IDLE, DetectorState.AWAKE):
-            # A recording this detector did not start: the user pressed Start, most
-            # likely on the very call that woke it. Waking arms the recorder and every
-            # way out of a wake discards it, so detecting through someone else's
-            # recording would close the streams that recording is using.
-            if self.state is DetectorState.AWAKE:
-                log.info("dropping the wake: a recording is already running")
-                self.wake = None
-                self.state = DetectorState.IDLE
-            return self.state
         holders = [
             holder
             for holder in self.sources.mic.current_holders()
@@ -257,8 +299,29 @@ class Detector:
         ]
         names = {holder.process for holder in holders}
         self._note_acquisitions(holders)
+        self.remind()
+        if self.prompts is not None:
+            self.prompts.tick(self.clock.now(), recording=self.recorder.committed, holders=names)
+        if self.recorder.committed and self.state in (DetectorState.IDLE, DetectorState.AWAKE):
+            # A recording this detector did not start: the user pressed Start, most likely
+            # on the very call that woke it. A wake is dropped (every way out of a wake
+            # discards the recorder, which would close the streams that recording uses),
+            # and the recording is adopted, so the same end signals end it (D76): before,
+            # one started by hand never stopped by itself.
+            if self.state is DetectorState.AWAKE:
+                log.info("dropping the wake: a recording is already running")
+                self.wake = None
+            self._adopt(holders)
+            return self.state
+        if (
+            self.state in (DetectorState.RECORDING, DetectorState.GRACE)
+            and not self.recorder.committed
+        ):
+            # Stopped from elsewhere: the page, the tray or a notification's Stop.
+            log.info("the recording was stopped elsewhere")
+            self._forget_recording()
+            return self.state
         if self.state is DetectorState.IDLE:
-            self.announce_starting()
             self._tick_idle(self.candidate(holders))
         elif self.state is DetectorState.AWAKE:
             # Only the process that woke us counts now. Taking any holder would mean a
@@ -270,6 +333,56 @@ class Detector:
             owner = self.recording_process
             self._tick_recording(owner if owner and owner in names else "")
         return self.state
+
+    def _adopt(self, holders: list[MicHolder]) -> None:
+        """Take on a recording started by the user, to end it like one of our own.
+
+        The app it belongs to is the known meeting app holding the microphone now, if one
+        is: when that app lets go, the call is over. With none (an in-person meeting, or a
+        call app not on the list) only silence, the calendar and the cap can end it.
+        """
+        known = list(self.config.get("detection.known_apps", []))
+        ignore = list(self.config.get("detection.ignore", []))
+        apps = [
+            holder.process
+            for holder in holders
+            if ev.matches_process(holder.process, known)
+            and not ev.matches_process(holder.process, ignore)
+        ]
+        self.meeting_id = self.recorder.meeting_id
+        self.recording_process = apps[0] if apps else None
+        # Whoever holds the microphone now is part of this recording's call, not news:
+        # stopping it while still on the call must not wake on that same call again.
+        self.fresh -= {holder.process for holder in holders}
+        self.state = DetectorState.RECORDING
+        self.started_mono = self.clock.monotonic()
+        self.released_at = None
+        self.silent_since = None
+        self._note_event()
+        log.info(
+            "adopted recording %s (%s)",
+            self.meeting_id,
+            f"ends when {self.recording_process} lets go of the microphone"
+            if self.recording_process
+            else "no call app holds the microphone",
+        )
+
+    def _note_event(self) -> None:
+        """The calendar meeting a recording belongs to, for its scheduled end."""
+        event = self.calendar_event()
+        self.event_end = event.end if event is not None else None
+        self.event_title = (event.title or "") if event is not None else ""
+        self.overrun_said = False
+
+    def _forget_recording(self) -> None:
+        self.meeting_id = None
+        self.recording_process = None
+        self.state = DetectorState.IDLE
+        self.released_at = None
+        self.silent_since = None
+        self.started_mono = None
+        self.event_end = None
+        self.overrun_said = False
 
     def _note_acquisitions(self, holders: list[MicHolder]) -> None:
         """Track who *began* holding the microphone since the previous look.
@@ -392,9 +505,29 @@ class Detector:
                 score=wake.peak_score,
                 event=event.title if event else None,
             )
-            # Detect and notify (D64): the nudge above reaches an open window; this
-            # reaches everyone else.
-            if self.notifier is not None:
+            # Detect and notify (D64): the offer reaches an open window as the banner, and
+            # everyone else as the toast. Both come from one offer (D76), so neither shows
+            # for a meeting already being recorded or already turned down.
+            offered = True
+            if self.prompts is not None:
+                from app.prompts import Prompt
+
+                offered = self.prompts.offer(
+                    Prompt(
+                        kind="detected",
+                        title=(event.title if event else wake.title) or "",
+                        at=self.clock.now(),
+                        calendar_id=event.calendar_id if event else None,
+                        event_id=event.event_id if event else None,
+                        conference_url=event.conference_url if event else None,
+                        until=event.end if event else None,
+                        process=wake.process,
+                    ),
+                    recording=self.recorder.committed,
+                )
+            if event is not None:
+                self.announced.add(event.key)  # the call is the announcement
+            if offered and self.notifier is not None:
                 self.notifier.call_detected(
                     wake.process,
                     event.title if event else wake.title,
@@ -411,6 +544,7 @@ class Detector:
         self.recorder.commit(meeting.path, meeting.id)
         self.meetings.committed(meeting, meeting.path)
         self.meeting_id = meeting.id
+        self._note_event()
         self.recording_process = wake.process
         self.fresh.discard(wake.process)
         self.state = DetectorState.RECORDING
@@ -449,7 +583,9 @@ class Detector:
 
     def _tick_recording(self, process: str) -> None:
         now = self.clock.monotonic()
-        if process:
+        if self.recording_process is None:
+            pass  # no call app to watch (adopted with none): the other signals decide
+        elif process:
             if self.state is DetectorState.GRACE:
                 log.info("microphone re-acquired inside the grace window; same meeting")
                 self.state = DetectorState.RECORDING
@@ -471,6 +607,16 @@ class Detector:
             return
         if self.started_mono is not None and now - self.started_mono >= self.max_meeting_s:
             self.end("the maximum meeting duration was reached")
+            return
+        wall = self.clock.now()
+        if self.event_end is not None and wall >= self.event_end and not self.overrun_said:
+            # The meeting's scheduled end has passed and the call is still on (had it
+            # ended, the microphone rule would have stopped it). Overruns are normal:
+            # ask, do not cut (D76).
+            self.overrun_said = True
+            log.info("recording %s runs past its scheduled end", self.meeting_id)
+            if self.notifier is not None and self.meeting_id:
+                self.notifier.still_recording(self.meeting_id, self.event_title)
 
     def end(self, why: str = "") -> str | None:
         meeting_id = self.meeting_id
@@ -480,19 +626,14 @@ class Detector:
             meeting = self.meetings.finish(meeting_id, duration_s=duration_s)
             log.info("meeting %s ended (%s), state %s", meeting_id, why, meeting.state)
             if self.notifier is not None and meeting.state == MeetingState.RECORDED:
-                self.notifier.recording_ended(meeting_id, duration_s // 60)
+                self.notifier.recording_ended(meeting_id, duration_s // 60, reason=why)
         if self.recording_process:
             # The meeting ended but the app still holds the microphone — the duration cap
             # fired, or both sides went quiet. If it looks like a meeting again it is a
             # new one (DETECTION.md §7.4), so this counts as a fresh acquisition. A
             # process that has genuinely let go is pruned on the next look anyway.
             self.fresh.add(self.recording_process)
-        self.meeting_id = None
-        self.recording_process = None
-        self.state = DetectorState.IDLE
-        self.released_at = None
-        self.silent_since = None
-        self.started_mono = None
+        self._forget_recording()
         self._publish("idle", reason=why)
         return meeting_id
 

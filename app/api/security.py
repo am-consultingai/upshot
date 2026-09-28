@@ -30,6 +30,8 @@ LAUNCHER_KEY_FILE = "launcher.key"
 #: (app/actions.py). It proves itself with the launcher key and has no cookie to
 #: double-submit, so CSRF lets exactly this path through on that key and nothing else.
 ACTION_PATH = "/api/launcher/action"
+#: Every path the launcher key opens: the action above, and the test hooks (D76).
+LAUNCHER_PREFIX = "/api/launcher/"
 
 
 @dataclass
@@ -250,7 +252,7 @@ class CsrfMiddleware:
             and not _is_mcp(str(scope.get("path", "")))
             and not self.auth.valid_csrf(_header(scope, CSRF_HEADER))
             and not (
-                scope.get("path") == ACTION_PATH
+                str(scope.get("path", "")).startswith(LAUNCHER_PREFIX)
                 and self.auth.valid_launcher(_header(scope, LAUNCHER_HEADER))
             )
         ):

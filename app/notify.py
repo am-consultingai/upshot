@@ -22,6 +22,8 @@ TOAST_TIMEOUT_S = 30.0
 
 #: A button that closes the toast and does nothing else (Windows' own Dismiss).
 DISMISS = "system.dismiss"
+#: A button that opens the meeting's link in the browser, and nothing else.
+JOIN = "join"
 
 
 @dataclass(frozen=True)
@@ -32,15 +34,23 @@ class Button:
     #: The calendar event a "Start recording" is for, so the recording starts named.
     calendar_id: str | None = None
     event_id: str | None = None
+    #: A meeting link: "Join" opens it; "Join and record" opens it and starts recording.
+    join: str | None = None
 
     def link(self) -> str | None:
-        """The ``upshot:`` link the button launches (app/actions.py); None for Dismiss."""
+        """The link the button launches (app/actions.py); None for Dismiss."""
         if self.action == DISMISS:
             return None
+        if self.action == JOIN:
+            return self.join
         from app import actions
 
         return actions.url(
-            self.action, meeting=self.meeting_id, calendar=self.calendar_id, event=self.event_id
+            self.action,
+            meeting=self.meeting_id,
+            calendar=self.calendar_id,
+            event=self.event_id,
+            join=self.join,
         )
 
 
@@ -124,10 +134,16 @@ class BaseNotifier:
             )
         )
 
-    def recording_ended(self, meeting_id: str, minutes: int) -> None:
+    def recording_ended(self, meeting_id: str, minutes: int, reason: str = "") -> None:
+        why = {
+            "the microphone was released": "You left the call, so Upshot stopped recording.",
+            "both tracks were silent": "Nobody spoke for 5 minutes, so Upshot stopped recording.",
+            "the maximum meeting duration was reached": "The recording reached its length limit.",
+        }.get(reason, "")
         self.show(
             Toast(
                 title=f"Meeting ended — {minutes} min. Transcribing…",
+                body=why,
                 buttons=(Button("Open", "meeting.open", meeting_id),),
                 key=f"ended:{meeting_id}",
                 meeting_id=meeting_id,
@@ -157,6 +173,20 @@ class BaseNotifier:
             )
         )
 
+    def meeting_soon(
+        self, key: str, title: str, *, minutes: int, conference_url: str | None = None
+    ) -> None:
+        """A calendar meeting starts in a few minutes (D76). Said once per meeting."""
+        unit = "minute" if minutes == 1 else "minutes"
+        self.show(
+            Toast(
+                title=f"{title or 'A meeting'} starts in {minutes} {unit}",
+                body="Upshot will ask to record it when it starts.",
+                buttons=(Button("Join", JOIN, join=conference_url),) if conference_url else (),
+                key=f"soon:{key}",
+            )
+        )
+
     def meeting_starting(
         self,
         key: str,
@@ -164,15 +194,48 @@ class BaseNotifier:
         *,
         calendar_id: str | None = None,
         event_id: str | None = None,
+        minutes_ago: int = 0,
+        conference_url: str | None = None,
     ) -> None:
-        """A calendar meeting is starting and nothing is recording. Said once per event."""
+        """A calendar meeting's start time has come and nothing records it. Said once."""
+        name = title or "A meeting"
+        buttons: tuple[Button, ...] = self._start_buttons(calendar_id, event_id)
+        if conference_url:
+            buttons = (
+                Button(
+                    "Join and record",
+                    "recording.start",
+                    None,
+                    calendar_id,
+                    event_id,
+                    conference_url,
+                ),
+                *buttons,
+            )
         self.show(
             Toast(
-                title=f"{title or 'A meeting'} is starting",
+                title=f"{name} started {minutes_ago} min ago"
+                if minutes_ago >= 2
+                else f"{name} has started",
                 body="Upshot isn't recording it.",
-                buttons=self._start_buttons(calendar_id, event_id),
+                buttons=buttons,
                 key=f"starting:{key}",
                 quiet_in_front=True,
+            )
+        )
+
+    def still_recording(self, meeting_id: str, title: str) -> None:
+        """A recording runs past its meeting's scheduled end (D76): ask, never cut."""
+        self.show(
+            Toast(
+                title=f"{title or 'The meeting'} was scheduled to end",
+                body="Upshot is still recording. Stop now, or it stops when you leave the call.",
+                buttons=(
+                    Button("Stop recording", "recording.stop", meeting_id),
+                    Button("Keep recording", DISMISS),
+                ),
+                key=f"overrun:{meeting_id}",
+                meeting_id=meeting_id,
             )
         )
 

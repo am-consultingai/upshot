@@ -228,6 +228,9 @@ def status(request: Request) -> dict[str, Any]:
     return {
         "profile": svc.config.profile,
         "policy": svc.worker.policy if svc.worker else svc.config.job_policy,
+        # The offer to record, shared with the toasts (app/prompts.py, D76): the page
+        # shows the banner from this, so it is never out of step with the recorder.
+        "prompt": svc.prompts.snapshot() if svc.prompts is not None else None,
         "recorder": {
             "active": bool(recorder and recorder.is_active()),
             "armed": bool(recorder and recorder.armed),
@@ -371,6 +374,8 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
     svc.recorder.start_thread()
     svc.meetings.committed(meeting, meeting.path)
     log.info("recording %s started from the interface", meeting.id)
+    if svc.prompts is not None:
+        svc.prompts.withdraw("a recording started")
     svc.events.publish("recorder", state="recording", meeting_id=meeting.id)
     if svc.notifier is not None:
         svc.notifier.recording_started(meeting.id, meeting.title or "")
@@ -384,6 +389,15 @@ def recording_stop(request: Request) -> dict[str, Any]:
     the request had even arrived."""
     svc = services_of(request)
     if svc.recorder is None or not svc.recorder.committed:
+        # The page offers Stop because a meeting is marked "recording". Nothing is: it is
+        # left from a run that ended. Stop means stop, so end that instead of refusing.
+        repaired = svc.meetings.recover_orphans()
+        if repaired:
+            log.info("stop: nothing was recording; repaired %s", ", ".join(repaired))
+            for meeting_id in repaired:
+                svc.events.publish("meeting", meeting_id=meeting_id, action="patched")
+            svc.events.publish("recorder", state="idle", meeting_id=repaired[0])
+            return {"meeting_id": repaired[0], "state": "repaired", "repaired": repaired}
         log.warning(
             "stop requested, refused: not recording (recorder %s)",
             "absent" if svc.recorder is None else f"armed={svc.recorder.armed}",
@@ -408,6 +422,70 @@ def recording_stop(request: Request) -> dict[str, Any]:
         "duration_s": duration_s,
         "chunks": len(result.records),
     }
+
+
+@router.post("/prompt/dismiss")
+def prompt_dismiss(request: Request) -> dict[str, Any]:
+    """ "Not a meeting" on the banner: the offer goes, and is not made again (D76)."""
+    svc = services_of(request)
+    if svc.prompts is not None:
+        svc.prompts.dismiss()
+    return {"prompt": None}
+
+
+class TestEvent(BaseModel):
+    id: str
+    title: str
+    start: str
+    end: str
+    conference_url: str | None = None
+    attendees: list[str] = Field(default_factory=lambda: ["Test Attendee"])
+
+
+class TestCalendar(BaseModel):
+    events: list[TestEvent] = Field(default_factory=list)
+
+
+@router.post("/launcher/test/calendar")
+def launcher_test_calendar(request: Request, body: TestCalendar) -> dict[str, Any]:
+    """Test hook (D76): set the calendar meetings of the "upshot-test" calendar.
+
+    For machine B's scenario runs only: off unless ``testing.hooks`` is true in that
+    machine's own settings, and then only for the launcher key. The events go into the
+    cache the way a sync leaves them, so reminders, matching and the scheduled end all see
+    real calendar meetings. An empty list clears them.
+    """
+    from datetime import datetime as _dt
+
+    from app.api.security import LAUNCHER_HEADER
+    from app.gcal.events import Attendee, CalendarEvent, EventStore
+
+    svc = services_of(request)
+    if not svc.auth.valid_launcher(request.headers.get(LAUNCHER_HEADER)):
+        raise HTTPException(401, "not the launcher")
+    if svc.config.get("testing.hooks") is not True:
+        raise HTTPException(404, "test hooks are off")
+    now = svc.clock.now()
+    events = [
+        CalendarEvent(
+            calendar_id="upshot-test",
+            event_id=item.id,
+            title=item.title,
+            start=_dt.fromisoformat(item.start),
+            end=_dt.fromisoformat(item.end),
+            ical_uid=f"{item.id}@upshot-test",
+            response="accepted",
+            attendees=tuple(Attendee(name=name) for name in item.attendees),
+            attendee_count=len(item.attendees),
+            conference_url=item.conference_url,
+        )
+        for item in body.events
+    ]
+    EventStore(svc.conn).replace_window(
+        "upshot-test", now - timedelta(days=1), now + timedelta(days=2), events, synced_at=now
+    )
+    log.info("test hook: %d calendar event(s) set", len(events))
+    return {"events": [e.event_id for e in events]}
 
 
 @router.post("/launcher/action")
@@ -2185,6 +2263,8 @@ def test_router() -> APIRouter:
             svc.conn.execute("DELETE FROM assistant_sessions")
             svc.extras.pop("storage_bytes", None)
             svc.conn.execute("DELETE FROM detector_events")
+            if svc.prompts is not None:
+                svc.prompts.reset()
             # And from the default appearance. These are saved settings, so a spec
             # that switches the interface to Hebrew, or to dark, used to leave the
             # next one running in it — the failure surfaced the moment the shell
@@ -2259,6 +2339,20 @@ def test_router() -> APIRouter:
                 process=event.get("process"),
                 score=int(event.get("peak_score", 7)),
             )
+            if outcome == "shadow" and svc.prompts is not None:
+                # The offer the detector makes on a verdict, which the banner shows (D76).
+                from app.prompts import Prompt
+
+                svc.prompts.offer(
+                    Prompt(
+                        kind="detected",
+                        title="",
+                        at=svc.clock.now(),
+                        process=event.get("process"),
+                        watch_process=False,
+                    ),
+                    recording=svc.recorder is not None and svc.recorder.committed,
+                )
         for item in body.get("meetings", []):
             meeting = svc.dao.insert_meeting(
                 meeting_id=item.get("id"),

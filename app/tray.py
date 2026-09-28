@@ -255,9 +255,16 @@ def run_link(link: str, home: Any = None) -> int | None:
             return None  # not running: an ordinary start opens the window
         window.open_window(url)
         return 0
-    # A button on a notification: hand the focus back to the window it was pressed over
-    # before anything else, since the press took it (D72).
-    back = window.give_focus_back()
+    # "Join and record": the meeting opens in the browser, where the user wants to be
+    # (D76). Otherwise the focus goes back to the window the button was pressed over (D72).
+    join = actions.join_url(parsed)
+    if join:
+        import webbrowser
+
+        webbrowser.open(join)
+        back = None
+    else:
+        back = window.give_focus_back()
     if back:
         log.info("toast action %s: focus back to %r", parsed.action, back)
     if port is None:

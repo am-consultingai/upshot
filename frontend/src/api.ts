@@ -220,6 +220,16 @@ export interface Settings {
   pinned: Record<string, string>;
 }
 
+/** What Upshot is offering to record right now: a calendar meeting, or a detected call. */
+export interface Prompt {
+  kind: "calendar" | "detected";
+  title: string;
+  calendar_id: string | null;
+  event_id: string | null;
+  conference_url: string | null;
+  process: string | null;
+}
+
 export interface Status {
   profile: string;
   policy: string;
@@ -231,6 +241,8 @@ export interface Status {
     levels: Record<string, number>;
   };
   detector: { mode: string; state: string; decided?: boolean };
+  /** The offer to record, shared with the toasts (app/prompts.py, D76). */
+  prompt: Prompt | null;
   queue: Record<string, number>;
   queue_depth: number;
   disk_free_bytes: number;
@@ -421,6 +433,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(event ?? {}),
     }),
+  /** "Not a meeting" on the banner: withdrawn, and not offered again for it (D76). */
+  dismissPrompt: () => request<{ prompt: null }>("/api/prompt/dismiss", { method: "POST" }),
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
   settings: () => request<Settings>("/api/settings"),

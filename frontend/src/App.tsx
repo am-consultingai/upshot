@@ -13,7 +13,7 @@ import Welcome from "./routes/Welcome";
 import { setupPending } from "./lib/speech";
 import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
-import DetectionNudge, { type Detection } from "./components/DetectionNudge";
+import DetectionNudge from "./components/DetectionNudge";
 import ConnectionBanner from "./components/ConnectionBanner";
 import CommandPalette from "./components/CommandPalette";
 import Toaster from "./components/Toaster";
@@ -166,7 +166,6 @@ export default function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [theme, setTheme] = useState<Theme>("light");
   const [tooltips, setTooltips] = useState(true);
-  const [detected, setDetected] = useState<Detection | null>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -228,19 +227,10 @@ export default function App() {
     source.addEventListener("meeting", invalidate);
     // The connection finishes in another tab — Google's — so Settings learns of it here.
     source.addEventListener("calendar", invalidate);
-    // The detector's verdicts go to the log file and to `detector_events`; what the
-    // interface still needs from them is the nudge, which is a different thing from
-    // the Detector screen removed on 2026-09-22.
-    source.addEventListener("detector", (event) => {
-      invalidate();
-      const payload = JSON.parse((event as MessageEvent).data) as Detection & {
-        state?: string;
-      };
-      // "shadow" is the verdict reached while only watching: a meeting we are not
-      // recording. In automatic mode the recording has already started and the bar says so.
-      // "upcoming" is a calendar meeting starting with nothing recording it.
-      if (payload.state === "shadow" || payload.state === "upcoming") setDetected(payload);
-    });
+    // The offer to record lives on the server (app/prompts.py, D76) and arrives with the
+    // status; these only say "look again now" so the banner comes and goes at once.
+    source.addEventListener("detector", invalidate);
+    source.addEventListener("prompt", invalidate);
     return () => {
       source.close();
       delete document.documentElement.dataset.stream;
@@ -293,7 +283,7 @@ export default function App() {
           <ConnectionBanner />
           <RecordingBar />
           {!welcoming && (
-            <DetectionNudge detection={detected} onDismiss={() => setDetected(null)} />
+            <DetectionNudge prompt={active ? null : (status.data?.prompt ?? null)} />
           )}
           {/* How meetings are recorded is asked in first-run setup (D64), not over the library. */}
           <main className="flex min-h-0 flex-1">

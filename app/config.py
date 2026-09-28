@@ -214,6 +214,10 @@ DEFAULTS: dict[str, Any] = {
         # transcript does not leave the machine. A deliberate choice, never a default.
         "fallback_provider": "",
     },
+    # Test-only hooks behind the launcher key: calendar events added straight into the
+    # cache, for machine B's scenario runs (D76, scripts/windows/scenarios). Off, and never
+    # turned on by anything but a test machine's own app_config.json.
+    "testing": {"hooks": False},
     "delivery": {
         "mode": "draft",  # draft|auto_send
         "attach_transcript": False,
