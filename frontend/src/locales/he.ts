@@ -583,6 +583,8 @@ export const he: Record<MessageKey, string> = {
   "settings.signinCopy": "העתקת הקישור",
   "settings.signinCopied": "הועתק",
   "settings.signinCancel": "ביטול",
+  "settings.signinCodePlaceholder": "הקוד מהדפדפן, אם מופיע",
+  "settings.signinSubmitCode": "סיום",
   "settings.signinLog": "הפלט של ההתחברות נרשם אל",
   "firstRun.languageEnglish": "English",
   "firstRun.languageHebrew": "עברית",
