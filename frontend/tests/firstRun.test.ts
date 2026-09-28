@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CAPTURE,
   chooseSummarizer,
+  crumbOf,
   initialTicks,
   resumeAt,
   stepsFor,
@@ -31,17 +32,14 @@ const ticks = (over: Partial<Record<"claude" | "codex" | "antigravity", boolean>
 });
 
 describe("stepsFor", () => {
-  it("asks how to record last, and never about the model or the CPU/GPU", () => {
-    expect(stepsFor({ calendarAvailable: true })).toEqual([
-      "welcome",
-      "calendar",
-      "services",
-      "ai",
-      "key",
-      "audio",
-      "capture",
-      "done",
-    ]);
+  it("ends on the sound check, and never asks about the model or the CPU/GPU", () => {
+    // How to record is on the sound check, whose Done finishes setup: no summary screen.
+    expect(stepsFor({ calendarAvailable: true })).toEqual(["welcome", "calendar", "services", "ai", "key", "audio"]);
+  });
+
+  it("shows the three AI screens as one stop on the track", () => {
+    const track = [...new Set(stepsFor({ calendarAvailable: true }).map(crumbOf))];
+    expect(track).toEqual(["welcome", "calendar", "aiSetup", "audio"]);
   });
 
   it("hides the calendar step in a build that cannot connect one", () => {

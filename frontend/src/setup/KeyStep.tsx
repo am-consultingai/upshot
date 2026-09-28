@@ -41,11 +41,9 @@ export default function KeyStep({ onNext, onBack }: { onNext: () => void; onBack
   );
 }
 
-const KEY_PROVIDERS: { id: KeyProviderId; label: MessageKey; console: string }[] = [
-  { id: "gemini", label: "assistant.provider.gemini", console: "https://aistudio.google.com/apikey" },
-  { id: "anthropic", label: "assistant.provider.anthropic", console: "https://console.anthropic.com/settings/keys" },
-  { id: "openai", label: "assistant.provider.openai", console: "https://platform.openai.com/api-keys" },
-];
+/** The one key setup offers: Gemini's, free with any Google account. Other providers'
+ *  keys are entered in Settings (product owner, 2026-09-28). */
+const GEMINI = { id: "gemini" as KeyProviderId, label: "assistant.provider.gemini" as MessageKey, console: "https://aistudio.google.com/apikey" };
 
 /** A key looks pasted, not half-typed, once it is this long. */
 const KEY_MIN = 20;
@@ -64,7 +62,7 @@ function KeyOffer() {
   const backend = useSetupBackend();
   const { key } = useSetupSnapshot();
   const [value, setValue] = useState("");
-  const provider = KEY_PROVIDERS.find((p) => p.id === key.provider) ?? KEY_PROVIDERS[0];
+  const provider = GEMINI;
   const providerName = t(provider.label);
 
   // Typed rather than pasted: check once the typing stops.
@@ -85,7 +83,7 @@ function KeyOffer() {
         </div>
         <a
           data-testid="key-get-gemini"
-          href={KEY_PROVIDERS[0].console}
+          href={GEMINI.console}
           target="_blank"
           rel="noreferrer"
           className={PRIMARY}
@@ -145,40 +143,12 @@ function KeyOffer() {
         <p className="text-xs text-tertiary">{t("firstRun.key.stored")}</p>
       </div>
 
-      {provider.id === "gemini" && (
-        <p data-testid="key-free-tier" className="mt-3 rounded-md bg-warning-quiet px-3 py-2 text-xs">
-          {t("firstRun.key.freeTier")}{" "}
-          <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer" className="underline">
-            {t("firstRun.key.terms")}
-          </a>
-        </p>
-      )}
-
-      <details className="mt-4" open={provider.id !== "gemini"}>
-        <summary className="cursor-pointer text-xs font-medium text-secondary">{t("firstRun.key.other")}</summary>
-        <div className="mt-2 flex flex-wrap items-center gap-2" role="radiogroup">
-          {KEY_PROVIDERS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              role="radio"
-              aria-checked={p.id === provider.id}
-              data-testid={`key-provider-${p.id}`}
-              onClick={() => backend.chooseKeyProvider(p.id)}
-              className={`rounded-md px-3 py-1.5 text-xs ${
-                p.id === provider.id ? "bg-accent-quiet font-medium text-primary" : "bg-surface-2 text-secondary hover:bg-a-200"
-              }`}
-            >
-              {t(p.label)}
-            </button>
-          ))}
-          {provider.id !== "gemini" && (
-            <a href={provider.console} target="_blank" rel="noreferrer" className="text-xs text-accent underline">
-              {t("firstRun.key.console")}
-            </a>
-          )}
-        </div>
-      </details>
+      <p data-testid="key-free-tier" className="mt-3 rounded-md bg-warning-quiet px-3 py-2 text-xs">
+        {t("firstRun.key.freeTier")}{" "}
+        <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer" className="underline">
+          {t("firstRun.key.terms")}
+        </a>
+      </p>
     </section>
   );
 }

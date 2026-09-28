@@ -317,7 +317,7 @@ def test_llm_test_never_changes_the_chosen_provider_while_it_probes(api, monkeyp
     assert api.services.config.get("llm.provider") == "ollama"
 
 
-def test_claudes_code_goes_to_the_waiting_signin(api) -> None:  # type: ignore[no-untyped-def]
+def test_claudes_code_goes_to_the_waiting_signin(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
     """D75: the page takes Claude's code and passes it to the windowless sign-in."""
     from app.api import routes
 
@@ -332,11 +332,24 @@ def test_claudes_code_goes_to_the_waiting_signin(api) -> None:  # type: ignore[n
             self.sent.append(text)
             return True
 
+    from app.llm.claude_cli import ClaudeCliClient, CliStatus
+
     client = api.client()
+    signed = {"in": False}
+    monkeypatch.setattr(
+        ClaudeCliClient, "status", lambda self: CliStatus(True, signed_in=signed["in"])
+    )
     none = client.post(
         "/api/llm/signin/code", json={"provider": "claude-subscription", "code": "abc#def"}
     )
     assert none.status_code == 409, "no sign-in is waiting for a code"
+    # Claude Code can finish by itself before the code is pasted (machine B, 2026-09-28):
+    # a late code is "already signed in", never a failure over a sign-in that worked.
+    signed["in"] = True
+    late = client.post(
+        "/api/llm/signin/code", json={"provider": "claude-subscription", "code": "abc#def"}
+    )
+    assert late.status_code == 200 and late.json() == {"sent": False, "signed_in": True}
     waiting = Waiting()
     routes._LOGINS["claude-subscription"] = waiting
     try:

@@ -248,6 +248,30 @@ def login_console(argv: Sequence[str]) -> list[str]:
     ]
 
 
+def logout_console(path: str) -> list[str]:
+    """Sign out, in a window running the interactive ``agy``, where ``/logout`` works.
+
+    ``/logout`` is refused in print mode, and ``agy -i /logout`` starts a session without
+    running it (machine B, 2026-09-28: still signed in afterwards). Typed into the
+    interactive session it is Google's own sign-out, and it clears the credential the app
+    never touches. So the window says what to type, and the row watches it close.
+    """
+    quoted = "'" + path.replace("'", "''") + "'"
+    script = (
+        "Write-Host 'Signing out of Antigravity.' -ForegroundColor Cyan; "
+        "Write-Host 'Type /logout and press Enter, then close this window.' "
+        "-ForegroundColor Cyan; Write-Host ''; "
+        f"& {quoted}"
+    )
+    return [
+        "powershell.exe",
+        "-NoProfile",
+        "-NoExit",
+        "-Command",
+        transcribed(script, "antigravity-signout"),
+    ]
+
+
 def update_command(path: str) -> str:
     """A copy-pasteable update line, pinned to the binary this application resolved.
 

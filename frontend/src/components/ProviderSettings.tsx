@@ -6,6 +6,7 @@ import type { MessageKey } from "../locales/en";
 import BusyButton from "./BusyButton";
 import { PinnedContext } from "./SettingRow";
 import Tooltip from "./Tooltip";
+import { VendorLogo, type VendorId } from "../setup/logos";
 
 /**
  * The words that differ between the two subscription CLIs. The flow is one flow —
@@ -28,6 +29,16 @@ const CLI_COPY: Record<string, { missing: MessageKey; signIn: MessageKey; plan: 
     signIn: "settings.antigravitySignInHint",
     plan: "settings.antigravityPlanNote",
   },
+};
+
+/** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
+const LOGO: Record<string, VendorId | undefined> = {
+  "claude-subscription": "claude",
+  anthropic: "claude",
+  "codex-subscription": "codex",
+  openai: "codex",
+  "antigravity-subscription": "antigravity",
+  gemini: "gemini",
 };
 
 /** Which secret name each provider reads. `undefined` means it needs no key. */
@@ -133,11 +144,27 @@ export default function ProviderSettings() {
     setWatching(provider);
   };
 
+  // A sign-out in a window (Antigravity): watched until the row reads signed out or the
+  // window closes, the other way round from a sign-in.
+  const [signingOut, setSigningOut] = useState<string | null>(null);
+  const signedOutSince = useRef(0);
+
   const status = useQuery({
     queryKey: ["llm-status"],
     queryFn: api.llmStatus,
-    refetchInterval: watching ? 3000 : false,
+    refetchInterval: watching || signingOut ? 3000 : false,
   });
+  useEffect(() => {
+    if (!signingOut) return undefined;
+    const row = status.data?.providers.find((provider) => provider.id === signingOut);
+    const closed = row?.console_open === false && status.dataUpdatedAt > signedOutSince.current;
+    if (row?.signed_in !== true || closed) {
+      setSigningOut(null);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setSigningOut(null), 300_000);
+    return () => window.clearTimeout(timer);
+  }, [signingOut, status.data, status.dataUpdatedAt]);
   const invalidate = () => queryClient.invalidateQueries();
 
   const select = useMutation({
@@ -167,7 +194,13 @@ export default function ProviderSettings() {
   });
   const signout = useMutation({
     mutationFn: (provider: string) => api.llmSignout(provider),
-    onSuccess: invalidate,
+    onSuccess: (result, provider) => {
+      if (result.launched) {
+        signedOutSince.current = Date.now();
+        setSigningOut(provider);
+      }
+      invalidate();
+    },
   });
   const cancelSignin = useMutation({
     mutationFn: (provider: string) => api.llmSigninCancel(provider),
@@ -306,6 +339,7 @@ export default function ProviderSettings() {
                     select.mutate(provider.id);
                   }}
                 />
+                {LOGO[provider.id] && <VendorLogo vendor={LOGO[provider.id]!} size={18} />}
                 <span className="font-medium">{provider.label}</span>
                 <span
                   data-testid="provider-ready"
@@ -372,12 +406,17 @@ export default function ProviderSettings() {
                     {provider.signed_in === true && provider.can_sign_out !== false && (
                       <BusyButton
                         data-testid="provider-signout"
-                        busy={signout.isPending && signout.variables === provider.id}
+                        busy={(signout.isPending && signout.variables === provider.id) || signingOut === provider.id}
                         onClick={() => signout.mutate(provider.id)}
                         className="rounded border border-line px-2 py-1 text-sm"
                       >
                         {t("settings.signOut")}
                       </BusyButton>
+                    )}
+                    {signingOut === provider.id && (
+                      <span data-testid="provider-signout-window" className="text-xs text-secondary">
+                        {t("settings.signOutInWindow")}
+                      </span>
                     )}
                     {provider.signed_in !== true && (
                       <BusyButton

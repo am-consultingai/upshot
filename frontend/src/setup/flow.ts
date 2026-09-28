@@ -6,7 +6,18 @@
  * the summaries. What the user confirms on the mock is what ships.
  */
 
-export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "audio" | "capture" | "done";
+export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "audio";
+
+/**
+ * What the progress track shows: the three AI screens are one stop on it, "AI setup"
+ * (product owner, 2026-09-28), so the track does not grow and shrink as the key step
+ * comes and goes.
+ */
+export type CrumbId = "welcome" | "calendar" | "aiSetup" | "audio";
+
+export function crumbOf(step: StepId): CrumbId {
+  return step === "services" || step === "ai" || step === "key" ? "aiSetup" : step;
+}
 
 /**
  * The steps, in order, for this machine.
@@ -14,8 +25,8 @@ export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "audio
  * The speech model is not among them: fetching it is the installer's job (D65), and setup
  * never asks for it. A build with no Google client cannot connect a calendar, so that
  * step is hidden, not shown broken. There is no CPU/GPU step: the device is chosen
- * automatically. How meetings are recorded comes last, once the user has seen what
- * Upshot does with a recording.
+ * automatically. The last step is the sound check, with how meetings are recorded under
+ * it, and its Done finishes setup: there is no summary screen (product owner, 2026-09-28).
  */
 export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
   return [
@@ -27,8 +38,6 @@ export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
     // An API key, only when no subscription was signed in (`withoutUnneeded`).
     "key",
     "audio",
-    "capture",
-    "done",
   ];
 }
 

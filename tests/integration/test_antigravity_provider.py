@@ -157,14 +157,17 @@ def test_status_with_the_cli_present_and_signed_in(api) -> None:  # type: ignore
     assert agy["path"].endswith("agy")
     assert agy["update_hint"].endswith(" update")
     assert agy["install_docs"].startswith("https://antigravity.google/")
-    assert agy["can_sign_out"] is False
+    # Sign out is offered, in a window where /logout is typed: agy refuses it headless.
+    assert agy["can_sign_out"] is True
+    assert agy["signout_in_window"] is True
 
 
-def test_the_other_clis_can_still_sign_out(api) -> None:  # type: ignore[no-untyped-def]
+def test_the_other_clis_sign_out_without_a_window(api) -> None:  # type: ignore[no-untyped-def]
     body = api.client().get("/api/llm/status").json()
     rows = {p["id"]: p for p in body["providers"]}
-    assert rows["claude-subscription"]["can_sign_out"] is True
-    assert rows["codex-subscription"]["can_sign_out"] is True
+    for provider in ("claude-subscription", "codex-subscription"):
+        assert rows[provider]["can_sign_out"] is True
+        assert rows[provider]["signout_in_window"] is False
 
 
 def test_status_when_signed_out(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
@@ -188,10 +191,14 @@ def test_selecting_antigravity_without_it_is_refused(api) -> None:  # type: igno
     assert api.services.config.get("llm.provider") == "fake"
 
 
-def test_sign_out_is_refused_with_how_to_do_it(api) -> None:  # type: ignore[no-untyped-def]
-    response = api.client().post("/api/llm/signout", json={"provider": PROVIDER})
-    assert response.status_code == 409
-    assert "/logout" in response.json()["detail"]
+def test_sign_out_opens_agy_where_logout_is_typed(api) -> None:  # type: ignore[no-untyped-def]
+    """/logout is refused headless and ignored as ``-i /logout`` (machine B, 2026-09-28):
+    the window runs agy and says what to type."""
+    body = api.client().post("/api/llm/signout", json={"provider": PROVIDER}).json()
+    assert body["signed_out"] is False, "not yet: that happens in the window"
+    assert body["launched"] is False, "off Windows nothing is launched"
+    assert "Type /logout and press Enter" in body["command"]
+    assert body["log"].endswith("antigravity-signout.log")
 
 
 def test_install_and_update_take_the_provider(api) -> None:  # type: ignore[no-untyped-def]
