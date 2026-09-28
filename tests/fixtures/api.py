@@ -123,6 +123,7 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
         clock=clock,
         mailer=Mailer(config),
         notifier=FakeNotifier(clock=clock),
+        prompts=__import__("app.prompts", fromlist=["Prompts"]).Prompts(events),
     )
     captures: dict[str, Any] = {}
 

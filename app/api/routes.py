@@ -505,12 +505,24 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
         raise HTTPException(401, "not the launcher")
     log.info("toast button: %s (meeting %s)", body.action, body.meeting_id or "-")
     if body.action == "recording.start":
+        # A button that names no meeting starts the one on offer (D76), so a detected
+        # call is recorded under its name ("Meet - Weekly sync"), not as "meeting".
+        offer = svc.prompts.current if svc.prompts is not None else None
+        calendar_id = body.calendar_id or (offer.calendar_id if offer else None)
+        event_id = body.event_id or (offer.event_id if offer else None)
         event = (
-            StartPost(calendar_id=body.calendar_id, event_id=body.event_id)
-            if body.calendar_id and body.event_id
+            StartPost(calendar_id=calendar_id, event_id=event_id)
+            if calendar_id and event_id
+            else StartPost(title=offer.title)
+            if offer is not None and offer.title
             else None
         )
-        if event is not None and _event_store(svc).get(body.calendar_id, body.event_id) is None:
+        if (
+            event is not None
+            and event.calendar_id
+            and event.event_id
+            and _event_store(svc).get(event.calendar_id, event.event_id) is None
+        ):
             event = None  # the event left the cache since the toast: record it unnamed
         try:
             return recording_start(request, event)
