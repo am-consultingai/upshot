@@ -237,6 +237,9 @@ def status(request: Request) -> dict[str, Any]:
             "paused": bool(recorder and recorder.paused),
             "meeting_id": recorder.meeting_id if recorder else None,
             "levels": recorder.levels() if recorder else {},
+            # The call's app let go: when the recording saves itself unless the call
+            # comes back or the user keeps it going (D77). The page counts down to it.
+            "ending": _ending(svc),
         },
         "detector": {
             "mode": svc.config.get("detection.mode"),
@@ -382,12 +385,51 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
     return {"meeting_id": meeting.id, "folder": meeting.folder, "state": meeting.state}
 
 
+def _ending(svc: Services) -> dict[str, Any] | None:
+    detector, recorder = svc.detector, svc.recorder
+    if detector is None or recorder is None or not recorder.holding:
+        return None
+    ends_at = getattr(detector, "ending_at", None)
+    if ends_at is None or detector.meeting_id != recorder.meeting_id:
+        return None
+    return {"ends_at": iso(ends_at), "meeting_id": recorder.meeting_id}
+
+
+@router.post("/recording/keep")
+def recording_keep(request: Request) -> dict[str, Any]:
+    """ "Keep recording" while the call looks over: the meeting goes on (D77)."""
+    svc = services_of(request)
+    recorder = svc.recorder
+    if svc.detector is None or recorder is None or not recorder.committed:
+        raise HTTPException(409, "not recording")
+    if not svc.detector.keep(recorder.meeting_id):
+        raise HTTPException(409, "that recording is not being followed")
+    svc.events.publish("recorder", state="recording", meeting_id=recorder.meeting_id)
+    return {"meeting_id": recorder.meeting_id, "kept": True}
+
+
 @router.post("/recording/stop")
 def recording_stop(request: Request) -> dict[str, Any]:
     """Stop the recording. Every request is logged, refused or not: a Stop that seemed to
     do nothing (2026-09-26) could not be diagnosed, because nothing here said whether
     the request had even arrived."""
     svc = services_of(request)
+    recorder = svc.recorder
+    if (
+        svc.detector is not None
+        and recorder is not None
+        and recorder.committed
+        and recorder.holding
+    ):
+        # Stop now, while the call looks over: end where the call ended, not now (D77).
+        ended = svc.detector.end_now(
+            recorder.meeting_id, "stopped by the user after the call ended"
+        )
+        if ended:
+            meeting = svc.dao.require_meeting(ended)
+            log.info("recording %s stopped by the user after its call ended", ended)
+            svc.events.publish("recorder", state="idle", meeting_id=ended)
+            return {"meeting_id": ended, "state": meeting.state, "duration_s": meeting.duration_s}
     if svc.recorder is None or not svc.recorder.committed:
         # The page offers Stop because a meeting is marked "recording". Nothing is: it is
         # left from a run that ended. Stop means stop, so end that instead of refusing.
@@ -538,6 +580,11 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
         if body.meeting_id and body.meeting_id != current:
             raise HTTPException(409, "that meeting is no longer recording")
         return recording_stop(request)
+    if body.action == "recording.keep":
+        if svc.detector is None or not svc.detector.keep(body.meeting_id or current):
+            raise HTTPException(409, "that recording is not being followed")
+        svc.events.publish("recorder", state="recording", meeting_id=current)
+        return {"meeting_id": current, "kept": True}
     if body.action == "meeting.discard":
         if not body.meeting_id:
             raise HTTPException(400, "name the meeting")

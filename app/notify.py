@@ -225,6 +225,22 @@ class BaseNotifier:
             )
         )
 
+    def call_ended(self, meeting_id: str, title: str, *, seconds: int) -> None:
+        """The call's app let go: say so at once, with the countdown's two ways out (D77)."""
+        self.show(
+            Toast(
+                title=f"{title} ended" if title else "The call ended",
+                body=f"Upshot saves the recording in {seconds} seconds, unless you rejoin.",
+                buttons=(
+                    Button("Stop now", "recording.stop", meeting_id),
+                    Button("Keep recording", "recording.keep", meeting_id),
+                ),
+                key=f"call-ended:{meeting_id}",
+                meeting_id=meeting_id,
+                quiet_in_front=True,
+            )
+        )
+
     def still_recording(self, meeting_id: str, title: str) -> None:
         """A recording runs past its meeting's scheduled end (D76): ask, never cut."""
         self.show(

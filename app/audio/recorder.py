@@ -75,6 +75,10 @@ class Recorder:
         self.armed = False
         self.committed = False
         self.paused = False
+        #: The call's app let go of the microphone (D77): audio goes to the in-memory ring,
+        #: not the file, until the call resumes, "Keep recording" writes it, or it ends.
+        self.holding = False
+        self._hold_started: float | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
@@ -169,6 +173,10 @@ class Recorder:
         self.runtime.clear()
         self.armed = False
         self.committed = False
+        # A stop while holding ends the file where the call ended: what the ring holds
+        # since then was never written, and is dropped with it (D77).
+        self.holding = False
+        self._hold_started = None
         self.writer = None
         return result
 
@@ -179,7 +187,12 @@ class Recorder:
             if len(tail) == 0:
                 continue
             with self._lock:
-                if self.committed and self.writer is not None and not self.paused:
+                if (
+                    self.committed
+                    and self.writer is not None
+                    and not self.paused
+                    and not self.holding
+                ):
                     self.writer.write_pcm(track, tail)
                 else:
                     runtime.ring.push(tail)
@@ -195,6 +208,40 @@ class Recorder:
 
     def resume(self) -> None:
         self.paused = False
+
+    def hold(self) -> None:
+        """The call seems to have ended: stop writing, keep listening (D77).
+
+        What comes in goes to the ring (up to the pre-roll's length), so the file ends
+        where the call did if nothing changes, and nothing is lost if it continues.
+        """
+        with self._lock:
+            if not self.committed or self.holding:
+                return
+            for runtime in self.runtime.values():
+                runtime.ring.drop()
+            self.holding = True
+            self._hold_started = self.clock.monotonic()
+        log.info("recorder holding: writing paused while the call looks over")
+
+    def release_hold(self, *, keep: bool) -> None:
+        """End a hold. ``keep``: write what was heard during it ("Keep recording"). Else it
+        is dropped (a rejoin: the gap was dead air) and the timeline keeps its length."""
+        with self._lock:
+            if not self.holding:
+                return
+            held_ms = round((self.clock.monotonic() - (self._hold_started or 0)) * 1000)
+            self.holding = False
+            self._hold_started = None
+            if self.writer is None:
+                return
+            for track, runtime in self.runtime.items():
+                if keep:
+                    runtime.ring.flush_to(self.writer, track)
+                else:
+                    runtime.ring.drop()
+                    self.writer.note_gap(track, held_ms)
+        log.info("recorder hold released (%s)", "kept what was heard" if keep else "continuing")
 
     def levels(self) -> dict[str, float]:
         return {track: runtime.level for track, runtime in self.runtime.items()}
@@ -222,7 +269,7 @@ class Recorder:
             return 0
         runtime.level = float(np.sqrt(np.mean(np.square(samples.astype(np.float32) / 32768.0))))
         with self._lock:
-            if self.committed and self.writer is not None:
+            if self.committed and self.writer is not None and not self.holding:
                 if self.paused:
                     return 0
                 self.writer.write_pcm(track, samples)

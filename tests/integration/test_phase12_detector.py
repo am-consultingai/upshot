@@ -793,3 +793,73 @@ def test_the_scheduled_end_is_the_recordings_own_meeting(tmp_path: Path) -> None
     h.seconds(150)
     overrun = [t for t in h.notifier.shown if "scheduled to end" in t.title]
     assert len(overrun) == 1 and "Short one" in overrun[0].title
+
+
+# ------------------------------------------------------------------ D77: the call ended
+
+
+def in_a_call_recorded_by_hand(h: Harness, seconds: int = 30) -> str:
+    h.mic.hold("Zoom.exe")
+    h.vad.set(me=True, them=True)
+    meeting_id = start_by_hand(h)
+    h.seconds(seconds)
+    return meeting_id
+
+
+def test_hanging_up_says_so_at_once_and_the_file_ends_there(tmp_path: Path) -> None:
+    """Machine B: nothing changed for the 60 s after hanging up, so it looked missed."""
+    h = build(tmp_path, detection__mode="shadow")
+    meeting_id = in_a_call_recorded_by_hand(h, 30)
+    h.mic.release()
+    h.seconds(2)
+    assert h.recorder.holding, "writing stopped at the hang-up"
+    assert h.detector.ending_at is not None
+    ended = [t for t in h.notifier.shown if t.title == "The call ended"]
+    assert ended and [b.label for b in ended[0].buttons] == ["Stop now", "Keep recording"]
+    h.seconds(h.detector.grace_s + 2)
+    assert not h.recorder.committed
+    meeting = h.dao.require_meeting(meeting_id)
+    assert meeting.state == MeetingState.RECORDED
+    # The file ends at the hang-up (about 32 s in), not after the grace (about 94 s).
+    assert meeting.duration_s is not None and meeting.duration_s <= 35
+
+
+def test_rejoining_inside_the_grace_continues_the_same_meeting(tmp_path: Path) -> None:
+    h = build(tmp_path, detection__mode="shadow")
+    meeting_id = in_a_call_recorded_by_hand(h, 20)
+    h.mic.release()
+    h.seconds(10)
+    assert h.recorder.holding
+    h.mic.hold("Zoom.exe")
+    h.seconds(3)
+    assert not h.recorder.holding
+    assert h.detector.state is DetectorState.RECORDING
+    assert h.detector.meeting_id == meeting_id and h.recorder.committed
+    assert h.detector.ending_at is None
+
+
+def test_keep_recording_writes_what_was_heard_and_stops_watching_the_microphone(
+    tmp_path: Path,
+) -> None:
+    h = build(tmp_path, detection__mode="shadow")
+    meeting_id = in_a_call_recorded_by_hand(h, 20)
+    h.mic.release()
+    h.seconds(10)
+    assert h.detector.keep(meeting_id)
+    assert not h.recorder.holding
+    h.seconds(h.detector.grace_s + 30)
+    assert h.recorder.committed, "kept going past the grace"
+    h.detector.end_now(meeting_id, "test")
+    meeting = h.dao.require_meeting(meeting_id)
+    assert meeting.duration_s is not None and meeting.duration_s >= 110, "nothing was dropped"
+
+
+def test_stop_now_ends_where_the_call_ended(tmp_path: Path) -> None:
+    h = build(tmp_path, detection__mode="shadow")
+    meeting_id = in_a_call_recorded_by_hand(h, 30)
+    h.mic.release()
+    h.seconds(20)
+    assert h.detector.end_now(meeting_id, "stopped by the user after the call ended") == meeting_id
+    meeting = h.dao.require_meeting(meeting_id)
+    assert meeting.duration_s is not None and meeting.duration_s <= 35
+    assert h.detector.state is DetectorState.IDLE

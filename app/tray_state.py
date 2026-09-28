@@ -49,6 +49,8 @@ class AppState:
     queue_depth: int = 0
     meeting_title: str | None = None
     detector_mode: str = "shadow"
+    #: The call's app let go and the recording saves itself soon (D77).
+    ending: bool = False
     worker_alive: bool = True
 
 
@@ -88,6 +90,8 @@ def _color(state: AppState) -> IconColor:
 
 
 def _tooltip(state: AppState) -> str:
+    if state.ending:
+        return "The call ended — saving the recording"
     if state.recorder is RecorderState.RECORDING:
         return f"Recording — {state.meeting_title}" if state.meeting_title else "Recording"
     if state.recorder is RecorderState.PAUSED:

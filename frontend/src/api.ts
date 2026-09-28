@@ -239,6 +239,8 @@ export interface Status {
     paused: boolean;
     meeting_id: string | null;
     levels: Record<string, number>;
+    /** The call's app let go: when the recording saves itself (D77). */
+    ending: { ends_at: string; meeting_id: string } | null;
   };
   detector: { mode: string; state: string; decided?: boolean };
   /** The offer to record, shared with the toasts (app/prompts.py, D76). */
@@ -435,6 +437,9 @@ export const api = {
     }),
   /** "Not a meeting" on the banner: withdrawn, and not offered again for it (D76). */
   dismissPrompt: () => request<{ prompt: null }>("/api/prompt/dismiss", { method: "POST" }),
+  /** "Keep recording" while the call looks over (D77). */
+  keepRecording: () =>
+    request<{ meeting_id: string; kept: boolean }>("/api/recording/keep", { method: "POST" }),
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
   settings: () => request<Settings>("/api/settings"),
