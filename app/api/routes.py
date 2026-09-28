@@ -131,6 +131,8 @@ class LauncherAction(BaseModel):
     meeting_id: str | None = None
     calendar_id: str | None = None
     event_id: str | None = None
+    #: The button also opened the meeting's link ("Join and record"). For the log.
+    joined: bool = False
 
 
 class StartPost(BaseModel):
@@ -545,7 +547,13 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
     svc = services_of(request)
     if not svc.auth.valid_launcher(request.headers.get(LAUNCHER_HEADER)):
         raise HTTPException(401, "not the launcher")
-    log.info("toast button: %s (meeting %s)", body.action, body.meeting_id or "-")
+    log.info(
+        "notification button: %s%s (meeting %s, calendar %s)",
+        "Join and record" if body.joined else body.action,
+        "" if not body.joined else " — the meeting was opened in the browser",
+        body.meeting_id or "-",
+        f"{body.calendar_id}/{body.event_id}" if body.calendar_id else "-",
+    )
     if body.action == "recording.start":
         # A button that names no meeting starts the one on offer (D76), so a detected
         # call is recorded under its name ("Meet - Weekly sync"), not as "meeting".

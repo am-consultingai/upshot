@@ -266,3 +266,17 @@ def test_a_start_that_names_no_meeting_records_the_one_on_offer(
     assert meeting.title == "Meet - Weekly sync"
     assert harness.services.prompts.snapshot() is None
     harness.services.recorder.stop()  # type: ignore[union-attr]
+
+
+def test_the_log_tells_join_and_record_from_start_recording() -> None:
+    """Machine B: both logged as "recording.start (meeting -)", so a Join and record
+    press was read as a plain Start."""
+    join = actions.parse(
+        "upshot:recording.start?calendar=primary&event=e1&join=https://meet.google.com/abc-defg"
+    )
+    assert join is not None
+    assert actions.describe(join) == (
+        "recording.start (calendar primary/e1, join meet.google.com)"
+    ), "the host only: the rest of a meeting link can be its key"
+    plain = actions.parse("upshot:recording.start")
+    assert plain is not None and actions.describe(plain) == "recording.start"
