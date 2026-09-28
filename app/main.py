@@ -157,6 +157,9 @@ def start_background(services: Services) -> None:
             "survive a restart while it does",
             ", ".join(f"{key} ({var})" for key, var in pinned.items()),
         )
+    # Nothing is recording yet in a process that has just started: every meeting still
+    # marked "recording" is left from one that ended (D76).
+    services.meetings.recover_orphans()
     if services.worker is not None:
         services.worker.start()
         log.info("worker started (policy %s)", services.worker.policy)

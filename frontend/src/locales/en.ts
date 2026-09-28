@@ -281,6 +281,7 @@ export const en = {
   "settings.pinnedByEnv": "This is being set by the environment ({var}), which wins over anything saved here. A change now lasts until the application restarts.",
   "settings.detectionHint": "When an app takes the microphone, the detector scores the evidence and lists every wake on the Detector page. Detect and notify never records, and shows a notification when a call starts; automatic recording starts a recording once the score passes the threshold, and tells you, with a button to throw it away. Takes effect straight away, with no restart.",
   "detector.nudge": "A meeting is being detected and is not being recorded",
+  "detector.nudgeJoin": "Join the meeting",
   "detector.nudgeDismiss": "Not a meeting",
   "state.RECORDING": "Recording",
   "state.RECORDED": "Recorded",

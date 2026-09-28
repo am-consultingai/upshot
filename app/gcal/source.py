@@ -119,6 +119,13 @@ class CalendarNow:
         self.store = store
         self.available = available
 
+    def soon(self, now: datetime, *, ahead_s: float) -> list[CalendarEvent]:
+        """Meetings on now or starting within ``ahead_s``, earliest first (reminders, D76)."""
+        if not self.available():
+            return []
+        events = self.store.between(now, now + timedelta(seconds=ahead_s))
+        return [e for e in events if meeting_like(e) is None]
+
     def current(self, now: datetime, *, lead_s: float = 120.0) -> CalendarEvent | None:
         if not self.available():
             return None

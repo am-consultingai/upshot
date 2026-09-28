@@ -261,9 +261,11 @@ class MeetingService:
             seconds = int((ended - parse_iso(meeting.started_at)).total_seconds())
         minimum = self.config.min_meeting_s
         self.dao.update_meeting(meeting_id, ended_at=iso(ended), duration_s=seconds)
-        # The minimum catches a recording started by accident. An imported file is one the
-        # user chose, however short: a 41-second clip used to vanish after "imported".
-        if seconds < minimum and meeting.source != "imported":
+        # The minimum catches a recording the detector started by accident. One the user
+        # started (Start, a notification's button, a file imported) is one they chose,
+        # however short: a 99-second test call vanished on machine B (D76), and a
+        # 41-second clip after "imported".
+        if seconds < minimum and meeting.source == "detected":
             log.info("meeting %s is %ss (< %ss) — discarding", meeting_id, seconds, minimum)
             return self.discard(meeting_id)
         updated = self.dao.set_state(meeting_id, MeetingState.RECORDED)
@@ -281,6 +283,41 @@ class MeetingService:
         if meta.path_for(meeting.path).exists():
             meta.mirror(meeting)
         return meeting
+
+    def recover_orphans(self, recording: str | None = None) -> list[str]:
+        """Meetings left "recording" with no recorder behind them. Their ids.
+
+        A process that died mid-recording, or a start that failed before the fix (machine
+        B, D76: a meeting stuck at "recording 615:48" whose Stop answered "not recording")
+        leaves a RECORDING row nothing will ever end. Audio on disk is kept and
+        transcribed; a row with none is discarded. ``recording`` is the one the recorder
+        is writing right now, never touched.
+        """
+        from app.audio.writer import track_files
+
+        repaired: list[str] = []
+        for meeting in self.dao.list_meetings(state=MeetingState.RECORDING, limit=1000):
+            if meeting.id == recording:
+                continue
+            tracks = track_files(meeting.path)
+            if tracks:
+                import wave
+
+                seconds = 0
+                for path in tracks.values():
+                    try:
+                        with wave.open(str(path), "rb") as audio:
+                            seconds = max(seconds, audio.getnframes() // audio.getframerate())
+                    except (OSError, EOFError, wave.Error):
+                        continue  # a header never finalised: the length is not known
+                log.warning("meeting %s was left recording; keeping its audio", meeting.id)
+                ended = parse_iso(meeting.started_at) + timedelta(seconds=seconds)
+                self.finish(meeting.id, ended_at=ended, duration_s=seconds)
+            else:
+                log.warning("meeting %s was left recording with no audio; discarding", meeting.id)
+                self.discard(meeting.id)
+            repaired.append(meeting.id)
+        return repaired
 
     def interrupted(self, meeting_id: str) -> Meeting:
         return self.dao.set_state(meeting_id, MeetingState.INTERRUPTED)

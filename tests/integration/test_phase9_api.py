@@ -518,8 +518,11 @@ def test_a_short_recording_can_be_kept_after_all(api) -> None:  # type: ignore[n
 
         stopped = client.post("/api/recording/stop")
         assert stopped.status_code == 200, stopped.text
-        # Nothing ran for two minutes, so it is filed rather than transcribed.
-        assert stopped.json()["state"] == MeetingState.DISCARDED
+        # Started by the user, so kept however short (D76); discarded here by hand.
+        assert stopped.json()["state"] == MeetingState.RECORDED
+        assert (
+            client.patch(f"/api/meetings/{meeting_id}", json={"discard": True}).status_code == 200
+        )
 
         kept = client.post(f"/api/meetings/{meeting_id}/keep")
         assert kept.status_code == 200, kept.text

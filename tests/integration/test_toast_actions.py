@@ -204,3 +204,42 @@ def test_a_start_that_cannot_record_says_why_and_leaves_nothing(
     before = len(notifier.shown)
     assert harness.client().post("/api/recording/start", json={}).status_code == 409
     assert len(notifier.shown) == before
+
+
+def test_stop_ends_a_meeting_left_recording_by_an_earlier_run(
+    tmp_path: Path, app_home: Path
+) -> None:
+    """Machine B, D76: a meeting stuck at "recording 615:48" whose Stop answered 409."""
+    harness = build_harness(tmp_path)
+    services = harness.services
+    ghost = services.meetings.create(source="manual")
+    assert services.dao.require_meeting(ghost.id).state == MeetingState.RECORDING
+    stopped = harness.client().post("/api/recording/stop")
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["repaired"] == [ghost.id]
+    # No audio was ever written, so there is nothing to keep.
+    assert services.dao.require_meeting(ghost.id).state == MeetingState.DISCARDED
+    assert harness.client().post("/api/recording/stop").status_code == 409
+
+
+def test_the_calendar_test_hook_is_off_unless_the_machine_turns_it_on(
+    tmp_path: Path, app_home: Path
+) -> None:
+    harness = build_harness(tmp_path)
+    launcher = _launcher(harness)
+    event = {
+        "id": "t1",
+        "title": "Harness meeting",
+        "start": "2026-09-28T09:00:00+00:00",
+        "end": "2026-09-28T09:30:00+00:00",
+    }
+    assert launcher.post("/api/launcher/test/calendar", json={"events": [event]}).status_code == 404
+    harness.services.config.set("testing.hooks", True)
+    stranger = harness.client(authorized=False)
+    assert stranger.post("/api/launcher/test/calendar", json={"events": []}).status_code == 403
+    answer = launcher.post("/api/launcher/test/calendar", json={"events": [event]})
+    assert answer.status_code == 200, answer.text
+    from app.gcal.events import EventStore
+
+    stored = EventStore(harness.services.conn).get("upshot-test", "t1")
+    assert stored is not None and stored.title == "Harness meeting"
