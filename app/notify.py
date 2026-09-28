@@ -423,6 +423,11 @@ class WindowsToastNotifier(BaseNotifier):
     def show(self, toast: Toast) -> None:
         if not self._should_emit(toast):
             return
+        log.info(
+            "notification: %r%s",
+            toast.title,
+            f" [{' | '.join(b.label for b in toast.buttons)}]" if toast.buttons else "",
+        )
         try:
             process = self.spawn(self.command(toast))
         except Exception as exc:  # a missing interpreter must not fail the recording

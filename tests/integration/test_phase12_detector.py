@@ -863,3 +863,45 @@ def test_stop_now_ends_where_the_call_ended(tmp_path: Path) -> None:
     meeting = h.dao.require_meeting(meeting_id)
     assert meeting.duration_s is not None and meeting.duration_s <= 35
     assert h.detector.state is DetectorState.IDLE
+
+
+# ------------------------------------------------------------------ D78: Join and record
+
+
+def test_a_call_joined_after_the_recording_started_ends_it(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
+    """Machine B: "Join and record" started recording two seconds before Meet took the
+    microphone; the recording was taken for an in-person one and the hang-up missed."""
+    import logging
+
+    caplog.set_level(logging.INFO)
+    h = build(tmp_path, detection__mode="shadow")
+    h.vad.set(me=True, them=True)
+    meeting_id = start_by_hand(h)
+    h.seconds(3)
+    assert h.detector.recording_process is None, "nothing to watch yet"
+    h.mic.hold("Zoom.exe")
+    h.seconds(3)
+    assert h.detector.recording_process == "Zoom.exe"
+    h.mic.release()
+    h.seconds(2)
+    assert h.recorder.holding, "the hang-up is noticed"
+    h.seconds(h.detector.grace_s + 2)
+    assert not h.recorder.committed
+    assert h.dao.require_meeting(meeting_id).state == MeetingState.RECORDED
+    logged = caplog.text
+    assert "Zoom.exe took the microphone" in logged
+    assert "Zoom.exe joined" in logged
+    assert "Zoom.exe let go of the microphone" in logged
+
+
+def test_an_app_that_is_not_a_call_app_does_not_claim_the_recording(tmp_path: Path) -> None:
+    h = build(tmp_path, detection__mode="shadow")
+    h.vad.set(me=True, them=True)
+    start_by_hand(h)
+    h.seconds(3)
+    h.mic.hold("SoundRecorder.exe")
+    h.seconds(3)
+    assert h.detector.recording_process is None
+    h.mic.release()
+    h.seconds(h.detector.grace_s + 5)
+    assert h.recorder.committed, "an in-person recording is not ended by another app"

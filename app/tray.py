@@ -248,6 +248,10 @@ def run_link(link: str, home: Any = None) -> int | None:
     if parsed is None:
         log.warning("ignoring a link that is not one of Upshot's: %r", link)
         return 2
+    # Which button it was, in words a reader of the log can match to the screen: "Join
+    # and record" and "Start recording" both start a recording, and only the join tells
+    # them apart (machine B, D78).
+    log.info("notification button: %s", actions.describe(parsed))
     home = home or paths.app_home()
     port = recorded_port(home)
     if parsed.action in actions.PAGES:
@@ -263,6 +267,7 @@ def run_link(link: str, home: Any = None) -> int | None:
         import webbrowser
 
         webbrowser.open(join)
+        log.info("opened the meeting link in the browser (%s)", actions.host(join))
         back = None
     else:
         back = window.give_focus_back()

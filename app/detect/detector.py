@@ -309,7 +309,15 @@ class Detector:
             if _exe_key(holder.process) not in self.own
         ]
         names = {holder.process for holder in holders}
+        before = self.holding
         self._note_acquisitions(holders)
+        if before is not None and self.state in (DetectorState.RECORDING, DetectorState.GRACE):
+            # Said in the log while recording, when nothing else would say it: the
+            # microphone was the whole story of a missed hang-up on machine B (D78).
+            for process in sorted(names - before):
+                log.info("recording %s: %s took the microphone", self.meeting_id, process)
+            for process in sorted(before - names):
+                log.info("recording %s: %s let go of the microphone", self.meeting_id, process)
         self.remind()
         if self.prompts is not None:
             self.prompts.tick(self.clock.now(), recording=self.recorder.committed, holders=names)
@@ -341,9 +349,38 @@ class Detector:
             wake = self.wake
             self._tick_awake(wake.process if wake and wake.process in names else "")
         elif self.state in (DetectorState.RECORDING, DetectorState.GRACE):
+            if self.recording_process is None and not self.keep_going:
+                self._join_late(holders)
             owner = self.recording_process
             self._tick_recording(owner if owner and owner in names else "")
         return self.state
+
+    def _join_late(self, holders: list[MicHolder]) -> None:
+        """A recording with no call app yet takes the first one that joins (D78).
+
+        "Join and record" starts the recording and opens the meeting at once, so the call
+        app takes the microphone a moment *after* the recording began: on machine B two
+        seconds after, and the hang-up then went unnoticed. Only a known call app that
+        newly takes the microphone counts, so a recording of an in-person meeting is not
+        claimed by something that has held it all along.
+        """
+        known = list(self.config.get("detection.known_apps", []))
+        ignore = list(self.config.get("detection.ignore", []))
+        for holder in holders:
+            process = holder.process
+            if (
+                process in self.fresh
+                and ev.matches_process(process, known)
+                and not ev.matches_process(process, ignore)
+            ):
+                self.recording_process = process
+                self.fresh.discard(process)
+                log.info(
+                    "recording %s: %s joined; it ends when that app lets go of the microphone",
+                    self.meeting_id,
+                    process,
+                )
+                return
 
     def _adopt(self, holders: list[MicHolder]) -> None:
         """Take on a recording started by the user, to end it like one of our own.

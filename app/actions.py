@@ -73,6 +73,25 @@ def link_argument(arguments: list[str]) -> str | None:
     return None
 
 
+def host(url: str) -> str:
+    """Only the host of a meeting link goes in the log: the rest can be a meeting's key."""
+    return urllib.parse.urlsplit(url).netloc or "?"
+
+
+def describe(link: Link) -> str:
+    """A link in one line for the log: "recording.start (meeting on calendar x/y, join
+    meet.google.com)"."""
+    parts = []
+    if link.params.get("meeting"):
+        parts.append(f"meeting {link.params['meeting']}")
+    if link.params.get("calendar") or link.params.get("event"):
+        parts.append(f"calendar {link.params.get('calendar', '?')}/{link.params.get('event', '?')}")
+    join = link.params.get(JOIN_KEY)
+    if join:
+        parts.append(f"join {host(join)}")
+    return link.action + (f" ({', '.join(parts)})" if parts else "")
+
+
 def join_url(link: Link) -> str | None:
     """The meeting link to open, if the link carries one and it is a web address."""
     url = link.params.get(JOIN_KEY, "")
@@ -89,9 +108,10 @@ def forward(link: Link, port: int, home: Path) -> bool:
     """Hand a remote action to the running instance. False when it refused or is gone."""
     from app.api.security import ACTION_PATH, LAUNCHER_HEADER, LAUNCHER_KEY_FILE
 
-    body = {"action": link.action} | {
-        FIELDS[key]: value for key, value in link.params.items() if key in FIELDS
-    }
+    body: dict[str, object] = {"action": link.action}
+    body.update({FIELDS[key]: value for key, value in link.params.items() if key in FIELDS})
+    if link.params.get(JOIN_KEY):
+        body["joined"] = True  # the app is told, for its log; the link stays here
     try:
         key = (home / LAUNCHER_KEY_FILE).read_text(encoding="utf-8").strip()
         request = urllib.request.Request(
