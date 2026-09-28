@@ -368,11 +368,29 @@ class Detector:
         )
 
     def _note_event(self) -> None:
-        """The calendar meeting a recording belongs to, for its scheduled end."""
-        event = self.calendar_event()
-        self.event_end = event.end if event is not None else None
-        self.event_title = (event.title or "") if event is not None else ""
+        """The calendar meeting a recording belongs to, for its scheduled end.
+
+        The recording's own meeting first: one started for a named calendar meeting is
+        matched to it at once. Only without one is it whatever is on now, and "whatever
+        is on now" was wrong on machine B, where a real 10:00 meeting overlapped the one
+        being recorded and its end was waited for instead (D76).
+        """
         self.overrun_said = False
+        self.event_end, self.event_title = None, ""
+        meeting = self.dao.get_meeting(self.meeting_id) if self.meeting_id else None
+        if meeting is not None and meeting.calendar_json:
+            try:
+                snap = json.loads(meeting.calendar_json)
+                end = (snap.get("event") or {}).get("end")
+                if end:
+                    self.event_end = datetime.fromisoformat(str(end))
+                    self.event_title = str(snap.get("title") or "")
+                    return
+            except (ValueError, TypeError, AttributeError):
+                pass  # an unreadable snapshot: fall back to the calendar
+        event = self.calendar_event()
+        if event is not None:
+            self.event_end, self.event_title = event.end, event.title or ""
 
     def _forget_recording(self) -> None:
         self.meeting_id = None

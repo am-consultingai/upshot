@@ -763,3 +763,33 @@ def test_a_recording_past_its_scheduled_end_asks_once(tmp_path: Path) -> None:
     assert len(overrun) == 1
     assert [b.label for b in overrun[0].buttons] == ["Stop recording", "Keep recording"]
     assert h.recorder.committed, "an overrun is asked about, never cut"
+
+
+def test_the_scheduled_end_is_the_recordings_own_meeting(tmp_path: Path) -> None:
+    """Machine B: a real meeting starting later overlapped the one being recorded, and
+    its end was waited for instead of the recorded meeting's."""
+    from app.gcal.events import Attendee, CalendarEvent
+    from app.gcal.source import snapshot
+
+    h = build(tmp_path, detection__mode="shadow")
+    h.mic.hold("Zoom.exe")
+    h.vad.set(me=True, them=True)
+    now = h.clock.now()
+    recorded = CalendarEvent(
+        calendar_id="primary",
+        event_id="short",
+        title="Short one",
+        start=now - timedelta(minutes=5),
+        end=now + timedelta(minutes=2),
+        attendees=(Attendee(name="Dana"),),
+        attendee_count=1,
+    )
+    # What "on now" returns: a later meeting that ends much later.
+    calendar_meeting(h, starts_in_s=30, minutes=60)
+    meeting_id = start_by_hand(h)
+    h.detector.meetings.choose_event(
+        meeting_id, snapshot(recorded, state="matched", source="user", confidence=1.0)
+    )
+    h.seconds(150)
+    overrun = [t for t in h.notifier.shown if "scheduled to end" in t.title]
+    assert len(overrun) == 1 and "Short one" in overrun[0].title
