@@ -67,3 +67,4 @@ frontend/.shot.mjs
 # Product research notes (third-party integrations, pricing, platform policies).
 # Working findings behind decisions; a finished decision goes to docs/DECISIONS.md.
 .research/
+.cache/
