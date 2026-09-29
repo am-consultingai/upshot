@@ -378,3 +378,49 @@ def test_a_remote_run_chooses_the_same_model_and_language_as_a_local_one(
     assert stored.language == "es"
     asr = meta.read(meeting.path)["asr"]
     assert (asr["name"], asr["role"]) == ("remote", "other")
+
+
+# ------------------------------------------------------- transcribe again as… (story E)
+
+
+def test_a_chosen_language_skips_the_classifier_and_picks_its_model(tmp_path: Path) -> None:
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=60)
+    classifier = FakeClassifier("he")
+    backend = FakeAsr()
+    services = Services(backend, classifier)
+    transcribe.run(h.context(meeting, services=services))
+    assert h.dao.require_meeting(meeting.id).language == "he"
+
+    # Transcribe again as English: the classifier is not asked, stock Whisper is told en.
+    meta.update(meeting.path, asr_language_override="en")
+    backend.transcribe_calls.clear()
+    transcribe.run(h.context(meeting, force=True, services=services))
+    assert len(classifier.calls) == 1, "not asked again"
+    assert {(c["role"], c["language"]) for c in backend.transcribe_calls} == {("other", "en")}
+    stored = h.dao.require_meeting(meeting.id)
+    assert stored.language == "en"
+    _segments, payload = transcribe.load_segments(meeting.path)
+    assert payload["asr"]["language_detection"]["rule"] == "override"
+    assert payload["language_source"] == "override"
+    assert any("project" in s.text for s in _segments), "replaced by the English transcript"
+
+    # And back as Hebrew.
+    meta.update(meeting.path, asr_language_override="he")
+    backend.transcribe_calls.clear()
+    transcribe.run(h.context(meeting, force=True, services=services))
+    assert {(c["role"], c["language"]) for c in backend.transcribe_calls} == {("hebrew", "he")}
+    assert h.dao.require_meeting(meeting.id).language == "he"
+
+
+def test_a_forced_rerun_transcribes_again(tmp_path: Path) -> None:
+    """force used to be ignored here: the stage found its own output and skipped."""
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=30)
+    backend = FakeAsr()
+    transcribe.run(h.context(meeting, services=Services(backend)))
+    calls = len(backend.transcribe_calls)
+    transcribe.run(h.context(meeting, force=True, services=Services(backend)))
+    assert len(backend.transcribe_calls) == 2 * calls

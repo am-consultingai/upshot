@@ -575,3 +575,49 @@ def test_root_static_files_are_not_shadowed_by_the_spa(tmp_path: Path) -> None:
                 )
     finally:
         main.frontend_dir = original  # type: ignore[assignment]
+
+
+# ---------------------------------------------------- transcribe again as… (story E)
+
+
+def test_transcribe_again_as_a_language_stores_it_and_redoes_everything(api) -> None:  # type: ignore[no-untyped-def]
+    """R9: the hidden correction. Stored on the meeting, so later reruns keep it."""
+    from app import meta
+
+    ids = seed(api, 1)
+    queue = api.services.queue
+    for stage in ("transcribe", "assemble", "summarize", "render", "deliver"):
+        queue.complete(queue.enqueue(ids[0], stage))
+    client = api.client()
+
+    body = client.post(f"/api/meetings/{ids[0]}/jobs/transcribe/retry?language=es").json()
+    assert body == {"stage": "transcribe", "state": "pending", "attempts": 0}
+    folder = api.services.dao.require_meeting(ids[0]).path
+    assert meta.read(folder)["asr_language_override"] == "es"
+    for stage in ("transcribe", "assemble", "summarize", "render", "deliver"):
+        assert queue.take_rerun(ids[0], stage) is True, f"{stage} is redone, not reused"
+
+    # A later retry without a language keeps the choice.
+    client.post(f"/api/meetings/{ids[0]}/jobs/transcribe/retry?force=true")
+    assert meta.read(folder)["asr_language_override"] == "es"
+
+
+def test_transcribe_again_refuses_what_whisper_cannot_do(api) -> None:  # type: ignore[no-untyped-def]
+    ids = seed(api, 1)
+    client = api.client()
+    response = client.post(f"/api/meetings/{ids[0]}/jobs/transcribe/retry?language=xx")
+    assert response.status_code == 422
+    response = client.post(f"/api/meetings/{ids[0]}/jobs/summarize/retry?language=es")
+    assert response.status_code == 422, "a language applies to transcription only"
+
+
+def test_the_meeting_carries_the_classifiers_candidates(api) -> None:  # type: ignore[no-untyped-def]
+    from app import meta
+
+    ids = seed(api, 1)
+    folder = api.services.dao.require_meeting(ids[0]).path
+    meta.update(
+        folder, asr={"language_detection": {"top3": [["es", 0.5], ["pt", 0.3], ["he", 0.1]]}}
+    )
+    body = api.client().get(f"/api/meetings/{ids[0]}").json()
+    assert body["language_candidates"] == ["es", "pt", "he"]

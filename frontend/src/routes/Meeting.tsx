@@ -10,6 +10,7 @@ import MeetingDetailsDialog from "../components/MeetingDetailsDialog";
 import MeetingRail from "../components/MeetingRail";
 import MeetingChips from "../components/MeetingChips";
 import Menu from "../components/Menu";
+import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
 import Tooltip from "../components/Tooltip";
 import StateBadge from "../components/StateBadge";
 import { Spinner } from "../components/BusyButton";
@@ -148,6 +149,16 @@ export default function MeetingPage() {
   // the jobs on screen predate it and show nothing running — the spinner would blink off
   // between the click and the first poll.
   const [pressedAt, setPressedAt] = useState<number | null>(null);
+  // The hidden "Transcribe again as…" (R9): only from the ⋯ menu, only once transcribed.
+  const [transcribeAgain, setTranscribeAgain] = useState(false);
+  const retranscribe = useMutation({
+    mutationFn: (language: string) => api.retry(id, "transcribe", true, language),
+    onSuccess: () => {
+      setPressedAt(Date.now());
+      setPipelineBusy(true);
+      queryClient.invalidateQueries();
+    },
+  });
   const summarize = useMutation({
     // force: pressing this means redo it, not "redo it if you think it is stale".
     mutationFn: () => api.retry(id, "summarize", true),
@@ -415,6 +426,9 @@ export default function MeetingPage() {
               label: summary.data ? t("meeting.resummarize") : t("meeting.summarize"),
               run: () => summarize.mutate(),
             },
+            ...(meeting.data?.language
+              ? [{ id: "transcribe-again", label: t("meeting.transcribeAgain"), run: () => setTranscribeAgain(true) }]
+              : []),
             { id: "prompt", label: t("meeting.viewPrompt"), run: () => navigate("/settings#prompt") },
             ...(summary.data
               ? [
@@ -708,6 +722,16 @@ export default function MeetingPage() {
 
       {hasAudio && tab === "transcript" && (
         <AudioPlayer ref={playerRef} src={api.audioUrl(id, "mix")} onTime={setPlayhead} bands={bands} />
+      )}
+      {transcribeAgain && (
+        <TranscribeAgainDialog
+          candidates={meeting.data.language_candidates}
+          onClose={() => setTranscribeAgain(false)}
+          onChoose={(code) => {
+            setTranscribeAgain(false);
+            retranscribe.mutate(code);
+          }}
+        />
       )}
       {details && (
         <MeetingDetailsDialog meetingId={id} calendar={meeting.data.calendar} onClose={() => setDetails(false)} />

@@ -2476,7 +2476,7 @@
     },
     "/api/meetings/{meeting_id}/jobs/{stage}/retry": {
       "post": {
-        "description": "Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.",
+        "description": "Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.\n\n``language`` (transcribe only) is the hidden \"Transcribe again as…\" (R9): the meeting\nis transcribed in that language whatever the classifier said, by the model for it,\nand stays so on every later rerun. Implies ``force``.",
         "operationId": "retry_stage_api_meetings__meeting_id__jobs__stage__retry_post",
         "parameters": [
           {
@@ -2505,6 +2505,22 @@
               "default": false,
               "title": "Force",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
             }
           }
         ],
