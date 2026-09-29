@@ -32,6 +32,9 @@ SEGMENTS_NAME = "segments.json"
 #: Where ``meeting.language`` came from: the classifier (``app/asr/classify.py``).
 LANGUAGE_SOURCE = "classifier"
 
+#: meta.json: the language someone chose with "Transcribe again as…" (R9).
+OVERRIDE_KEY = "asr_language_override"
+
 #: Where the echo-cancelled copy of a track lives while it is being transcribed.
 CLEAN_DIR = "clean"
 
@@ -193,8 +196,14 @@ def _check_installation(ctx: StageContext) -> None:
 
 def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
     """The meeting's language, from the files transcription will read. Stored and logged,
-    never shown (R7)."""
-    decision = classifier_for(ctx).classify(inputs)
+    never shown (R7). A language chosen with "Transcribe again as…" wins, every time."""
+    chosen = meta.read(ctx.folder).get(OVERRIDE_KEY)
+    if chosen:
+        from app.asr.classify import override
+
+        decision = override(str(chosen))
+    else:
+        decision = classifier_for(ctx).classify(inputs)
     log.info("%s", decision.log_line())
     ctx.metrics["language_detection_s"] = round(decision.seconds, 2)
     return decision
@@ -220,7 +229,7 @@ def run(ctx: StageContext) -> None:
     inputs = _chunk_inputs(folder)
     if not inputs:
         raise FileNotFoundError(f"no track audio under {folder / 'audio'}")
-    if up_to_date(output, inputs):
+    if not ctx.force and up_to_date(output, inputs):
         log.info("transcript segments are current; skipping")
         return
 
@@ -268,7 +277,7 @@ def run(ctx: StageContext) -> None:
         "version": 1,
         "language": decision.language,
         "language_conf": confidence,
-        "language_source": LANGUAGE_SOURCE,
+        "language_source": _source(decision),
         "model": _describe(backend),
         "asr": {"language_detection": decision.as_dict()},
         "segments": [segment.as_dict() for segment in segments],
@@ -278,7 +287,7 @@ def run(ctx: StageContext) -> None:
         ctx.refresh(),
         language=decision.language,
         language_conf=confidence,
-        language_source=LANGUAGE_SOURCE,
+        language_source=_source(decision),
         asr=asr,
         **({"diarization": ctx.metrics["diarization"]} if "diarization" in ctx.metrics else {}),
     )
@@ -286,6 +295,10 @@ def run(ctx: StageContext) -> None:
     backend.unload()
     ctx.metrics["segments"] = len(segments)
     ctx.metrics["language"] = decision.language
+
+
+def _source(decision: LanguageDecision) -> str:
+    return "override" if decision.rule == "override" else LANGUAGE_SOURCE
 
 
 def _discard_clean(folder: Path) -> None:
