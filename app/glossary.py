@@ -17,6 +17,14 @@ log = get(__name__)
 
 CHARS_PER_TOKEN = 3.0  # conservative for Hebrew, which runs 2–4 tokens per word
 
+#: Off since 2026-09-29: nothing ever filled the glossary (there is no screen for it), its
+#: effect was never measured, and a Hebrew prompt given to Whisper in a non-Hebrew meeting
+#: risks pulling the transcript toward Hebrew. While it is off, every use sees an empty
+#: glossary and Whisper gets no prompt at all. The table, the API and this module stay, so
+#: turning it back on is this one line; the backlog item on restoring it says what that
+#: needs first.
+ENABLED = False
+
 
 @dataclass(frozen=True)
 class Entry:
@@ -67,6 +75,13 @@ def from_db(dao: Dao) -> list[Entry]:
 def _from_row(row: GlossaryTerm) -> Entry:
     aliases = tuple(part.strip() for part in (row.aliases or "").split(",") if part.strip())
     return Entry(row.term, row.kind, aliases, row.note)
+
+
+def active(dao: Dao, yaml_path: Path) -> list[Entry]:
+    """The glossary every stage uses: the database's terms and the YAML file's, or none."""
+    if not ENABLED:
+        return []
+    return merge(from_db(dao), load_yaml(yaml_path))
 
 
 def merge(*sources: Iterable[Entry]) -> list[Entry]:

@@ -98,7 +98,8 @@ def test_data_root_default(app_home: Path) -> None:
 
 
 def test_synced_folder_warning(app_home: Path) -> None:
-    for folder in ("C:/Users/someone/OneDrive/meetings", "/home/someone/Dropbox/x", "/x/Google Drive/y"):
+    synced = ("C:/Users/someone/OneDrive/meetings", "/home/someone/Dropbox/x", "/x/Google Drive/y")
+    for folder in synced:
         cfg = default_config()
         cfg.set("data_root", folder)
         warnings = cfg.warnings()

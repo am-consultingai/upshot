@@ -165,10 +165,7 @@ def _corrected(ctx: StageContext, segments: Sequence[Segment]) -> list[Segment]:
     """The glossary's second use: alias → canonical term, before summarization."""
     from app import glossary as glossary_module
 
-    entries = glossary_module.merge(
-        glossary_module.from_db(ctx.dao),
-        glossary_module.load_yaml(ctx.config.glossary_path),
-    )
+    entries = glossary_module.active(ctx.dao, ctx.config.glossary_path)
     if not entries:
         return list(segments)
     fixed: list[Segment] = []
