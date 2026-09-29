@@ -1,4 +1,5 @@
 import type { UIMessage } from "ai";
+import type { Language } from "./lib/transcribeAgain";
 /** The only place that talks to the backend. Cookie auth + the CSRF double-submit. */
 
 export interface Meeting {
@@ -131,6 +132,8 @@ export interface MeetingDetail extends Meeting {
   direction?: "ltr" | "rtl";
   /** Which way the notes run, for the summary's language. */
   summary_direction?: "ltr" | "rtl";
+  /** The classifier's top guesses, for the hidden "Transcribe again as…" only. */
+  language_candidates?: string[];
 }
 
 /** The Google Calendar connection. Never carries a token. */
@@ -433,10 +436,14 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
-  retry: (id: string, stage: string, force = false) =>
-    request<Job>(`/api/meetings/${id}/jobs/${stage}/retry?force=${force}`, {
-      method: "POST",
-    }),
+  /** `language` (transcribe only): the hidden "Transcribe again as…"; implies force. */
+  retry: (id: string, stage: string, force = false, language?: string) =>
+    request<Job>(
+      `/api/meetings/${id}/jobs/${stage}/retry?force=${force}` +
+        (language ? `&language=${encodeURIComponent(language)}` : ""),
+      { method: "POST" },
+    ),
+  languages: () => request<{ languages: Language[] }>("/api/languages"),
   /** With an event, the recording starts already matched to it ("Record this one"). */
   startRecording: (event?: { calendar_id: string; event_id: string }) =>
     request<{ meeting_id: string }>("/api/recording/start", {

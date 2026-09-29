@@ -79,7 +79,7 @@ class Harness:
         return self.dao.require_meeting(meeting.id)
 
     def context(
-        self, meeting, stage: JobStage = JobStage.TRANSCRIBE, services=None
+        self, meeting, stage: JobStage = JobStage.TRANSCRIBE, services=None, force: bool = False
     ) -> StageContext:  # type: ignore[no-untyped-def]
         job = self.queue.enqueue(meeting.id, stage)
         return StageContext(
@@ -90,6 +90,7 @@ class Harness:
             clock=self.clock,
             job=job,
             services=services,
+            force=force,
         )
 
 

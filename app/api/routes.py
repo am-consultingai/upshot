@@ -696,6 +696,9 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     from app.asr.languages import direction_for
 
     payload["direction"] = direction_for(meeting.language)
+    # For the hidden "Transcribe again as…" list only: the classifier's next guesses.
+    detection = (meta.read(meeting.path).get("asr") or {}).get("language_detection") or {}
+    payload["language_candidates"] = [str(lang) for lang, _p in detection.get("top3", [])]
     payload["summary_direction"] = direction_for(meeting.summary_language or meeting.language)
     payload["jobs"] = [
         {
@@ -1175,13 +1178,31 @@ def retention_sweep(request: Request) -> dict[str, Any]:
 
 @router.post("/meetings/{meeting_id}/jobs/{stage}/retry")
 def retry_stage(
-    request: Request, meeting_id: str, stage: str, force: bool = False
+    request: Request,
+    meeting_id: str,
+    stage: str,
+    force: bool = False,
+    language: str | None = None,
 ) -> dict[str, Any]:
-    """Re-run a stage. With ``force``, redo the work rather than reuse what is on disk."""
+    """Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.
+
+    ``language`` (transcribe only) is the hidden "Transcribe again as…" (R9): the meeting
+    is transcribed in that language whatever the classifier said, by the model for it,
+    and stays so on every later rerun. Implies ``force``.
+    """
     svc = services_of(request)
     if stage not in {str(item) for item in STAGE_ORDER}:
         raise HTTPException(404, f"no such stage {stage!r}")
-    svc.dao.require_meeting(meeting_id)
+    meeting = svc.dao.require_meeting(meeting_id)
+    if language is not None:
+        from app.asr.languages import is_supported
+
+        if stage != str(JobStage.TRANSCRIBE):
+            raise HTTPException(422, "a language applies to the transcribe stage only")
+        if not is_supported(language):
+            raise HTTPException(422, f"{language!r} is not a language Whisper transcribes")
+        meta.update(meeting.path, asr_language_override=language)
+        force = True
     if force:
         # A button press is a decision. Every later stage is redone too, or a fresh
         # summary would be rendered from the previous one's HTML.

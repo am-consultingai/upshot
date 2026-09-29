@@ -185,6 +185,16 @@ def decide(probs: Mapping[str, float]) -> LanguageDecision:
     )  # fmt: skip
 
 
+def override(language: str) -> LanguageDecision:
+    """The language someone chose with "Transcribe again as…" (R9): no classifier, and
+    the model for that language, told it."""
+    hebrew = language == HEBREW_LANGUAGE
+    return LanguageDecision(
+        language, HEBREW if hebrew else OTHER, True,
+        1.0 if hebrew else 0.0, 1.0, rule="override",
+    )  # fmt: skip
+
+
 def mean_probabilities(answers: list[list[tuple[str, float]]]) -> dict[str, float]:
     totals: dict[str, float] = {}
     if not answers:
