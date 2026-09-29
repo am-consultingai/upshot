@@ -15,6 +15,7 @@ from pathlib import Path
 
 from app import meta
 from app.asr.backend import Segment, TranscriptFile
+from app.asr.language import spoken_language
 from app.db.dao import Turn
 from app.log import get
 from app.pipeline.states import MeetingState
@@ -75,13 +76,16 @@ def import_transcript(
     started_at: datetime,
     duration_s: int,
     audio: Path | None = None,
-    language: str = "he",
+    language: str | None = None,
     speaker: str = DEFAULT_SPEAKER,
 ) -> ImportedTranscript:
     """Create a TRANSCRIBED meeting from text, with the recording attached if given."""
     lines = lines_of(text)
     if not lines:
         raise ValueError("the transcript is empty")
+    if not language:
+        # No audio to classify: the script the text is written in says what it is.
+        language = spoken_language(lines).language
 
     meeting = services.meetings.create(
         source="imported", started_at=started_at, title=title, title_source="import"

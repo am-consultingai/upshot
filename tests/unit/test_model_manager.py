@@ -124,30 +124,61 @@ def test_ensure_downloads_then_returns_the_folder(app_home: Path) -> None:
         failing.ensure()
 
 
-def test_a_missing_model_is_fetched_through_the_manager_not_faster_whisper(app_home: Path) -> None:
+@pytest.mark.parametrize("role", ROLES)
+@pytest.mark.parametrize("damage", ["folder", "marker"])
+def test_a_missing_model_is_a_broken_installation_and_nothing_is_downloaded(
+    app_home: Path, monkeypatch: pytest.MonkeyPatch, role: str, damage: str
+) -> None:
+    """R12: models come from installation only. A model deleted after install is
+    reported by name; no download function is called, and no other model stands in."""
+    import shutil
+
     from app.asr.local import LocalAsr
+    from app.asr.models import ModelNotInstalled, check_installed, missing_roles
+    from tests.fixtures.models import install_models
 
-    built: list[dict[str, Any]] = []
-    fetched: list[str] = []
+    placed = install_models(app_home)
+    if damage == "folder":
+        shutil.rmtree(placed[role])
+    else:
+        (placed[role] / model_manager.VERIFIED).unlink()
 
-    def fetch(repo: str) -> Path:
-        fetched.append(repo)
-        return app_home / "fetched"
+    def no_downloads(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a download was attempted")
 
-    class Model:
-        def transcribe(self, *args: Any, **kwargs: Any) -> tuple[list[Any], Any]:
-            return [], None
+    monkeypatch.setattr(model_manager, "http_fetch", no_downloads)
+    monkeypatch.setattr(model_manager, "hub_lister", no_downloads)
+    monkeypatch.setattr(model_manager.ModelManager, "start", no_downloads)
+    monkeypatch.setattr(model_manager.ModelManager, "ensure", no_downloads)
+    built: list[Any] = []
 
-    def factory(**kwargs: Any) -> Model:
-        built.append(kwargs)
-        return Model()
+    config = default_config(asr__device="cpu")
+    assert missing_roles(config) == [role]
+    with pytest.raises(ModelNotInstalled, match=MODELS[role].repo) as caught:
+        check_installed(config)
+    assert "installer again" in str(caught.value)
+    if role != CLASSIFIER:
+        with pytest.raises(ModelNotInstalled):
+            LocalAsr(config, role=role, model_factory=lambda **kw: built.append(kw)).load()
+        assert built == [], "no model is loaded in its place"
 
-    config = default_config()
-    config.set("asr.device", "cpu")
-    backend = LocalAsr(config, model_factory=factory, fetch=fetch)
-    backend.load()
-    assert fetched == [REPO]
-    assert built[0]["model_size_or_path"] == str(app_home / "fetched")
+
+def test_the_startup_check_names_the_missing_role(
+    tmp_path: Path, app_home: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import shutil
+
+    from app.main import _check_speech_models
+    from tests.fixtures.api import build_harness
+    from tests.fixtures.models import install_models
+
+    placed = install_models(app_home)
+    shutil.rmtree(placed[OTHER])
+    api = build_harness(tmp_path)
+    api.services.config.set("asr.backend", "local")
+    with caplog.at_level("ERROR"):
+        assert _check_speech_models(api.services) == [OTHER]
+    assert any(MODELS[OTHER].repo in record.getMessage() for record in caplog.records)
 
 
 def stub_all(home: Path | None = None, **kwargs: Any) -> dict[str, ModelManager]:

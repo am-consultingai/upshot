@@ -68,3 +68,27 @@ def test_import_refuses_an_empty_transcript(services) -> None:  # type: ignore[n
 
 def test_lines_of_drops_blanks() -> None:
     assert lines_of("a\n\n\n b \n") == ["a", "b"]
+
+
+@pytest.mark.parametrize(
+    ("text", "given", "stored"),
+    [
+        ("שלום לכולם\nנתחיל בסטטוס", None, "he"),
+        ("مرحبا بالجميع\nلنبدأ", None, "ar"),
+        ("Всем привет\nНачнём", None, "ru"),
+        ("Hello everyone\nLet's start", None, "en"),
+        ("Hello everyone", "de", "de"),
+    ],
+)
+def test_the_imported_language_is_detected_unless_given(  # type: ignore[no-untyped-def]
+    services, text: str, given: str | None, stored: str
+) -> None:
+    result = import_transcript(
+        services,
+        text=text,
+        title="import",
+        started_at=datetime(2026, 9, 2, 13, 0, tzinfo=UTC),
+        duration_s=60,
+        language=given,
+    )
+    assert services.dao.require_meeting(result.meeting_id).language == stored

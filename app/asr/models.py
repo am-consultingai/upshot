@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app import paths
 from app.config import Config
+from app.errors import PermanentError
 from app.log import get
 
 log = get(__name__)
@@ -142,10 +143,10 @@ def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
     return ModelChoice(model.repo, local=False, repo_id=model.repo)
 
 
-class ModelNotInstalled(RuntimeError):
+class ModelNotInstalled(PermanentError):
     """A speech model the installation should have put on disk is not there, or does not
     match its pinned revision. Nothing downloads it here (R12): the installation needs
-    repairing."""
+    repairing. Permanent: trying the job again changes nothing until it is repaired."""
 
     def __init__(self, role: str, where: str) -> None:
         model = MODELS[role]
@@ -171,6 +172,18 @@ def resolve_all(config: Config) -> dict[str, ModelChoice]:
     return {role: resolve(config, role) for role in ROLES}
 
 
+def missing_roles(config: Config) -> list[str]:
+    """The roles whose model is not installed, in installation order: empty when whole."""
+    return [role for role, choice in resolve_all(config).items() if not choice.local]
+
+
+def check_installed(config: Config) -> None:
+    """All three models present and verified, or ``ModelNotInstalled`` for the first that
+    is not: checked at startup and before each transcription, and never a download."""
+    for role in missing_roles(config):
+        require(config, role)
+
+
 def any_model_on_disk(config: Config) -> bool:
     """Whether any of the speech models is already here: an install that has been used.
 
@@ -182,19 +195,6 @@ def any_model_on_disk(config: Config) -> bool:
     except Exception as exc:  # pragma: no cover - a filesystem that refuses to be read
         log.warning("could not tell whether a speech model is on disk: %s", exc)
         return False
-
-
-def ensure(config: Config, *, allow_download: bool = True, role: str = HEBREW) -> ModelChoice:
-    """Resolve, downloading only when nothing local is available."""
-    choice = resolve(config, role)
-    if choice.local or not allow_download:
-        if not choice.local and not allow_download:
-            raise FileNotFoundError(
-                f"no local ASR model and downloads are disabled (would fetch {choice.reference})"
-            )
-        return choice
-    log.info("no local model; faster-whisper will fetch %s on first use", choice.reference)
-    return choice
 
 
 @dataclass(frozen=True)

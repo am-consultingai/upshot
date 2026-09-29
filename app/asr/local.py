@@ -25,7 +25,7 @@ from typing import Any
 
 from app import paths
 from app.asr.backend import Segment, Word, track_of
-from app.asr.models import HEBREW, MODELS, ModelChoice, resolve
+from app.asr.models import HEBREW, MODELS, ModelChoice, require, resolve
 from app.config import Config
 from app.log import get
 
@@ -298,7 +298,6 @@ class LocalAsr:
         role: str = HEBREW,
         model_factory: ModelFactory | None = None,
         choice: ModelChoice | None = None,
-        fetch: Callable[[str], Path] | None = None,
     ) -> None:
         self.config = config
         self.role = role
@@ -306,9 +305,6 @@ class LocalAsr:
         self.choice = choice
         #: A choice the caller made is kept; otherwise the model is resolved at load.
         self._given_choice = choice
-        # Downloads a repo that is not on disk and returns its folder. Without it the repo
-        # id goes to faster-whisper, which fetches it unseen into the Hugging Face cache.
-        self.fetch = fetch
         self.model: Any = None
         self.device = "cpu"
         self.compute_type = "int8"
@@ -335,7 +331,9 @@ class LocalAsr:
             return self.model
         device, compute, registered = probe_device(self.config)
         self.registered_dll_dirs = registered
-        self.choice = self._given_choice or resolve(self.config, self.role)
+        # The installed model or ModelNotInstalled: never a download (R12). A repo id
+        # handed to faster-whisper would fetch it unseen into the Hugging Face cache.
+        self.choice = self._given_choice or require(self.config, self.role)
         try:
             self.model = self._build(device, compute)
             self.device, self.compute_type = device, compute
@@ -353,11 +351,7 @@ class LocalAsr:
         return self.model
 
     def _build(self, device: str, compute_type: str) -> Any:
-        choice = self.choice or resolve(self.config, self.role)
-        if not choice.local and choice.repo_id and self.fetch is not None:
-            folder = self.fetch(choice.repo_id)
-            choice = ModelChoice(str(folder), local=True, repo_id=choice.repo_id)
-            self.choice = choice
+        choice = self.choice or require(self.config, self.role)
         cpu_threads = max(1, (os.cpu_count() or 4) - 2)
         return self.model_factory(
             model_size_or_path=choice.reference,
