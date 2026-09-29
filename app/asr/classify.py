@@ -385,3 +385,55 @@ class WhisperClassifier:
 
 def classify(inputs: Mapping[str, Path], config: Config, **kwargs: Any) -> LanguageDecision:
     return WhisperClassifier(config, **kwargs).classify(inputs)
+
+
+def _classify_in_child(data: dict[str, Any], inputs: dict[str, str]) -> dict[str, Any]:
+    """The classifier, in a process of its own (see ``IsolatedClassifier``)."""
+    config = Config(data)
+    decision = WhisperClassifier(config).classify({k: Path(v) for k, v in inputs.items()})
+    return decision.as_dict()
+
+
+ChildRunner = Callable[[dict[str, Any], dict[str, str]], dict[str, Any]]
+
+
+def spawn_child(data: dict[str, Any], inputs: dict[str, str]) -> dict[str, Any]:
+    """Run ``_classify_in_child`` in a fresh spawned process and wait for it."""
+    import multiprocessing
+
+    with multiprocessing.get_context("spawn").Pool(1) as pool:
+        return dict(pool.apply(_classify_in_child, (data, inputs)))
+
+
+class IsolatedClassifier:
+    """The classifier on the CPU runs in a child process that exits when it answers.
+
+    Measured (2026-09-29, CPU, a 100 s clip): run in the same process, the classifier's
+    freed memory stayed in the heap, fragmented, and ivrit large-v3 then peaked at 5.7 GB
+    instead of 4.5 GB, over the D60 budget that the 12 GB minimum (D66) rests on. A process
+    of its own returns every byte. On the GPU the weights are in video memory and the
+    extra second a new process costs is not worth it, so it runs in place there.
+    """
+
+    name = "whisper-small"
+
+    def __init__(self, config: Config, *, run_child: ChildRunner | None = None) -> None:
+        self.config = config
+        self.run_child = run_child or spawn_child
+        self.isolated = False
+
+    def classify(self, inputs: Mapping[str, Path]) -> LanguageDecision:
+        from app.asr.local import planned_device
+
+        require(self.config, CLASSIFIER)  # a missing model is said here, not in the child
+        if planned_device(self.config) != "cpu":
+            return WhisperClassifier(self.config).classify(inputs)
+        try:
+            answer = self.run_child(
+                self.config.as_dict(), {track: str(wav) for track, wav in inputs.items()}
+            )
+        except Exception as exc:
+            log.warning("classifier: its own process failed (%s); running it in place", exc)
+            return WhisperClassifier(self.config).classify(inputs)
+        self.isolated = True
+        return LanguageDecision.from_dict(answer)

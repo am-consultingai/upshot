@@ -385,4 +385,9 @@ if __name__ == "__main__":  # pragma: no cover - process entry point
     # PyInstaller runs this file as the script, as __main__. Without these lines the
     # frozen upshot.exe defined main() and exited 0 at once: no tray, no server, and
     # every --selftest "passed" without running (the first freeze, machine A, 2026-09-23).
+    import multiprocessing
+
+    # First: a child process the frozen exe starts for the CPU language classifier
+    # (app/asr/classify.py) arrives here and must run that, not the app.
+    multiprocessing.freeze_support()
     sys.exit(main())
