@@ -53,13 +53,14 @@ class RemoteAsr:
         self,
         wav: Path,
         *,
-        language: str = "he",
+        language: str | None = "he",
         initial_prompt: str | None = None,
         word_timestamps: bool = True,
+        multilingual: bool = False,
     ) -> list[Segment]:
         if self.healthy():
             try:
-                return self._post(wav, language, initial_prompt, word_timestamps)
+                return self._post(wav, language, initial_prompt, word_timestamps, multilingual)
             except Exception as exc:
                 self._warn(f"remote transcription failed: {exc}")
         self.used_fallback += 1
@@ -68,10 +69,16 @@ class RemoteAsr:
             language=language,
             initial_prompt=initial_prompt,
             word_timestamps=word_timestamps,
+            multilingual=multilingual,
         )
 
     def _post(
-        self, wav: Path, language: str, initial_prompt: str | None, word_timestamps: bool
+        self,
+        wav: Path,
+        language: str | None,
+        initial_prompt: str | None,
+        word_timestamps: bool,
+        multilingual: bool = False,
     ) -> list[Segment]:
         import httpx
 
@@ -80,7 +87,7 @@ class RemoteAsr:
                 f"{self.url}/api/asr",
                 files={"audio": (wav.name, handle, "audio/wav")},
                 data={
-                    "language": language,
+                    "language": language or "",
                     "initial_prompt": initial_prompt or "",
                     "word_timestamps": str(word_timestamps).lower(),
                 },

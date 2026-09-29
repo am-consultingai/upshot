@@ -387,12 +387,19 @@ class LocalAsr:
     # -- protocol ----------------------------------------------------------
 
     def _raw_transcribe(
-        self, wav: Path, *, language: str | None, initial_prompt: str | None, word_timestamps: bool
+        self,
+        wav: Path,
+        *,
+        language: str | None,
+        initial_prompt: str | None,
+        word_timestamps: bool,
+        multilingual: bool = False,
     ) -> list[Any]:
         model = self.model if self.model is not None else self.load()
         segments, _info = model.transcribe(
             str(wav),
             language=language,
+            multilingual=multilingual,
             initial_prompt=initial_prompt,
             vad_filter=True,
             word_timestamps=word_timestamps,
@@ -415,9 +422,10 @@ class LocalAsr:
         self,
         wav: Path,
         *,
-        language: str = "he",
+        language: str | None = "he",
         initial_prompt: str | None = None,
         word_timestamps: bool = True,
+        multilingual: bool = False,
     ) -> list[Segment]:
         self.load()
         track = track_of(wav)
@@ -429,6 +437,7 @@ class LocalAsr:
                 language=language,
                 initial_prompt=initial_prompt,
                 word_timestamps=word_timestamps,
+                multilingual=multilingual,
             )
         ):
             words = tuple(
