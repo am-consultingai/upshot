@@ -108,13 +108,18 @@ body :dir(rtl) {
 
 /*
  * Under a reduced-motion preference the rule above simply never applies, which
- * is the right default. The two keyframe animations in the application are not
- * covered by it, so they are stopped here by name rather than with a blanket
- * `* { animation: none }` that would also kill a future loading shimmer's
- * fallback.
+ * is the right default. The pulse is stopped here by name rather than with a
+ * blanket `* { animation: none }` that would also kill a future loading
+ * shimmer's fallback.
+ *
+ * The spinner is not: it is how "working" is said, and a still ring says
+ * "stuck". Windows reports reduced motion whenever its animation effects are
+ * off (performance settings, remote desktop, VMs), and on machine B the
+ * assistant's "Working…" looked frozen (2026-09-29) — the call D67 made for
+ * setup's scenes. A small ring turning in place is not the motion the setting
+ * is about.
  */
 @media (prefers-reduced-motion: reduce) {
-  .animate-spin,
   .animate-ping {
     animation: none;
   }
