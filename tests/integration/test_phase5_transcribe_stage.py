@@ -61,6 +61,77 @@ def test_the_fake_asr_brings_a_matching_classifier(tmp_path: Path) -> None:
     assert h.dao.require_meeting(meeting.id).language == "en"
 
 
+# ------------------------------------------------------- routing (story C, R2/R3)
+
+
+def route(tmp_path: Path, classifier: FakeClassifier) -> tuple[FakeAsr, object, object]:
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=60)
+    backend = FakeAsr()
+    transcribe.run(h.context(meeting, services=Services(backend, classifier)))
+    return backend, h.dao.require_meeting(meeting.id), meeting
+
+
+def test_a_hebrew_meeting_goes_to_the_hebrew_model_told_hebrew(tmp_path: Path) -> None:
+    backend, stored, _m = route(tmp_path, FakeClassifier("he"))
+    assert backend.roles == ["hebrew"]
+    assert [(c["role"], c["language"], c["multilingual"]) for c in backend.transcribe_calls] == [
+        ("hebrew", "he", False), ("hebrew", "he", False),
+    ]  # fmt: skip
+    assert stored.language == "he"
+
+
+def test_a_spanish_meeting_goes_to_stock_whisper_forced_to_spanish(tmp_path: Path) -> None:
+    backend, stored, meeting = route(tmp_path, FakeClassifier("es", p=0.97))
+    assert backend.roles == ["other"]
+    assert {(c["role"], c["language"], c["multilingual"]) for c in backend.transcribe_calls} == {
+        ("other", "es", False)
+    }
+    assert stored.language == "es"
+    segments, _payload = transcribe.load_segments(meeting.path)
+    assert any("proyecto" in s.text for s in segments), "the transcript is in Spanish"
+
+
+def test_an_unclear_meeting_lets_whisper_decide(tmp_path: Path) -> None:
+    from app.asr.classify import decide
+
+    unsure = decide({"ru": 0.45, "en": 0.35, "he": 0.2})
+    backend, stored, _m = route(tmp_path, FakeClassifier(decision=unsure))
+    assert {(c["role"], c["language"], c["multilingual"]) for c in backend.transcribe_calls} == {
+        ("other", None, True)
+    }
+    assert stored.language == "ru", "the meeting's language is still the top one"
+    assert stored.language_conf == pytest.approx(0.45)
+
+
+def test_exactly_one_backend_is_built_per_meeting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R3: one large model per meeting, both tracks through it."""
+    from app.asr import factory
+
+    built: list[str] = []
+    real = factory.make_backend
+
+    def counting(config: object, role: str = "hebrew") -> object:
+        built.append(role)
+        return real(config, role)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(factory, "make_backend", counting)
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy", asr__fake_language="ar")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=60)
+    transcribe.run(h.context(meeting, services=None))
+    assert built == ["other"]
+    assert h.dao.require_meeting(meeting.id).language == "ar"
+
+
+def test_the_model_used_is_recorded(tmp_path: Path) -> None:
+    _backend, _stored, meeting = route(tmp_path, FakeClassifier("es"))
+    assert meta.read(meeting.path)["asr"]["role"] == "other"
+
+
 def test_a_hebrew_meeting_needs_no_review(tmp_path: Path) -> None:
     """There is no detection left to be unsure about, so nothing is flagged for it."""
     h = harness(tmp_path, asr__backend="fake", audio__vad="energy")

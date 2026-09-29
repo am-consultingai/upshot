@@ -56,15 +56,19 @@ class Segment:
 
 @runtime_checkable
 class AsrBackend(Protocol):
+    """One speech model's transcription. ``language=None, multilingual=True`` lets
+    Whisper decide the language per 30 s, for a meeting the classifier was unsure of."""
+
     name: str
 
     def transcribe(
         self,
         wav: Path,
         *,
-        language: str = "he",
+        language: str | None = "he",
         initial_prompt: str | None = None,
         word_timestamps: bool = True,
+        multilingual: bool = False,
     ) -> list[Segment]: ...
 
     def unload(self) -> None: ...

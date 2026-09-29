@@ -1,6 +1,8 @@
 """The transcribe stage: the meeting's language, then one WAV per track → one segment list.
 
-The classifier (``app/asr/classify.py``) decides the language first (D80).
+The classifier (``app/asr/classify.py``) decides the language first; then exactly one
+large model transcribes both tracks (R3): ivrit-ai large-v3 for Hebrew, stock large-v3
+for everything else (D80).
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from app import meta
 from app.asr.backend import AsrBackend, Segment
 from app.asr.classify import Classifier, LanguageDecision
 from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
-from app.asr.models import HEBREW_LANGUAGE
+from app.asr.models import HEBREW
 from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
 from app.audio.writer import ChunkRecord, recover, track_files, track_path
@@ -184,14 +186,18 @@ def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
     return decision
 
 
-def backend_for(ctx: StageContext) -> AsrBackend:
+def backend_for(ctx: StageContext, role: str = HEBREW) -> AsrBackend:
+    """The one backend for this meeting, for the model role the classifier chose."""
     services = ctx.services
     backend = getattr(services, "asr", None) if services is not None else None
     if backend is not None:
+        select = getattr(backend, "select_role", None)
+        if callable(select):
+            select(role)
         return backend  # type: ignore[no-any-return]
     from app.asr.factory import make_backend
 
-    return make_backend(ctx.config)
+    return make_backend(ctx.config, role)
 
 
 def run(ctx: StageContext) -> None:
@@ -216,15 +222,18 @@ def run(ctx: StageContext) -> None:
         asr_inputs = _asr_inputs(ctx, echo_model)
         ctx.checkpoint()
         decision = _classify(ctx, asr_inputs)
-        backend = backend_for(ctx)
+        backend = backend_for(ctx, decision.route)
         for _track, wav in sorted(asr_inputs.items()):
             ctx.checkpoint()
             track_segments = backend.transcribe(
-                # Still the Hebrew model, told Hebrew, until routing (story C).
                 wav,
-                language=HEBREW_LANGUAGE,
+                # "he" on ivrit; the language on stock large-v3, or None with
+                # multilingual when the classifier was unsure: forcing one language on
+                # an unclear meeting translates the rest into it.
+                language=decision.transcribe_language,
                 initial_prompt=prompt,
                 word_timestamps=True,
+                multilingual=decision.multilingual,
             )
             segments.extend(track_segments)
     finally:

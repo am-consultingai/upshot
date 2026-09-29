@@ -192,7 +192,32 @@ def test_transcribe_params_are_the_tuned_set(tmp_path: Path) -> None:
     assert call["vad_filter"] is True
     assert call["word_timestamps"] is True
     assert call["language"] == "he"
+    assert call["multilingual"] is False
     assert call["beam_size"] == 5
+
+
+@pytest.mark.parametrize(("language", "multilingual"), [("es", False), (None, True)])
+def test_stock_whisper_gets_the_same_tuned_set(
+    tmp_path: Path, language: str | None, multilingual: bool
+) -> None:
+    """Both models run with the same guards; only the language differs (story C)."""
+    models: list[RecordingModel] = []
+
+    def factory(**kwargs: object) -> RecordingModel:
+        model = RecordingModel(**kwargs)
+        models.append(model)
+        return model
+
+    backend = LocalAsr(default_config(), role=OTHER, model_factory=factory)
+    backend.transcribe(
+        make_wav(tmp_path / "them" / "0001.wav", 2), language=language, multilingual=multilingual
+    )
+    call = models[0].calls[-1]
+    assert (call["language"], call["multilingual"]) == (language, multilingual)
+    assert call["condition_on_previous_text"] is False
+    assert call["vad_filter"] is True and call["word_timestamps"] is True
+    assert call["beam_size"] == 5
+    assert backend.describe()["repo"] == MODELS[OTHER].repo
 
 
 @pytest.mark.parametrize(
@@ -415,24 +440,23 @@ def test_transcribe_speech_fixture(tmp_path: Path) -> None:
 
 @pytest.mark.windows
 @pytest.mark.slow
-def test_english_speech_reads_as_an_english_meeting(tmp_path: Path) -> None:
-    """T1: English speech, transcribed as always with Hebrew, is an English meeting."""
+def test_english_speech_is_classified_as_an_english_meeting(tmp_path: Path) -> None:
+    """T1: English speech is heard as English by the classifier, before transcription."""
+    from app.asr.classify import WhisperClassifier
+    from app.asr.models import CLASSIFIER
     from tests.fixtures import speech
 
     if not speech.available():
         pytest.skip("SAPI is only available on Windows")
     config = default_config()
-    if not resolve(config).local:
-        pytest.skip("no local ASR model on this machine; set asr.model_path")
+    if not resolve(config, CLASSIFIER).local:
+        pytest.skip("no classifier model on this machine; run upshot --prepare")
     wav = speech.synth(
         "Good morning everyone, can you hear me? Let us start the weekly sync.",
         tmp_path / "them" / "0001.wav",
     )
-    backend = LocalAsr(config)
-    segments = backend.transcribe(wav, language=DEFAULT_LANGUAGE)
-    decision = spoken_language(segment.text for segment in segments)
-    assert decision.language == "en", [segment.text for segment in segments]
-    backend.unload()
+    decision = WhisperClassifier(config).classify({"them": wav})
+    assert (decision.language, decision.route) == ("en", OTHER), decision.as_dict()
 
 
 # ------------------------------------------------------------------ configured CUDA dir
