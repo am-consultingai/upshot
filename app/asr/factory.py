@@ -41,5 +41,5 @@ def make_backend(config: Config, role: str = HEBREW) -> AsrBackend:
         url = str(config.get("asr.remote_url") or config.get("worker_url") or "")
         if not url:
             return LocalAsr(config, role=role)
-        return RemoteAsr(url, LocalAsr(config, role=role))
+        return RemoteAsr(url, LocalAsr(config, role=role), role=role)
     raise ValueError(f"unknown asr.backend {kind!r}")

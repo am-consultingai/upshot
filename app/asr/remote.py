@@ -1,4 +1,20 @@
-"""Remote ASR: POST the WAV to another instance, with automatic local fallback."""
+"""Remote ASR: POST the WAV to another instance, with automatic local fallback.
+
+The contract with the worker's ``POST /api/asr`` (multipart form; D80):
+
+- ``audio``: the track's WAV;
+- ``route``: ``hebrew`` or ``other``, which of the two large models to transcribe with
+  (ivrit-ai large-v3 or stock Whisper large-v3). The worker holds both, installed by its
+  own ``--prepare``, and never downloads one while transcribing (R12);
+- ``language``: ``he`` on the Hebrew model; the meeting's language on the other, or empty
+  to let Whisper decide per 30 s;
+- ``multilingual``: ``true`` when ``language`` is empty for that reason;
+- ``initial_prompt``, ``word_timestamps``: as before.
+
+It answers ``{"segments": [...]}``. The language is decided here, on the client: the
+worker needs no classifier. Whatever goes wrong, the local fallback transcribes with the
+same model and the same arguments.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from app.asr.backend import AsrBackend, Segment, Word, track_of
+from app.asr.models import HEBREW, MODELS
 from app.log import get
 
 log = get(__name__)
@@ -21,11 +38,14 @@ class RemoteAsr:
         url: str,
         fallback: AsrBackend,
         *,
+        role: str = HEBREW,
         timeout: float = 300.0,
         health_timeout: float = 2.0,
     ) -> None:
         self.url = url.rstrip("/")
         self.fallback = fallback
+        #: Which large model the worker is asked for; the fallback holds the same one.
+        self.role = role
         self.timeout = timeout
         self.health_timeout = health_timeout
         self.used_fallback = 0
@@ -87,7 +107,9 @@ class RemoteAsr:
                 f"{self.url}/api/asr",
                 files={"audio": (wav.name, handle, "audio/wav")},
                 data={
+                    "route": self.role,
                     "language": language or "",
+                    "multilingual": str(multilingual).lower(),
                     "initial_prompt": initial_prompt or "",
                     "word_timestamps": str(word_timestamps).lower(),
                 },
@@ -113,6 +135,17 @@ class RemoteAsr:
             )
             for index, item in enumerate(payload.get("segments", []))
         ]
+
+    def describe(self) -> dict[str, Any]:
+        model = MODELS[self.role]
+        return {
+            "name": "remote",
+            "url": self.url,
+            "role": self.role,
+            "repo": model.repo,
+            "revision": model.revision,
+            "fallbacks": self.used_fallback,
+        }
 
     def unload(self) -> None:
         self.fallback.unload()
