@@ -516,6 +516,8 @@ class ModelSet:
             if not running and not self.ready():
                 self._cancel.clear()
                 self._failure, self._cancelled = None, False
+                # Named before the thread starts, so the first report already says which.
+                self._current = next(iter(self._pending()), "")
                 self._thread = threading.Thread(target=self._run, name="models", daemon=True)
                 self._thread.start()
         return self.status()
