@@ -13,11 +13,13 @@
   The summarizer is whatever Settings says. Pass -Provider to override it for one run.
 
 .PARAMETER ModelPath
-  The ivrit-ai CTranslate2 model folder (the one containing model.bin).
+  The ivrit-ai CTranslate2 model folder (the one containing model.bin). Defaults to the
+  ModelPath in run-app.local.psd1, if there is one.
 
 .PARAMETER CudaDir
   A folder holding cuBLAS and cuDNN DLLs. Without it CTranslate2 silently runs on the CPU,
-  which on a 3 GB large-v3 model is several times slower.
+  which on a 3 GB large-v3 model is several times slower. Defaults to the CudaDir in
+  run-app.local.psd1, if there is one.
 
 .PARAMETER Provider
   Summarizer, for this run only: fake, anthropic, gemini, openai, ollama,
@@ -41,8 +43,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $ModelPath = "C:\path\to\ivrit_model",
-    [string] $CudaDir   = "C:\path\to\cuda",
+    [string] $ModelPath = "",
+    [string] $CudaDir   = "",
     [string] $Provider = "",
     [string] $HomeDir = "$env:LOCALAPPDATA\upshot",
     [string] $WorkDir = "$env:LOCALAPPDATA\upshot-win",
@@ -56,6 +58,18 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
+
+# This machine's own model and CUDA folders live next to this script in
+# run-app.local.psd1, which git ignores: they name the developer's drives and folders, and
+# this repository is public. For example:
+#   @{ ModelPath = "D:\models\ivrit_model"; CudaDir = "D:\cuda" }
+# A value passed on the command line wins over the file.
+$localSettings = Join-Path $PSScriptRoot "run-app.local.psd1"
+if (Test-Path -LiteralPath $localSettings) {
+    $local = Import-PowerShellDataFile -LiteralPath $localSettings
+    if (-not $PSBoundParameters.ContainsKey("ModelPath") -and $local.ModelPath) { $ModelPath = $local.ModelPath }
+    if (-not $PSBoundParameters.ContainsKey("CudaDir") -and $local.CudaDir) { $CudaDir = $local.CudaDir }
+}
 
 function Write-Step { param([string] $Text) Write-Host "`n=== $Text" -ForegroundColor Cyan }
 function Write-Good { param([string] $Text) Write-Host "  $Text" -ForegroundColor Green }
@@ -255,8 +269,8 @@ try {
     }
 
     # [System.IO.Path]::Combine, not Join-Path: Join-Path resolves the drive through the
-    # PowerShell provider, so a path on a drive this machine does not have - the default
-    # here names D: - throws DriveNotFound, and under "Stop" that killed the whole run
+    # PowerShell provider, so a path on a drive this machine does not have - a local
+    # settings file copied from another machine can name one - throws DriveNotFound, and under "Stop" that killed the whole run
     # before anything started. A model that is not there is a download, not an error.
     $modelBin = [System.IO.Path]::Combine($ModelPath, "model.bin")
     $modelOk = ($ModelPath -ne "") -and (Test-Path -LiteralPath $modelBin)
