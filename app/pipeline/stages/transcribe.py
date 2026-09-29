@@ -41,10 +41,10 @@ def _chunk_inputs(folder: Path) -> list[Path]:
 
 
 def build_initial_prompt(ctx: StageContext, previous_sentence: str | None) -> str | None:
-    entries = glossary_module.merge(
-        glossary_module.from_db(ctx.dao),
-        glossary_module.load_yaml(ctx.config.glossary_path),
-    )
+    """Whisper's prompt: glossary terms and attendee names. None while the glossary is off."""
+    if not glossary_module.ENABLED:
+        return None
+    entries = glossary_module.active(ctx.dao, ctx.config.glossary_path)
     participants = _participants(ctx)
     return glossary_module.initial_prompt(
         entries,

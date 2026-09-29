@@ -80,7 +80,8 @@ def test_transcribe_is_idempotent(tmp_path: Path) -> None:
     assert len(backend.transcribe_calls) == calls, "the stage found its own output"
 
 
-def test_participants_reach_initial_prompt(tmp_path: Path) -> None:
+def test_participants_reach_initial_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.glossary.ENABLED", True)  # off by default since 2026-09-29
     h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
     meeting = h.meeting()
     h.dao.upsert_term(
@@ -93,6 +94,22 @@ def test_participants_reach_initial_prompt(tmp_path: Path) -> None:
     transcribe.run(h.context(meeting, services=Services(backend)))
     prompts = {call["initial_prompt"] for call in backend.transcribe_calls}
     assert any(p and "ArgoCD" in p for p in prompts)
+
+
+def test_whisper_gets_no_prompt_while_the_glossary_is_off(tmp_path: Path) -> None:
+    """Glossary terms and attendee names both stay out of transcription by default."""
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    h.dao.upsert_term(
+        __import__("app.db.dao", fromlist=["GlossaryTerm"]).GlossaryTerm(
+            "ArgoCD", kind="tech", aliases="ארגו"
+        )
+    )
+    write_chunks(meeting.path, seconds=90)
+    backend = FakeAsr()
+    transcribe.run(h.context(meeting, services=Services(backend)))
+    assert backend.transcribe_calls
+    assert all(call["initial_prompt"] is None for call in backend.transcribe_calls)
 
 
 def test_missing_audio_fails_loudly(tmp_path: Path) -> None:

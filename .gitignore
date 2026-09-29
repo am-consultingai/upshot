@@ -53,9 +53,17 @@ google_oauth_client.json
 scripts/agent/
 scripts/windows/scenarios/
 scripts/windows/run-app.local.psd1
+CLAUDE.local.md
+# Local scratch tools: they name this machine's browser build and folders.
+frontend/.pw-local.config.ts
+frontend/.shot.mjs
 .claude/settings.json
 .claude/clickup.md
 
 # UI/UX makeover research: screenshots of this app and of competitors, plus notes.
 # Scratch material for a redesign, not part of the product.
 .ui-research/
+
+# Product research notes (third-party integrations, pricing, platform policies).
+# Working findings behind decisions; a finished decision goes to docs/DECISIONS.md.
+.research/
