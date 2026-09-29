@@ -52,6 +52,7 @@ google_oauth_client.json
 # them. Kept on the developer's disk only; removed from this public repository's history.
 scripts/agent/
 scripts/windows/scenarios/
+scripts/windows/run-app.local.psd1
 .claude/settings.json
 .claude/clickup.md
 
