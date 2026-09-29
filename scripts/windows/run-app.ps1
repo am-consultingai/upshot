@@ -276,7 +276,7 @@ try {
     $modelOk = ($ModelPath -ne "") -and (Test-Path -LiteralPath $modelBin)
     if (-not $modelOk) {
         if ($ModelPath -ne "") { Write-Warn "no model.bin under: $ModelPath" }
-        $plan += "the transcription model (~1.6-3 GB, one time, during the first transcription)"
+        $plan += "the three speech models (~6.7 GB, one time: run upshot --prepare, or the setup screen's Download)"
     }
 
     $needUi = -not (Test-Path "frontend\dist\index.html")

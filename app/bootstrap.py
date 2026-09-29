@@ -67,7 +67,7 @@ class BootstrapReport:
 def choose_profile(config: Config) -> tuple[str, str]:
     """CUDA probe → profile → model. Pascal-class GPUs get int8 (DESIGN.md §20)."""
     from app.asr.local import planned_device
-    from app.asr.models import resolve
+    from app.asr.models import HEBREW, resolve
 
     configured = config.profile
     # The same decision the backend makes at load, VRAM gate included, so the profile
@@ -76,7 +76,7 @@ def choose_profile(config: Config) -> tuple[str, str]:
     profile = (
         configured if configured != "auto" else ("gpu-live" if device == "cuda" else "cpu-deferred")
     )
-    choice = resolve(config)
+    choice = resolve(config, HEBREW)
     return profile, choice.reference
 
 

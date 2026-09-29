@@ -1,10 +1,8 @@
-"""Model resolution and download (DESIGN.md §11, §20.2).
+"""The speech models, and where they are on disk (DESIGN.md §11, §20.2, DECISIONS.md D80).
 
-Order: configured ``model_path`` → the app home's ``model/`` directory → the one repo,
-downloaded by ``app.asr.model_manager`` into
-``models/asr/`` → the bare repo id.
-With ``model_path`` pointed at an existing CTranslate2 directory, first run downloads
-nothing.
+Three roles, each one pinned repo revision, downloaded by ``app.asr.model_manager`` into
+``models/asr/<repo>`` at installation. ``asr.model_path`` overrides the Hebrew model's
+folder for a developer who keeps a copy elsewhere.
 """
 
 from __future__ import annotations
@@ -28,24 +26,78 @@ EMBEDDING_URL = (
     "speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
 )
 
-#: The one speech model, on the GPU and the CPU alike (DECISIONS.md D60). Measured on
-#: 2026-09-25 against a Hebrew clip, an English clip and the two spliced together: it
-#: writes Hebrew as Hebrew and English as English, mixed or not, as long as it is told
-#: the language is Hebrew. The alternatives each failed one of those: its turbo sibling
-#: translated the English of the mixed clip into Hebrew (machine B's invented Hebrew,
-#: ClickUp z8tj1haczh), and stock Whisper turbo translated the Hebrew into English.
-REPO = "ivrit-ai/whisper-large-v3-ct2"
+#: The three speech models (DECISIONS.md D80, superseding D60), each pinned to a hub
+#: revision so an upstream re-upload cannot silently change transcripts. All three are
+#: downloaded at installation (``upshot.exe --prepare``) and only then (R12):
+#:
+#: - ``classifier``: Whisper small. It hears 5 × 30 s of the meeting's speech and says
+#:   which language it was in, before either large model loads (``app/asr/classify.py``).
+#:   As accurate as large-v3 at that on every recording measured, at a fifth of the cost.
+#: - ``hebrew``: ivrit-ai large-v3, for a meeting that is mostly Hebrew. Its newest Hebrew
+#:   large model (2025-10-27); its later uploads are turbo variants and format conversions.
+#: - ``other``: stock Whisper large-v3, for every other language. ivrit cannot write
+#:   them: on FLEURS it scored 99-103 % WER on Spanish, French and Russian.
+#:
+#: Large-v3 and never turbo for transcription (R6): turbo is smaller and less accurate.
+CLASSIFIER = "classifier"
+HEBREW = "hebrew"
+OTHER = "other"
 
-#: The language the model is always given. Not a setting: this model's own language
-#: detection answers Hebrew for every input, English included, and told "English" it
-#: drifts into Hebrew it was never played. Told "Hebrew", English speech comes out as
-#: English. Which language a meeting was in is read from its transcript instead
-#: (``app/asr/language.py``).
-ASR_LANGUAGE = "he"
 
-#: What the download weighs (DESIGN.md §20.2), so the setup screen can say so before it
-#: starts. The manager learns the exact figure from the hub once the download begins.
-REPO_BYTES = 3_090_000_000
+@dataclass(frozen=True)
+class SpeechModel:
+    """One of the three: which repo, at which revision, and what it weighs."""
+
+    role: str
+    repo: str
+    revision: str
+    #: What the download weighs (DESIGN.md §20.2), so the setup screen and the installer
+    #: can say so before it starts. The manager learns the exact figure from the hub.
+    size_bytes: int
+
+    @property
+    def marker(self) -> str:
+        """What the verified marker holds: a marker for another revision is not ready."""
+        return f"{self.repo}@{self.revision}"
+
+
+#: In installation order: the small one first, so a failure shows up early.
+MODELS: dict[str, SpeechModel] = {
+    CLASSIFIER: SpeechModel(
+        CLASSIFIER,
+        "Systran/faster-whisper-small",
+        "536b0662742c02347bc0e980a01041f333bce120",
+        486_000_000,
+    ),
+    HEBREW: SpeechModel(
+        HEBREW,
+        "ivrit-ai/whisper-large-v3-ct2",
+        "e9ed4a4a98d761b0f617d668303de2c514236c66",
+        3_090_000_000,
+    ),
+    OTHER: SpeechModel(
+        OTHER,
+        "Systran/faster-whisper-large-v3",
+        "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+        3_090_000_000,
+    ),
+}
+ROLES: tuple[str, ...] = tuple(MODELS)
+
+#: All three together, about 6.67 GB.
+TOTAL_BYTES = sum(model.size_bytes for model in MODELS.values())
+
+#: A meeting's language when nothing says otherwise: an empty meeting, a missing field.
+DEFAULT_LANGUAGE = "he"
+
+#: The language code that routes a meeting to the Hebrew model.
+HEBREW_LANGUAGE = "he"
+
+
+def role_for_language(language: str | None) -> str:
+    """``he`` → the Hebrew model; anything else, or no language at all → stock large-v3."""
+    return HEBREW if language == HEBREW_LANGUAGE else OTHER
+
 
 MODEL_FILES = ("model.bin", "config.json")
 
@@ -67,41 +119,49 @@ def looks_like_model_dir(path: Path) -> bool:
     return path.is_dir() and all((path / name).exists() for name in MODEL_FILES)
 
 
-def resolve(config: Config) -> ModelChoice:
-    """Where the model is: ``asr.model_path``, the app home's ``model/``, or the download."""
-    configured = config.get("asr.model_path")
-    if configured:
-        path = Path(str(configured)).expanduser()
-        if looks_like_model_dir(path):
-            return ModelChoice(str(path), local=True)
-        log.warning("asr.model_path %s is not a CTranslate2 model directory", path)
-    home_model = paths.app_home() / "model"
-    if looks_like_model_dir(home_model):
-        return ModelChoice(str(home_model), local=True)
-    from app.asr.model_manager import VERIFIED, target_for
+def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
+    """Where one role's model is: the managed folder, verified at its pinned revision.
 
-    managed = target_for(REPO)
-    if looks_like_model_dir(managed) and (managed / VERIFIED).is_file():
-        return ModelChoice(str(managed), local=True, repo_id=REPO)
-    return ModelChoice(REPO, local=False, repo_id=REPO)
+    ``asr.model_path`` is a developer's override for the Hebrew model only (a copy of it
+    kept elsewhere); nothing a user sets reaches the other two. A model that is not on
+    disk comes back with ``local=False``: the caller decides what that means.
+    """
+    model = MODELS[role]
+    if role == HEBREW:
+        configured = config.get("asr.model_path")
+        if configured:
+            path = Path(str(configured)).expanduser()
+            if looks_like_model_dir(path):
+                return ModelChoice(str(path), local=True, repo_id=model.repo)
+            log.warning("asr.model_path %s is not a CTranslate2 model directory", path)
+    from app.asr.model_manager import is_verified, target_for
+
+    managed = target_for(model.repo)
+    if is_verified(managed, model):
+        return ModelChoice(str(managed), local=True, repo_id=model.repo)
+    return ModelChoice(model.repo, local=False, repo_id=model.repo)
+
+
+def resolve_all(config: Config) -> dict[str, ModelChoice]:
+    return {role: resolve(config, role) for role in ROLES}
 
 
 def any_model_on_disk(config: Config) -> bool:
-    """Whether the speech model this config would load is already here.
+    """Whether any of the speech models is already here: an install that has been used.
 
     Never raises: it decides whether an existing install skips first-run setup, and a
     question like that must not be able to stop the application from starting.
     """
     try:
-        return resolve(config).local
+        return any(choice.local for choice in resolve_all(config).values())
     except Exception as exc:  # pragma: no cover - a filesystem that refuses to be read
         log.warning("could not tell whether a speech model is on disk: %s", exc)
         return False
 
 
-def ensure(config: Config, *, allow_download: bool = True) -> ModelChoice:
+def ensure(config: Config, *, allow_download: bool = True, role: str = HEBREW) -> ModelChoice:
     """Resolve, downloading only when nothing local is available."""
-    choice = resolve(config)
+    choice = resolve(config, role)
     if choice.local or not allow_download:
         if not choice.local and not allow_download:
             raise FileNotFoundError(

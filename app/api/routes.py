@@ -168,27 +168,23 @@ def _disk_usage(path: Path) -> Any:
 # --------------------------------------------------------------------------- speech model
 
 
-def _model_manager(svc: Services) -> Any:
-    from app.asr.model_manager import manager_for
-    from app.asr.models import resolve
+def _model_set(svc: Services) -> Any:
+    """All three speech models as one download, shared by every request."""
+    from app.asr.model_manager import model_set
 
-    choice = resolve(svc.config)
-    return choice, manager_for(choice.repo_id or choice.reference)
+    return model_set(svc.config)
 
 
-def _model_payload(svc: Services) -> dict[str, Any]:
+def _model_payload(svc: Services, models: Any = None) -> dict[str, Any]:
     from app.asr.local import MIN_VRAM_MB, device_plan
-    from app.asr.models import REPO_BYTES
+    from app.asr.models import TOTAL_BYTES
 
-    choice, manager = _model_manager(svc)
-    payload: dict[str, Any] = manager.status().as_dict()
-    if choice.local:
-        # A model_path or the app home's model/ folder: nothing to fetch.
-        payload.update(state="ready", path=choice.reference)
+    models = models or _model_set(svc)
+    payload: dict[str, Any] = models.status().as_dict()
     plan = device_plan(svc.config)
     payload.update(
         # The size before the download starts, when the hub has not been asked yet.
-        expected_bytes=payload["total_bytes"] or REPO_BYTES,
+        expected_bytes=payload["total_bytes"] or TOTAL_BYTES,
         # Where it will run and why, for the setup screen's "CPU or GPU".
         device=plan.device,
         device_reason=plan.reason,
@@ -207,18 +203,17 @@ def model_status(request: Request) -> dict[str, Any]:
 @router.post("/model/download")
 def model_download(request: Request) -> dict[str, Any]:
     svc = services_of(request)
-    choice, manager = _model_manager(svc)
-    if not choice.local:
-        manager.start()
-    return _model_payload(svc)
+    models = _model_set(svc)
+    models.start()
+    return _model_payload(svc, models)
 
 
 @router.post("/model/cancel")
 def model_cancel(request: Request) -> dict[str, Any]:
     svc = services_of(request)
-    _choice, manager = _model_manager(svc)
-    manager.cancel()
-    return _model_payload(svc)
+    models = _model_set(svc)
+    models.cancel()
+    return _model_payload(svc, models)
 
 
 @router.get("/status")

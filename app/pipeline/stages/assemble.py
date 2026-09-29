@@ -15,7 +15,7 @@ from typing import Any
 
 from app import meta
 from app.asr.backend import Segment, TranscriptFile, renumber, sort_segments
-from app.asr.models import ASR_LANGUAGE
+from app.asr.models import DEFAULT_LANGUAGE
 from app.db.dao import Turn as DbTurn
 from app.log import get
 from app.pipeline.artifacts import up_to_date
@@ -124,7 +124,7 @@ def run(ctx: StageContext) -> None:
     turns = coalesce(numbered)
 
     transcript = TranscriptFile(
-        language=str(payload.get("language", ASR_LANGUAGE)),
+        language=str(payload.get("language", DEFAULT_LANGUAGE)),
         model=dict(payload.get("model", {})),
         segments=numbered,
     )

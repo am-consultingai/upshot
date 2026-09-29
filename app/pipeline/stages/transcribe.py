@@ -12,7 +12,7 @@ from app import meta
 from app.asr.backend import AsrBackend, Segment
 from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
 from app.asr.language import spoken_language
-from app.asr.models import ASR_LANGUAGE
+from app.asr.models import DEFAULT_LANGUAGE
 from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
 from app.audio.writer import ChunkRecord, recover, track_files, track_path
@@ -186,7 +186,7 @@ def run(ctx: StageContext) -> None:
             track_segments = backend.transcribe(
                 # Always Hebrew, whatever was spoken (D60): English comes out as English.
                 wav,
-                language=ASR_LANGUAGE,
+                language=DEFAULT_LANGUAGE,
                 initial_prompt=prompt,
                 word_timestamps=True,
             )
