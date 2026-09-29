@@ -25,7 +25,7 @@ from typing import Any
 
 from app import paths
 from app.asr.backend import Segment, Word, track_of
-from app.asr.models import ASR_LANGUAGE, ModelChoice, resolve
+from app.asr.models import HEBREW, MODELS, ModelChoice, resolve
 from app.config import Config
 from app.log import get
 
@@ -283,7 +283,11 @@ def _default_factory(**kwargs: Any) -> Any:  # pragma: no cover - needs the real
 
 
 class LocalAsr:
-    """faster-whisper, loaded lazily and unloaded before the LLM stage."""
+    """faster-whisper, loaded lazily and unloaded before the LLM stage.
+
+    One instance holds one model: ``role`` picks which of ``models.MODELS`` (the Hebrew
+    model unless told otherwise).
+    """
 
     name = "local"
 
@@ -291,11 +295,13 @@ class LocalAsr:
         self,
         config: Config,
         *,
+        role: str = HEBREW,
         model_factory: ModelFactory | None = None,
         choice: ModelChoice | None = None,
         fetch: Callable[[str], Path] | None = None,
     ) -> None:
         self.config = config
+        self.role = role
         self.model_factory = model_factory or _default_factory
         self.choice = choice
         #: A choice the caller made is kept; otherwise the model is resolved at load.
@@ -313,15 +319,23 @@ class LocalAsr:
     # -- loading -----------------------------------------------------------
 
     def describe(self) -> dict[str, Any]:
-        choice = self.choice or resolve(self.config)
-        return {"name": choice.reference, "compute": self.compute_type, "device": self.device}
+        choice = self.choice or resolve(self.config, self.role)
+        model = MODELS[self.role]
+        return {
+            "name": choice.reference,
+            "role": self.role,
+            "repo": model.repo,
+            "revision": model.revision,
+            "compute": self.compute_type,
+            "device": self.device,
+        }
 
     def load(self) -> Any:
         if self.model is not None:
             return self.model
         device, compute, registered = probe_device(self.config)
         self.registered_dll_dirs = registered
-        self.choice = self._given_choice or resolve(self.config)
+        self.choice = self._given_choice or resolve(self.config, self.role)
         try:
             self.model = self._build(device, compute)
             self.device, self.compute_type = device, compute
@@ -331,15 +345,15 @@ class LocalAsr:
                 raise
             log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
             self.fell_back = True
-            # The same model on the CPU (D60): slower, about four times the meeting's
-            # length, but the only one that keeps English as English.
+            # The same model on the CPU: slower, about four times the meeting's length,
+            # but the meeting's language already chose it.
             self.model = self._build("cpu", "int8")
             self.device, self.compute_type = "cpu", "int8"
             self._warmup()
         return self.model
 
     def _build(self, device: str, compute_type: str) -> Any:
-        choice = self.choice or resolve(self.config)
+        choice = self.choice or resolve(self.config, self.role)
         if not choice.local and choice.repo_id and self.fetch is not None:
             folder = self.fetch(choice.repo_id)
             choice = ModelChoice(str(folder), local=True, repo_id=choice.repo_id)
@@ -366,9 +380,8 @@ class LocalAsr:
                 handle.setsampwidth(2)
                 handle.setframerate(16000)
                 handle.writeframes(b"\x00\x00" * 8000)  # 0.5 s of silence
-            self._raw_transcribe(
-                path, language=ASR_LANGUAGE, initial_prompt=None, word_timestamps=False
-            )
+            self._raw_transcribe(path, language="he" if self.role == HEBREW else "en",
+                                 initial_prompt=None, word_timestamps=False)  # fmt: skip
         self.warmups += 1
 
     # -- protocol ----------------------------------------------------------

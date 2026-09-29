@@ -320,13 +320,13 @@ def _audio(args: argparse.Namespace) -> list[Check]:
 def _asr(args: argparse.Namespace) -> list[Check]:
     """Which backend is wired, and whether a local model and CUDA are actually present."""
     from app.asr.local import cuda_library_dirs, supported_compute_type
-    from app.asr.models import resolve
+    from app.asr.models import resolve_all
     from app.config import Config
 
     cfg = Config.load()
     kind = str(cfg.get("asr.backend", "local"))
     cuda_dirs = cuda_library_dirs(configured=cfg.get("asr.cuda_dir"))
-    choice = resolve(cfg)
+    choices = resolve_all(cfg)
     checks = [
         Check("asr_backend", True, f"asr.backend = {kind}", {"backend": kind}),
         Check(
@@ -336,11 +336,14 @@ def _asr(args: argparse.Namespace) -> list[Check]:
             + (f"; compute {supported_compute_type()}" if cuda_dirs else "; running on CPU"),
             {"cuda_dirs": len(cuda_dirs), "device": "cuda" if cuda_dirs else "cpu"},
         ),
-        Check(
-            "asr_model",
-            True,
-            ("local: " if choice.local else "will download: ") + choice.reference,
-            {"model": choice.reference, "local": choice.local},
+        *(
+            Check(
+                f"asr_model_{role}",
+                True,
+                ("local: " if choice.local else "not installed: ") + choice.reference,
+                {"model": choice.reference, "local": choice.local},
+            )
+            for role, choice in choices.items()
         ),
     ]
     return checks

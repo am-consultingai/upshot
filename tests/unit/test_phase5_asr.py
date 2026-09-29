@@ -14,7 +14,7 @@ from app.asr.factory import make_backend
 from app.asr.fake import FakeAsr
 from app.asr.language import spoken_language
 from app.asr.local import LocalAsr, cuda_library_dirs, probe_device
-from app.asr.models import ASR_LANGUAGE, REPO, resolve
+from app.asr.models import DEFAULT_LANGUAGE, HEBREW, MODELS, OTHER, resolve
 from app.asr.remote import RemoteAsr
 from app.config import default_config
 
@@ -291,7 +291,8 @@ def test_model_resolution_prefers_configured_path(tmp_path: Path, app_home: Path
 
     empty = default_config()
     fallback = resolve(empty)
-    assert fallback.local is False and fallback.reference == REPO
+    assert fallback.local is False and fallback.reference == MODELS[HEBREW].repo
+    assert not resolve(config, OTHER).local, "the override is for the Hebrew model only"
 
 
 # ------------------------------------------------------------------ remote
@@ -342,7 +343,7 @@ def test_an_evenly_mixed_meeting_is_summarized_in_hebrew() -> None:
 def test_a_silent_meeting_is_hebrew_by_default() -> None:
     decision = spoken_language([])
     assert (decision.language, decision.confidence, decision.source) == (
-        ASR_LANGUAGE,
+        DEFAULT_LANGUAGE,
         0.0,
         "default",
     )
@@ -399,12 +400,12 @@ def test_transcribe_speech_fixture(tmp_path: Path) -> None:
     config = default_config()
     from app.asr.models import resolve
 
-    if not resolve(config).local:
-        pytest.skip("no local ASR model on this machine; set asr.model_path")
+    if not resolve(config, OTHER).local:
+        pytest.skip("no stock large-v3 on this machine; run upshot --prepare")
     sentence = "The quick brown fox jumps over the lazy dog near the river bank"
     wav = speech.synth(sentence, tmp_path / "them" / "0001.wav")
-    backend = LocalAsr(config)
-    segments = backend.transcribe(wav, language=ASR_LANGUAGE)
+    backend = LocalAsr(config, role=OTHER)
+    segments = backend.transcribe(wav, language="en")
     text = " ".join(segment.text for segment in segments).lower()
     expected = [word for word in sentence.lower().split() if len(word) > 2]
     hits = sum(1 for word in expected if word in text)
@@ -428,7 +429,7 @@ def test_english_speech_reads_as_an_english_meeting(tmp_path: Path) -> None:
         tmp_path / "them" / "0001.wav",
     )
     backend = LocalAsr(config)
-    segments = backend.transcribe(wav, language=ASR_LANGUAGE)
+    segments = backend.transcribe(wav, language=DEFAULT_LANGUAGE)
     decision = spoken_language(segment.text for segment in segments)
     assert decision.language == "en", [segment.text for segment in segments]
     backend.unload()

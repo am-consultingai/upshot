@@ -16,8 +16,8 @@ import pytest
 from app import prepare
 from app.asr import cuda_libs
 from app.asr.cuda_libs import CudaInstaller, Wheel, ready, target_dir, wanted
-from app.asr.model_manager import ModelManager, RemoteFile
-from app.asr.models import REPO
+from app.asr.model_manager import ModelManager, ModelSet, RemoteFile
+from app.asr.models import MODELS, ROLES, SpeechModel
 from app.config import default_config
 from app.prepare import ProgressFile, run
 
@@ -26,7 +26,7 @@ def read_progress(path: Path) -> dict[str, str]:
     return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
 
 
-# -- the speech model stage ---------------------------------------------------------
+# -- the speech models stage ---------------------------------------------------------
 
 MODEL = b"m" * 8192
 CONFIG = b'{"model": "tiny"}'
@@ -36,8 +36,20 @@ FILES = {
 }
 
 
-def model_manager(home: Path, gate: threading.Event | None = None) -> ModelManager:
-    def download(repo: str, target: Path, progress: type) -> None:
+def model_manager(
+    home: Path,
+    gate: threading.Event | None = None,
+    order: list[str] | None = None,
+    fail: str = "",
+) -> ModelSet:
+    """The three models as ``--prepare`` fetches them, with a stand-in for the hub."""
+
+    def download(model: SpeechModel, target: Path, progress: type) -> None:
+        if order is not None:
+            order.append(model.role)
+        if model.role == fail:
+            (target / "config.json").write_bytes(CONFIG)
+            return
         bar = progress(total=len(MODEL) + len(CONFIG), initial=0)
         with (target / "model.bin").open("wb") as out:
             for at in range(0, len(MODEL), 1024):
@@ -48,7 +60,11 @@ def model_manager(home: Path, gate: threading.Event | None = None) -> ModelManag
         (target / "config.json").write_bytes(CONFIG)
         bar.update(len(CONFIG))
 
-    return ModelManager(REPO, home=home, lister=lambda repo: dict(FILES), downloader=download)
+    return ModelSet({
+        role: ModelManager(MODELS[role], home=home, lister=lambda repo, rev: dict(FILES),
+                           downloader=download)
+        for role in ROLES
+    })  # fmt: skip
 
 
 def test_the_model_is_fetched_and_the_file_ends_ready(app_home: Path, tmp_path: Path) -> None:
@@ -80,7 +96,8 @@ def test_progress_is_written_while_the_model_downloads(app_home: Path, tmp_path:
         gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
     working = [s for s in seen if s.get("state") == "working" and s.get("stage") == "model"]
     assert working, seen
-    assert working[0]["text"].startswith("Speech model:")
+    assert working[0]["text"].startswith("Speech models (language detection, 1 of 3):")
+    assert working[0]["model"] == "classifier"
 
 
 def test_a_cancel_file_stops_the_download_and_says_it_continues_later(
@@ -134,7 +151,49 @@ def test_a_model_already_on_disk_is_skipped(app_home: Path, tmp_path: Path) -> N
     original = progress.write
     progress.write = lambda **f: (original(**f), seen.append(str(f.get("text"))))  # type: ignore[method-assign,func-returns-value]
     assert run(default_config(), progress, gpu_wanted=(False, "x"), poll=0.01) == prepare.EXIT_OK
-    assert "Speech model: already on this computer" in seen
+    assert "Speech models: already on this computer" in seen
+
+
+def test_prepare_fetches_all_three_models_in_order(app_home: Path, tmp_path: Path) -> None:
+    order: list[str] = []
+    progress_path = tmp_path / "prepare.txt"
+    code = run(default_config(), ProgressFile(progress_path),
+               model=model_manager(app_home, order=order),
+               gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert order == ["classifier", "hebrew", "other"]
+    # A second run downloads nothing: the default set finds all three verified.
+    seen: list[str] = []
+    progress = ProgressFile(progress_path)
+    original = progress.write
+    progress.write = lambda **f: (original(**f), seen.append(str(f.get("text"))))  # type: ignore[method-assign,func-returns-value]
+    assert run(default_config(), progress, gpu_wanted=(False, "x"), poll=0.01) == prepare.EXIT_OK
+    assert "Speech models: already on this computer" in seen
+
+
+def test_prepare_fails_when_any_one_model_fails(app_home: Path, tmp_path: Path) -> None:
+    order: list[str] = []
+    progress_path = tmp_path / "prepare.txt"
+    code = run(default_config(), ProgressFile(progress_path),
+               model=model_manager(app_home, order=order, fail="other"),
+               gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_FAILED
+    final = read_progress(progress_path)
+    assert final["stage"] == "model" and final["state"] == "failed"
+    assert order == ["classifier", "hebrew", "other"]
+
+
+def test_prepare_resumes_a_partial_download(app_home: Path, tmp_path: Path) -> None:
+    order: list[str] = []
+    progress_path = tmp_path / "prepare.txt"
+    assert run(default_config(), ProgressFile(progress_path),
+               model=model_manager(app_home, order=order, fail="hebrew"),
+               gpu_wanted=(False, "x"), poll=0.01) == prepare.EXIT_FAILED  # fmt: skip
+    order.clear()
+    assert run(default_config(), ProgressFile(progress_path),
+               model=model_manager(app_home, order=order),
+               gpu_wanted=(False, "x"), poll=0.01) == prepare.EXIT_OK  # fmt: skip
+    assert order == ["hebrew", "other"], "the verified classifier is not fetched again"
 
 
 # -- the GPU libraries ---------------------------------------------------------------

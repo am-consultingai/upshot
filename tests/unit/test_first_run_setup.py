@@ -1,9 +1,9 @@
 """First-run setup (ClickUp z8tj1had06, z8tj1haczh, z8tj1had07).
 
 What the /welcome screen stands on: the persisted ``setup.done`` flag and who is spared
-the screen, the one speech model whatever the language or the device (D60), the VRAM
-gate on the automatic GPU choice, and a GPU that fails to load falling back to the same
-model on the CPU.
+the screen, the three pinned speech models whatever the device (D80), the VRAM gate on
+the automatic GPU choice, and a GPU that fails to load falling back to the same model on
+the CPU.
 """
 
 from __future__ import annotations
@@ -24,19 +24,23 @@ from app.asr.local import (
     probe_device,
 )
 from app.asr.model_manager import VERIFIED, target_for
-from app.asr.models import REPO, resolve
+from app.asr.models import HEBREW, MODELS, OTHER, ROLES, resolve
 from app.config import Config, default_config
 
 # ------------------------------------------------------------------ the setup flag
 
 
-def place_model(app_home: Path, repo: str = REPO) -> Path:
+REPO = MODELS[HEBREW].repo
+
+
+def place_model(app_home: Path, role: str = HEBREW) -> Path:
     """A verified model where the manager would have put it."""
-    target = target_for(repo, app_home)
+    model = MODELS[role]
+    target = target_for(model.repo, app_home)
     target.mkdir(parents=True)
     (target / "model.bin").write_bytes(b"m")
     (target / "config.json").write_text("{}", encoding="utf-8")
-    (target / VERIFIED).write_text(repo, encoding="utf-8")
+    (target / VERIFIED).write_text(model.marker, encoding="utf-8")
     return target
 
 
@@ -132,20 +136,22 @@ def test_the_device_setting_is_checked() -> None:
         default_config(asr__device="gpu")
 
 
-# ------------------------------------------------------------------ language → model
+# ------------------------------------------------------------------ the three models
 
 
 @pytest.mark.parametrize("device", ["auto", "cpu", "cuda"])
-def test_one_model_whatever_the_device(device: str) -> None:
-    """ivrit-ai large-v3 on the GPU and the CPU alike: its turbo sibling is what turned
-    English into Hebrew on machine B (D60)."""
-    assert resolve(default_config(asr__device=device)).reference == REPO
-    assert REPO == "ivrit-ai/whisper-large-v3-ct2"
+def test_the_device_never_changes_which_models(device: str) -> None:
+    """large-v3 for transcription on the GPU and the CPU alike (R6): no smaller model
+    for a smaller machine."""
+    config = default_config(asr__device=device)
+    assert {resolve(config, role).repo_id for role in ROLES} == {m.repo for m in MODELS.values()}
+    assert resolve(config, HEBREW).repo_id == "ivrit-ai/whisper-large-v3-ct2"
+    assert resolve(config, OTHER).repo_id == "Systran/faster-whisper-large-v3"
 
 
-def test_no_other_speech_model_is_named_anywhere_in_the_app() -> None:
-    """D60 in one line: the turbo fine-tune and stock Whisper each broke on English or
-    Hebrew, and a second model id is how either would come back."""
+def test_only_the_three_speech_models_are_named_anywhere_in_the_app() -> None:
+    """D80 in one line: a classifier and two large-v3 models, and no other Whisper. A
+    fourth model id (a turbo variant, a distil model) is how an untested one would come in."""
     import re
 
     pattern = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]*whisper[A-Za-z0-9_.-]*", re.I)
@@ -154,7 +160,11 @@ def test_no_other_speech_model_is_named_anywhere_in_the_app() -> None:
         for path in Path("app").rglob("*.py")
         for match in pattern.findall(path.read_text(encoding="utf-8"))
     }
-    assert {match for _path, match in named} == {REPO}, sorted(named)
+    assert {match for _path, match in named} == {
+        "Systran/faster-whisper-small",
+        "ivrit-ai/whisper-large-v3-ct2",
+        "Systran/faster-whisper-large-v3",
+    }, sorted(named)
 
 
 def test_an_old_config_cannot_bring_another_model_back(tmp_path: Path, app_home: Path) -> None:
@@ -166,30 +176,32 @@ def test_an_old_config_cannot_bring_another_model_back(tmp_path: Path, app_home:
     )
     path.write_text(json.dumps(data), encoding="utf-8")
     cfg = Config.load(file=path, environ={})
-    assert resolve(cfg).reference == REPO
+    assert {resolve(cfg, role).repo_id for role in ROLES} == {m.repo for m in MODELS.values()}
 
 
-def test_the_model_api_names_the_one_model_and_says_where_it_runs(
+def test_the_model_api_names_the_three_models_and_says_where_they_run(
     tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.fixtures.api import build_harness
 
     monkeypatch.setattr(model_manager, "_managers", {})
+    monkeypatch.setattr(model_manager, "_sets", {})
     api = build_harness(tmp_path)
     api.services.config.set("asr.device", "cpu")
     client = api.client()
 
     model = client.get("/api/model").json()
-    assert model["repo"] == REPO
+    assert [row["repo"] for row in model["models"]] == [m.repo for m in MODELS.values()]
     assert model["state"] == "missing"
     # The size is known before the download is started, for the screen to show.
-    assert model["expected_bytes"] > 3_000_000_000
+    assert model["expected_bytes"] > 6_500_000_000
     assert model["free_bytes"] > 0
     assert (model["device"], model["device_reason"]) == ("cpu", "configured")
     assert model["min_vram_mb"] == MIN_VRAM_MB
 
     client.put("/api/settings", json={"values": {"asr.device": "cuda"}})
-    assert client.get("/api/model").json()["repo"] == REPO, "the device never changes the model"
+    again = client.get("/api/model").json()
+    assert again["repo"] == model["repo"], "the device never changes the models"
 
 
 # ------------------------------------------------------------------ the VRAM gate
@@ -310,7 +322,9 @@ def test_a_gpu_that_fails_to_load_falls_back_to_the_same_model_on_the_cpu(
     assert built == [("cuda", REPO), ("cpu", REPO)]
     assert backend.fell_back and backend.choice is not None
     assert backend.choice.reference == REPO
-    assert backend.describe() == {"name": REPO, "compute": "int8", "device": "cpu"}
+    described = backend.describe()
+    assert (described["name"], described["compute"], described["device"]) == (REPO, "int8", "cpu")
+    assert (described["role"], described["revision"]) == (HEBREW, MODELS[HEBREW].revision)
 
 
 def test_the_fallback_does_not_fetch_again(app_home: Path) -> None:
