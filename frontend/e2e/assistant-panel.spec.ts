@@ -165,6 +165,37 @@ test("a_local_model_is_said_up_front_before_anything_is_asked", async ({ page, s
   }
 });
 
+test("a_short_answer_never_scrolls_the_panel_itself", async ({ page, seed, request }) => {
+  // Machine B, 2026-09-29: a question answered with one short line slid the whole panel
+  // up — header gone, blank space below, nothing to scroll back with.
+  await seed(BUDGET);
+  await page.setViewportSize({ width: 1566, height: 758 });
+  await request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "gemini" } } });
+  try {
+    await gotoApp(page, "/settings#summaries");
+    await page.keyboard.press("Control+j");
+    await ask(page, "What did we decide about the budget?");
+    await expect(page.getByTestId("assistant-error")).toBeVisible();
+    const panel = page.getByTestId("assistant-panel");
+    // The panel itself cannot be scrolled, not even by a script and not even when its
+    // content is taller than it (as it was on machine B): only its log scrolls.
+    const moved = await panel.evaluate((node) => {
+      const tall = document.createElement("div");
+      tall.style.height = "2000px";
+      tall.style.flexShrink = "0";
+      node.appendChild(tall);
+      node.scrollTop = 300;
+      node.scrollIntoView();
+      node.querySelector<HTMLElement>("[data-testid=assistant-question]")?.scrollIntoView({ block: "start" });
+      return node.scrollTop;
+    });
+    expect(moved).toBe(0);
+    await expect(page.getByTestId("assistant-close")).toBeInViewport();
+  } finally {
+    await request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
+  }
+});
+
 test("the_screen_reader_hears_states_not_the_stream", async ({ page, seed }) => {
   await seed(BUDGET);
   await gotoApp(page, "/");
