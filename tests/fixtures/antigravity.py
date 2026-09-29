@@ -82,9 +82,39 @@ if "--input-format" in args:
     if args[args.index("--input-format") + 1] != "stream-json":
         print("error: expected --input-format stream-json", file=sys.stderr)
         sys.exit(2)
+    # Every run of Upshot's goes through its tool-less agent, kept in its own folder (D78).
+    agent = os.path.join(os.getcwd(), ".agents", "agents", "upshot.md")
+    chosen = args[args.index("--agent") + 1] if "--agent" in args else ""
+    if chosen != "upshot" or not os.path.exists(agent):
+        print("fake agy: started without the upshot agent", file=sys.stderr)
+        sys.exit(2)
+    with open(agent, encoding="utf-8") as handle:
+        if "tools: [finish]" not in handle.read():
+            print("fake agy: the upshot agent must allow no tools but finish", file=sys.stderr)
+            sys.exit(2)
     lines = [line for line in sys.stdin.read().splitlines() if line.strip()]
     event = json.loads(lines[0])
     prompt = event["message"]["content"]
+    if "--json-schema" not in args:
+        # The assistant: no schema, the answer streamed. It cites the first transcript line
+        # Upshot gathered into the prompt, as a real model would.
+        record(prompt=prompt, schema=None, events=len(lines))
+        print(json.dumps({"event": "init", "conversation_id": "fake-chat",
+                          "init": {"model": "gemini-fake"}}))
+        if not signed_in:
+            print(json.dumps({"event": "result", "result": result(
+                status="ERROR", response="", error="authentication failed or timed out")}))
+            sys.exit(1)
+        import re
+        found = re.search(r'"meeting_id":"([^"]+)"[^{}]*?"lines":\[\{"at_ms":(\d+)', prompt)
+        cite = f" [[m:{found.group(1)}@{found.group(2)}]]" if found else ""
+        recap = "Recapped. " if "The conversation so far" in prompt else ""
+        for piece in (recap, "Antigravity found it", cite, "."):
+            if piece:
+                print(json.dumps({"event": "step_update", "step_update": {
+                    "state": "ACTIVE", "step_type": "agent_response", "text_delta": piece}}))
+        print(json.dumps({"event": "result", "result": result(status="SUCCESS", response="")}))
+        sys.exit(0)
     with open(args[args.index("--json-schema") + 1], encoding="utf-8") as handle:
         schema = json.load(handle)
     record(prompt=prompt, schema=schema, events=len(lines))

@@ -120,6 +120,8 @@ def test_the_argument_list_is_exactly_what_is_intended(tmp_path: Path) -> None:
         schema_file,
         "--disable-slash-commands",
         "--sandbox",
+        "--agent",
+        "upshot",
     ]
     assert "--dangerously-skip-permissions" not in args
     assert "-p" not in args, "the prompt is never an argument: Windows would cut it short"
@@ -180,6 +182,22 @@ def test_the_result_event_is_found_among_the_others() -> None:
 
 def test_user_event_round_trips() -> None:
     assert json.loads(user_event("a\nb")) == {"event": "user", "message": {"content": "a\nb"}}
+
+
+def test_every_run_is_the_toolless_upshot_agent_in_our_own_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """agy applies the user's own permission rules, which can allow every command: our
+    runs select an agent with no tool but finish, kept in our run folder (D78)."""
+    monkeypatch.setenv("UP_HOME", str(tmp_path / "home"))
+    folder = Path(antigravity_cli.workdir())
+    agent = folder / ".agents" / "agents" / "upshot.md"
+    assert agent.read_text(encoding="utf-8") == antigravity_cli.AGENT
+    assert "tools: [finish]" in antigravity_cli.AGENT
+    assert 'commandExecutionPolicy: "off"' in antigravity_cli.AGENT
+    agent.write_text("---\nname: upshot\ntools: [run_command]\n---\n", encoding="utf-8")
+    antigravity_cli.workdir()
+    assert agent.read_text(encoding="utf-8") == antigravity_cli.AGENT, "a changed one is put back"
 
 
 def test_other_credentials_never_reach_the_child(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -344,6 +362,8 @@ def test_sign_in_is_a_tiny_prompt_and_sign_out_does_not_exist(tmp_path: Path) ->
         "Reply with exactly the word OK.",
         "--output-format",
         "json",
+        "--agent",
+        "upshot",
     ]
     assert client.logout_command() is None, "/logout is refused in print mode"
     script = antigravity_cli.login_console([r"C:\Users\someone\App Data\agy.exe", "-p", "x"])[-1]

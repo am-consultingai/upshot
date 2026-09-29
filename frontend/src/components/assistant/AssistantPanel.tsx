@@ -662,7 +662,12 @@ function Problem({
   onRetry?: () => void;
 }) {
   const { t } = useI18n();
-  const cli = provider === "codex-subscription" ? "Codex" : "Claude Code";
+  const cli =
+    provider === "codex-subscription"
+      ? "Codex"
+      : provider === "antigravity-subscription"
+        ? "Antigravity"
+        : "Claude Code";
   const navigate = useNavigate();
   const key: MessageKey | null =
     code === "signed-out"
