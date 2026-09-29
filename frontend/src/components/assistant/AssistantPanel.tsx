@@ -100,7 +100,10 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
       ref={panel}
       data-testid="assistant-panel"
       aria-label={t("assistant.title")}
-      className="fixed bottom-24 start-5 z-40 flex h-[min(640px,calc(100vh-8rem))] w-[min(420px,calc(100vw-2.5rem))] flex-col overflow-hidden rounded-2xl bg-surface-1 shadow-2xl ring-1 ring-line"
+      // `overflow-clip`, not `overflow-hidden`: hidden still lets a script scroll the panel
+      // itself, and it did — the header slid out of reach with blank space below and no
+      // way back (machine B, 2026-09-29). Clipped, only the log inside it ever scrolls.
+      className="fixed bottom-24 start-5 z-40 flex h-[min(640px,calc(100vh-8rem))] w-[min(420px,calc(100vw-2.5rem))] flex-col overflow-clip rounded-2xl bg-surface-1 shadow-2xl ring-1 ring-line"
     >
       <header className="flex items-center gap-1 border-b border-line-subtle px-3 py-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("assistant.title")}</h2>
@@ -228,9 +231,17 @@ function Chat({
     void sendMessage({ text });
     // The question goes to the top and stays: the answer is read from its start, not
     // chased to its end as it grows (NN/G).
+    // Only the log scrolls. `scrollIntoView` scrolls every ancestor that can, and the
+    // panel itself can be scrolled by script though it hides its overflow: with a short
+    // log the panel slid up, its header out of reach and blank space below, with no way
+    // back (product owner, 2026-09-29).
     window.requestAnimationFrame(() => {
-      const questions = log.current?.querySelectorAll<HTMLElement>("[data-testid=assistant-question]");
-      questions?.[questions.length - 1]?.scrollIntoView({ block: "start" });
+      const box = log.current;
+      const questions = box?.querySelectorAll<HTMLElement>("[data-testid=assistant-question]");
+      const question = questions?.[questions.length - 1];
+      if (box && question) {
+        box.scrollTop += question.getBoundingClientRect().top - box.getBoundingClientRect().top - 12;
+      }
     });
   };
 
