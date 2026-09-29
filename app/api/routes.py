@@ -1855,7 +1855,7 @@ def llm_status(request: Request) -> dict[str, Any]:
         # "Claude Agent" rather than presenting the row as Claude Code itself.
         providers.append(cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)"))
     if "antigravity-subscription" in CLI_PROVIDERS:
-        # Named the way Codex's row is (D58, D78): the program actually run and the plan
+        # Named the way Codex's row is (D58, D79): the program actually run and the plan
         # it spends, with no Google mark and nothing that reads as a Google product.
         providers.append(
             cli_row(svc, "antigravity-subscription", "Antigravity CLI (your own Google AI plan)")
@@ -1902,7 +1902,7 @@ def cli_row(svc: Services, provider: str, label: str) -> dict[str, Any]:
         "install_method": plan.method if plan else "",
         "install_docs": module.INSTALL_DOCS_URL,
         "update_hint": module.update_command(cli.path) if cli.installed else "",
-        # False for a CLI with no way to sign out from outside it (Antigravity, D78).
+        # False for a CLI with no way to sign out from outside it (Antigravity, D79).
         "can_sign_out": cli_client(svc, provider).logout_command() is not None
         or hasattr(module, "logout_console"),
         # Sign out opens a window where the user types the CLI's own command (Antigravity).
@@ -2128,7 +2128,7 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
                 409,
                 f"{product} cannot be signed out from here. Run it in a terminal and type /logout.",
             )
-        # Its sign-out only works typed into the program itself (Antigravity, D78): a
+        # Its sign-out only works typed into the program itself (Antigravity, D79): a
         # window that runs it and says what to type. The row watches the window close.
         path = client.resolve() or client.executable
         return launch_console(

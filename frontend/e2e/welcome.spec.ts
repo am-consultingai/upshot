@@ -40,7 +40,7 @@ async function toServices(page: Page): Promise<void> {
   await expect(page.getByTestId("setup-step-services")).toBeVisible();
 }
 
-/** On to the AI step with a Google AI plan chosen (D75, D78). */
+/** On to the AI step with a Google AI plan chosen (D75, D79). */
 async function toAiStep(page: Page): Promise<void> {
   await toServices(page);
   await page.getByTestId("service-antigravity").click();

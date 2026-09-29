@@ -31,7 +31,7 @@ const LABEL: Record<CrumbId, MessageKey> = {
 /**
  * First-run setup: Welcome → Google Calendar → AI setup (services, connecting them, and a
  * key when none connected) → Sound check and recording, ending on Done (epic z8tj1hb01k,
- * D75, D78).
+ * D75, D79).
  *
  * Which steps exist is decided once, when setup opens. Two of them follow the AI choices
  * as they change: Connect AI appears once a service is ticked, and API key only while no

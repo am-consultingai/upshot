@@ -4,7 +4,7 @@ Claude Code and Codex call Upshot's tools themselves, over its MCP server. ``agy
 be given that server for one run: ``agy mcp add`` writes the user's own configuration, and
 a ``.mcp.json`` in the run's folder is not read (checked 2026-09-29). And it must not have
 tools at all: it applies the user's own permission rules, which can allow every shell
-command (D78). So it runs as the tool-less ``upshot`` agent
+command (D79). So it runs as the tool-less ``upshot`` agent
 (``antigravity_cli.ensure_agent``), and Upshot does the looking up first, with the same
 read-only functions the tool server serves (``AssistantTools``):
 
@@ -178,7 +178,7 @@ class AntigravityRoute(ClaudeRoute):
         return antigravity_cli.child_env()
 
     def cwd(self) -> str:
-        # The folder whose .agents/agents/upshot.md makes the run tool-less (D78).
+        # The folder whose .agents/agents/upshot.md makes the run tool-less (D79).
         return antigravity_cli.workdir()
 
     def translator(self, turn: Turn, citer: Citer | None) -> Translator:

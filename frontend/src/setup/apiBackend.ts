@@ -39,7 +39,7 @@ function cliFacts(row: LlmProvider | undefined, id: CliId): Omit<CliSnapshot, "p
     account: row?.account,
     installCommand: row?.install_command ?? "",
     signinUrl: row?.signin_url || undefined,
-    // Claude Code's and Antigravity's logins end on a code, pasted in the page (D75, D78);
+    // Claude Code's and Antigravity's logins end on a code, pasted in the page (D75, D79);
     // Codex's does not.
     signinNeedsCode: id !== "codex",
     codeInWindow: false,

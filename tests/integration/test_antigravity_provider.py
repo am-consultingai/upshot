@@ -2,7 +2,7 @@
 
 Nothing here reaches Google: ``tests/fixtures/antigravity.py`` stands in for the CLI, and
 the real subprocess, PATH lookup, stdin, schema file and child environment are all
-exercised, as is the windowless sign-in with its pasted code. See D78.
+exercised, as is the windowless sign-in with its pasted code. See D79.
 """
 
 from __future__ import annotations

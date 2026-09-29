@@ -71,7 +71,7 @@ const GROUPS = [
 /** Not rows here: summaries off is simply no row chosen, and the local model is set aside. */
 const NOT_LISTED = new Set(["none", "ollama"]);
 
-/** A sign-in that ends on a code pasted back (Claude's may, Antigravity's does, D75, D78). */
+/** A sign-in that ends on a code pasted back (Claude's may, Antigravity's does, D75, D79). */
 const TAKES_CODE = new Set(["claude-subscription", "antigravity-subscription"]);
 
 const BUTTON = "rounded border border-line px-2 py-1 text-sm disabled:opacity-40";
@@ -99,7 +99,7 @@ export function watchFinished(state: {
  *
  * Install and sign-in run with no window, as setup's do (D75): the vendor's tool opens its
  * page in the default browser, and a code, where there is one, is pasted in the row.
- * Antigravity's sign-out is the exception: it only works typed into agy (D78).
+ * Antigravity's sign-out is the exception: it only works typed into agy (D79).
  */
 export default function ProviderSettings() {
   const { t } = useI18n();

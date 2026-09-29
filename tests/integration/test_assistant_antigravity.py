@@ -1,4 +1,4 @@
-"""The assistant on a Google AI plan (D78), with the fake ``agy`` on PATH.
+"""The assistant on a Google AI plan (D79), with the fake ``agy`` on PATH.
 
 Upshot looks things up and passes them in; ``agy`` runs as the tool-less ``upshot`` agent
 (the fake refuses to run without it) and streams its answer, whose citation markers go

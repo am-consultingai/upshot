@@ -81,7 +81,7 @@ def route_for(svc: Services) -> tuple[ClaudeRoute | None, dict[str, Any] | None]
 
         return CodexRoute(svc.config, command=command or None), None
     if provider == "antigravity-subscription":
-        # No tools of its own: Upshot looks things up and passes them in (D78).
+        # No tools of its own: Upshot looks things up and passes them in (D79).
         from app.assistant.antigravity_route import AntigravityRoute
 
         return AntigravityRoute(svc.config, command=command or None, services=svc), None
@@ -163,7 +163,7 @@ async def chat(request: Request, body: ChatPost) -> StreamingResponse:
         )
         turn = Turn(session_id=session.cli_session_id)
         collector = stream.Collector()
-        # The route that gathers for the model itself needs to know the screen (D78).
+        # The route that gathers for the model itself needs to know the screen (D79).
         if hasattr(route, "context"):
             route.context = dict(body.context)
         try:

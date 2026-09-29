@@ -82,7 +82,7 @@ if "--input-format" in args:
     if args[args.index("--input-format") + 1] != "stream-json":
         print("error: expected --input-format stream-json", file=sys.stderr)
         sys.exit(2)
-    # Every run of Upshot's goes through its tool-less agent, kept in its own folder (D78).
+    # Every run of Upshot's goes through its tool-less agent, kept in its own folder (D79).
     agent = os.path.join(os.getcwd(), ".agents", "agents", "upshot.md")
     chosen = args[args.index("--agent") + 1] if "--agent" in args else ""
     if chosen != "upshot" or not os.path.exists(agent):
