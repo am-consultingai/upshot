@@ -1,6 +1,6 @@
 """Which language a meeting was in: read from its transcript, not asked of the model (D60).
 
-The speech model is always told the language is Hebrew (``models.ASR_LANGUAGE``). That is
+The speech model is always told the language is Hebrew (``models.DEFAULT_LANGUAGE``). That is
 how ivrit-ai large-v3 writes English speech as English; told "English" it drifts into
 Hebrew nobody said, and its own language detection answers Hebrew for every input. So
 the question of what language a meeting was in is no longer put to the model before
@@ -16,7 +16,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from app.asr.models import ASR_LANGUAGE
+from app.asr.models import DEFAULT_LANGUAGE
 
 HEBREW_LETTER = re.compile(r"[א-ת]")
 LATIN_LETTER = re.compile(r"[A-Za-z]")
@@ -44,7 +44,7 @@ def spoken_language(texts: Iterable[str]) -> LanguageDecision:
         latin += len(LATIN_LETTER.findall(text))
     total = hebrew + latin
     if total == 0:
-        return LanguageDecision(ASR_LANGUAGE, 0.0, "default")
+        return LanguageDecision(DEFAULT_LANGUAGE, 0.0, "default")
     share = hebrew / total
     if share >= HEBREW_SHARE:
         return LanguageDecision("he", round(share, 3))

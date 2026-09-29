@@ -1,4 +1,5 @@
-"""The speech model is fetched in the open: progress, space check, cancel, checksum."""
+"""The speech models are fetched in the open: progress, space check, cancel, checksum,
+pinned revisions, all three in order."""
 
 from __future__ import annotations
 
@@ -10,8 +11,8 @@ from typing import Any
 import pytest
 
 from app.asr import model_manager
-from app.asr.model_manager import ModelManager, RemoteFile, target_for
-from app.asr.models import REPO, resolve
+from app.asr.model_manager import ModelManager, ModelSet, RemoteFile, target_for
+from app.asr.models import CLASSIFIER, HEBREW, MODELS, OTHER, ROLES, SpeechModel, resolve
 from app.config import default_config
 
 MODEL = b"m" * 4096
@@ -22,14 +23,18 @@ FILES = {
 }
 
 
-def lister(repo: str) -> dict[str, RemoteFile]:
+HEB = MODELS[HEBREW]
+REPO = HEB.repo
+
+
+def lister(repo: str, revision: str) -> dict[str, RemoteFile]:
     return dict(FILES)
 
 
 def writing(model: bytes = MODEL, gate: threading.Event | None = None) -> Any:
     """A stand-in for the hub: writes the files in blocks, reporting each one."""
 
-    def download(repo: str, target: Path, progress: type) -> None:
+    def download(model_: SpeechModel, target: Path, progress: type) -> None:
         bar = progress(total=len(model) + len(CONFIG), initial=0, unit="B")
         with (target / "model.bin").open("wb") as out:
             for at in range(0, len(model), 1024):
@@ -44,7 +49,7 @@ def writing(model: bytes = MODEL, gate: threading.Event | None = None) -> Any:
 
 
 def test_the_model_lands_in_the_app_home_and_resolve_finds_it(app_home: Path) -> None:
-    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing())
+    manager = ModelManager(HEB, home=app_home, lister=lister, downloader=writing())
     assert manager.status().state == "missing"
     status = manager.start()
     assert status.state in ("downloading", "ready")
@@ -62,7 +67,7 @@ def test_too_little_space_fails_before_fetching_anything(
     fetched: list[str] = []
     monkeypatch.setattr(model_manager, "free_bytes", lambda path: 10)
     manager = ModelManager(
-        REPO, home=app_home, lister=lister, downloader=lambda *a: fetched.append("x")
+        HEB, home=app_home, lister=lister, downloader=lambda *a: fetched.append("x")
     )
     status = manager.start()
     status = manager.wait(5)
@@ -74,7 +79,7 @@ def test_too_little_space_fails_before_fetching_anything(
 
 def test_cancel_stops_the_download_and_a_restart_resumes(app_home: Path) -> None:
     gate = threading.Event()
-    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing(gate=gate))
+    manager = ModelManager(HEB, home=app_home, lister=lister, downloader=writing(gate=gate))
     manager.start()
     manager.cancel()
     gate.set()
@@ -87,7 +92,7 @@ def test_cancel_stops_the_download_and_a_restart_resumes(app_home: Path) -> None
 
 def test_a_file_that_does_not_match_its_checksum_is_removed(app_home: Path) -> None:
     manager = ModelManager(
-        REPO, home=app_home, lister=lister, downloader=writing(model=b"x" * len(MODEL))
+        HEB, home=app_home, lister=lister, downloader=writing(model=b"x" * len(MODEL))
     )
     manager.start()
     status = manager.wait(5)
@@ -101,15 +106,20 @@ def test_files_from_a_stopped_download_are_not_a_model(app_home: Path) -> None:
     target.mkdir(parents=True)
     (target / "model.bin").write_bytes(MODEL[:100])
     (target / "config.json").write_bytes(CONFIG)
-    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing())
+    manager = ModelManager(HEB, home=app_home, lister=lister, downloader=writing())
     assert manager.status().state == "missing"
     assert not resolve(default_config()).local
 
 
 def test_ensure_downloads_then_returns_the_folder(app_home: Path) -> None:
-    manager = ModelManager(REPO, home=app_home, lister=lister, downloader=writing())
+    manager = ModelManager(HEB, home=app_home, lister=lister, downloader=writing())
     assert manager.ensure() == target_for(REPO, app_home)
-    failing = ModelManager("other/repo", home=app_home, lister=lister, downloader=lambda *a: None)
+    failing = ModelManager(
+        SpeechModel("x", "other/repo", "r", 1),
+        home=app_home,
+        lister=lister,
+        downloader=lambda *a: None,
+    )
     with pytest.raises(RuntimeError, match=r"could not be downloaded: model\.bin is missing"):
         failing.ensure()
 
@@ -140,35 +150,48 @@ def test_a_missing_model_is_fetched_through_the_manager_not_faster_whisper(app_h
     assert built[0]["model_size_or_path"] == str(app_home / "fetched")
 
 
+def stub_all(home: Path | None = None, **kwargs: Any) -> dict[str, ModelManager]:
+    """The shared managers of all three models, with stand-ins for the hub."""
+    managers = {role: model_manager.manager_for(MODELS[role], home) for role in ROLES}
+    for manager in managers.values():
+        manager.lister = kwargs.get("lister", lister)
+        manager.downloader = kwargs.get("downloader", writing())
+    return managers
+
+
 def test_the_model_api_reports_and_starts_the_download(
     tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.fixtures.api import build_harness
 
     monkeypatch.setattr(model_manager, "_managers", {})
+    monkeypatch.setattr(model_manager, "_sets", {})
     api = build_harness(tmp_path)
     api.services.config.set("asr.device", "cpu")
     client = api.client()
 
-    # The API finds this same manager; give it stand-ins for the hub.
-    manager = model_manager.manager_for(REPO)
-    manager.lister, manager.downloader = lister, writing()
+    # The API finds these same managers; give them stand-ins for the hub.
+    stub_all()
 
     before = client.get("/api/model").json()
-    assert before["state"] == "missing" and before["repo"] == REPO
+    assert before["state"] == "missing"
+    assert [row["role"] for row in before["models"]] == list(ROLES)
+    assert all(m.repo in before["repo"] for m in MODELS.values())
     started = client.post("/api/model/download").json()
     assert started["state"] in ("downloading", "ready")
-    manager.wait(5)
+    model_manager.model_set(api.services.config).wait(5)
     after = client.get("/api/model").json()
     assert after["state"] == "ready" and after["done_bytes"] == after["total_bytes"]
+    assert {row["state"] for row in after["models"]} == {"ready"}
 
 
-def test_a_configured_model_needs_no_download(
+def test_a_configured_hebrew_model_needs_no_download_but_the_others_do(
     tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.fixtures.api import build_harness
 
     monkeypatch.setattr(model_manager, "_managers", {})
+    monkeypatch.setattr(model_manager, "_sets", {})
     model = tmp_path / "my-model"
     model.mkdir()
     (model / "model.bin").write_bytes(b"x")
@@ -176,7 +199,8 @@ def test_a_configured_model_needs_no_download(
     api = build_harness(tmp_path)
     api.services.config.set("asr.model_path", str(model))
     body = api.client().get("/api/model").json()
-    assert body["state"] == "ready" and body["path"] == str(model)
+    rows = {row["role"]: row["state"] for row in body["models"]}
+    assert rows == {CLASSIFIER: "missing", HEBREW: "ready", OTHER: "missing"}
 
 
 def test_status_survives_a_data_folder_on_a_missing_drive(tmp_path: Path, app_home: Path) -> None:
@@ -216,7 +240,7 @@ def test_a_stopped_download_keeps_its_part_file_and_the_next_one_fetches_the_res
                 out.write(data[at : at + 512])
                 on_bytes(len(data[at : at + 512]))
 
-    first = ModelManager(REPO, home=app_home, lister=lister,
+    first = ModelManager(HEB, home=app_home, lister=lister,
                          downloader=http_downloader(lister, fetch))  # fmt: skip
     first.start()
     assert first.wait(5).state == "cancelled"
@@ -225,7 +249,7 @@ def test_a_stopped_download_keeps_its_part_file_and_the_next_one_fetches_the_res
 
     stop_at[0] = None
     asked.clear()
-    second = ModelManager(REPO, home=app_home, lister=lister,
+    second = ModelManager(HEB, home=app_home, lister=lister,
                           downloader=http_downloader(lister, fetch))  # fmt: skip
     status = second.start()
     status = second.wait(5)
@@ -253,7 +277,7 @@ def test_a_part_file_longer_than_the_file_is_started_again(app_home: Path) -> No
             out.write(data[start:])
         on_bytes(len(data) - start)
 
-    manager = ModelManager(REPO, home=app_home, lister=lister,
+    manager = ModelManager(HEB, home=app_home, lister=lister,
                            downloader=http_downloader(lister, fetch))  # fmt: skip
     manager.start()
     assert manager.wait(5).state == "ready"
@@ -273,3 +297,187 @@ def test_downloads_trust_certifi_as_well_as_the_system() -> None:
         in_certifi = bundle.read().count("BEGIN CERTIFICATE")
     assert loaded >= in_certifi > 100
     assert context.verify_mode.name == "CERT_REQUIRED" and context.check_hostname
+
+
+# -- three pinned models (the multilingual epic, story A) --------------------------------
+
+
+def test_the_registry_holds_exactly_three_roles_each_pinned_to_a_revision() -> None:
+    from app.asr.models import TOTAL_BYTES
+
+    assert ROLES == (CLASSIFIER, HEBREW, OTHER), "installation order: small one first"
+    assert {m.repo for m in MODELS.values()} == {
+        "Systran/faster-whisper-small",
+        "ivrit-ai/whisper-large-v3-ct2",
+        "Systran/faster-whisper-large-v3",
+    }
+    for model in MODELS.values():
+        assert len(model.revision) == 40 and int(model.revision, 16) >= 0, model
+        assert "turbo" not in model.repo, "large-v3, never turbo (R6)"
+    assert 6_500_000_000 < TOTAL_BYTES < 6_800_000_000
+
+
+def test_files_are_fetched_at_the_pinned_revision_never_main(app_home: Path) -> None:
+    from collections.abc import Callable
+
+    from app.asr.model_manager import http_downloader
+
+    listed: list[tuple[str, str]] = []
+    urls: list[str] = []
+    blobs = {"model.bin": MODEL, "config.json": CONFIG}
+
+    def listing(repo: str, revision: str) -> dict[str, RemoteFile]:
+        listed.append((repo, revision))
+        return dict(FILES)
+
+    def fetch(url: str, dest: Path, on_bytes: Callable[[int], None], cancel: object) -> None:
+        urls.append(url)
+        dest.write_bytes(blobs[url.rsplit("/", 1)[-1]])
+
+    manager = ModelManager(HEB, home=app_home, lister=listing,
+                           downloader=http_downloader(listing, fetch))  # fmt: skip
+    manager.start()
+    assert manager.wait(5).state == "ready"
+    assert set(listed) == {(HEB.repo, HEB.revision)}
+    assert urls and all(f"/resolve/{HEB.revision}/" in url for url in urls)
+    assert not any("/main/" in url for url in urls)
+    marker = (target_for(REPO, app_home) / model_manager.VERIFIED).read_text(encoding="utf-8")
+    assert marker == f"{HEB.repo}@{HEB.revision}"
+
+
+def test_a_marker_for_another_revision_is_not_ready(app_home: Path) -> None:
+    target = target_for(REPO, app_home)
+    target.mkdir(parents=True)
+    (target / "model.bin").write_bytes(MODEL)
+    (target / "config.json").write_bytes(CONFIG)
+    (target / model_manager.VERIFIED).write_text(f"{REPO}@{'0' * 40}", encoding="utf-8")
+    assert not ModelManager(HEB, home=app_home, lister=lister).ready()
+    assert not resolve(default_config(), HEBREW).local
+    # A marker from before revisions were pinned held the repo alone.
+    (target / model_manager.VERIFIED).write_text(REPO, encoding="utf-8")
+    assert not resolve(default_config(), HEBREW).local
+    (target / model_manager.VERIFIED).write_text(HEB.marker, encoding="utf-8")
+    assert resolve(default_config(), HEBREW).local
+
+
+def test_resolve_finds_each_role_in_its_own_folder(app_home: Path) -> None:
+    for role in ROLES:
+        manager = ModelManager(MODELS[role], home=app_home, lister=lister, downloader=writing())
+        manager.start()
+        assert manager.wait(5).state == "ready"
+    for role in ROLES:
+        choice = resolve(default_config(), role)
+        assert choice.local and Path(choice.reference) == target_for(MODELS[role].repo, app_home)
+
+
+def test_the_model_path_override_is_for_the_hebrew_model_only(
+    tmp_path: Path, app_home: Path
+) -> None:
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "model.bin").write_bytes(b"x")
+    (mine / "config.json").write_bytes(b"{}")
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+    assert resolve(config, HEBREW).reference == str(mine)
+    assert not resolve(config, OTHER).local and resolve(config, OTHER).reference != str(mine)
+    assert not resolve(config, CLASSIFIER).local
+    assert model_manager.overridden_roles(config) == frozenset({HEBREW})
+
+
+def recording_downloader(order: list[str], fail: str = "") -> Any:
+    base = writing()
+
+    def download(model_: SpeechModel, target: Path, progress: type) -> None:
+        order.append(model_.role)
+        if model_.role == fail:
+            (target / "config.json").write_bytes(CONFIG)  # model.bin never arrives
+            return
+        base(model_, target, progress)
+
+    return download
+
+
+def test_all_three_are_downloaded_in_order(app_home: Path) -> None:
+    order: list[str] = []
+    managers = {
+        role: ModelManager(MODELS[role], home=app_home, lister=lister,
+                           downloader=recording_downloader(order))
+        for role in ROLES
+    }  # fmt: skip
+    models = ModelSet(managers)
+    assert models.status().state == "missing"
+    models.start()
+    status = models.wait(10)
+    assert status.state == "ready", status.error
+    assert order == [CLASSIFIER, HEBREW, OTHER]
+    assert status.done_bytes == status.total_bytes == 3 * (len(MODEL) + len(CONFIG))
+    for role in ROLES:
+        assert resolve(default_config(), role).local
+    # A second run fetches nothing.
+    order.clear()
+    ModelSet(managers).start()
+    assert order == []
+
+
+def test_one_model_failing_verification_fails_the_set_and_stops_there(app_home: Path) -> None:
+    order: list[str] = []
+    managers = {
+        role: ModelManager(MODELS[role], home=app_home, lister=lister,
+                           downloader=recording_downloader(order, fail=HEBREW))
+        for role in ROLES
+    }  # fmt: skip
+    models = ModelSet(managers)
+    models.start()
+    status = models.wait(10)
+    assert status.state == "failed" and "model.bin" in status.error
+    assert order == [CLASSIFIER, HEBREW], "the third is not started after a failure"
+    rows = {row["role"]: row["state"] for row in status.models}
+    assert rows == {CLASSIFIER: "ready", HEBREW: "failed", OTHER: "missing"}
+
+
+def test_the_free_space_check_covers_all_three_together(
+    app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Room for any one model, not for the three: refused before the first byte."""
+    order: list[str] = []
+    one = len(MODEL) + len(CONFIG)
+    monkeypatch.setattr(
+        model_manager, "free_bytes", lambda path: model_manager.SPARE_BYTES + 2 * one
+    )
+    managers = {
+        role: ModelManager(MODELS[role], home=app_home, lister=lister,
+                           downloader=recording_downloader(order))
+        for role in ROLES
+    }  # fmt: skip
+    models = ModelSet(managers)
+    models.start()
+    status = models.wait(10)
+    assert status.state == "failed" and status.code == "no_space"
+    assert order == []
+
+
+def test_a_stopped_set_resumes_where_it_stopped(app_home: Path) -> None:
+    order: list[str] = []
+    gate = threading.Event()
+    slow = writing(gate=gate)
+
+    def download(model_: SpeechModel, target: Path, progress: type) -> None:
+        order.append(model_.role)
+        (slow if model_.role == HEBREW else writing())(model_, target, progress)
+
+    managers = {
+        role: ModelManager(MODELS[role], home=app_home, lister=lister, downloader=download)
+        for role in ROLES
+    }
+    models = ModelSet(managers)
+    models.start()
+    while models.status().current != HEBREW:
+        threading.Event().wait(0.01)
+    models.cancel()
+    gate.set()
+    assert models.wait(10).state == "cancelled"
+    order.clear()
+    models.start()
+    assert models.wait(10).state == "ready"
+    assert order == [HEBREW, OTHER], "the classifier is not fetched again"

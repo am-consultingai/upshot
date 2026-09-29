@@ -1,12 +1,14 @@
 """The speech model on a stranger's machine: fetched once, in the open (Windows testing 2).
 
-Before this, a machine with no model downloaded 1.6-3 GB inside the first meeting's
+Before this, a machine with no model downloaded 3 GB inside the first meeting's
 transcription, through faster-whisper, into the Hugging Face user cache: minutes of what
 looked like a hang, no progress, no cancel, no space check, and files the uninstaller
-never saw (job 007 on machine B). Here the download is its own step, which first-run
-setup starts and shows, and which the transcribe stage falls back to:
+never saw (job 007 on machine B). Here the download is its own step, which the installer
+(``--prepare``) and first-run setup start and show, and which transcription never does:
 
 - into ``<home>/models/asr/<repo>``, where ``models.resolve`` looks and the app owns it;
+- at the revision ``models.MODELS`` pins, never ``main``; the verified marker records the
+  revision, so a marker left by another revision counts as not downloaded;
 - resumable across runs: each file downloads into ``<name>.part`` and a later attempt asks
   for the rest with an HTTP range. Not through the hub's own download: from 1.29 it writes
   to a temporary name unique to the run and deletes it on any failure, so a stopped
@@ -28,12 +30,12 @@ import threading
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from app import paths
-from app.asr.models import REPO, looks_like_model_dir
+from app.asr.models import MODELS, ROLES, SpeechModel, looks_like_model_dir
 from app.log import get
 
 log = get(__name__)
@@ -52,10 +54,10 @@ class RemoteFile:
     sha256: str | None = None
 
 
-#: (repo_id) -> {file name: RemoteFile}
-Lister = Callable[[str], dict[str, RemoteFile]]
-#: (repo_id, local_dir, progress class) -> None; ``http_downloader`` by default.
-Downloader = Callable[[str, Path, type], Any]
+#: (repo_id, revision) -> {file name: RemoteFile}
+Lister = Callable[[str, str], dict[str, RemoteFile]]
+#: (model, local_dir, progress class) -> None; ``http_downloader`` by default.
+Downloader = Callable[[SpeechModel, Path, type], Any]
 
 
 class DownloadCancelled(Exception):
@@ -79,6 +81,9 @@ class ModelStatus:
     #: "no_space" when the drive is too full, so the screen can say that in the reader's
     #: language instead of relaying this English sentence; "" for anything else.
     code: str = ""
+    #: A set of models (``ModelSet``): the role being fetched now, and each one's status.
+    current: str = ""
+    models: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -92,6 +97,17 @@ def target_for(repo: str, home: Path | None = None) -> Path:
     return models_root(home) / repo.replace("/", "__")
 
 
+def is_verified(folder: Path, model: SpeechModel) -> bool:
+    """A model folder whose files all matched the listing of the pinned revision."""
+    marker = folder / VERIFIED
+    if not (looks_like_model_dir(folder) and marker.is_file()):
+        return False
+    try:
+        return marker.read_text(encoding="utf-8").strip() == model.marker
+    except OSError:
+        return False
+
+
 def free_bytes(path: Path) -> int:
     """Free space on ``path``'s drive, from its nearest folder that exists."""
     probe = path
@@ -103,13 +119,13 @@ def free_bytes(path: Path) -> int:
         return 0
 
 
-def hub_lister(repo: str) -> dict[str, RemoteFile]:  # pragma: no cover - network
+def hub_lister(repo: str, revision: str) -> dict[str, RemoteFile]:  # pragma: no cover - network
     from huggingface_hub import HfApi
     from huggingface_hub.hf_api import RepoFile
 
     return {
         entry.path: RemoteFile(int(entry.size or 0), entry.lfs.sha256 if entry.lfs else None)
-        for entry in HfApi().list_repo_tree(repo, recursive=True)
+        for entry in HfApi().list_repo_tree(repo, revision=revision, recursive=True)
         if isinstance(entry, RepoFile)
     }
 
@@ -172,14 +188,14 @@ def http_fetch(
 #: (url, destination .part file, bytes received callback, cancel event) -> None
 Fetcher = Callable[[str, Path, Callable[[int], None], threading.Event], None]
 
-HUB_URL = "https://huggingface.co/{repo}/resolve/main/{name}"
+HUB_URL = "https://huggingface.co/{repo}/resolve/{revision}/{name}"
 
 
 def http_downloader(lister: Lister = hub_lister, fetch: Fetcher = http_fetch) -> Downloader:
     """Each file of the repo over plain HTTPS, into ``<name>.part`` until it is whole."""
 
-    def download(repo: str, target: Path, progress: type) -> None:
-        files = lister(repo)
+    def download(model: SpeechModel, target: Path, progress: type) -> None:
+        files = lister(model.repo, model.revision)
         parts = {name: target / (name + ".part") for name in files}
         done = 0
         for name, remote in files.items():
@@ -199,7 +215,9 @@ def http_downloader(lister: Lister = hub_lister, fetch: Fetcher = http_fetch) ->
                 continue
             part.parent.mkdir(parents=True, exist_ok=True)
             if not (part.is_file() and part.stat().st_size == remote.size):
-                url = HUB_URL.format(repo=repo, name=urllib.parse.quote(name))
+                url = HUB_URL.format(
+                    repo=model.repo, revision=model.revision, name=urllib.parse.quote(name)
+                )
                 fetch(url, part, bar.update, never)
             os.replace(part, whole)
 
@@ -207,30 +225,31 @@ def http_downloader(lister: Lister = hub_lister, fetch: Fetcher = http_fetch) ->
 
 
 class ModelManager:
-    """One download at a time, whoever asks: the setup screen or a meeting's transcription."""
+    """One model's download, one at a time, whoever asks: the installer or the setup screen."""
 
     def __init__(
         self,
-        repo: str = REPO,
+        model: SpeechModel,
         *,
         home: Path | None = None,
         lister: Lister = hub_lister,
         downloader: Downloader | None = None,
     ) -> None:
-        self.repo = repo
-        self.target = target_for(repo, home)
+        self.model = model
+        self.repo = model.repo
+        self.target = target_for(model.repo, home)
         self.lister = lister
         self.downloader = downloader or http_downloader(lister)
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._cancel = threading.Event()
-        self._status = ModelStatus(repo, str(self.target), "missing")
+        self._status = ModelStatus(self.repo, str(self.target), "missing")
         if self.ready():
             self._status.state = "ready"
 
     def ready(self) -> bool:
         """Only once verified: files can be in place from a download that was stopped."""
-        return looks_like_model_dir(self.target) and (self.target / VERIFIED).is_file()
+        return is_verified(self.target, self.model)
 
     def status(self) -> ModelStatus:
         with self._lock:
@@ -263,7 +282,7 @@ class ModelManager:
         return self.status()
 
     def ensure(self) -> Path:
-        """The model folder, downloading it first if needed (the transcribe stage's path)."""
+        """The model folder, downloading it first if needed."""
         if self.ready():
             return self.target
         self.start()
@@ -277,7 +296,7 @@ class ModelManager:
 
     def _run(self) -> None:
         try:
-            files = self.lister(self.repo)
+            files = self.lister(self.model.repo, self.model.revision)
             total = sum(remote.size for remote in files.values())
             present = sum(
                 (self.target / name).stat().st_size
@@ -295,16 +314,22 @@ class ModelManager:
                     f"{self.target}, and {free / 1e9:.1f} GB is free"
                 )
             self.target.mkdir(parents=True, exist_ok=True)
-            log.info("downloading %s (%.2f GB) into %s", self.repo, total / 1e9, self.target)
-            self.downloader(self.repo, self.target, self._progress_class(present))
+            log.info(
+                "downloading %s@%s (%.2f GB) into %s",
+                self.repo,
+                self.model.revision[:12],
+                total / 1e9,
+                self.target,
+            )
+            self.downloader(self.model, self.target, self._progress_class(present))
             self._verify(files)
             if not looks_like_model_dir(self.target):
                 raise RuntimeError(f"{self.target} has no model.bin/config.json after the download")
-            (self.target / VERIFIED).write_text(self.repo, encoding="utf-8")
+            (self.target / VERIFIED).write_text(self.model.marker, encoding="utf-8")
             with self._lock:
                 self._status.state = "ready"
                 self._status.done_bytes = total
-            log.info("speech model ready at %s", self.target)
+            log.info("speech model %s ready at %s", self.model.role, self.target)
         except DownloadCancelled:
             with self._lock:
                 self._status.state = "cancelled"
@@ -386,10 +411,193 @@ _managers: dict[Path, ModelManager] = {}
 _managers_lock = threading.Lock()
 
 
-def manager_for(repo: str, home: Path | None = None) -> ModelManager:
-    """The one manager for this repo and home, shared by the API and the pipeline."""
-    target = target_for(repo, home)
+def manager_for(model: SpeechModel, home: Path | None = None) -> ModelManager:
+    """The one manager for this model and home, shared by the API and the installer."""
+    target = target_for(model.repo, home)
     with _managers_lock:
-        if target not in _managers:
-            _managers[target] = ModelManager(repo, home=home)
+        if target not in _managers or _managers[target].model != model:
+            _managers[target] = ModelManager(model, home=home)
         return _managers[target]
+
+
+def overridden_roles(config: Any) -> frozenset[str]:
+    """Roles whose model a developer keeps outside the managed folder (``asr.model_path``):
+    nothing to fetch for them."""
+    from app.asr.models import resolve
+
+    roles = set()
+    for role in ROLES:
+        choice = resolve(config, role)
+        if choice.local and Path(choice.reference) != target_for(MODELS[role].repo):
+            roles.add(role)
+    return frozenset(roles)
+
+
+class ModelSet:
+    """All three models, fetched one after another: what ``--prepare`` and the setup
+    screen start. Its status sums the three, and names the one being fetched now.
+
+    Roles in ``skip`` are already somewhere else (``asr.model_path``) and count as ready.
+    The free-space check covers everything still to fetch, plus the spare, before the
+    first byte: a drive that fits the small model but not the large ones fails at once
+    rather than an hour in.
+    """
+
+    def __init__(
+        self,
+        managers: dict[str, ModelManager] | None = None,
+        *,
+        home: Path | None = None,
+        skip: frozenset[str] = frozenset(),
+    ) -> None:
+        self.managers = managers or {role: manager_for(MODELS[role], home) for role in ROLES}
+        self.skip = skip
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._cancel = threading.Event()
+        self._current = ""
+        self._failure: ModelStatus | None = None
+        self._cancelled = False
+
+    def _pending(self) -> dict[str, ModelManager]:
+        return {
+            role: manager
+            for role, manager in self.managers.items()
+            if role not in self.skip and not manager.ready()
+        }
+
+    def ready(self) -> bool:
+        return not self._pending()
+
+    def repo_text(self) -> str:
+        return " + ".join(manager.repo for manager in self.managers.values())
+
+    def status(self) -> ModelStatus:
+        parts = {role: manager.status() for role, manager in self.managers.items()}
+        done = total = 0
+        rows: list[dict[str, Any]] = []
+        for role, part in parts.items():
+            expected = part.total_bytes or self.managers[role].model.size_bytes
+            state = "ready" if role in self.skip else part.state
+            done += expected if state == "ready" else part.done_bytes
+            total += expected
+            rows.append(
+                {"role": role, "repo": part.repo, "state": state,
+                 "done_bytes": expected if state == "ready" else part.done_bytes,
+                 "total_bytes": expected}
+            )  # fmt: skip
+        with self._lock:
+            running = self._thread is not None and self._thread.is_alive()
+            failure, cancelled, current = self._failure, self._cancelled, self._current
+        first = next(iter(parts.values()))
+        status = ModelStatus(
+            self.repo_text(),
+            str(Path(first.path).parent),
+            "missing",
+            done_bytes=done,
+            total_bytes=total,
+            free_bytes=first.free_bytes,
+            current=current if running else "",
+            models=rows,
+        )
+        if running:
+            status.state = "downloading"
+        elif all(row["state"] == "ready" for row in rows):
+            status.state = "ready"
+        elif failure is not None:
+            status.state, status.error, status.code = "failed", failure.error, failure.code
+        elif cancelled:
+            status.state = "cancelled"
+        return status
+
+    def start(self) -> ModelStatus:
+        with self._lock:
+            running = self._thread is not None and self._thread.is_alive()
+            if not running and not self.ready():
+                self._cancel.clear()
+                self._failure, self._cancelled = None, False
+                self._thread = threading.Thread(target=self._run, name="models", daemon=True)
+                self._thread.start()
+        return self.status()
+
+    def cancel(self) -> ModelStatus:
+        self._cancel.set()
+        for manager in self.managers.values():
+            manager.cancel()
+        return self.status()
+
+    def wait(self, timeout: float | None = None) -> ModelStatus:
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout)
+        return self.status()
+
+    def _run(self) -> None:
+        pending = self._pending()
+        try:
+            self._check_space(pending)
+        except NotEnoughSpace as exc:
+            with self._lock:
+                self._failure = ModelStatus("", "", "failed", error=str(exc), code="no_space")
+            log.warning("model download refused: %s", exc)
+            return
+        except Exception as exc:
+            with self._lock:
+                self._failure = ModelStatus("", "", "failed", error=str(exc) or type(exc).__name__)
+            log.warning("could not list the speech models: %s", exc)
+            return
+        for role, manager in pending.items():
+            if self._cancel.is_set():
+                with self._lock:
+                    self._cancelled = True
+                return
+            with self._lock:
+                self._current = role
+            manager.start()
+            status = manager.wait()
+            if status.state == "cancelled" or self._cancel.is_set():
+                with self._lock:
+                    self._cancelled = True
+                return
+            if status.state != "ready":
+                with self._lock:
+                    self._failure = status
+                return
+
+    def _check_space(self, pending: dict[str, ModelManager]) -> None:
+        if not pending:
+            return
+        needed = SPARE_BYTES
+        target = next(iter(pending.values())).target
+        for manager in pending.values():
+            files = manager.lister(manager.model.repo, manager.model.revision)
+            total = sum(remote.size for remote in files.values())
+            present = sum(
+                (manager.target / name).stat().st_size
+                for name in files
+                if (manager.target / name).is_file()
+            )
+            needed += max(0, total - present)
+        free = free_bytes(target)
+        if free < needed:
+            raise NotEnoughSpace(
+                f"the speech models need {needed / 1e9:.1f} GB free on the drive of "
+                f"{target}, and {free / 1e9:.1f} GB is free"
+            )
+
+
+_sets: dict[tuple[Path, frozenset[str]], ModelSet] = {}
+
+
+def model_set(config: Any, home: Path | None = None) -> ModelSet:
+    """The one ``ModelSet`` for this home, so a download the setup screen started is the
+    one its next poll reports on."""
+    skip = overridden_roles(config)
+    key = (models_root(home), skip)
+    with _managers_lock:
+        existing = _sets.get(key)
+    if existing is None:
+        existing = ModelSet(home=home, skip=skip)
+        with _managers_lock:
+            existing = _sets.setdefault(key, existing)
+    return existing

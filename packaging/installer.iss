@@ -97,12 +97,13 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait pos
 ; offers to remove the speech model and GPU libraries (see [Code]).
 
 [Code]
-{ The speech model (and, with a suitable NVIDIA GPU, the CUDA libraries) is fetched
-  during the install by "upshot.exe --prepare" (app/prepare.py), which does the work and
-  the checks; this page only shows the progress file it writes.
-  A download that fails or is stopped never fails the install: the app fetches a
-  missing model before the first transcription, and runs on the CPU without the GPU
-  libraries. }
+{ The three speech models (and, with a suitable NVIDIA GPU, the CUDA libraries) are
+  fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
+  work and the checks; this page only shows the progress file it writes.
+  The models come from the installer and nowhere else: the app never downloads one while
+  transcribing. So a model download that fails or is stopped leaves the install
+  incomplete, and the finish page says to run the installer again, which resumes where
+  it stopped. The GPU libraries are optional: without them the app runs on the CPU. }
 
 const
   { Polls (200 ms each) without a new report before the download counts as dead: 2 minutes. }
@@ -232,7 +233,7 @@ end;
 procedure InitializeWizard;
 begin
   PreparePage := CreateOutputProgressPage('Getting {#AppName} ready to transcribe',
-    '{#AppName} transcribes on this computer, so it needs its speech model. This is a one-time download.');
+    '{#AppName} transcribes on this computer, so it needs its speech models (about 6.7 GB). This is a one-time download.');
 end;
 
 function ReadValue(const Lines: TArrayOfString; const Key: String): String;
@@ -252,7 +253,7 @@ begin
   if Stage = 'gpu' then
     Result := 'NVIDIA cuBLAS and cuDNN, so transcription runs on your graphics card.'
   else
-    Result := 'Hebrew and English speech recognition (ivrit-ai), from Hugging Face.';
+    Result := 'Speech recognition for Hebrew (ivrit-ai) and every other language (Whisper), from Hugging Face.';
 end;
 
 procedure RunPrepare;
@@ -267,7 +268,7 @@ begin
   { As the signed-in user, not an elevated one: the model belongs in their profile. }
   if not ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), Params, '', SW_HIDE, ewNoWait, ResultCode) then begin
     Log('Could not start the download: ' + SysErrorMessage(ResultCode));
-    PrepareNote := 'The speech model was not downloaded. {#AppName} downloads it before your first transcription.';
+    PrepareNote := 'The speech models were not downloaded, so {#AppName} cannot transcribe yet. Run the installer again to finish.';
     Exit;
   end;
   PreparePage.SetText('Starting the download...', StageHint('model'));
@@ -311,14 +312,14 @@ begin
   end;
   Log('Prepare ended: stage=' + Stage + ' state=' + State + ' code=' + Code + ' error=' + Error);
   if State = 'cancelled' then
-    PrepareNote := 'The speech model download was paused. {#AppName} continues it before your first transcription.'
+    PrepareNote := 'The speech model download was paused, so {#AppName} cannot transcribe yet. Run the installer again to continue it.'
   else if Code = 'no_space' then
-    PrepareNote := 'There was not enough free disk space for the speech model (about 4 GB). Free some space; {#AppName} downloads it before your first transcription.'
+    PrepareNote := 'There was not enough free disk space for the speech models (about 7.7 GB with room to spare). Free some space, then run the installer again to finish.'
   else if State = 'failed' then begin
     if Stage = 'gpu' then
-      PrepareNote := 'The speech model is ready. The GPU libraries could not be downloaded, so {#AppName} transcribes on the processor for now.'
+      PrepareNote := 'The speech models are ready. The GPU libraries could not be downloaded, so {#AppName} transcribes on the processor for now.'
     else
-      PrepareNote := 'The speech model could not be downloaded now. {#AppName} tries again before your first transcription.';
+      PrepareNote := 'The speech models could not be downloaded, so the installation is incomplete and {#AppName} cannot transcribe yet. Run the installer again to finish; it continues where it stopped.';
   end;
 end;
 
@@ -349,9 +350,9 @@ begin
   Home := ExpandConstant('{localappdata}\upshot');
   if not DirExists(Home + '\models') and not DirExists(Home + '\cuda') then
     Exit;
-  What := 'the speech model (about 3 GB)';
+  What := 'the speech models (about 6.7 GB)';
   if DirExists(Home + '\cuda') then
-    What := 'the speech model and the GPU libraries (about 5 GB)';
+    What := 'the speech models and the GPU libraries (about 9 GB)';
   if MsgBox('Also remove ' + What + '?' + #13#10#13#10 +
       'Your recordings, transcripts and settings are kept either way. Keep the model if you may reinstall {#AppName}.',
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then begin

@@ -15,8 +15,10 @@ def fetch_model(repo: str) -> Path:
     """A model not on disk is downloaded by the model manager, which the setup screen
     shows, rather than inside faster-whisper where nobody can see it."""
     from app.asr.model_manager import manager_for
+    from app.asr.models import MODELS
 
-    return manager_for(repo).ensure()
+    model = next(m for m in MODELS.values() if m.repo == repo)
+    return manager_for(model).ensure()
 
 
 def make_backend(config: Config) -> AsrBackend:

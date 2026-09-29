@@ -1,12 +1,13 @@
 """``upshot.exe --prepare``: fetch what transcription needs, for the installer to show.
 
 The installer runs this right after copying the app (packaging/installer.iss) and draws
-its own progress page from the file this writes, so the 3 GB speech model arrives during
-the install, in the open, instead of silently inside the first meeting's transcription.
-It fetches, in order:
+its own progress page from the file this writes, so the speech models arrive during the
+install, in the open. It fetches, in order:
 
-1. the speech model, through the same ``ModelManager`` the app uses: resumable, checked
-   file by file, refused up front when the drive is too full;
+1. the three speech models (``models.MODELS``: the language classifier, then ivrit-ai
+   large-v3 for Hebrew, then stock large-v3 for every other language, ~6.7 GB), through
+   the same ``ModelSet`` the app uses: pinned revisions, resumable, checked file by file,
+   refused up front when the drive cannot hold all of them;
 2. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
    model.
 
@@ -14,12 +15,15 @@ It fetches, in order:
 
 ``P`` is rewritten every half second as ``key=value`` lines — plain text, because Inno's
 Pascal script reads it: ``stage`` (model|gpu|done), ``state`` (working|ready|skipped|
-failed|cancelled), ``done_mb``, ``total_mb``, ``percent``, ``text``, ``error``, ``code``,
-and ``tick``, which grows on every write so the reader can tell a live process from a
-dead one. Creating ``C`` cancels; partial files stay and resume next time.
+failed|cancelled), ``done_mb``, ``total_mb``, ``percent`` (all three models together),
+``model`` (the role being fetched), ``text``, ``error``, ``code``, and ``tick``, which grows
+on every write so the reader can tell a live process from a dead one. Creating ``C``
+cancels; partial files stay and resume next time.
 
-A failure here never undoes the install: the app fetches a missing model before the
-first transcription, and runs on the CPU without the CUDA libraries.
+Models come from here and nowhere else (R12): transcription never downloads one. If any
+of the three fails, the exit code says so and the installer reports an incomplete install;
+running it again resumes. The CUDA libraries are optional: without them the app runs on
+the CPU.
 """
 
 from __future__ import annotations
@@ -39,6 +43,13 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_CANCELLED = 2
 EXIT_NO_SPACE = 3
+
+#: How the progress text names each model while it downloads.
+MODEL_LABELS = {
+    "classifier": "language detection, 1 of 3",
+    "hebrew": "Hebrew, 2 of 3",
+    "other": "other languages, 3 of 3",
+}
 
 
 class Download(Protocol):
@@ -103,17 +114,19 @@ def follow(
             download.cancel()
         done, total = int(status.done_bytes), int(status.total_bytes)
         percent = min(100, done * 100 // total) if total else 0
+        current = str(getattr(status, "current", "") or "")
+        name = f"{label} ({MODEL_LABELS.get(current, current)})" if current else label
         if status.state == "unpacking":
             text = f"{label}: unpacking"
         elif total:
-            text = f"{label}: {_mb(done):,} MB of {_mb(total):,} MB"
+            text = f"{name}: {_mb(done):,} MB of {_mb(total):,} MB"
         else:
             text = f"{label}: starting"
         if status.state not in busy:
             break
         progress.write(
             stage=stage, state="working", done_mb=_mb(done), total_mb=_mb(total),
-            percent=percent, text=text,
+            percent=percent, text=text, **({"model": current} if current else {}),
         )  # fmt: skip
         time.sleep(poll)
     download.wait(5)
@@ -145,19 +158,19 @@ def run(
     poll: float = 0.5,
 ) -> int:
     """Both stages, in order. Stops at the first that does not finish."""
-    from app.asr.models import resolve
+    if model is None:
+        from app.asr.model_manager import model_set
 
-    choice = resolve(config)
-    if model is None and choice.local:
-        progress.write(stage="model", state="skipped", percent=100,
-                       text="Speech model: already on this computer")  # fmt: skip
-        log.info("prepare: the speech model is already at %s", choice.reference)
-    else:
-        if model is None:
-            from app.asr.model_manager import manager_for
-
-            model = manager_for(choice.repo_id or choice.reference)
-        code = follow("model", "Speech model", model, progress, cancelled, poll=poll)
+        models = model_set(config)
+        if models.ready():
+            progress.write(stage="model", state="skipped", percent=100,
+                           text="Speech models: already on this computer")  # fmt: skip
+            log.info("prepare: all three speech models are already here")
+            model = None
+        else:
+            model = models
+    if model is not None:
+        code = follow("model", "Speech models", model, progress, cancelled, poll=poll)
         if code != EXIT_OK:
             return code
 
