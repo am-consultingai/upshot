@@ -11,6 +11,7 @@ from typing import Any
 
 from app import glossary as glossary_module
 from app import meta
+from app.asr.languages import english_name
 from app.asr.models import DEFAULT_LANGUAGE
 from app.due import anchor_date, resolve_due
 from app.errors import QuotaExhausted
@@ -139,7 +140,8 @@ def resolve_summary_language(ctx: StageContext) -> str:
 
 
 def language_instruction(language: str) -> str:
-    name = {"he": "Hebrew", "en": "English"}.get(language, language)
+    """Which language the notes are written in: any Whisper language, by its name."""
+    name = english_name(language)
     return (
         f"Write the notes in {name} ({language}). Keep proper nouns, product names and "
         "technical terms verbatim in their original language."

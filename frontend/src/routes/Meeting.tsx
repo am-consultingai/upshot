@@ -22,10 +22,7 @@ import { toast } from "../components/Toaster";
 import { speakers } from "../lib/speakers";
 import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
 import { leadFirst } from "../lib/summary";
-
-function contentDirection(language: string | null): "rtl" | "ltr" {
-  return language === "he" ? "rtl" : "ltr";
-}
+import { meetingDirections } from "../lib/direction";
 
 /** What each stage is doing, in words. "summarize: running" told nobody anything. */
 const STAGE_LABEL: Record<string, MessageKey> = {
@@ -307,13 +304,9 @@ export default function MeetingPage() {
     if (yes) remove.mutate();
   };
 
-  const dir = useMemo(
-    () =>
-      contentDirection(
-        meeting.data?.summary_language ?? meeting.data?.language ?? null,
-      ),
-    [meeting.data],
-  );
+  // Which way the notes and the transcript run, as the API says for their languages.
+  const directions = useMemo(() => meetingDirections(meeting.data), [meeting.data]);
+  const dir = directions.summary;
 
   /*
    * The line being spoken: the last one that has started. Segments carry a start
@@ -691,7 +684,7 @@ export default function MeetingPage() {
                   ref={findRef}
                   segments={segments}
                   people={people}
-                  dir={contentDirection(meeting.data.language)}
+                  dir={directions.transcript}
                   speaking={spokenIndex}
                   onSeek={(seconds) => {
                     playerRef.current?.seek(seconds);

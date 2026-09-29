@@ -216,6 +216,14 @@ def model_cancel(request: Request) -> dict[str, Any]:
     return _model_payload(svc, models)
 
 
+@router.get("/languages")
+def languages() -> dict[str, Any]:
+    """Every language Whisper transcribes, for the hidden "Transcribe again as…" list."""
+    from app.asr.languages import LANGUAGES
+
+    return {"languages": [language.as_dict() for language in LANGUAGES.values()]}
+
+
 @router.get("/status")
 def status(request: Request) -> dict[str, Any]:
     svc = services_of(request)
@@ -683,6 +691,12 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     if meeting is None:
         raise HTTPException(404, "no such meeting")
     payload = meeting.as_dict()
+    # Which way the transcript and the notes run, for any Whisper language: the list of
+    # right-to-left languages lives in app/asr/languages.py only, not in the page.
+    from app.asr.languages import direction_for
+
+    payload["direction"] = direction_for(meeting.language)
+    payload["summary_direction"] = direction_for(meeting.summary_language or meeting.language)
     payload["jobs"] = [
         {
             "stage": job.stage,

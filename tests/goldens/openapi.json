@@ -1478,6 +1478,27 @@
         "summary": "Import Audio"
       }
     },
+    "/api/languages": {
+      "get": {
+        "description": "Every language Whisper transcribes, for the hidden \"Transcribe again as…\" list.",
+        "operationId": "languages_api_languages_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Languages Api Languages Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Languages"
+      }
+    },
     "/api/launcher/action": {
       "post": {
         "description": "A toast button, pressed (D70). The caller is ``upshot.exe \"upshot:...\"``, which\nproves itself with the launcher key: CSRF lets this one path through on it, so it is\nchecked again here rather than trusted from the middleware alone.\n\nEach action takes the same path as its button in the window. Stop and \"Not a meeting\"\nname their meeting, so a notification left in the Action Center cannot stop a later\nrecording than the one it was about.",
