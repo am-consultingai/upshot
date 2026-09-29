@@ -6,7 +6,7 @@ owner installed and signed into themselves, sends the prompt on stdin, and reads
 answer from its stdout. The sign-in lives in the CLI's own store; nothing here reads,
 writes, copies or passes it along.
 
-What is different, and why (D78):
+What is different, and why (D79):
 
 * **Gemini CLI no longer takes a consumer plan.** Google moved AI Pro and Ultra sign-ins
   to Antigravity CLI on 2026-06-18, so this is the only route to a Google subscription.
@@ -21,7 +21,7 @@ What is different, and why (D78):
   answers "Please sign in…" when signed out, spends nothing, and is the status check.
   ``/logout`` is refused in print mode, so the app cannot sign anyone out.
 * **Runs are kept in the user's Antigravity history**, as Claude Code's are. There is no
-  ephemeral flag; the product owner chose not to delete them (D78).
+  ephemeral flag; the product owner chose not to delete them (D79).
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ NOT_SIGNED_IN = (
 )
 #: The plan's allowance. **Not yet seen from a real build**: these are Google's API words
 #: for a spent quota and the ones Antigravity's plan page uses. Refine from the first real
-#: occurrence (D78); until then an unmatched limit is retried like any other failure.
+#: occurrence (D79); until then an unmatched limit is retried like any other failure.
 QUOTA_SPENT = (
     "resource_exhausted",
     "resource exhausted",

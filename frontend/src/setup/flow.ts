@@ -90,7 +90,7 @@ export type ProviderId =
 export const CLI_PROVIDER: Record<CliId, ProviderId> = {
   claude: "claude-subscription",
   codex: "codex-subscription",
-  // A Google AI plan, through Google's Antigravity CLI (D78).
+  // A Google AI plan, through Google's Antigravity CLI (D79).
   antigravity: "antigravity-subscription",
 };
 

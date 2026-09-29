@@ -272,9 +272,9 @@ export interface LlmProvider {
   install_method?: string;
   install_docs?: string;
   update_hint?: string;
-  /** False for a CLI that cannot be signed out from outside it (Antigravity, D78). */
+  /** False for a CLI that cannot be signed out from outside it (Antigravity, D79). */
   can_sign_out?: boolean;
-  /** Sign out opens a window where the CLI's own /logout is typed (Antigravity, D78). */
+  /** Sign out opens a window where the CLI's own /logout is typed (Antigravity, D79). */
   signout_in_window?: boolean;
   /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */
   console_open?: boolean;

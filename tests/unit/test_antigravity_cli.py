@@ -1,4 +1,4 @@
-"""The Antigravity provider (D78), driven through an injected runner — no subprocess.
+"""The Antigravity provider (D79), driven through an injected runner — no subprocess.
 
 The outputs replayed here are the real ones, recorded from ``agy`` 1.2.8 and 1.2.12 on
 2026-09-28 (this machine, and machine B signed out and then signed in).
@@ -188,7 +188,7 @@ def test_every_run_is_the_toolless_upshot_agent_in_our_own_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """agy applies the user's own permission rules, which can allow every command: our
-    runs select an agent with no tool but finish, kept in our run folder (D78)."""
+    runs select an agent with no tool but finish, kept in our run folder (D79)."""
     monkeypatch.setenv("UP_HOME", str(tmp_path / "home"))
     folder = Path(antigravity_cli.workdir())
     agent = folder / ".agents" / "agents" / "upshot.md"
