@@ -245,8 +245,99 @@ def test_a_gpu_that_fails_falls_back_to_the_cpu(
     assert built == ["cuda", "cpu"] and decision.device == "cpu"
 
 
+def test_a_small_gpu_runs_the_classifier_on_the_cpu_too(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The VRAM gate (under 4 GB -> CPU) holds for the classifier as for the large model."""
+    import app.asr.local as local
+
+    place_classifier(app_home)
+    cublas = tmp_path / "cuda"
+    cublas.mkdir()
+    (cublas / "cublas64_12.dll").write_bytes(b"")
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 2048)
+    built: list[str] = []
+
+    def factory(**kwargs: Any) -> StubModel:
+        built.append(str(kwargs["device"]))
+        return StubModel([{"he": 0.9}])
+
+    config = default_config(asr__cuda_dir=str(cublas))
+    assert local.plan_device(config, [cublas]).reason == "low_vram"
+    classifier = WhisperClassifier(
+        config, model_factory=factory, read_speech=lambda t, w: speech(t, 100)
+    )
+    assert classifier.classify(INPUTS).device == "cpu" and built == ["cpu"]
+
+
 def test_a_missing_classifier_is_a_broken_installation_not_a_download(app_home: Path) -> None:
     classifier = make([{"he": 0.9}], {"me": 100, "them": 100}, [])
+    with pytest.raises(ModelNotInstalled, match="classifier"):
+        classifier.classify(INPUTS)
+
+
+# ------------------------------------------------------------------ its own process
+
+
+def test_on_the_cpu_the_classifier_runs_in_a_process_of_its_own(app_home: Path) -> None:
+    """Its freed memory would otherwise stay in the heap and push the large model's peak
+    over the D60 budget (measured: 5.7 GB against 4.5 GB)."""
+    from app.asr.classify import IsolatedClassifier
+
+    place_classifier(app_home)
+    sent: list[tuple[dict[str, Any], dict[str, str]]] = []
+
+    def child(data: dict[str, Any], inputs: dict[str, str]) -> dict[str, Any]:
+        sent.append((data, inputs))
+        return decide({"es": 0.97, "he": 0.03}).as_dict()
+
+    classifier = IsolatedClassifier(default_config(asr__device="cpu"), run_child=child)
+    decision = classifier.classify(INPUTS)
+    assert classifier.isolated and (decision.language, decision.route) == ("es", OTHER)
+    assert sent[0][1] == {"me": "me.wav", "them": "them.wav"}
+    assert sent[0][0]["asr"]["device"] == "cpu", "the child gets the same configuration"
+
+
+def test_on_the_gpu_it_runs_in_place(app_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.asr.local as local
+    from app.asr.classify import IsolatedClassifier
+
+    place_classifier(app_home)
+    monkeypatch.setattr(local, "planned_device", lambda config: "cuda")
+    ran: list[str] = []
+    monkeypatch.setattr(
+        classify_module.WhisperClassifier, "classify",
+        lambda self, inputs: ran.append("in place") or decide({"he": 0.9}),
+    )  # fmt: skip
+    classifier = IsolatedClassifier(
+        default_config(), run_child=lambda *a: pytest.fail("no child on the GPU")
+    )
+    assert classifier.classify(INPUTS).route == HEBREW and ran == ["in place"]
+
+
+def test_a_child_that_fails_is_replaced_by_running_in_place(
+    app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.asr.classify import IsolatedClassifier
+
+    place_classifier(app_home)
+    monkeypatch.setattr(
+        classify_module.WhisperClassifier, "classify", lambda self, inputs: decide({"fr": 0.95})
+    )
+
+    def broken(*args: Any) -> dict[str, Any]:
+        raise OSError("could not start a process")
+
+    classifier = IsolatedClassifier(default_config(asr__device="cpu"), run_child=broken)
+    assert classifier.classify(INPUTS).language == "fr" and not classifier.isolated
+
+
+def test_a_missing_classifier_is_said_before_any_process_starts(app_home: Path) -> None:
+    from app.asr.classify import IsolatedClassifier
+
+    classifier = IsolatedClassifier(
+        default_config(asr__device="cpu"), run_child=lambda *a: pytest.fail("started")
+    )
     with pytest.raises(ModelNotInstalled, match="classifier"):
         classifier.classify(INPUTS)
 
@@ -263,20 +354,25 @@ def test_the_decision_round_trips_through_json() -> None:
 
 # ------------------------------------------------------------------ real model
 
-EVIDENCE = Path(__file__).resolve().parents[2] / ".research/2026-09-29-multilingual-asr-evidence"
+#: Where scripts/asr_bench/fleurs_fetch.py puts FLEURS (git ignores it).
+FLEURS = Path(__file__).resolve().parents[2] / ".cache" / "asr_bench" / "fleurs"
 
 
 @pytest.mark.gpu
 @pytest.mark.slow
 @pytest.mark.parametrize("language", ["he", "en", "es", "fr", "ru"])
 def test_the_real_classifier_on_fleurs(language: str, tmp_path: Path) -> None:
-    """FLEURS clips, levelled as the benchmark does; the classifier model on disk."""
+    """FLEURS clips, levelled as the benchmark does; the classifier model on disk.
+
+    Run explicitly: ``pytest -m gpu`` (it runs on the CPU too), with ``UP_HOME`` pointing
+    at an app home that ``--prepare`` filled, after ``fleurs_fetch.py --tier 1``.
+    """
     from app.asr.models import resolve
 
     config = default_config()
     if not resolve(config, CLASSIFIER).local:
         pytest.skip("whisper-small is not installed; run upshot --prepare")
-    source = EVIDENCE / "fleurs" / f"{language}.npz"
+    source = FLEURS / f"{language}.npz"
     if not source.exists():
         pytest.skip("FLEURS clips not fetched (scripts/asr_bench/fleurs_fetch.py)")
     import wave

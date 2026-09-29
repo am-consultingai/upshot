@@ -175,9 +175,9 @@ def classifier_for(ctx: StageContext) -> Classifier:
 
         language = getattr(asr, "language", None) or ctx.config.get("asr.fake_language", "he")
         return FakeClassifier(str(language))
-    from app.asr.classify import WhisperClassifier
+    from app.asr.classify import IsolatedClassifier
 
-    return WhisperClassifier(ctx.config)
+    return IsolatedClassifier(ctx.config)
 
 
 def _check_installation(ctx: StageContext) -> None:
