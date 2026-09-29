@@ -177,6 +177,20 @@ def classifier_for(ctx: StageContext) -> Classifier:
     return WhisperClassifier(ctx.config)
 
 
+def _check_installation(ctx: StageContext) -> None:
+    """All three models present, before anything is loaded: a model missing after
+    install fails the job with a message naming it. It is never downloaded, and ivrit
+    never stands in for stock Whisper (R12)."""
+    services = ctx.services
+    if services is not None and getattr(services, "asr", None) is not None:
+        return  # an injected backend (tests) brings its own models
+    if str(ctx.config.get("asr.backend", "local")) == "fake":
+        return
+    from app.asr.models import check_installed
+
+    check_installed(ctx.config)
+
+
 def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
     """The meeting's language, from the files transcription will read. Stored and logged,
     never shown (R7)."""
@@ -210,6 +224,7 @@ def run(ctx: StageContext) -> None:
         log.info("transcript segments are current; skipping")
         return
 
+    _check_installation(ctx)
     records = recover(folder)
     echo_model = _measure_echo(ctx)
 

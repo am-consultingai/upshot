@@ -141,6 +141,7 @@ def test_cuda_dirs_found_in_wheel_layout(tmp_path: Path) -> None:
     assert dirs == [wheel]
 
 
+@pytest.mark.usefixtures("installed_models")
 def test_cuda_error_falls_back(tmp_path: Path) -> None:
     """A cuBLAS-shaped failure must never fail a transcription."""
     attempts: list[tuple[str, str]] = []
@@ -163,6 +164,7 @@ def test_cuda_error_falls_back(tmp_path: Path) -> None:
     assert segments and segments[0].text == "hello world"
 
 
+@pytest.mark.usefixtures("installed_models")
 def test_warmup_runs_at_load(tmp_path: Path) -> None:
     models: list[RecordingModel] = []
 
@@ -177,6 +179,7 @@ def test_warmup_runs_at_load(tmp_path: Path) -> None:
     assert models[0].calls, "the warmup inference forces the lazy library load at startup"
 
 
+@pytest.mark.usefixtures("installed_models")
 def test_transcribe_params_are_the_tuned_set(tmp_path: Path) -> None:
     models: list[RecordingModel] = []
 
@@ -196,6 +199,7 @@ def test_transcribe_params_are_the_tuned_set(tmp_path: Path) -> None:
     assert call["beam_size"] == 5
 
 
+@pytest.mark.usefixtures("installed_models")
 @pytest.mark.parametrize(("language", "multilingual"), [("es", False), (None, True)])
 def test_stock_whisper_gets_the_same_tuned_set(
     tmp_path: Path, language: str | None, multilingual: bool
@@ -220,6 +224,7 @@ def test_stock_whisper_gets_the_same_tuned_set(
     assert backend.describe()["repo"] == MODELS[OTHER].repo
 
 
+@pytest.mark.usefixtures("installed_models")
 @pytest.mark.parametrize(
     ("device", "cpu_fast", "beam"),
     [("cpu", False, 5), ("cpu", True, 1), ("cuda", False, 5), ("cuda", True, 5)],
@@ -244,6 +249,7 @@ def test_cpu_acceleration_is_greedy_on_the_cpu_only(
     assert models[-1].calls[-1]["beam_size"] == beam
 
 
+@pytest.mark.usefixtures("installed_models")
 def test_cpu_acceleration_applies_without_a_restart(tmp_path: Path) -> None:
     models: list[RecordingModel] = []
 
@@ -262,6 +268,7 @@ def test_cpu_acceleration_applies_without_a_restart(tmp_path: Path) -> None:
     assert [call["beam_size"] for call in models[-1].calls[-2:]] == [5, 1]
 
 
+@pytest.mark.usefixtures("installed_models")
 def test_initial_prompt_passed(tmp_path: Path) -> None:
     models: list[RecordingModel] = []
 
@@ -276,6 +283,7 @@ def test_initial_prompt_passed(tmp_path: Path) -> None:
     assert models[0].calls[-1]["initial_prompt"] == prompt
 
 
+@pytest.mark.usefixtures("installed_models")
 def test_unload_drops_the_model() -> None:
     backend = LocalAsr(default_config(), model_factory=lambda **kw: RecordingModel(**kw))
     backend.load()
@@ -525,3 +533,22 @@ def test_configured_cuda_dir_accepts_a_list(tmp_path: Path) -> None:
         system_dirs=(),
     )
     assert found == [first, second]
+
+
+@pytest.mark.parametrize(
+    ("text", "language"),
+    [
+        ("בוא נתחיל עם הסטטוס של הפרויקט", "he"),
+        ("لنبدأ بحالة المشروع", "ar"),
+        ("начнём со статуса проекта", "ru"),
+        ("let's start with the status of the project", "en"),
+        ("empecemos con el estado del proyecto", "en"),
+        ("我们先从项目的状态开始", "zh"),
+        ("プロジェクトの状況から始めましょう", "ja"),
+        ("프로젝트 상태부터 시작합시다", "ko"),
+    ],
+)
+def test_an_imported_texts_language_is_read_from_its_script(text: str, language: str) -> None:
+    """Imported text has no audio to classify: its script decides, and other Latin-script
+    languages fall back to English."""
+    assert spoken_language([text]).language == language

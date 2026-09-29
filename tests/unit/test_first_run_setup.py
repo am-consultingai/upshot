@@ -306,7 +306,7 @@ class Model:
 
 
 def test_a_gpu_that_fails_to_load_falls_back_to_the_same_model_on_the_cpu(
-    app_home: Path,
+    installed_models: dict[str, Path],
 ) -> None:
     built: list[tuple[str, str]] = []
 
@@ -319,29 +319,13 @@ def test_a_gpu_that_fails_to_load_falls_back_to_the_same_model_on_the_cpu(
     config = default_config(asr__device="cuda", asr__compute_type="int8")
     backend = LocalAsr(config, model_factory=factory)
     backend.load()
-    assert built == [("cuda", REPO), ("cpu", REPO)]
+    folder = str(installed_models[HEBREW])
+    assert built == [("cuda", folder), ("cpu", folder)]
     assert backend.fell_back and backend.choice is not None
-    assert backend.choice.reference == REPO
+    assert backend.choice.reference == folder
     described = backend.describe()
-    assert (described["name"], described["compute"], described["device"]) == (REPO, "int8", "cpu")
+    assert (described["name"], described["compute"], described["device"]) == (folder, "int8", "cpu")
     assert (described["role"], described["revision"]) == (HEBREW, MODELS[HEBREW].revision)
-
-
-def test_the_fallback_does_not_fetch_again(app_home: Path) -> None:
-    fetched: list[str] = []
-
-    def fetch(repo: str) -> Path:
-        fetched.append(repo)
-        return app_home / repo.replace("/", "__")
-
-    def factory(**kwargs: Any) -> Model:
-        if kwargs["device"] == "cuda":
-            raise RuntimeError("CUDA driver version is insufficient")
-        return Model()
-
-    config = default_config(asr__device="cuda", asr__compute_type="int8")
-    LocalAsr(config, model_factory=factory, fetch=fetch).load()
-    assert fetched == [REPO], "the CPU loads the files the GPU attempt already fetched"
 
 
 def test_a_model_the_caller_chose_survives_the_fallback(tmp_path: Path) -> None:
