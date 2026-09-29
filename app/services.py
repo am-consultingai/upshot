@@ -36,6 +36,8 @@ class Services:
     worker: Worker | None = None
     notifier: Any = None
     asr: Any = None  # overridden in tests via config-selected fakes
+    #: app.asr.classify.Classifier: the meeting-language decision; injected in tests.
+    classifier: Any = None
     llm: Any = None
     #: Injected in tests; otherwise built from ``llm.fallback_provider`` when needed.
     fallback_llm: Any = None
