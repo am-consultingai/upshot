@@ -123,10 +123,7 @@ def window_tokens(ctx: StageContext, client: LlmClient) -> int:
 
 
 def glossary_block(ctx: StageContext) -> str | None:
-    entries = glossary_module.merge(
-        glossary_module.from_db(ctx.dao),
-        glossary_module.load_yaml(ctx.config.glossary_path),
-    )
+    entries = glossary_module.active(ctx.dao, ctx.config.glossary_path)
     if not entries:
         return None
     lines = ["Glossary — keep these spellings verbatim:"]

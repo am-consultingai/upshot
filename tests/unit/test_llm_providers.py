@@ -406,7 +406,8 @@ def test_login_console_survives_powershell_quoting() -> None:
     from app.llm.claude_cli import login_console
 
     script = login_console([r"C:\Users\someone\App Data\claude.exe", "auth", "login"])[-1]
-    assert "'C:\\Users\\someone\\App Data\\claude.exe'" in script, "a path with a space must be quoted"
+    quoted = "'C:\\Users\\someone\\App Data\\claude.exe'"
+    assert quoted in script, "a path with a space must be quoted"
     # `Write-Host ''` is a legitimate empty line. The hazard is an escaped quote *inside*
     # prose, which is what a Python line split through a quoted string produces.
     assert re.search(r"[A-Za-z]''|''[A-Za-z]", script) is None, "a stray quote mid-sentence"

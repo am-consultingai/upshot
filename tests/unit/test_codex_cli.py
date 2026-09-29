@@ -335,7 +335,8 @@ def test_install_is_windows_only() -> None:
 
 
 def test_update_is_pinned_to_the_install() -> None:
-    assert update_command(r"C:\Users\someone\AppData\Roaming\npm\codex.cmd").startswith("npm install")
+    npm_shim = r"C:\Users\someone\AppData\Roaming\npm\codex.cmd"
+    assert update_command(npm_shim).startswith("npm install")
     native = r"C:\Users\someone\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe"
     assert update_command(native) == f'"{native}" update'
     links = r"C:\Users\someone\AppData\Local\Microsoft\WinGet\Links\codex.exe"

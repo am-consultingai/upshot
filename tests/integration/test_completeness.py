@@ -97,8 +97,9 @@ def test_read_mono_averages_channels(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ glossary
 
 
-def test_glossary_corrects_the_transcript(tmp_path: Path) -> None:
+def test_glossary_corrects_the_transcript(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The glossary's second use: aliases become canonical terms before summarization."""
+    monkeypatch.setattr("app.glossary.ENABLED", True)  # off by default since 2026-09-29
     h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
     meeting = h.meeting()
     h.dao.upsert_term(GlossaryTerm("Kubernetes", kind="tech", aliases="קוברנטיס,k8s"))

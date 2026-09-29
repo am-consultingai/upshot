@@ -82,7 +82,8 @@ def test_enrichment_exception_ignored(tmp_path: Path) -> None:
     assert h.dao.require_meeting(meeting.id).state == MeetingState.RECORDED
 
 
-def test_participants_reach_initial_prompt(tmp_path: Path) -> None:
+def test_participants_reach_initial_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.glossary.ENABLED", True)  # off by default since 2026-09-29
     h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
     enriched = service(h, FakeSource()).create(source="manual")
     write_chunks(enriched.path, seconds=90)
