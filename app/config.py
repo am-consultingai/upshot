@@ -212,7 +212,7 @@ DEFAULTS: dict[str, Any] = {
         "codex_cli_args": [],
         # `antigravity-subscription`: Google's Antigravity CLI (`agy`), on the signed-in
         # user's own Google AI plan. Never the default; Google has published nothing on
-        # third parties driving it on a plan (DECISIONS D78). An empty model is agy's own.
+        # third parties driving it on a plan (DECISIONS D79). An empty model is agy's own.
         "antigravity_cli_path": "agy",
         "antigravity_cli_timeout_s": 600,
         "antigravity_cli_args": [],

@@ -8,7 +8,7 @@ const VENDORS: { id: CliId; name: MessageKey; plan: MessageKey }[] = [
   { id: "claude", name: "firstRun.services.claude.name", plan: "firstRun.services.claude.plan" },
   { id: "codex", name: "firstRun.services.codex.name", plan: "firstRun.services.codex.plan" },
   // Named for what the user pays for, a Google AI plan; the next step installs the
-  // Antigravity CLI that spends it (D78).
+  // Antigravity CLI that spends it (D79).
   { id: "antigravity", name: "firstRun.services.gemini.name", plan: "firstRun.services.gemini.plan" },
 ];
 
