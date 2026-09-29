@@ -38,18 +38,22 @@ recordings and transcriptions to their datasets.
 
 How Upshot uses them:
 
-- **Which model.** Upshot transcribes with one model,
+- **Which model.** Upshot transcribes Hebrew meetings with
   [`ivrit-ai/whisper-large-v3-ct2`](https://huggingface.co/ivrit-ai/whisper-large-v3-ct2),
-  on an NVIDIA GPU or on the CPU. It handles Hebrew and English, mixed in one meeting
-  too (docs/DECISIONS.md D60). It runs locally through
-  [faster-whisper](https://github.com/SYSTRAN/faster-whisper), so no audio is sent
-  anywhere to be transcribed.
-- **How it gets there.** The model is not part of this repository or the application.
-  The first time transcription runs, faster-whisper downloads it from Hugging Face onto
-  the user's machine. A model folder already on disk (the `asr.model_path` configuration
-  key) is used instead.
+  on an NVIDIA GPU or on the CPU. Meetings in any other language go to OpenAI's Whisper
+  large-v3 ([`Systran/faster-whisper-large-v3`](https://huggingface.co/Systran/faster-whisper-large-v3)),
+  and Whisper small ([`Systran/faster-whisper-small`](https://huggingface.co/Systran/faster-whisper-small))
+  first tells which language a meeting was in (docs/DECISIONS.md D80). All of it runs
+  locally through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), so no
+  audio is sent anywhere to be transcribed.
+- **How it gets there.** The models are not part of this repository or the application.
+  The installer downloads all three from Hugging Face onto the user's machine, about
+  6.7 GB, each pinned to a revision and checked file by file. Nothing is downloaded while
+  transcribing.
 - **Unmodified.** Upshot loads the published weights as they are.
 
-The models are released by ivrit.ai under the
+The ivrit.ai models are released under the
 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) and are fine-tuned
-from OpenAI's [Whisper](https://github.com/openai/whisper).
+from OpenAI's [Whisper](https://github.com/openai/whisper). The two stock Whisper models
+are OpenAI's weights converted for faster-whisper by SYSTRAN, released under the MIT
+licence.
