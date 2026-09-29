@@ -221,6 +221,10 @@ class ClaudeRoute:
     def env(self) -> dict[str, str]:
         return claude_cli.child_env()
 
+    def cwd(self) -> str:
+        """Where the CLI runs. Antigravity's route runs in its own folder (D78)."""
+        return claude_cli.workdir()
+
     def translator(self, turn: Turn, citer: Citer | None) -> Translator:
         """What reads this CLI's events. The Codex route brings its own."""
         return Translator(turn, citer)
@@ -318,7 +322,7 @@ class ClaudeRoute:
                 encoding="utf-8",
                 errors="replace",
                 env=self.env(),
-                cwd=claude_cli.workdir(),
+                cwd=self.cwd(),
                 creationflags=claude_cli.creation_flags(visible=False),
             )
         except OSError as exc:

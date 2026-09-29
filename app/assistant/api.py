@@ -80,6 +80,11 @@ def route_for(svc: Services) -> tuple[ClaudeRoute | None, dict[str, Any] | None]
         from app.assistant.codex_route import CodexRoute
 
         return CodexRoute(svc.config, command=command or None), None
+    if provider == "antigravity-subscription":
+        # No tools of its own: Upshot looks things up and passes them in (D78).
+        from app.assistant.antigravity_route import AntigravityRoute
+
+        return AntigravityRoute(svc.config, command=command or None, services=svc), None
     if provider == "ollama":
         return None, {"code": "local-model", "provider": provider}
     return None, {"code": "unsupported-provider", "provider": provider}
@@ -89,8 +94,8 @@ CHOOSE_CLAUDE = "Choose Claude Code in Settings → AI to use it."
 PROBLEM_TEXT = {
     "local-model": f"The assistant does not work with local models yet. {CHOOSE_CLAUDE}",
     "unsupported-provider": (
-        "For now the assistant works with your own plan, through Claude Code or Codex. "
-        "Choose one in Settings → AI."
+        "For now the assistant works with your own plan, through Claude Code, Codex or "
+        "Antigravity. Choose one in Settings → AI."
     ),
     "not-configured": "The assistant is not configured.",
 }
@@ -158,6 +163,9 @@ async def chat(request: Request, body: ChatPost) -> StreamingResponse:
         )
         turn = Turn(session_id=session.cli_session_id)
         collector = stream.Collector()
+        # The route that gathers for the model itself needs to know the screen (D78).
+        if hasattr(route, "context"):
+            route.context = dict(body.context)
         try:
             async for chunk in route.run(
                 question,
