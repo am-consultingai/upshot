@@ -343,6 +343,80 @@ def test_remote_falls_back_when_down(tmp_path: Path) -> None:
     assert remote.warnings and "health check failed" in remote.warnings[0]
 
 
+class FakeWorker:
+    """httpx as a worker would answer it: healthy, and segments for every POST."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, fail: bool = False) -> None:
+        import httpx
+
+        self.posts: list[dict[str, str]] = []
+        self.fail = fail
+        monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(200, json={}))
+        monkeypatch.setattr(httpx, "post", self.post)
+
+    def post(self, url: str, *, files: object, data: dict[str, str], **kw: object) -> object:
+        import httpx
+
+        self.posts.append(dict(data))
+        if self.fail:
+            raise httpx.ConnectError("the worker went away")
+        text = {"es": "tenemos un problema con el despliegue"}.get(data["language"], "שלום")
+        body = {"segments": [{"id": 0, "start": 0.0, "end": 2.0, "text": text, "words": []}]}
+        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
+
+
+@pytest.mark.parametrize(
+    ("role", "language", "multilingual"),
+    [("hebrew", "he", False), ("other", "es", False), ("other", None, True)],
+)
+def test_remote_sends_the_route_language_and_multilingual(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    role: str,
+    language: str | None,
+    multilingual: bool,
+) -> None:
+    worker = FakeWorker(monkeypatch)
+    remote = RemoteAsr("http://worker", FakeAsr(), role=role)
+    segments = remote.transcribe(
+        make_wav(tmp_path / "them.wav", 3), language=language, multilingual=multilingual
+    )
+    assert worker.posts == [{
+        "route": role, "language": language or "", "multilingual": str(multilingual).lower(),
+        "initial_prompt": "", "word_timestamps": "true",
+    }]  # fmt: skip
+    assert segments and remote.used_fallback == 0
+    if language == "es":
+        assert segments[0].text == "tenemos un problema con el despliegue", "kept as it came"
+    assert remote.describe()["repo"] == MODELS[role].repo
+
+
+def test_the_fallback_uses_the_same_model_and_language(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    FakeWorker(monkeypatch, fail=True)
+    fallback = FakeAsr()
+    fallback.select_role(OTHER)
+    remote = RemoteAsr("http://worker", fallback, role=OTHER)
+    remote.transcribe(make_wav(tmp_path / "them.wav", 3), language="es")
+    remote.transcribe(make_wav(tmp_path / "me.wav", 3), language=None, multilingual=True)
+    assert remote.used_fallback == 2
+    assert [(c["role"], c["language"], c["multilingual"]) for c in fallback.transcribe_calls] == [
+        (OTHER, "es", False), (OTHER, None, True),
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize("role", [HEBREW, OTHER])
+def test_the_factory_gives_the_worker_and_its_fallback_the_same_role(role: str) -> None:
+    from app.asr.factory import make_backend
+
+    config = default_config(asr__backend="remote", asr__remote_url="http://worker")
+    backend = make_backend(config, role)
+    assert isinstance(backend, RemoteAsr)
+    assert backend.role == role
+    assert isinstance(backend.fallback, LocalAsr) and backend.fallback.role == role
+
+
 # ------------------------------------------------------------------ language
 
 
