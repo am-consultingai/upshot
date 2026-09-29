@@ -142,6 +142,31 @@ def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
     return ModelChoice(model.repo, local=False, repo_id=model.repo)
 
 
+class ModelNotInstalled(RuntimeError):
+    """A speech model the installation should have put on disk is not there, or does not
+    match its pinned revision. Nothing downloads it here (R12): the installation needs
+    repairing."""
+
+    def __init__(self, role: str, where: str) -> None:
+        model = MODELS[role]
+        self.role = role
+        super().__init__(
+            f"the {role} speech model ({model.repo}) is not installed at {where}: "
+            "the installation is incomplete. Run the installer again to repair it "
+            "(or Settings → Speech → Download)."
+        )
+
+
+def require(config: Config, role: str) -> ModelChoice:
+    """The role's model on disk, or ``ModelNotInstalled``. Never a download."""
+    choice = resolve(config, role)
+    if not choice.local:
+        from app.asr.model_manager import target_for
+
+        raise ModelNotInstalled(role, str(target_for(MODELS[role].repo)))
+    return choice
+
+
 def resolve_all(config: Config) -> dict[str, ModelChoice]:
     return {role: resolve(config, role) for role in ROLES}
 

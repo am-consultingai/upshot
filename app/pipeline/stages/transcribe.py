@@ -1,4 +1,7 @@
-"""The transcribe stage: one WAV per track → one segment list, and the language it was in."""
+"""The transcribe stage: the meeting's language, then one WAV per track → one segment list.
+
+The classifier (``app/asr/classify.py``) decides the language first (D80).
+"""
 
 from __future__ import annotations
 
@@ -10,9 +13,9 @@ from typing import Any
 from app import glossary as glossary_module
 from app import meta
 from app.asr.backend import AsrBackend, Segment
+from app.asr.classify import Classifier, LanguageDecision
 from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
-from app.asr.language import spoken_language
-from app.asr.models import DEFAULT_LANGUAGE
+from app.asr.models import HEBREW_LANGUAGE
 from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
 from app.audio.writer import ChunkRecord, recover, track_files, track_path
@@ -23,6 +26,9 @@ from app.pipeline.context import StageContext
 log = get(__name__)
 
 SEGMENTS_NAME = "segments.json"
+
+#: Where ``meeting.language`` came from: the classifier (``app/asr/classify.py``).
+LANGUAGE_SOURCE = "classifier"
 
 #: Where the echo-cancelled copy of a track lives while it is being transcribed.
 CLEAN_DIR = "clean"
@@ -151,6 +157,33 @@ def _participants(ctx: StageContext) -> tuple[str, ...]:
     return tuple(str(name) for name in names or ())
 
 
+def classifier_for(ctx: StageContext) -> Classifier:
+    """The injected classifier; a scripted one beside the fake ASR; otherwise Whisper small."""
+    services = ctx.services
+    injected = getattr(services, "classifier", None) if services is not None else None
+    if injected is not None:
+        return injected  # type: ignore[no-any-return]
+    asr = getattr(services, "asr", None) if services is not None else None
+    fake = getattr(asr, "name", "") == "fake" if asr is not None else False
+    if fake or str(ctx.config.get("asr.backend", "local")) == "fake":
+        from app.asr.fake import FakeClassifier
+
+        language = getattr(asr, "language", None) or ctx.config.get("asr.fake_language", "he")
+        return FakeClassifier(str(language))
+    from app.asr.classify import WhisperClassifier
+
+    return WhisperClassifier(ctx.config)
+
+
+def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
+    """The meeting's language, from the files transcription will read. Stored and logged,
+    never shown (R7)."""
+    decision = classifier_for(ctx).classify(inputs)
+    log.info("%s", decision.log_line())
+    ctx.metrics["language_detection_s"] = round(decision.seconds, 2)
+    return decision
+
+
 def backend_for(ctx: StageContext) -> AsrBackend:
     services = ctx.services
     backend = getattr(services, "asr", None) if services is not None else None
@@ -173,7 +206,6 @@ def run(ctx: StageContext) -> None:
 
     records = recover(folder)
     echo_model = _measure_echo(ctx)
-    backend = backend_for(ctx)
 
     # One pass per track over the whole file. Lost audio was written as silence, so the
     # file's timeline is the meeting's timeline and the timestamps need no shifting. It
@@ -181,12 +213,16 @@ def run(ctx: StageContext) -> None:
     segments: list[Segment] = []
     prompt = build_initial_prompt(ctx, None)
     try:
-        for _track, wav in sorted(_asr_inputs(ctx, echo_model).items()):
+        asr_inputs = _asr_inputs(ctx, echo_model)
+        ctx.checkpoint()
+        decision = _classify(ctx, asr_inputs)
+        backend = backend_for(ctx)
+        for _track, wav in sorted(asr_inputs.items()):
             ctx.checkpoint()
             track_segments = backend.transcribe(
-                # Always Hebrew, whatever was spoken (D60): English comes out as English.
+                # Still the Hebrew model, told Hebrew, until routing (story C).
                 wav,
-                language=DEFAULT_LANGUAGE,
+                language=HEBREW_LANGUAGE,
                 initial_prompt=prompt,
                 word_timestamps=True,
             )
@@ -198,32 +234,28 @@ def run(ctx: StageContext) -> None:
 
     segments = _diarize(ctx, segments, records)
 
-    # What the meeting was in, read from what was said: it picks the summary's language.
-    decision = spoken_language(segment.text for segment in segments)
-    ctx.dao.update_meeting(
-        ctx.meeting.id, language=decision.language, language_conf=decision.confidence
-    )
-    log.info(
-        "meeting language %s (%s, %.0f%% of the letters)",
-        decision.language,
-        decision.source,
-        decision.confidence * 100,
-    )
+    # What the meeting was in, as the classifier heard it: it picks the summary's language
+    # and the page's direction.
+    confidence = round(decision.p_top, 3)
+    ctx.dao.update_meeting(ctx.meeting.id, language=decision.language, language_conf=confidence)
+    asr = {**_describe(backend), "language_detection": decision.as_dict()}
 
     payload: dict[str, Any] = {
         "version": 1,
         "language": decision.language,
-        "language_conf": decision.confidence,
-        "language_source": decision.source,
+        "language_conf": confidence,
+        "language_source": LANGUAGE_SOURCE,
         "model": _describe(backend),
+        "asr": {"language_detection": decision.as_dict()},
         "segments": [segment.as_dict() for segment in segments],
     }
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     meta.mirror(
         ctx.refresh(),
         language=decision.language,
-        language_conf=decision.confidence,
-        asr=_describe(backend),
+        language_conf=confidence,
+        language_source=LANGUAGE_SOURCE,
+        asr=asr,
         **({"diarization": ctx.metrics["diarization"]} if "diarization" in ctx.metrics else {}),
     )
     # ASR and the LLM are never resident together (DESIGN.md §20.4).

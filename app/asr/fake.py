@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import wave
+from collections.abc import Mapping
 from pathlib import Path
 
 from app.asr.backend import Segment, Word, track_of
+from app.asr.classify import LanguageDecision, decide
+from app.asr.models import HEBREW_LANGUAGE
 
 SENTENCES: tuple[str, ...] = (
     "בוא נתחיל עם הסטטוס של הפרויקט",
@@ -123,3 +126,30 @@ class FakeAsr:
 
     def unload(self) -> None:
         self.unloaded += 1
+
+
+class FakeClassifier:
+    """A scripted language decision, for tests: no model, no audio read.
+
+    Give it a whole ``LanguageDecision``, or just a language: ``he`` routes to the Hebrew
+    model, anything else to stock large-v3, forced, at ``p``.
+    """
+
+    name = "fake-classifier"
+
+    def __init__(
+        self, language: str = "he", *, p: float = 0.95, decision: LanguageDecision | None = None
+    ) -> None:
+        if decision is None:
+            if language == HEBREW_LANGUAGE:
+                probs = {HEBREW_LANGUAGE: p, "en": round(1 - p, 4)}
+            else:
+                probs = {language: p, HEBREW_LANGUAGE: round((1 - p) / 2, 4),
+                         "en" if language != "en" else "es": round((1 - p) / 2, 4)}  # fmt: skip
+            decision = decide(probs)
+        self.decision = decision
+        self.calls: list[dict[str, Path]] = []
+
+    def classify(self, inputs: Mapping[str, Path]) -> LanguageDecision:
+        self.calls.append(dict(inputs))
+        return self.decision
