@@ -127,6 +127,10 @@ export interface MeetingDetail extends Meeting {
   /** A name for each transcript speaker slot ("THEM", "THEM_1"…) the user has named. */
   speaker_names?: Record<string, string>;
   chapters?: Chapter[];
+  /** Which way the transcript runs, for the meeting's language (the backend's RTL list). */
+  direction?: "ltr" | "rtl";
+  /** Which way the notes run, for the summary's language. */
+  summary_direction?: "ltr" | "rtl";
 }
 
 /** The Google Calendar connection. Never carries a token. */

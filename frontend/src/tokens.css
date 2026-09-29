@@ -40,8 +40,17 @@
    * is hand-hinted, so it renders worse on older Windows — the only platform this
    * ships on. Plex Sans is a grotesque drawn for interfaces.
    */
-  --font-display: "Frank Ruhl Libre", "Times New Roman", serif;
-  --font-ui: "IBM Plex Sans Hebrew", "Segoe UI", "Arial Hebrew", Arial, sans-serif;
+  /*
+   * After the Latin/Hebrew faces, Windows' own faces for the other scripts a meeting can
+   * be in (any Whisper language): Segoe UI already covers Arabic, Cyrillic and Greek;
+   * Nirmala UI the Indic scripts; Leelawadee UI Thai, Lao and Khmer; then Chinese,
+   * Japanese and Korean. Named rather than left to per-glyph fallback, which picks
+   * whatever face it finds first and mixes styles within a line.
+   */
+  --font-scripts: "Nirmala UI", "Leelawadee UI", "Microsoft YaHei UI", "Yu Gothic UI", "Malgun Gothic",
+    "Noto Sans", "Noto Sans CJK SC";
+  --font-display: "Frank Ruhl Libre", "Times New Roman", var(--font-scripts), serif;
+  --font-ui: "IBM Plex Sans Hebrew", "Segoe UI", "Arial Hebrew", Arial, var(--font-scripts), sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   /* 14px body, as Linear, Raycast and Notion Calendar all independently land on. */
