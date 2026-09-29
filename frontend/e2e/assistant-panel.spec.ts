@@ -196,6 +196,24 @@ test("a_short_answer_never_scrolls_the_panel_itself", async ({ page, seed, reque
   }
 });
 
+test("working_spins_even_when_the_system_asks_for_reduced_motion", async ({ page, seed }) => {
+  // Windows reports "reduce" whenever its animation effects are off; on machine B the
+  // assistant's "Working…" ring stood still and read as stuck (2026-09-29).
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await seed(BUDGET);
+  await gotoApp(page, "/");
+  await page.keyboard.press("Control+j");
+  const running = await page.evaluate(() => {
+    const ring = document.createElement("span");
+    ring.className = "inline-block size-3.5 animate-spin";
+    document.body.appendChild(ring);
+    const count = ring.getAnimations().filter((a) => a.playState === "running").length;
+    ring.remove();
+    return count;
+  });
+  expect(running).toBeGreaterThan(0);
+});
+
 test("the_screen_reader_hears_states_not_the_stream", async ({ page, seed }) => {
   await seed(BUDGET);
   await gotoApp(page, "/");
