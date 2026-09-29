@@ -1,13 +1,8 @@
-"""Which language a meeting was in: read from its transcript, not asked of the model (D60).
+"""Which language a text is in, by the script it is written in.
 
-The speech model is always told the language is Hebrew (``models.DEFAULT_LANGUAGE``). That is
-how ivrit-ai large-v3 writes English speech as English; told "English" it drifts into
-Hebrew nobody said, and its own language detection answers Hebrew for every input. So
-the question of what language a meeting was in is no longer put to the model before
-transcription. It is answered afterwards, from the words that came out.
-
-The answer decides the summary's language when ``summary.language`` is ``auto``, and the
-direction the page renders in.
+A recorded meeting's language is decided from its audio before transcription
+(``app/asr/classify.py``, D80). This is only for text that arrives without audio: an
+imported transcript whose caller did not say what language it is in.
 """
 
 from __future__ import annotations

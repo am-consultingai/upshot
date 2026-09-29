@@ -5,19 +5,20 @@ from pathlib import Path
 import pytest
 
 from app import meta
-from app.asr.fake import FakeAsr
+from app.asr.fake import FakeAsr, FakeClassifier
 from app.pipeline.stages import transcribe
 from tests.fixtures.meetings import harness, write_chunks
 
 
 class Services:
-    def __init__(self, asr: FakeAsr) -> None:
+    def __init__(self, asr: FakeAsr, classifier: FakeClassifier | None = None) -> None:
         self.asr = asr
+        self.classifier = classifier
 
 
-def test_the_model_is_told_hebrew_and_the_language_comes_from_the_words(tmp_path: Path) -> None:
-    """D60: ivrit-ai is always given Hebrew, which is how it writes English as English.
-    What the meeting was in is read from the transcript afterwards.
+def test_the_meeting_language_comes_from_the_classifier(tmp_path: Path) -> None:
+    """The classifier decides what the meeting was in, before transcription, and the
+    decision is stored under ``asr.language_detection``, never shown.
 
     Audio is one file per track, so this is one pass per track rather than one per
     committed segment — the model sees the entire track as context.
@@ -26,22 +27,38 @@ def test_the_model_is_told_hebrew_and_the_language_comes_from_the_words(tmp_path
     meeting = h.meeting()
     records = write_chunks(meeting.path, seconds=200)
     assert len({r.seq for r in records}) > 1, "more than one committed segment per track"
-    backend = FakeAsr(language="en")  # says English, whatever it is told
-    ctx = h.context(meeting, services=Services(backend))
+    backend = FakeAsr()
+    classifier = FakeClassifier("es", p=0.93)
+    ctx = h.context(meeting, services=Services(backend, classifier))
 
     transcribe.run(ctx)
 
-    languages = {call["language"] for call in backend.transcribe_calls}
-    assert languages == {"he"}, "never told English: that is what drifts into Hebrew"
+    assert len(classifier.calls) == 1, "classified once per meeting"
+    assert set(classifier.calls[0]) == {"me", "them"}
     assert len(backend.transcribe_calls) == 2, "one pass per track, not per segment"
     assert {call["wav"].stem for call in backend.transcribe_calls} == {"me", "them"}
     stored = h.dao.require_meeting(meeting.id)
-    assert stored.language == "en", "an English transcript is an English meeting"
-    assert stored.language_conf == pytest.approx(1.0)
+    assert stored.language == "es"
+    assert stored.language_conf == pytest.approx(0.93)
     _segments, payload = transcribe.load_segments(meeting.path)
-    assert payload["language"] == "en"
-    assert payload["language_source"] == "transcript"
+    assert payload["language"] == "es"
+    assert payload["language_source"] == "classifier"
+    detection = payload["asr"]["language_detection"]
+    assert (detection["language"], detection["route"], detection["forced"]) == ("es", "other", True)
+    stored_meta = meta.read(meeting.path)
+    assert stored_meta["asr"]["language_detection"] == detection
+    assert stored_meta["language"] == "es"
+    assert "language_detection_s" in ctx.metrics
     assert backend.unloaded == 1, "the model is unloaded before the LLM stage"
+
+
+def test_the_fake_asr_brings_a_matching_classifier(tmp_path: Path) -> None:
+    """With the fake backend and no classifier given, no real model is loaded."""
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=60)
+    transcribe.run(h.context(meeting, services=Services(FakeAsr(language="en"))))
+    assert h.dao.require_meeting(meeting.id).language == "en"
 
 
 def test_a_hebrew_meeting_needs_no_review(tmp_path: Path) -> None:
@@ -137,7 +154,8 @@ def test_a_leaking_microphone_is_cancelled_before_transcription(tmp_path: Path) 
     meeting = h.meeting()
     write_chunks(meeting.path, seconds=90, leak=1.0)
     backend = FakeAsr()
-    ctx = h.context(meeting, services=Services(backend))
+    classifier = FakeClassifier()
+    ctx = h.context(meeting, services=Services(backend, classifier))
 
     transcribe.run(ctx)
 
@@ -150,6 +168,9 @@ def test_a_leaking_microphone_is_cancelled_before_transcription(tmp_path: Path) 
     handed = {call["wav"].parent.name: call["wav"] for call in backend.transcribe_calls}
     assert handed["clean"].stem == "me", "the near track was cleaned before transcription"
     assert handed["audio"].stem == "them", "the far side is already clean"
+    classified = classifier.calls[0]
+    assert classified["me"].parent.name == "clean", "classified on the cleaned track too"
+    assert classified == {Path(w).stem: w for w in handed.values()}
 
     with wave.open(str(transcribe.track_path(meeting.path, "me")), "rb") as raw:
         original = np.frombuffer(raw.readframes(raw.getnframes()), dtype=np.int16)
