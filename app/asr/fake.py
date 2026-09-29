@@ -9,7 +9,7 @@ from pathlib import Path
 
 from app.asr.backend import Segment, Word, track_of
 from app.asr.classify import LanguageDecision, decide
-from app.asr.models import HEBREW_LANGUAGE
+from app.asr.models import HEBREW, HEBREW_LANGUAGE
 
 SENTENCES: tuple[str, ...] = (
     "בוא נתחיל עם הסטטוס של הפרויקט",
@@ -20,8 +20,8 @@ SENTENCES: tuple[str, ...] = (
     "מי לוקח את המשימה של ה-monitoring",
 )
 
-#: An English meeting, for ``language="en"``: the meeting's language is read from what
-#: was transcribed (``app/asr/language.py``), so the fake has to say it in English.
+#: An English meeting, for ``language="en"``: canned text in the language asked for, so
+#: the stages after transcription can be tested in it.
 SENTENCES_EN: tuple[str, ...] = (
     "let's start with the status of the project",
     "we have a problem with the deployment in production",
@@ -30,6 +30,52 @@ SENTENCES_EN: tuple[str, ...] = (
     "let's write that down as a decision",
     "who is taking the monitoring task",
 )
+
+SENTENCES_ES: tuple[str, ...] = (
+    "empecemos con el estado del proyecto",
+    "tenemos un problema con el despliegue en producción",
+    "me encargo de eso y os respondo antes del jueves",
+    "acordamos mover el lanzamiento a la semana que viene",
+    "anotemos eso como una decisión",
+    "quién se encarga de la tarea de monitorización",
+)
+
+SENTENCES_AR: tuple[str, ...] = (
+    "لنبدأ بحالة المشروع",
+    "لدينا مشكلة في النشر على بيئة الإنتاج",
+    "سأتولى ذلك وأعود إليكم قبل يوم الخميس",
+    "اتفقنا على تأجيل الإصدار إلى الأسبوع القادم",
+    "لنكتب ذلك كقرار",
+    "من سيتولى مهمة المراقبة",
+)
+
+SENTENCES_RU: tuple[str, ...] = (
+    "начнём со статуса проекта",
+    "у нас проблема с развёртыванием в продакшене",
+    "я возьму это на себя и отвечу до четверга",
+    "мы договорились перенести релиз на следующую неделю",
+    "давайте запишем это как решение",
+    "кто возьмёт задачу по мониторингу",
+)
+
+SENTENCES_ZH: tuple[str, ...] = (
+    "我们先从项目的状态开始",
+    "生产环境的部署有问题",
+    "这件事我来负责周四之前答复大家",
+    "我们同意把发布推迟到下周",
+    "把这个记下来作为一项决定",
+    "谁来负责监控任务",
+)
+
+#: Canned text per language; any other language gets English.
+SENTENCES_BY_LANGUAGE: dict[str, tuple[str, ...]] = {
+    "he": SENTENCES,
+    "en": SENTENCES_EN,
+    "es": SENTENCES_ES,
+    "ar": SENTENCES_AR,
+    "ru": SENTENCES_RU,
+    "zh": SENTENCES_ZH,
+}
 
 
 class FakeAsr:
@@ -45,11 +91,14 @@ class FakeAsr:
         segment_s: float = 6.0,
     ) -> None:
         self.language = language
-        self.sentences = SENTENCES_EN if language == "en" else SENTENCES
+        self.sentences = SENTENCES_BY_LANGUAGE.get(language, SENTENCES_EN)
         self.repetitions = max(1, repetitions)
         self.segment_s = segment_s
         self.transcribe_calls: list[dict[str, object]] = []
         self.unloaded = 0
+        #: Which model role this stands in for, and every role it was asked to be (R3).
+        self.role = HEBREW
+        self.roles: list[str] = []
 
     # -- helpers
 
@@ -69,19 +118,30 @@ class FakeAsr:
         key = f"{track_of(wav)}/{wav.name}"
         return int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16)
 
+    def select_role(self, role: str) -> None:
+        """Stand in for this model role (the transcribe stage says which, once a meeting)."""
+        self.role = role
+        self.roles.append(role)
+
+    def describe(self) -> dict[str, object]:
+        return {"name": self.name, "role": self.role}
+
     # -- protocol
 
     def transcribe(
         self,
         wav: Path,
         *,
-        language: str = "he",
+        language: str | None = "he",
         initial_prompt: str | None = None,
         word_timestamps: bool = True,
+        multilingual: bool = False,
     ) -> list[Segment]:
         self.transcribe_calls.append(
-            {"wav": wav, "language": language, "initial_prompt": initial_prompt}
-        )
+            {"wav": wav, "language": language, "initial_prompt": initial_prompt,
+             "multilingual": multilingual, "role": self.role}
+        )  # fmt: skip
+        sentences = SENTENCES_BY_LANGUAGE.get(language, SENTENCES_EN) if language else None
         track = track_of(wav)
         speaker = "ME" if track == "me" else "THEM"
         duration = self._duration_s(wav)
@@ -92,9 +152,10 @@ class FakeAsr:
         while start + 1.0 <= duration:
             end = min(duration, start + self.segment_s)
             for repeat in range(self.repetitions):
-                text = self.sentences[(seed + index + repeat) % len(self.sentences)]
+                pool = sentences or self.sentences
+                text = pool[(seed + index + repeat) % len(pool)]
                 if self.repetitions > 1:
-                    text = self.sentences[(seed + index) % len(self.sentences)]
+                    text = pool[(seed + index) % len(pool)]
                 words = self._words(text, start, end)
                 segments.append(
                     Segment(
