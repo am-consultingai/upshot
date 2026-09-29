@@ -2,24 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from app.asr.backend import AsrBackend
 from app.asr.models import HEBREW
 from app.config import Config
 from app.log import get
 
 log = get(__name__)
-
-
-def fetch_model(repo: str) -> Path:
-    """A model not on disk is downloaded by the model manager, which the setup screen
-    shows, rather than inside faster-whisper where nobody can see it."""
-    from app.asr.model_manager import manager_for
-    from app.asr.models import MODELS
-
-    model = next(m for m in MODELS.values() if m.repo == repo)
-    return manager_for(model).ensure()
 
 
 def make_backend(config: Config, role: str = HEBREW) -> AsrBackend:
@@ -45,13 +33,13 @@ def make_backend(config: Config, role: str = HEBREW) -> AsrBackend:
         from app.asr.local import LocalAsr
 
         log.info("asr.backend=local, role=%s", role)
-        return LocalAsr(config, role=role, fetch=fetch_model)
+        return LocalAsr(config, role=role)
     if kind == "remote":
         from app.asr.local import LocalAsr
         from app.asr.remote import RemoteAsr
 
         url = str(config.get("asr.remote_url") or config.get("worker_url") or "")
         if not url:
-            return LocalAsr(config, role=role, fetch=fetch_model)
-        return RemoteAsr(url, LocalAsr(config, role=role, fetch=fetch_model))
+            return LocalAsr(config, role=role)
+        return RemoteAsr(url, LocalAsr(config, role=role))
     raise ValueError(f"unknown asr.backend {kind!r}")

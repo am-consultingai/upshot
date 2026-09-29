@@ -198,7 +198,11 @@ def run(
         )
     else:
         report.steps.append(
-            Step("model", True, ("local: " if model_local else "will download: ") + model)
+            Step(
+                "model",
+                True,
+                ("local: " if model_local else "not installed yet (upshot --prepare): ") + model,
+            )
         )
     report.steps.append(Step("profile", True, profile))
 

@@ -145,6 +145,27 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     return app
 
 
+def _check_speech_models(services: Services) -> list[str]:
+    """Say at startup, by name, which speech model the installation is missing (R12).
+
+    Nothing is downloaded: the models come from the installer. Each transcription checks
+    again and fails with the same message, where job failures already show.
+    """
+    if str(services.config.get("asr.backend", "local")) == "fake":
+        return []
+    from app.asr.models import MODELS, missing_roles
+
+    missing = missing_roles(services.config)
+    for role in missing:
+        log.error(
+            "the %s speech model (%s) is not installed: the installation is incomplete; "
+            "run the installer again to repair it",
+            role,
+            MODELS[role].repo,
+        )
+    return missing
+
+
 def start_background(services: Services) -> None:
     """The worker and the detector. Without these the app records and then sits there."""
     # Said once, by name. A launcher that exports UP_DETECTION__MODE beats app_config.json
@@ -160,6 +181,7 @@ def start_background(services: Services) -> None:
     # Nothing is recording yet in a process that has just started: every meeting still
     # marked "recording" is left from one that ended (D76).
     services.meetings.recover_orphans()
+    _check_speech_models(services)
     if services.worker is not None:
         services.worker.start()
         log.info("worker started (policy %s)", services.worker.policy)

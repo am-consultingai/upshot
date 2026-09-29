@@ -56,6 +56,14 @@ def app_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 
 
 @pytest.fixture
+def installed_models(app_home: Path) -> dict[str, Path]:
+    """All three speech models present and verified in the test's app home."""
+    from tests.fixtures.models import install_models
+
+    return install_models(app_home)
+
+
+@pytest.fixture
 def fake_clock() -> FakeClock:
     return FakeClock()
 

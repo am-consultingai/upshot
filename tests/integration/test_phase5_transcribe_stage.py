@@ -306,3 +306,34 @@ def test_a_partial_leak_is_cancelled_only_when_asked(tmp_path: Path) -> None:
         cleaned = "clean" in {call["wav"].parent.name for call in backend.transcribe_calls}
         assert cleaned is expected, mode
         assert meta.review_reasons(meeting.path) == ([CANCELLED_REASON] if expected else [])
+
+
+# ------------------------------------------------------- installation integrity (story G)
+
+
+def test_a_missing_model_fails_the_job_by_name_without_a_download(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R12: nothing is downloaded and nothing stands in; the failure names the model."""
+    import shutil
+
+    from app.asr import model_manager
+    from app.asr.models import MODELS, ModelNotInstalled
+    from app.errors import PermanentError
+    from tests.fixtures.models import install_models
+
+    placed = install_models(app_home)
+    shutil.rmtree(placed["other"])
+
+    def no_downloads(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a download was attempted")
+
+    monkeypatch.setattr(model_manager, "http_fetch", no_downloads)
+    monkeypatch.setattr(model_manager.ModelManager, "start", no_downloads)
+    h = harness(tmp_path, asr__backend="local", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=30)
+    with pytest.raises(ModelNotInstalled, match=MODELS["other"].repo) as caught:
+        transcribe.run(h.context(meeting, services=None))
+    assert isinstance(caught.value, PermanentError), "failed once, not retried"
+    assert not transcribe.segments_path(meeting.path).exists()
