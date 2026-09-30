@@ -237,11 +237,16 @@ def test_the_calendar_test_hook_is_off_unless_the_machine_turns_it_on(
     harness.services.config.set("testing.hooks", True)
     stranger = harness.client(authorized=False)
     assert stranger.post("/api/launcher/test/calendar", json={"events": []}).status_code == 403
+    no_account = launcher.post("/api/launcher/test/calendar", json={"events": [event]})
+    assert no_account.status_code == 409, "the events go under a connected account"
+    from tests.fixtures.api import seed_calendar_account
+
+    account = seed_calendar_account(harness.services)
     answer = launcher.post("/api/launcher/test/calendar", json={"events": [event]})
     assert answer.status_code == 200, answer.text
     from app.gcal.events import EventStore
 
-    stored = EventStore(harness.services.conn).get("upshot-test", "t1")
+    stored = EventStore(harness.services.conn).get(account, "upshot-test", "t1")
     assert stored is not None and stored.title == "Harness meeting"
 
 

@@ -101,7 +101,7 @@ const ready = (plan: "paid" | "free" = "paid") =>
 
 export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
   const base: SetupSnapshot = {
-    calendar: { available: true, phase: "idle" },
+    calendar: { available: true, phase: "idle", accounts: [] },
     cli: { claude: cli("claude"), codex: cli("codex"), antigravity: cli("antigravity") },
     cliKnown: true,
     key: { provider: "gemini", phase: "idle" },
@@ -129,7 +129,7 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
     case "claude-free":
       return { ...base, cli: { ...base.cli, claude: cli("claude", ready("free")) } };
     case "no-google-client":
-      return { ...base, calendar: { available: false, phase: "idle" } };
+      return { ...base, calendar: { available: false, phase: "idle", accounts: [] } };
   }
 }
 
@@ -188,17 +188,23 @@ export class MockSetupBackend implements SetupBackend {
   connectCalendar(): void {
     this.set({ ...this.state, calendar: { ...this.state.calendar, phase: "waiting" } });
     this.later(2500, () => {
-      const phase = this.outcomes.calendar;
-      this.set({
-        ...this.state,
-        calendar: { ...this.state.calendar, phase, account: phase === "connected" ? ACCOUNT : undefined },
-      });
+      const outcome = this.outcomes.calendar;
+      const had = this.state.calendar.accounts;
+      // A second sign-in adds a second made-up account, as "Add another calendar" does.
+      const address = had.length === 0 ? ACCOUNT : `account${had.length + 1}@example.com`;
+      const accounts =
+        outcome === "connected" ? [...had, { id: `ga_mock000${had.length + 1}`, address }] : had;
+      // A failed second sign-in says so, beside the accounts that stay connected.
+      this.set({ ...this.state, calendar: { ...this.state.calendar, phase: outcome, accounts } });
     });
   }
 
   cancelCalendar(): void {
     this.clearTimers();
-    this.set({ ...this.state, calendar: { ...this.state.calendar, phase: "cancelled" } });
+    // Cancelling "Add another calendar" keeps the accounts already connected.
+    const { accounts } = this.state.calendar;
+    const phase = accounts.length ? "connected" : "cancelled";
+    this.set({ ...this.state, calendar: { ...this.state.calendar, phase } });
   }
 
   install(id: CliId): void {

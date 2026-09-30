@@ -203,3 +203,33 @@ describe("workingHours", () => {
     expect(workingHours({ calendar: { work_start: 18, work_end: 8 } })).toEqual({ start: 8, end: 18 });
   });
 });
+
+import { accountColour, accountsOf, eventKey } from "../src/lib/calendar";
+
+describe("several calendar accounts (D82)", () => {
+  it("an event's key names its account, so the same id on two accounts is two events", () => {
+    const one = { account_id: "ga_1", calendar_id: "primary", event_id: "e" };
+    const two = { ...one, account_id: "ga_2" };
+    expect(eventKey(one)).not.toBe(eventKey(two));
+    expect(eventKey(one)).toBe("event:ga_1:primary:e");
+  });
+
+  it("gives each account one of six dot colours, repeating after six", () => {
+    expect(accountColour(1)).toBe("var(--account-1)");
+    expect(accountColour(6)).toBe("var(--account-6)");
+    expect(accountColour(7)).toBe("var(--account-1)");
+    expect(accountColour(0)).toBe("var(--account-1)");
+  });
+
+  it("lists the accounts an event or a meeting is on, in Settings' order", () => {
+    const listed = [{ id: "ga_a" }, { id: "ga_b" }, { id: "ga_c" }];
+    expect(accountsOf({ account_id: "ga_b", accounts: ["ga_c", "ga_b"] }, listed)).toEqual([
+      "ga_b",
+      "ga_c",
+    ]);
+    expect(accountsOf({ calendar_accounts: ["ga_a"] }, listed)).toEqual(["ga_a"]);
+    // A removed account is not listed, so it has no dot.
+    expect(accountsOf({ account_id: "ga_gone" }, listed)).toEqual([]);
+    expect(accountsOf({}, listed)).toEqual([]);
+  });
+});

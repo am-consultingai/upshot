@@ -327,18 +327,20 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
   }
 });
 
-test("a_connected_calendar_can_be_swapped_for_another_account_in_setup", async ({ page }) => {
-  // Connected already, as a second pass through setup finds it; then another account.
-  let account = "dana@example.com";
+test("a_second_calendar_can_be_added_in_setup", async ({ page }) => {
+  // Connected already, as a second pass through setup finds it; then another account
+  // beside it (D82), which never replaces the first.
+  const accounts = [{ id: "ga_dana0001", address: "dana@example.com" }];
   const status = () => ({
-    configured: true, state: "connected", account, auth_url: null, error: null,
-    scope: "", opens_externally: true,
+    configured: true, state: "connected", account: accounts[0].address, auth_url: null,
+    error: null, scope: "", opens_externally: true,
+    accounts: accounts.map((a, i) => ({ ...a, state: "connected", visible: true, color: i + 1, error: null })),
   });
   await page.route("**/api/calendar/status", (route) => route.fulfill({ json: status() }));
   let connects = 0;
   await page.route("**/api/calendar/connect", (route) => {
     connects += 1;
-    account = "noa@example.com"; // Google's account chooser, a different account picked
+    accounts.push({ id: "ga_noa00001", address: "noa@example.com" }); // Google's chooser
     return route.fulfill({
       json: { ...status(), state: "connecting", auth_url: "https://accounts.google.com/x", opened: true },
     });
@@ -347,10 +349,12 @@ test("a_connected_calendar_can_be_swapped_for_another_account_in_setup", async (
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("calendar-connected")).toContainText("dana@example.com");
 
-  await page.getByTestId("calendar-switch").click();
+  await page.getByTestId("calendar-add").click();
   expect(connects).toBe(1);
-  // The new account arrives and setup moves on by itself, as after a first connect.
-  await expect(page.getByTestId("setup-step-services")).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId("setup-back").click();
+  // Both are listed, and setup stays on the step: a third may follow.
+  await expect(page.getByTestId("calendar-connected-account")).toHaveCount(2);
+  await expect(page.getByTestId("calendar-connected")).toContainText("dana@example.com");
   await expect(page.getByTestId("calendar-connected")).toContainText("noa@example.com");
+  await page.waitForTimeout(2000);
+  await expect(page.getByTestId("calendar-add")).toBeVisible();
 });

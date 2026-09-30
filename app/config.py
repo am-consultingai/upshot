@@ -48,6 +48,8 @@ DEFAULTS: dict[str, Any] = {
         "language": "en",
         "view": "list",  # list|calendar — the main screen's layout
         "calendar_span": "week",  # day|week|month|list
+        # The library list's calendar filter (D82): account ids and "none". Empty: all.
+        "library_accounts": [],
         # light|dark|system. Defaults to light rather than system on purpose: this is
         # read in daylight, and every comparable product ships light only. "system"
         # is offered, not assumed.

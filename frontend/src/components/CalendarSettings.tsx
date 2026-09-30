@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CalendarStatus } from "../api";
+import { api, type CalendarAccount, type CalendarStatus } from "../api";
+import { AccountDot } from "./AccountDots";
+import { confirmDialog } from "./ConfirmDialog";
 import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
 import { CopySignInLink } from "./CopySignInLink";
@@ -11,12 +13,13 @@ const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent";
 const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
 
 /**
- * Connect a Google account (Calendar 1).
+ * The Google accounts (Calendar 1, D82): several at once.
  *
  * The consent page opens in the user's own browser, in a new tab, and Google sends
  * the browser back to a listener the backend opened for this one connection. This
  * screen never sees a token: it asks for the status, and hears over the event
- * stream when the other tab has finished.
+ * stream when the other tab has finished. Whichever account the user picks there is
+ * added — or restored, with its history, when that address was connected before.
  */
 export default function CalendarSettings() {
   const { t } = useI18n();
@@ -30,14 +33,20 @@ export default function CalendarSettings() {
     refetchInterval: (query) => (query.state.data?.state === "connecting" ? 3000 : false),
   });
   const settle = (next: CalendarStatus) => queryClient.setQueryData(["calendar"], next);
+  /** Hiding or removing an account changes what every list shows. */
+  const everywhere = (next: CalendarStatus) => {
+    settle(next);
+    void queryClient.invalidateQueries();
+  };
 
   const connect = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reconnect?: string) => {
+      const start = () => (reconnect ? api.calendarReconnect(reconnect) : api.calendarConnect());
       // On Windows the server opens Google's page in the user's own browser, in the
       // profile they were last in: this window's profile is Upshot's own (z8tj1hca86).
       if (status.data?.opens_externally) {
         consentTab.current = null;
-        const next = await api.calendarConnect();
+        const next = await start();
         if (!next.opened) window.open(next.auth_url, "_blank");
         return next;
       }
@@ -50,7 +59,7 @@ export default function CalendarSettings() {
       if (tab) tab.opener = null;
       consentTab.current = tab;
       try {
-        const next = await api.calendarConnect();
+        const next = await start();
         if (tab) tab.location.href = next.auth_url;
         return next;
       } catch (error) {
@@ -96,23 +105,32 @@ export default function CalendarSettings() {
     // `cancel` is a stable mutation object; re-running on it would restart the poll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.data?.state]);
-  const disconnect = useMutation({
-    mutationFn: api.calendarDisconnect,
-    onSuccess: (next) => {
-      setRevokeByHand(next.revoke_by_hand);
-      settle(next);
-    },
-  });
 
-  const syncNow = useMutation({ mutationFn: api.calendarSyncNow, onSuccess: settle });
-  const forget = useMutation({
-    mutationFn: api.calendarForget,
+  const show = useMutation({
+    mutationFn: ({ id, visible }: { id: string; visible: boolean }) =>
+      api.calendarSetVisible(id, visible),
+    onSuccess: everywhere,
+  });
+  const remove = useMutation({
+    mutationFn: async (account: CalendarAccount) => {
+      const sure = await confirmDialog({
+        title: t("calendar.removeTitle").replace("{address}", account.address),
+        body: t("calendar.removeConfirm"),
+        confirm: t("calendar.remove"),
+        cancel: t("calendar.cancel"),
+      });
+      return sure ? api.calendarRemove(account.id) : null;
+    },
     onSuccess: (next) => {
-      settle(next);
-      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      if (next === null) return;
+      setRevokeByHand(next.revoke_by_hand);
+      everywhere(next);
     },
   });
+  const syncNow = useMutation({ mutationFn: api.calendarSyncNow, onSuccess: settle });
   const data = status.data;
+  const accounts = data?.accounts ?? [];
+  const connecting = data?.state === "connecting";
   const error = data?.error ?? (connect.error ? String(connect.error.message) : null);
 
   return (
@@ -122,12 +140,10 @@ export default function CalendarSettings() {
         description={
           <>
             <span className="block">{t("calendar.what")}</span>
-            {data?.state === "connected" && data.account && (
-              <span className="mt-1 block" data-testid="calendar-account">
-                {t("calendar.connectedAs")} <bdi className="font-medium">{data.account}</bdi>
-              </span>
+            {accounts.length > 0 && (
+              <span className="mt-1 block">{t("calendar.hiddenEverywhere")}</span>
             )}
-            {data?.state === "connecting" && (
+            {connecting && (
               <span className="mt-1 block" data-testid="calendar-waiting">
                 {t("calendar.connecting")}{" "}
                 {data.auth_url && (
@@ -136,11 +152,6 @@ export default function CalendarSettings() {
                   </a>
                 )}{" "}
                 <CopySignInLink url={data.auth_url} />
-              </span>
-            )}
-            {data?.state === "reconnect" && (
-              <span className="mt-1 block text-warning" data-testid="calendar-reconnect">
-                {t("calendar.reconnectHint")}
               </span>
             )}
             {data && !data.configured && (
@@ -168,22 +179,7 @@ export default function CalendarSettings() {
           </>
         }
       >
-        {data?.state === "connected" && (
-          <>
-            <span className="text-xs text-success" data-testid="calendar-connected">
-              {t("calendar.connected")}
-            </span>
-            <BusyButton
-              data-testid="calendar-disconnect"
-              busy={disconnect.isPending}
-              onClick={() => disconnect.mutate()}
-              className={SECONDARY}
-            >
-              {t("calendar.disconnect")}
-            </BusyButton>
-          </>
-        )}
-        {data?.state === "connecting" && (
+        {connecting ? (
           <BusyButton
             data-testid="calendar-cancel"
             busy={cancel.isPending}
@@ -192,32 +188,91 @@ export default function CalendarSettings() {
           >
             {t("calendar.cancel")}
           </BusyButton>
-        )}
-        {(data?.state === "disconnected" || data?.state === "reconnect") && (
+        ) : (
           <BusyButton
-            data-testid="calendar-connect"
+            data-testid={accounts.length ? "calendar-add" : "calendar-connect"}
             busy={connect.isPending}
-            disabled={!data.configured}
-            onClick={() => connect.mutate()}
-            className={`${PRIMARY} disabled:opacity-40`}
+            disabled={!data?.configured}
+            onClick={() => connect.mutate(undefined)}
+            className={`${accounts.length ? SECONDARY : PRIMARY} disabled:opacity-40`}
           >
-            {t(data.state === "reconnect" ? "calendar.reconnect" : "calendar.connect")}
+            {t(accounts.length ? "calendar.addAnother" : "calendar.connect")}
           </BusyButton>
         )}
       </SettingRow>
 
-      {data?.state === "connected" && (
+      {accounts.map((account) => (
+        <SettingRow
+          key={account.id}
+          label={
+            <span className="inline-flex items-center gap-1.5" data-testid={`calendar-account-${account.id}`}>
+              <AccountDot account={account} size={8} />
+              <bdi className="font-medium" data-testid="calendar-account">
+                {account.address}
+              </bdi>
+            </span>
+          }
+          description={
+            <span data-testid={`calendar-account-status-${account.id}`}>
+              {account.state === "reconnect" ? (
+                <span className="block text-warning" data-testid="calendar-reconnect">
+                  {account.error ?? t("calendar.reconnectHint")}
+                </span>
+              ) : !account.visible ? (
+                <span className="block">{t("calendar.accountHidden")}</span>
+              ) : account.last_synced_at ? (
+                t("calendar.syncedAt")
+                  .replace("{time}", new Date(account.last_synced_at).toLocaleString())
+                  .replace("{count}", String(account.cached_events ?? 0))
+              ) : (
+                t("calendar.notSyncedYet")
+              )}
+              {account.sync_error && account.state !== "reconnect" && (
+                <span className="mt-1 block text-warning">{account.sync_error}</span>
+              )}
+            </span>
+          }
+        >
+          <label className="flex items-center gap-2 text-xs text-secondary">
+            <input
+              type="checkbox"
+              role="switch"
+              data-testid={`calendar-account-visible-${account.id}`}
+              checked={account.visible}
+              disabled={show.isPending}
+              onChange={(event) => show.mutate({ id: account.id, visible: event.target.checked })}
+              className="size-4 accent-[var(--accent)]"
+            />
+            {t("calendar.show")}
+          </label>
+          {account.state === "reconnect" && (
+            <BusyButton
+              data-testid={`calendar-account-reconnect-${account.id}`}
+              busy={connect.isPending}
+              disabled={connecting || !data?.configured}
+              onClick={() => connect.mutate(account.id)}
+              className={PRIMARY}
+            >
+              {t("calendar.reconnect")}
+            </BusyButton>
+          )}
+          <BusyButton
+            data-testid={`calendar-account-remove-${account.id}`}
+            busy={remove.isPending && remove.variables?.id === account.id}
+            onClick={() => remove.mutate(account)}
+            className={SECONDARY}
+          >
+            {t("calendar.remove")}
+          </BusyButton>
+        </SettingRow>
+      ))}
+
+      {accounts.length > 0 && (
         <SettingRow
           label={t("calendar.syncLabel")}
           description={
             <span data-testid="calendar-sync-status">
-              {data.last_synced_at
-                ? t("calendar.syncedAt")
-                    .replace("{time}", new Date(data.last_synced_at).toLocaleString())
-                    .replace("{count}", String(data.cached_events ?? 0))
-                : t("calendar.notSyncedYet")}
-              {data.sync_error && <span className="mt-1 block text-warning">{data.sync_error}</span>}
-              <span className="mt-1 block">{t("calendar.whatIsKept")}</span>
+              <span className="block">{t("calendar.whatIsKept")}</span>
             </span>
           }
         >
@@ -228,14 +283,6 @@ export default function CalendarSettings() {
             className={SECONDARY}
           >
             {t("calendar.syncNow")}
-          </BusyButton>
-          <BusyButton
-            data-testid="calendar-forget"
-            busy={forget.isPending}
-            onClick={() => forget.mutate()}
-            className={SECONDARY}
-          >
-            {t("calendar.deleteCache")}
           </BusyButton>
         </SettingRow>
       )}

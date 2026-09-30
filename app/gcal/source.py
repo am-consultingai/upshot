@@ -11,13 +11,13 @@ rename the recording, and deleting it does not lose the name.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
 from app.enrich.source import Enrichment
 from app.gcal.events import CalendarEvent, EventStore, iso_utc
-from app.gcal.match import MATCHED, NONE, PROPOSED, Verdict, match, meeting_like
+from app.gcal.match import MATCHED, NONE, PROPOSED, Verdict, dedupe, match, meeting_like
 
 #: How far around a recording to look in the cache.
 SEARCH_MARGIN = timedelta(hours=3)
@@ -25,6 +25,7 @@ SEARCH_MARGIN = timedelta(hours=3)
 
 def event_ref(event: CalendarEvent) -> dict[str, Any]:
     return {
+        "account_id": event.account_id,
         "calendar_id": event.calendar_id,
         "event_id": event.event_id,
         "ical_uid": event.ical_uid,
@@ -42,11 +43,18 @@ def snapshot(
     source: str,
     confidence: float | None = None,
     reason: str = "",
+    accounts: Iterable[str] = (),
 ) -> dict[str, Any]:
-    """What a meeting keeps of the event it was matched to. Names, never addresses."""
+    """What a meeting keeps of the event it was matched to. Names, never addresses.
+
+    ``accounts`` is every connected account the same meeting appears on (D82): a meeting
+    belongs to all of them, and stays shown while any one of them is.
+    """
     names, more = event.participants()
+    members = sorted({a for a in (event.account_id, *accounts) if a})
     return {
         "event": event_ref(event),
+        "accounts": members,
         "title": event.title,
         "participants": names,
         "participants_more": more,
@@ -61,10 +69,14 @@ def snapshot(
     }
 
 
-def verdict_payload(verdict: Verdict) -> dict[str, Any]:
+def verdict_payload(verdict: Verdict, copies: Iterable[str] = ()) -> dict[str, Any]:
     if verdict.state == MATCHED and verdict.best:
         return snapshot(
-            verdict.best.event, state=MATCHED, source="auto", confidence=verdict.confidence
+            verdict.best.event,
+            state=MATCHED,
+            source="auto",
+            confidence=verdict.confidence,
+            accounts=copies,
         )
     payload: dict[str, Any] = {
         "match": {
@@ -85,23 +97,29 @@ def verdict_payload(verdict: Verdict) -> dict[str, Any]:
 class GoogleCalendarSource:
     name = "google"
 
-    def __init__(self, store: EventStore, *, available: Callable[[], bool]) -> None:
+    def __init__(self, store: EventStore, *, active: Callable[[], Collection[str]]) -> None:
         self.store = store
-        #: False when no account is connected: then there is nothing to say at all, not
-        #: even "no event matched".
-        self.available = available
+        #: The accounts whose events count: connected, and neither hidden nor removed.
+        #: None of them means there is nothing to say at all, not even "no event matched".
+        self.active = active
 
     def for_meeting(self, started_at: datetime, ended_at: datetime | None) -> Enrichment | None:
-        if not self.available():
+        accounts = self.active()
+        if not accounts:
             return None
         end = ended_at or started_at
-        events = self.store.between(started_at - SEARCH_MARGIN, end + SEARCH_MARGIN)
+        events = self.store.between(
+            started_at - SEARCH_MARGIN, end + SEARCH_MARGIN, accounts=accounts
+        )
         verdict = match(events, started_at, ended_at)
-        payload = verdict_payload(verdict)
+        copies: list[str] = []
+        if verdict.state == MATCHED and verdict.best:
+            copies = self.store.copies(verdict.best.event, accounts=accounts)
+        payload = verdict_payload(verdict, copies)
         if verdict.state == MATCHED and verdict.best:
             names = tuple(payload["participants"])
             return Enrichment(title=verdict.best.event.title, participants=names, raw=payload)
-        if verdict.state == NONE and not events and self.store.count() == 0:
+        if verdict.state == NONE and not events and not any(self.store.count(a) for a in accounts):
             # Connected, but nothing has synced yet: no evidence either way.
             return None
         return Enrichment(raw=payload)
@@ -115,22 +133,30 @@ class CalendarNow:
     soft hold, and not a solo block. A blocked-out hour is not a call.
     """
 
-    def __init__(self, store: EventStore, *, available: Callable[[], bool]) -> None:
+    def __init__(self, store: EventStore, *, active: Callable[[], Collection[str]]) -> None:
         self.store = store
-        self.available = available
+        #: Only these accounts give reminders and a detector signal: a hidden one is quiet.
+        self.active = active
 
     def soon(self, now: datetime, *, ahead_s: float) -> list[CalendarEvent]:
-        """Meetings on now or starting within ``ahead_s``, earliest first (reminders, D76)."""
-        if not self.available():
+        """Meetings on now or starting within ``ahead_s``, earliest first (reminders, D76).
+
+        The same meeting on two accounts is reminded of once."""
+        accounts = self.active()
+        if not accounts:
             return []
-        events = self.store.between(now, now + timedelta(seconds=ahead_s))
+        events = dedupe(
+            self.store.between(now, now + timedelta(seconds=ahead_s), accounts=accounts)
+        )
+        events.sort(key=lambda e: (e.start, e.account_id, e.event_id))
         return [e for e in events if meeting_like(e) is None]
 
     def current(self, now: datetime, *, lead_s: float = 120.0) -> CalendarEvent | None:
-        if not self.available():
+        accounts = self.active()
+        if not accounts:
             return None
-        events = self.store.between(now, now + timedelta(seconds=lead_s))
-        live = [e for e in events if meeting_like(e) is None]
+        events = self.store.between(now, now + timedelta(seconds=lead_s), accounts=accounts)
+        live = [e for e in dedupe(events) if meeting_like(e) is None]
         if not live:
             return None
         # The one that started most recently: in back-to-back meetings, the new one.

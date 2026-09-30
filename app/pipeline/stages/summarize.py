@@ -232,7 +232,7 @@ def calendar_context(ctx: StageContext) -> str | None:
     Advisory, like every other calendar path: no network, no connection or no match means
     the snapshot taken at match time is used instead, and failing that, nothing.
     """
-    from app.meetings import calendar_payload
+    from app.meetings import calendar_payload, event_account
 
     if not ctx.config.get("calendar.prompt_invite", True):
         return None
@@ -241,9 +241,10 @@ def calendar_context(ctx: StageContext) -> str | None:
         return None
     reader = getattr(ctx.services, "calendar_invites", None)
     ref = payload.get("event") or {}
-    if reader is not None and ref:
+    account = event_account(ctx.meeting)
+    if reader is not None and ref and account:
         try:
-            invite = reader.fetch(str(ref["calendar_id"]), str(ref["event_id"]))
+            invite = reader.fetch(account, str(ref["calendar_id"]), str(ref["event_id"]))
             return str(invite.as_prompt())
         except Exception as exc:
             # The meeting is summarized whatever the calendar is doing.

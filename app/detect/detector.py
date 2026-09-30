@@ -112,8 +112,8 @@ class Detector:
         self.prompts = prompts
         #: Calendar meetings already reminded of, and already announced as started: each
         #: is said once (D76).
-        self.reminded: set[tuple[str, str]] = set()
-        self.announced: set[tuple[str, str]] = set()
+        self.reminded: set[tuple[str, str, str]] = set()
+        self.announced: set[tuple[str, str, str]] = set()
         #: The running recording's calendar meeting end, and whether its overrun was said.
         self.event_end: datetime | None = None
         self.event_title: str = ""
@@ -238,7 +238,7 @@ class Detector:
         for event in events:
             to_start = (event.start - now).total_seconds()
             title = event.title or ""
-            calendar_id, event_id = event.key
+            account_id, calendar_id, event_id = event.key
             if 0 < to_start <= REMINDER_S and event.key not in self.reminded:
                 self.reminded.add(event.key)
                 log.info("calendar: %s starts in %d s", title or "a meeting", int(to_start))
@@ -268,6 +268,7 @@ class Detector:
                             event_id=event_id,
                             conference_url=event.conference_url,
                             until=event.end,
+                            account_id=account_id,
                         ),
                         recording=recording,
                     )
@@ -280,6 +281,7 @@ class Detector:
                         event_id=event_id,
                         minutes_ago=max(0, int(-to_start // 60)),
                         conference_url=event.conference_url,
+                        account_id=account_id,
                     )
 
     def score(self, evidence: list[Evidence]) -> int:
@@ -621,6 +623,7 @@ class Detector:
                         conference_url=event.conference_url if event else None,
                         until=event.end if event else None,
                         process=wake.process,
+                        account_id=event.account_id if event else None,
                     ),
                     recording=self.recorder.committed,
                 )
@@ -632,6 +635,7 @@ class Detector:
                     event.title if event else wake.title,
                     calendar_id=event.calendar_id if event else None,
                     event_id=event.event_id if event else None,
+                    account_id=event.account_id if event else None,
                 )
             return
         meeting = self.meetings.create(

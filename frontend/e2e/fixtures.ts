@@ -43,13 +43,24 @@ export interface SeedMeeting {
   audio_seconds?: number;
   /** Pretend the retention sweep already removed this meeting's audio. */
   audio_deleted_at?: string;
-  /** Matched to this seeded calendar event. */
-  calendar?: { calendar_id: string; event_id: string; participants?: string[] };
+  /** Matched to this seeded calendar event; on the first seeded account unless named. */
+  calendar?: {
+    account_id?: string;
+    /** Every account the event is on, when more than one. */
+    accounts?: string[];
+    calendar_id: string;
+    event_id: string;
+    participants?: string[];
+  };
 }
 
 /** A Google Calendar event, as a sync would have left it in the cache. */
 export interface SeedEvent {
   id: string;
+  /** On the first seeded account unless named. */
+  account_id?: string;
+  /** The same meeting on two accounts shares this (Google's iCalUID). */
+  ical_uid?: string;
   calendar_id?: string;
   start: string;
   end: string;
@@ -67,6 +78,9 @@ export interface SeedBody {
   /** First-run setup finished or not; only welcome.spec.ts asks for `false`. */
   setup_done?: boolean;
   meetings?: SeedMeeting[];
+  /** Connected calendar accounts, with no Google behind them. Without any, one is made
+   * ("you@example.com") as soon as calendar data is seeded. */
+  calendar_accounts?: { id?: string; address: string; visible?: boolean; removed?: boolean }[];
   calendar_events?: SeedEvent[];
   detector_events?: {
     process?: string;
