@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DURATIONS, durationLabel, floorToQuarter, formatPattern, formatTime, quartersOfDay } from "../src/lib/timeFormat";
+import { DURATIONS, durationLabel, floorToQuarter, formatPattern, formatTime, parseTime, quartersOfDay } from "../src/lib/timeFormat";
 
 const at = (h: number, m: number) => new Date(2026, 8, 30, h, m, 9);
 
@@ -34,5 +34,27 @@ describe("quarter hours", () => {
     expect(durationLabel(45, units)).toBe("45 min");
     expect(durationLabel(60, units)).toBe("1 h");
     expect(durationLabel(90, units)).toBe("1 h 30 min");
+  });
+});
+
+describe("typed times", () => {
+  const day = new Date(2026, 8, 30, 9, 0);
+  const typed = (text: string) => {
+    const parsed = parseTime(text, day);
+    return parsed ? formatTime(parsed) : null;
+  };
+  it("reads the ways a time is written", () => {
+    expect(typed("14:37")).toBe("14:37");
+    expect(typed("1437")).toBe("14:37");
+    expect(typed("14.37")).toBe("14:37");
+    expect(typed("14")).toBe("14:00");
+    expect(typed("9:05")).toBe("09:05");
+    expect(typed("2:37 pm")).toBe("14:37");
+    expect(typed("2PM")).toBe("14:00");
+    expect(typed("12:10 am")).toBe("00:10");
+    expect(typed("12:10 pm")).toBe("12:10");
+  });
+  it("refuses what is not a time", () => {
+    for (const bad of ["", "25:00", "14:60", "13 pm", "noon", "1:2:3"]) expect(typed(bad)).toBeNull();
   });
 });
