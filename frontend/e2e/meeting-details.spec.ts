@@ -94,3 +94,40 @@ test("the_details_keep_the_focus_where_the_user_types_and_reject_a_non_time", as
   await expect(dialog).toHaveCount(0);
   await page.getByTestId("stop-recording").click();
 });
+
+test("the_time_boxes_list_every_suggestion_whatever_is_typed", async ({ page, seed }) => {
+  await seed([]);
+  await gotoApp(page);
+  await page.getByTestId("start-recording").click();
+  const dialog = page.getByTestId("meeting-info");
+  const start = dialog.getByTestId("meeting-info-start");
+
+  // A time already in the box does not narrow the list: all 96 quarter hours are there,
+  // and the one nearest the typed time is highlighted.
+  await start.fill("14:05");
+  await dialog.getByTestId("meeting-info-start-toggle").click();
+  const starts = dialog.getByTestId("meeting-info-start-options");
+  await expect(starts.getByRole("option")).toHaveCount(96);
+  await expect(starts.locator('[aria-selected="true"]')).toHaveText("14:15");
+  await starts.getByRole("option", { name: "10:30" }).click();
+  await expect(start).toHaveValue("10:30");
+  await expect(starts).toHaveCount(0);
+  await expect(dialog.getByTestId("meeting-info-end")).toHaveValue("11:00");
+
+  // The end lists every duration, each with its length, and the keyboard picks from it.
+  const end = dialog.getByTestId("meeting-info-end");
+  await end.click();
+  const ends = dialog.getByTestId("meeting-info-end-options");
+  expect(await ends.getByRole("option").count()).toBeGreaterThan(10);
+  await expect(ends.getByRole("option").first()).toContainText("10:45");
+  await end.press("ArrowDown");
+  await end.press("Enter");
+  await expect(end).toHaveValue("11:15");
+  // Escape closes an open list, not the dialog.
+  await end.press("ArrowDown");
+  await end.press("Escape");
+  await expect(ends).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByTestId("stop-recording").click();
+});

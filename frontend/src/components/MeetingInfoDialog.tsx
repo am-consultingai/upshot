@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import TimeField from "./TimeField";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type MeetingDetail } from "../api";
 import { useI18n } from "../i18n";
@@ -133,6 +134,7 @@ function Form({
   }, []);
 
   const start = parseTime(startText, day);
+  const end = parseTime(endText, day);
   const slots = quartersOfDay(day);
   const units = { h: t("meetingInfo.hours"), min: t("meetingInfo.minutes") };
   const endSuggestions = start
@@ -214,39 +216,38 @@ function Form({
           />
         </label>
         <div className="flex gap-3">
-          <label className="block flex-1 space-y-1 text-xs text-secondary">
+          {/* Not a <label>: a click on a suggestion would be passed on to the box. */}
+          <div className="flex-1 space-y-1 text-xs text-secondary">
             <span>{t("meetingInfo.start")}</span>
-            <input
-              data-testid="meeting-info-start"
-              list="meeting-info-starts"
+            <TimeField
+              label={t("meetingInfo.start")}
+              testId="meeting-info-start"
               value={startText}
-              onChange={(e) => changeStart(e.target.value)}
+              onChange={changeStart}
+              current={start}
+              options={slots.map((slot) => ({ value: time(slot), at: slot }))}
               className={field}
             />
-            <datalist id="meeting-info-starts">
-              {slots.map((slot) => (
-                <option key={slot.getTime()} value={time(slot)} />
-              ))}
-            </datalist>
-          </label>
-          <label className="block flex-1 space-y-1 text-xs text-secondary">
+          </div>
+          <div className="flex-1 space-y-1 text-xs text-secondary">
             <span>{t("meetingInfo.end")}</span>
-            <input
-              data-testid="meeting-info-end"
-              list="meeting-info-ends"
+            <TimeField
+              label={t("meetingInfo.end")}
+              testId="meeting-info-end"
               value={endText}
-              onChange={(e) => {
+              onChange={(text) => {
                 setEndTouched(true);
-                setEndText(e.target.value);
+                setEndText(text);
               }}
+              current={end}
+              options={endSuggestions.map(({ at, minutes }) => ({
+                value: time(at),
+                at,
+                label: durationLabel(minutes, units),
+              }))}
               className={field}
             />
-            <datalist id="meeting-info-ends">
-              {endSuggestions.map(({ at, minutes }) => (
-                <option key={minutes} value={time(at)} label={durationLabel(minutes, units)} />
-              ))}
-            </datalist>
-          </label>
+          </div>
         </div>
         <p className="text-xs text-tertiary">{t("meetingInfo.optional")}</p>
         {error && (
