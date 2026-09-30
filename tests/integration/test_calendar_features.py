@@ -387,7 +387,7 @@ def test_no_match_is_said_plainly_and_invents_nothing(world: World) -> None:
     world.api.items = [g_event("tomorrow", NOW + timedelta(days=1))]
     world.synced()
     meeting = world.meetings.create(source="manual")
-    assert meeting.title is None
+    assert meeting.title_source == "default", "only the default name, nothing from the calendar"
     assert json.loads(meeting.calendar_json or "{}")["match"]["state"] == "none"
 
 
