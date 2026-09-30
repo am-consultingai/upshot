@@ -302,6 +302,17 @@
       },
       "MeetingPatch": {
         "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "discard": {
             "anyOf": [
               {
@@ -312,6 +323,28 @@
               }
             ],
             "title": "Discard"
+          },
+          "planned_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned End"
+          },
+          "planned_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Start"
           },
           "sensitive": {
             "anyOf": [
@@ -1963,6 +1996,29 @@
           }
         },
         "summary": "Llm Update"
+      }
+    },
+    "/api/locale": {
+      "get": {
+        "description": "The user's short date and time patterns, as Windows shows them (sShortDate,\nsShortTime): the meeting-details times are written with them.",
+        "operationId": "locale_formats_api_locale_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Locale Formats Api Locale Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Locale Formats"
       }
     },
     "/api/meetings": {

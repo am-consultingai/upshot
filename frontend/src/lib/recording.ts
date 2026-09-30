@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { toast } from "../components/Toaster";
+import { openMeetingInfo } from "../components/MeetingInfoDialog";
 import { useI18n } from "../i18n";
 
 /**
@@ -20,7 +21,11 @@ export function useRecordingControls() {
     toast({ title: t(key), sub: error.message, tone: "danger" });
   const start = useMutation({
     mutationFn: () => api.startRecording(),
-    onSuccess: () => queryClient.invalidateQueries(),
+    onSuccess: (started) => {
+      void queryClient.invalidateQueries();
+      // Recording already; the details are asked for alongside, never before.
+      openMeetingInfo(started.meeting_id);
+    },
     onError: failed("recording.startFailed"),
   });
   const stop = useMutation({
