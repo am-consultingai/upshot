@@ -6,6 +6,7 @@ import type { MessageKey } from "../locales/en";
 import BusyButton from "./BusyButton";
 import { PinnedContext } from "./SettingRow";
 import Tooltip from "./Tooltip";
+import { openExternal } from "../lib/external";
 import { VendorLogo, type VendorId } from "../setup/logos";
 
 /** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
@@ -193,7 +194,7 @@ export default function ProviderSettings() {
     mutationFn: (provider: string) => api.llmInstall(provider, true),
     onSuccess: (result, provider) => {
       // Nothing was launched only when no installer can run; then the guide is the answer.
-      if (!result.launched && result.docs) window.open(result.docs, "_blank", "noreferrer");
+      if (!result.launched && result.docs) void openExternal(result.docs);
       if (result.launched) watch(provider);
       invalidate();
     },

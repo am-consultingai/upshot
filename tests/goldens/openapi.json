@@ -180,17 +180,6 @@
         "title": "CalendarChoice",
         "type": "object"
       },
-      "CalendarConnect": {
-        "properties": {
-          "profile": {
-            "default": "",
-            "title": "Profile",
-            "type": "string"
-          }
-        },
-        "title": "CalendarConnect",
-        "type": "object"
-      },
       "ChatPost": {
         "properties": {
           "context": {
@@ -369,6 +358,19 @@
           }
         },
         "title": "MeetingPatch",
+        "type": "object"
+      },
+      "OpenPost": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "OpenPost",
         "type": "object"
       },
       "ProviderPost": {
@@ -1138,25 +1140,8 @@
     },
     "/api/calendar/connect": {
       "post": {
-        "description": "Start a connection. The browser opens the returned URL; the rest is the listener's.\n\nWith a profile, Upshot opens it in that browser profile and says so (``opened``).",
+        "description": "Start a connection, and open Google's page in the user's default browser.\n\nOpened from here, not by the page: the page is Upshot's window, which runs in a browser\nprofile of its own, so a tab it opened would have none of the user's Google accounts.\nWindows opens it in the profile the user was last in (z8tj1hca86). ``opened`` false\n(not Windows): the page opens ``auth_url`` itself.",
         "operationId": "calendar_connect_api_calendar_connect_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/CalendarConnect"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Body"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "content": {
@@ -1169,16 +1154,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Calendar Connect"
@@ -1254,27 +1229,6 @@
           }
         },
         "summary": "Calendar Events"
-      }
-    },
-    "/api/calendar/profiles": {
-      "get": {
-        "description": "The browser profiles Google's sign-in can open in (ClickUp z8tj1hca86).\n\nUpshot's window runs in one profile of the default browser, and a page it opens lands\nthere whatever has the focus. Chrome and Edge list their profiles; any other browser\ngets an empty list and the page opens the link, which the user can also copy.",
-        "operationId": "calendar_profiles_api_calendar_profiles_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Calendar Profiles Api Calendar Profiles Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Calendar Profiles"
       }
     },
     "/api/calendar/status": {
@@ -2916,6 +2870,49 @@
           }
         },
         "summary": "Model Download"
+      }
+    },
+    "/api/open": {
+      "post": {
+        "description": "Open a link in the user's default browser (``window.open_external``).\n\nUpshot's window runs in a browser profile of its own, so a link it opened itself would\nland there, signed in to nothing. Every link leaving the app comes here instead.\n``opened`` false: the page opens it itself (not Windows). http and https only.",
+        "operationId": "open_link_api_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Open Link Api Open Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Link"
       }
     },
     "/api/prompt/dismiss": {

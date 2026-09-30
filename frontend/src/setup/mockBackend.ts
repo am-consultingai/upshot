@@ -185,7 +185,7 @@ export class MockSetupBackend implements SetupBackend {
     });
   }
 
-  connectCalendar(_profile?: string): void {
+  connectCalendar(): void {
     this.set({ ...this.state, calendar: { ...this.state.calendar, phase: "waiting" } });
     this.later(2500, () => {
       const phase = this.outcomes.calendar;

@@ -159,7 +159,11 @@ def test_the_window_opens_in_a_chromium_browser_in_app_mode() -> None:
     assert window.supports_app_mode(r"C:\x\MSEDGE.EXE")
     assert not window.supports_app_mode(r"C:\Program Files\Mozilla Firefox\firefox.exe")
     assert not window.supports_app_mode(None)
-    assert window.app_command("msedge.exe", "http://127.0.0.1:8010/?k=a") == [
+    # Its own browser profile, never one of the user's (z8tj1hca86).
+    assert window.app_command("msedge.exe", "http://127.0.0.1:8010/?k=a", Path("H/browser")) == [
         "msedge.exe",
         "--app=http://127.0.0.1:8010/?k=a",
+        f"--user-data-dir={Path('H/browser')}",
+        "--no-first-run",
+        "--no-default-browser-check",
     ]

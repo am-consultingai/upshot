@@ -137,20 +137,6 @@ export interface MeetingDetail extends Meeting {
 }
 
 /** The Google Calendar connection. Never carries a token. */
-/** The browser profiles Google's sign-in can open in (Chrome and Edge list theirs). */
-export interface BrowserProfile {
-  id: string;
-  name: string;
-  email: string;
-}
-
-export interface BrowserProfiles {
-  browser: string | null;
-  profiles: BrowserProfile[];
-  /** The profile chosen last time, "" if none. */
-  last: string;
-}
-
 export interface CalendarStatus {
   /** False when this build has no Google OAuth client baked in. */
   configured: boolean;
@@ -165,6 +151,8 @@ export interface CalendarStatus {
   cached_events?: number;
   /** The user's first name from their Google profile, when they allowed it. */
   name?: string | null;
+  /** The server opens Google's page itself (Windows); the page must not open a tab. */
+  opens_externally?: boolean;
 }
 
 /** A Google Calendar event from the local cache. Names only — never an address. */
@@ -537,12 +525,13 @@ export const api = {
       body: JSON.stringify({ provider, background }),
     }),
   calendarStatus: () => request<CalendarStatus>("/api/calendar/status"),
-  calendarConnect: (profile?: string) =>
+  calendarConnect: () =>
     request<CalendarStatus & { auth_url: string; opened: boolean }>("/api/calendar/connect", {
       method: "POST",
-      body: JSON.stringify({ profile: profile ?? "" }),
     }),
-  calendarProfiles: () => request<BrowserProfiles>("/api/calendar/profiles"),
+  /** Open a link in the user's default browser; `opened` false: open it here. */
+  openLink: (url: string) =>
+    request<{ opened: boolean }>("/api/open", { method: "POST", body: JSON.stringify({ url }) }),
   calendarCancel: () => request<CalendarStatus>("/api/calendar/cancel", { method: "POST" }),
   calendarDisconnect: () =>
     request<CalendarStatus & { revoked: boolean; revoke_by_hand: string | null }>(

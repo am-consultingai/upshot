@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CalendarStatus } from "../api";
 import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
-import BrowserProfilePicker, { CopySignInLink, useBrowserProfile } from "./BrowserProfilePicker";
+import { CopySignInLink } from "./CopySignInLink";
 import SettingRow, { SELECT_CLASS, SettingGroup } from "./SettingRow";
 import { workingHours } from "../lib/calendar";
 
@@ -30,15 +30,14 @@ export default function CalendarSettings() {
     refetchInterval: (query) => (query.state.data?.state === "connecting" ? 3000 : false),
   });
   const settle = (next: CalendarStatus) => queryClient.setQueryData(["calendar"], next);
-  const browser = useBrowserProfile();
 
   const connect = useMutation({
     mutationFn: async () => {
-      // A profile chosen: Upshot opens Google's page in it, from the backend. A page
-      // opened from here would land in the profile this window runs in (z8tj1hca86).
-      if (browser.choice) {
+      // On Windows the server opens Google's page in the user's own browser, in the
+      // profile they were last in: this window's profile is Upshot's own (z8tj1hca86).
+      if (status.data?.opens_externally) {
         consentTab.current = null;
-        const next = await api.calendarConnect(browser.choice);
+        const next = await api.calendarConnect();
         if (!next.opened) window.open(next.auth_url, "_blank");
         return next;
       }
@@ -193,13 +192,6 @@ export default function CalendarSettings() {
           >
             {t("calendar.cancel")}
           </BusyButton>
-        )}
-        {(data?.state === "disconnected" || data?.state === "reconnect") && (
-          <BrowserProfilePicker
-            profiles={browser.profiles}
-            choice={browser.choice}
-            onChange={browser.setChoice}
-          />
         )}
         {(data?.state === "disconnected" || data?.state === "reconnect") && (
           <BusyButton

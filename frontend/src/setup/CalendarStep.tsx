@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
 import BusyButton from "../components/BusyButton";
-import BrowserProfilePicker, { CopySignInLink, useBrowserProfile } from "../components/BrowserProfilePicker";
+import { CopySignInLink } from "../components/CopySignInLink";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import { Note, PRIMARY, QUIET, SECONDARY, StepFrame, fill } from "./ui";
 import { CalendarScene } from "./visuals";
@@ -20,7 +20,6 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
   const backend = useSetupBackend();
   const { calendar } = useSetupSnapshot();
   const { phase } = calendar;
-  const browser = useBrowserProfile();
 
   // Only a connection made on this visit moves on: someone who comes Back to a
   // calendar that is already connected came back to look at it.
@@ -78,18 +77,11 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
           </Note>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            {phase !== "waiting" && (
-              <BrowserProfilePicker
-                profiles={browser.profiles}
-                choice={browser.choice}
-                onChange={browser.setChoice}
-              />
-            )}
             <BusyButton
               data-testid="calendar-connect"
               busy={phase === "waiting"}
               className={`${problem ? SECONDARY : PRIMARY} px-4 py-2`}
-              onClick={() => backend.connectCalendar(browser.choice || undefined)}
+              onClick={() => backend.connectCalendar()}
             >
               {problem ? t("firstRun.calendar.retry") : t("firstRun.calendar.connect")}
             </BusyButton>
