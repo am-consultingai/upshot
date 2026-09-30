@@ -66,7 +66,7 @@ def test_enrichment_timeout_ignored(tmp_path: Path) -> None:
     meeting = svc.create(source="manual")
     elapsed = time.monotonic() - started
     assert elapsed < 2.5, f"commit waited {elapsed:.2f}s on a slow enrichment source"
-    assert meeting.title is None
+    assert meeting.title_source == "default"
     assert meeting.calendar_json is None
     assert svc.warnings and "timed out" in svc.warnings[0]
 

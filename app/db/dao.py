@@ -552,6 +552,13 @@ class Dao:
         )
         return replace(meeting, state=str(target))
 
+    def titles_starting_with(self, prefix: str) -> set[str]:
+        """Every meeting title that begins with ``prefix`` (the default name's clashes)."""
+        rows = self.conn.execute(
+            "SELECT title FROM meetings WHERE substr(title, 1, ?) = ?", (len(prefix), prefix)
+        ).fetchall()
+        return {str(row["title"]) for row in rows}
+
     def delete_meeting(self, meeting_id: str) -> None:
         self.clear_turns(meeting_id)
         if capabilities(self.conn).fts:

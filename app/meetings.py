@@ -71,8 +71,11 @@ def slugify(text: str, limit: int = 40) -> str:
 #: finishes it (``finish_interrupted_deletes``) if the app closed before the stage stopped.
 DELETING_MARKER = ".deleting"
 
+#: A meeting nobody named: the weekday, date and time (``default_title``).
+DEFAULT_TITLE = "default"
+
 #: Titles something automatic may replace. A title the user typed never is.
-AUTOMATIC_TITLES = frozenset({"window", "llm", "calendar"})
+AUTOMATIC_TITLES = frozenset({"window", "llm", "calendar", DEFAULT_TITLE})
 
 
 def title_is_open(meeting: Meeting) -> bool:
@@ -144,7 +147,27 @@ class MeetingService:
             evidence=evidence,
         )
         log.info("created meeting %s (source=%s)", meeting.id, source)
-        return self.enrich(meeting)
+        meeting = self.enrich(meeting)
+        if not meeting.title:
+            meeting = self.dao.update_meeting(
+                meeting.id, title=self.default_title(started), title_source=DEFAULT_TITLE
+            )
+        return meeting
+
+    def default_title(self, when: datetime) -> str:
+        """The weekday, the date and the time as Windows shows them ("Tuesday 30/09/2026
+        14:05"), and " (2)", " (3)"... when a meeting already has that name. Anything
+        else replaces it: a calendar event, the summary's title, the user's own."""
+        from app.locale_formats import default_meeting_title
+
+        base = default_meeting_title(when.astimezone(), str(self.config.get("ui.language", "en")))
+        taken = self.dao.titles_starting_with(base)
+        if base not in taken:
+            return base
+        number = 2
+        while f"{base} ({number})" in taken:
+            number += 1
+        return f"{base} ({number})"
 
     def _profile(self) -> str:
         configured = self.config.profile

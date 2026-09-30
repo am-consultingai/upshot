@@ -360,7 +360,7 @@ def summarize(
     # Title precedence (Calendar 4): the user, then the calendar, then the model, then
     # the window title. The model's suggestion only replaces a window guess or nothing.
     meeting = ctx.meeting
-    if model_title and (not meeting.title or meeting.title_source == "window"):
+    if model_title and (not meeting.title or meeting.title_source in ("window", "default")):
         ctx.dao.update_meeting(meeting.id, title=model_title[:200], title_source="llm")
         meeting = ctx.refresh()
     notes["title"] = str(meeting.title or model_title or "")
