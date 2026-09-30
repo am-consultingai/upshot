@@ -138,6 +138,10 @@ class CalendarAuth:
         self._connect_timeout_s = connect_timeout_s
         self._lock = threading.Lock()
         self._pending: _Pending | None = None
+        #: Google's redirect has arrived and the code is being exchanged. Still
+        #: "connecting" until that ends: between the two the status read "disconnected"
+        #: with no error, and first-run setup took that for a cancel (machine B, 2026-09-30).
+        self._finishing = False
         self._access: tuple[str, float] | None = None  # token, expires at (monotonic)
         self._error: str | None = None
         #: Set when Google rejects the client itself. Every refresh would fail the same
@@ -172,7 +176,7 @@ class CalendarAuth:
             error = self._error
         refresh = self._secrets.get(REFRESH_SECRET)
         account = self._secrets.get(ACCOUNT_SECRET)
-        if pending is not None:
+        if pending is not None or self._finishing:
             state = "connecting"
         elif refresh and not self._client_rejected:
             state = "connected"
@@ -265,9 +269,14 @@ class CalendarAuth:
             current = self._pending is pending
             if current:
                 self._pending = None
+                self._finishing = True
         if not current:
             return False, "This sign-in has already finished. Go back to Upshot."
-        ok, message = self._finish(pending, params)
+        try:
+            ok, message = self._finish(pending, params)
+        finally:
+            with self._lock:
+                self._finishing = False
         with self._lock:
             self._error = None if ok else message
         self._announce()
@@ -476,6 +485,20 @@ def _json(response: httpx.Response) -> dict[str, Any]:
     return body if isinstance(body, dict) else {}
 
 
+def back_link(port: int) -> str:
+    """Where the sign-in's last page sends the user back to Upshot.
+
+    On Windows the ``upshot:open`` link (the installer registers the scheme, D70): it brings
+    Upshot's own window forward. A plain http link opened Upshot as a tab in the browser the
+    sign-in ran in, beside the window that was waiting for it (machine B, 2026-09-30).
+    """
+    import sys
+
+    if sys.platform == "win32":
+        return "upshot:open"
+    return f"http://127.0.0.1:{port}/settings#calendar"
+
+
 # --------------------------------------------------------------------------- listener
 
 PAGE = """<!doctype html>
@@ -487,6 +510,8 @@ place-items:center;background:#f6f7f9;color:#111}}
 main{{max-width:28rem;padding:2rem;text-align:center}}
 h1{{font-size:1.25rem;margin:0 0 .5rem}} p{{margin:.25rem 0;color:#444}}
 a{{color:#2451d6}}
+a.back{{display:inline-block;margin:1rem 0 .5rem;padding:.5rem 1.25rem;border-radius:.5rem;
+background:#0f6b5c;color:#fff;text-decoration:none;font-weight:600}}
 @media (prefers-color-scheme:dark){{body{{background:#0b0f19;color:#eee}}p{{color:#bbb}}
 a{{color:#8fb0ff}}}}
 </style></head>
@@ -513,7 +538,8 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             title="Connected" if ok else "Not connected",
             message=html.escape(message),
             next=(
-                f'You can close this tab, or <a href="{html.escape(back)}">go back to Upshot</a>.'
+                f'<a class="back" href="{html.escape(back)}">Back to Upshot</a>'
+                "<br>You can close this tab."
                 if back
                 else "You can close this tab."
             ),
