@@ -53,7 +53,7 @@ def show(payload: dict[str, Any]) -> None:
         )
     else:
         toaster = WindowsToaster(str(aumid or payload.get("app_id") or APP_ID))
-    toast = Toast()
+    toast = Toast(group=payload.get("group") or None)
     toast.text_fields = [str(payload.get("title", "")), str(payload.get("body", ""))]
     # Each press launches an upshot: link, which the installer registers and a short
     # process hands to the running app (app/actions.py, D70): it works long after this
@@ -77,6 +77,19 @@ def show(payload: dict[str, Any]) -> None:
     time.sleep(SETTLE_S)
 
 
+def withdraw(payload: dict[str, Any]) -> None:
+    """Remove a meeting's notifications from the screen and the Action Center."""
+    from windows_toasts import InteractableWindowsToaster, WindowsToaster
+
+    aumid = payload.get("aumid")
+    toaster = (
+        InteractableWindowsToaster("Upshot", notifierAUMID=str(aumid))
+        if aumid
+        else WindowsToaster(str(payload.get("app_id") or APP_ID))
+    )
+    toaster.remove_toast_group(str(payload["remove_group"]))
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments:
@@ -87,6 +100,13 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"bad payload: {exc}", file=sys.stderr)
         return 2
+    if payload.get("remove_group"):
+        try:
+            withdraw(payload)
+        except Exception as exc:
+            print(f"withdraw failed: {exc}", file=sys.stderr)
+            return 1
+        return 0
     try:
         show(payload)
     except Exception as exc:

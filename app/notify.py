@@ -117,6 +117,10 @@ class BaseNotifier:
     def show(self, toast: Toast) -> None:
         raise NotImplementedError
 
+    def withdraw(self, meeting_id: str) -> None:
+        """Take back every notification about this meeting (it was deleted): a
+        "Transcribing..." left on screen for a meeting that is gone misleads."""
+
     # -- the vocabulary the app uses
 
     def recording_started(self, meeting_id: str, title: str) -> None:
@@ -328,6 +332,7 @@ class FakeNotifier(BaseNotifier):
         super().__init__(debounce_s=debounce_s, clock=clock, app_in_front=app_in_front)
         self.shown = []
         self.activations = []
+        self.withdrawn: list[str] = []
         self.on_action = on_action
         self.name = "fake"
 
@@ -349,6 +354,10 @@ class FakeNotifier(BaseNotifier):
 
     def titles(self) -> Sequence[str]:
         return [toast.title for toast in self.shown]
+
+    def withdraw(self, meeting_id: str) -> None:
+        self.withdrawn.append(meeting_id)
+        self.shown = [toast for toast in self.shown if toast_meeting(toast) != meeting_id]
 
 
 class WindowsToastNotifier(BaseNotifier):
@@ -388,6 +397,8 @@ class WindowsToastNotifier(BaseNotifier):
                 "title": toast.title,
                 "body": toast.body,
                 "launch": toast.link(),
+                # Grouped by meeting, so deleting it can take its notifications back.
+                "group": toast_group(toast_meeting(toast)),
                 "buttons": [
                     {"label": button.label, "action": button.action, "launch": button.link()}
                     for button in toast.buttons
@@ -441,6 +452,34 @@ class WindowsToastNotifier(BaseNotifier):
             target=self._reap, args=(process, toast), name="toast", daemon=True
         ).start()
 
+    def withdraw(self, meeting_id: str) -> None:
+        group = toast_group(meeting_id)
+        payload = json.dumps(
+            {
+                "remove_group": group,
+                "app_id": self.app_id,
+                "aumid": self.app_id if getattr(sys, "frozen", False) else None,
+            }
+        )
+        command = (
+            [sys.executable, "--toast", payload]
+            if getattr(sys, "frozen", False)
+            else [sys.executable, "-m", "app.notify_toast", payload]
+        )
+        try:
+            process = self.spawn(command)
+        except Exception as exc:
+            log.warning("could not withdraw the notifications of %s: %s", meeting_id, exc)
+            return
+        log.info("notifications of %s withdrawn", meeting_id)
+        if process is not None:
+            threading.Thread(
+                target=self._reap,
+                args=(process, Toast(title="withdraw", key=f"withdraw:{meeting_id}")),
+                name="toast",
+                daemon=True,
+            ).start()
+
     def _reap(self, process: Any, toast: Toast) -> None:
         try:
             _, errors = process.communicate(timeout=TOAST_TIMEOUT_S)
@@ -457,6 +496,23 @@ class WindowsToastNotifier(BaseNotifier):
         elif errors:
             # The child fell back to a toast without buttons and said so.
             log.warning("toast %r: %s", toast.key, errors.strip())
+
+
+def toast_meeting(toast: Toast) -> str | None:
+    """The meeting a notification is about: its own, or its buttons'."""
+    if toast.meeting_id:
+        return toast.meeting_id
+    return next((b.meeting_id for b in toast.buttons if b.meeting_id), None)
+
+
+def toast_group(meeting_id: str | None) -> str | None:
+    """Windows' group for a meeting's notifications: short, since a group is at most 64
+    characters and a meeting id can be longer."""
+    if not meeting_id:
+        return None
+    import hashlib
+
+    return "m-" + hashlib.sha1(meeting_id.encode("utf-8")).hexdigest()[:20]
 
 
 def make_notifier(config: Config, *, events: Any = None, clock: Any = None) -> BaseNotifier:

@@ -1215,6 +1215,9 @@ def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
         raise HTTPException(409, "this meeting is still recording")
 
     svc.queue.request_delete(meeting_id)
+    if svc.notifier is not None:
+        # "Transcribing..." for a meeting that is gone would mislead.
+        svc.notifier.withdraw(meeting_id)
     if svc.queue.running_for(meeting_id) is not None:
         with contextlib.suppress(OSError):
             meeting.path.mkdir(parents=True, exist_ok=True)
