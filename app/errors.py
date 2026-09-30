@@ -68,6 +68,10 @@ class Preempted(UpshotError):
     """A stage yielded to a recording. Releases the job without counting an attempt."""
 
 
+class Cancelled(UpshotError):
+    """The meeting is being deleted: stop now. The job goes with the meeting."""
+
+
 class IllegalTransition(UpshotError):
     """A state transition that is not in LEGAL_TRANSITIONS. Always a bug."""
 

@@ -203,7 +203,10 @@ def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
 
         decision = override(str(chosen))
     else:
-        decision = classifier_for(ctx).classify(inputs)
+        classifier = classifier_for(ctx)
+        if hasattr(classifier, "stop_check"):
+            classifier.stop_check = ctx.stop_if_deleted  # a deletion stops it at once
+        decision = classifier.classify(inputs)
     log.info("%s", decision.log_line())
     ctx.metrics["language_detection_s"] = round(decision.seconds, 2)
     return decision
@@ -247,6 +250,10 @@ def run(ctx: StageContext) -> None:
         ctx.checkpoint()
         decision = _classify(ctx, asr_inputs)
         backend = backend_for(ctx, decision.route)
+        if hasattr(backend, "stop_check"):
+            # Between segments, a deletion stops the track; the recorder does not (a track
+            # cannot be resumed part-way, so it waits for the next checkpoint).
+            backend.stop_check = ctx.stop_if_deleted
         for _track, wav in sorted(asr_inputs.items()):
             ctx.checkpoint()
             track_segments = backend.transcribe(

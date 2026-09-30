@@ -181,6 +181,10 @@ def start_background(services: Services) -> None:
     # Nothing is recording yet in a process that has just started: every meeting still
     # marked "recording" is left from one that ended (D76).
     services.meetings.recover_orphans()
+    # A deletion asked for while a stage ran, and the app closed before it stopped.
+    finished = services.meetings.finish_interrupted_deletes()
+    if finished:
+        log.info("finished deleting %d meeting(s) from the last run", finished)
     _check_speech_models(services)
     if services.worker is not None:
         services.worker.start()

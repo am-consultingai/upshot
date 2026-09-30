@@ -35,6 +35,7 @@ import numpy as np
 
 from app.asr.models import CLASSIFIER, HEBREW, HEBREW_LANGUAGE, OTHER, require
 from app.config import Config
+from app.errors import Cancelled
 from app.log import get
 
 log = get(__name__)
@@ -329,6 +330,8 @@ class WhisperClassifier:
         self.read_speech = read_speech or speech_of
         self.loads = 0
         self.unloads = 0
+        #: Called between windows; raises to stop (the meeting is being deleted).
+        self.stop_check: Callable[[], None] | None = None
 
     def classify(self, inputs: Mapping[str, Path]) -> LanguageDecision:
         started = time.monotonic()
@@ -344,6 +347,8 @@ class WhisperClassifier:
             answers: list[list[tuple[str, float]]] = []
             sampled: list[Window] = []
             for window, audio in windows:
+                if self.stop_check is not None:
+                    self.stop_check()
                 _lang, _p, probs = model.detect_language(audio=audio)
                 answer = [(str(lang), float(p)) for lang, p in probs]
                 answers.append(answer)
@@ -394,15 +399,29 @@ def _classify_in_child(data: dict[str, Any], inputs: dict[str, str]) -> dict[str
     return decision.as_dict()
 
 
-ChildRunner = Callable[[dict[str, Any], dict[str, str]], dict[str, Any]]
+ChildRunner = Callable[..., dict[str, Any]]
 
 
-def spawn_child(data: dict[str, Any], inputs: dict[str, str]) -> dict[str, Any]:
-    """Run ``_classify_in_child`` in a fresh spawned process and wait for it."""
+def spawn_child(
+    data: dict[str, Any],
+    inputs: dict[str, str],
+    stop_check: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """Run ``_classify_in_child`` in a fresh spawned process and wait for it. ``stop_check``
+    is asked every fifth of a second; if it raises, the process is ended at once."""
     import multiprocessing
 
-    with multiprocessing.get_context("spawn").Pool(1) as pool:
-        return dict(pool.apply(_classify_in_child, (data, inputs)))
+    pool = multiprocessing.get_context("spawn").Pool(1)
+    try:
+        pending = pool.apply_async(_classify_in_child, (data, inputs))
+        while not pending.ready():
+            if stop_check is not None:
+                stop_check()
+            pending.wait(0.2)
+        return dict(pending.get())
+    finally:
+        pool.terminate()
+        pool.join()
 
 
 class IsolatedClassifier:
@@ -421,19 +440,29 @@ class IsolatedClassifier:
         self.config = config
         self.run_child = run_child or spawn_child
         self.isolated = False
+        self.stop_check: Callable[[], None] | None = None
 
     def classify(self, inputs: Mapping[str, Path]) -> LanguageDecision:
         from app.asr.local import planned_device
 
         require(self.config, CLASSIFIER)  # a missing model is said here, not in the child
         if planned_device(self.config) != "cpu":
-            return WhisperClassifier(self.config).classify(inputs)
+            return self._in_place(inputs)
         try:
             answer = self.run_child(
-                self.config.as_dict(), {track: str(wav) for track, wav in inputs.items()}
+                self.config.as_dict(),
+                {track: str(wav) for track, wav in inputs.items()},
+                self.stop_check,
             )
+        except Cancelled:
+            raise
         except Exception as exc:
             log.warning("classifier: its own process failed (%s); running it in place", exc)
-            return WhisperClassifier(self.config).classify(inputs)
+            return self._in_place(inputs)
         self.isolated = True
         return LanguageDecision.from_dict(answer)
+
+    def _in_place(self, inputs: Mapping[str, Path]) -> LanguageDecision:
+        classifier = WhisperClassifier(self.config)
+        classifier.stop_check = self.stop_check
+        return classifier.classify(inputs)

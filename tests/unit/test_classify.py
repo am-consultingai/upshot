@@ -287,7 +287,7 @@ def test_on_the_cpu_the_classifier_runs_in_a_process_of_its_own(app_home: Path) 
     place_classifier(app_home)
     sent: list[tuple[dict[str, Any], dict[str, str]]] = []
 
-    def child(data: dict[str, Any], inputs: dict[str, str]) -> dict[str, Any]:
+    def child(data: dict[str, Any], inputs: dict[str, str], *rest: Any) -> dict[str, Any]:
         sent.append((data, inputs))
         return decide({"es": 0.97, "he": 0.03}).as_dict()
 
