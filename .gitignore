@@ -64,7 +64,10 @@ frontend/.shot.mjs
 # Scratch material for a redesign, not part of the product.
 .ui-research/
 
-# Product research notes (third-party integrations, pricing, platform policies).
-# Working findings behind decisions; a finished decision goes to docs/DECISIONS.md.
+# Design documents, decisions, plans and product research live in the private
+# am-consultingai/upshot-internal repository, cloned here as internal/. .research is a
+# symlink into it, kept so older notes and tools that name that path still work.
+internal/
+.research
 .research/
 .cache/

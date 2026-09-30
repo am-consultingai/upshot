@@ -14,20 +14,12 @@ scripts\windows\run-app.cmd
 
 It works out what needs downloading, asks once, then starts the app and opens it in the
 browser. Everything it downloads stays in `%LOCALAPPDATA%\upshot-win`.
-[`docs/windows-run.md`](docs/windows-run.md) has the details.
 
 To try it on Linux with fake audio, transcription and summaries:
 
 ```bash
 bash scripts/demo.sh
 ```
-
-## Documentation
-
-- [`docs/current-state.md`](docs/current-state.md): what works today and what is not proven yet
-- [`docs/DESIGN.md`](docs/DESIGN.md): what the application is and why it is built this way
-- [`docs/DECISIONS.md`](docs/DECISIONS.md): every judgment call, with its reasoning
-- [`docs/known-issues.md`](docs/known-issues.md): open problems
 
 ## Acknowledgements
 
@@ -43,7 +35,7 @@ How Upshot uses them:
   on an NVIDIA GPU or on the CPU. Meetings in any other language go to OpenAI's Whisper
   large-v3 ([`Systran/faster-whisper-large-v3`](https://huggingface.co/Systran/faster-whisper-large-v3)),
   and Whisper small ([`Systran/faster-whisper-small`](https://huggingface.co/Systran/faster-whisper-small))
-  first tells which language a meeting was in (docs/DECISIONS.md D80). All of it runs
+  first tells which language a meeting was in. All of it runs
   locally through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), so no
   audio is sent anywhere to be transcribed.
 - **How it gets there.** The models are not part of this repository or the application.
