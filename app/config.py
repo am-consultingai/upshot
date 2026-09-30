@@ -42,8 +42,7 @@ DEFAULTS: dict[str, Any] = {
     "data_root": None,  # null → <app home>/meetings
     "ffmpeg_path": None,
     "glossary_path": None,  # null → <app home>/glossary.yaml
-    "profile": "auto",  # auto|gpu-live|cpu-deferred|remote-worker
-    "worker_url": None,
+    "profile": "auto",  # auto|gpu-live|cpu-deferred
     "job_policy": "auto",  # auto|asap|after_meeting|when_idle|scheduled
     "ui": {
         "language": "en",
@@ -63,7 +62,7 @@ DEFAULTS: dict[str, Any] = {
     # of a Hebrew meeting unless the user found the setting first.
     "summary": {"language": "auto"},  # en|he|auto
     "asr": {
-        "backend": "local",  # local|remote|fake
+        "backend": "local",  # local|fake
         "model_path": None,
         # An existing CUDA library folder (DESIGN.md §2). Without this the probe only
         # looks in the app home, the standard toolkit paths and the nvidia-* wheels, so a
@@ -76,7 +75,6 @@ DEFAULTS: dict[str, Any] = {
         # beam_size. Measured on a 103 s Hebrew clip: half the time, the same words
         # (2026-09-27). The GPU always uses beam_size, where the extra beams cost little.
         "cpu_fast": False,
-        "remote_url": None,
         "initial_prompt_max_tokens": 200,
         "diarization": "off",  # off|onnx|fake — splits THEM into THEM_1/2/3
         "diarization_dir": None,
@@ -300,11 +298,11 @@ LLM_PROVIDERS: tuple[str, ...] = (
 )
 
 _ENUMS: dict[str, tuple[str, ...]] = {
-    "profile": ("auto", "gpu-live", "cpu-deferred", "remote-worker"),
+    "profile": ("auto", "gpu-live", "cpu-deferred"),
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),
     "ui.language": ("en", "he"),
     "summary.language": ("en", "he", "auto"),
-    "asr.backend": ("local", "remote", "fake"),
+    "asr.backend": ("local", "fake"),
     "asr.device": ("auto", "cpu", "cuda"),
     "asr.diarization": ("off", "onnx", "fake"),
     "audio.capture": ("wasapi", "synthetic"),
@@ -328,7 +326,6 @@ ENV_ALIASES: dict[str, str] = {
     "WHISPER_MODEL_PATH": "asr.model_path",
     "FFMPEG_PATH": "ffmpeg_path",
     "OLLAMA_MODEL": "llm.local_model",
-    "WORKER_URL": "worker_url",
 }
 
 
@@ -449,6 +446,28 @@ def _retire_providers(data: dict[str, Any]) -> list[str]:
             f"The fallback summarizer {fallback!r} is no longer available in this version, "
             "so there is no fallback now. Choose one in Settings, AI agents."
         )
+    return notices
+
+
+def _retire_remote_worker(data: dict[str, Any]) -> list[str]:
+    """Remote-worker mode was removed (D81): an old config naming it transcribes here.
+
+    Without this, a saved ``asr.backend = "remote"`` or ``profile = "remote-worker"`` would
+    fail validation and the application would not start. Its two URL keys are dropped.
+    """
+    notices: list[str] = []
+    if data.get("profile") == "remote-worker":
+        data["profile"] = "auto"
+    asr = data.get("asr")
+    if isinstance(asr, dict):
+        asr.pop("remote_url", None)
+        if asr.get("backend") == "remote":
+            asr["backend"] = "local"
+            notices.append(
+                "Transcription on another computer is no longer available in this version, "
+                "so meetings are transcribed on this one."
+            )
+    data.pop("worker_url", None)
     return notices
 
 
@@ -623,7 +642,7 @@ class Config:
             for dotted, value in overrides.items():
                 _set(data, dotted, value)
                 cfg_from_env.pop(dotted, None)  # an explicit override is not the env
-        notices = _retire_providers(data)
+        notices = _retire_providers(data) + _retire_remote_worker(data)
         cfg = cls(data, source_file=path, from_env=cfg_from_env)
         cfg._notices.extend(notices)
         if predates_setup and "setup.done" not in cfg_from_env:
