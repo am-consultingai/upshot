@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import random
 import sqlite3
 import threading
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
@@ -45,7 +46,38 @@ MEETING_COLUMNS = (
     "description",
     "planned_start",
     "planned_end",
+    "calendar_account_id",
 )
+
+#: A meeting the user can see: one that belongs to no calendar account, or to at least one
+#: that is visible and not removed (D82). Hiding an account hides everything of it; a
+#: meeting on two accounts stays while either is shown. ``{m}`` is the meetings alias.
+VISIBLE = (
+    "(NOT EXISTS (SELECT 1 FROM meeting_calendar_accounts x WHERE x.meeting_id = {m}.id)"
+    " OR EXISTS (SELECT 1 FROM meeting_calendar_accounts x"
+    " JOIN calendar_accounts ca ON ca.id = x.account_id"
+    " WHERE x.meeting_id = {m}.id AND ca.visible = 1 AND ca.removed_at IS NULL))"
+)
+
+
+def visible(alias: str = "meetings") -> str:
+    return VISIBLE.format(m=alias)
+
+
+@contextlib.contextmanager
+def transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """One transaction on an autocommit connection (``isolation_level=None``), where
+    ``with conn`` makes none. The connection's own lock keeps other threads' statements
+    out of the middle of it. Not reentrant: do not nest."""
+    lock = getattr(conn, "up_lock", None) or threading.RLock()
+    with lock:
+        conn.execute("BEGIN")
+        try:
+            yield
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +107,8 @@ class Meeting:
     description: str | None = None
     planned_start: str | None = None
     planned_end: str | None = None
+    #: The calendar account of the event this meeting is matched to (D82).
+    calendar_account_id: str | None = None
 
     @property
     def path(self) -> Path:
@@ -489,6 +523,14 @@ class Dao:
         row = self.conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
         return _row_to_meeting(row) if row else None
 
+    def visible_meeting(self, meeting_id: str) -> Meeting | None:
+        """The meeting, unless it belongs only to hidden calendar accounts: what every
+        screen, the assistant and the API ask, so a hidden meeting is simply not there."""
+        row = self.conn.execute(
+            f"SELECT * FROM meetings WHERE id = ? AND {visible()}", (meeting_id,)
+        ).fetchone()
+        return _row_to_meeting(row) if row else None
+
     def require_meeting(self, meeting_id: str) -> Meeting:
         meeting = self.get_meeting(meeting_id)
         if meeting is None:
@@ -504,9 +546,37 @@ class Dao:
         q: str | None = None,
         limit: int = 200,
         offset: int = 0,
+        accounts: Sequence[str] | None = None,
+        include_hidden: bool = False,
     ) -> list[Meeting]:
+        """Newest first. Meetings of hidden calendar accounts are left out unless
+        ``include_hidden`` (the pipeline, retention and repairs see everything).
+
+        ``accounts`` narrows to meetings on any of those accounts; ``"none"`` among them
+        means meetings on no account (the library filter, D82).
+        """
         where: list[str] = []
         args: list[Any] = []
+        if not include_hidden:
+            where.append(visible())
+        if accounts is not None:
+            named = [a for a in accounts if a != "none"]
+            either: list[str] = []
+            if named:
+                marks = ",".join("?" for _ in named)
+                either.append(
+                    "EXISTS (SELECT 1 FROM meeting_calendar_accounts x "
+                    f"WHERE x.meeting_id = meetings.id AND x.account_id IN ({marks}))"
+                )
+                args.extend(named)
+            if "none" in accounts:
+                either.append(
+                    "NOT EXISTS (SELECT 1 FROM meeting_calendar_accounts x "
+                    "WHERE x.meeting_id = meetings.id)"
+                )
+            if not either:
+                return []
+            where.append(f"({' OR '.join(either)})")
         if frm:
             where.append("started_at >= ?")
             args.append(frm)
@@ -558,6 +628,43 @@ class Dao:
             (str(target), iso(self.clock.now()), meeting_id),
         )
         return replace(meeting, state=str(target))
+
+    def set_calendar_accounts(
+        self, meeting_id: str, account_id: str | None, accounts: Sequence[str] = ()
+    ) -> None:
+        """Which calendar accounts this meeting belongs to: the one whose copy of the event
+        it is matched to, and every account the same event appears on (D82)."""
+        members = {a for a in (account_id, *accounts) if a}
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE meetings SET calendar_account_id = ? WHERE id = ?",
+                (account_id, meeting_id),
+            )
+            self.conn.execute(
+                "DELETE FROM meeting_calendar_accounts WHERE meeting_id = ?", (meeting_id,)
+            )
+            for member in sorted(members):
+                self.conn.execute(
+                    "INSERT INTO meeting_calendar_accounts(meeting_id, account_id) VALUES (?, ?)",
+                    (meeting_id, member),
+                )
+
+    def calendar_accounts_of(self, meeting_id: str) -> list[str]:
+        rows = self.conn.execute(
+            "SELECT account_id FROM meeting_calendar_accounts WHERE meeting_id = ? "
+            "ORDER BY account_id",
+            (meeting_id,),
+        ).fetchall()
+        return [r["account_id"] for r in rows]
+
+    def calendar_accounts_by_meeting(self) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for row in self.conn.execute(
+            "SELECT meeting_id, account_id FROM meeting_calendar_accounts "
+            "ORDER BY meeting_id, account_id"
+        ).fetchall():
+            out.setdefault(row["meeting_id"], []).append(row["account_id"])
+        return out
 
     def titles_starting_with(self, prefix: str) -> set[str]:
         """Every meeting title that begins with ``prefix`` (the default name's clashes)."""
@@ -671,7 +778,7 @@ class Dao:
 
         for row in self.conn.execute(
             "SELECT id, title FROM meetings "
-            "WHERE title IS NOT NULL AND lower(title) LIKE lower(?) "
+            f"WHERE title IS NOT NULL AND lower(title) LIKE lower(?) AND {visible()} "
             "ORDER BY started_at DESC LIMIT ?",
             (like, limit),
         ).fetchall():
@@ -680,8 +787,10 @@ class Dao:
             )
 
         for row in self.conn.execute(
-            "SELECT meeting_id, what, at_ms FROM action_items "
-            "WHERE lower(what) LIKE lower(?) ORDER BY created_at DESC LIMIT ?",
+            "SELECT a.meeting_id, a.what, a.at_ms FROM action_items a "
+            "JOIN meetings m ON m.id = a.meeting_id "
+            f"WHERE lower(a.what) LIKE lower(?) AND {visible('m')} "
+            "ORDER BY a.created_at DESC LIMIT ?",
             (like, limit),
         ).fetchall():
             hits.append(
@@ -713,7 +822,7 @@ class Dao:
                 # cascade) must not come back as a hit.
                 "SELECT meeting_id, speaker, at_ms, text FROM search_fts "
                 "WHERE search_fts MATCH ? AND kind = ? "
-                "AND meeting_id IN (SELECT id FROM meetings) LIMIT ?",
+                f"AND meeting_id IN (SELECT id FROM meetings WHERE {visible()}) LIMIT ?",
                 (match, kind, limit),
             ).fetchall()
             return [
@@ -730,13 +839,16 @@ class Dao:
         if kind == "summary":
             rows = self.conn.execute(
                 "SELECT meeting_id, '' AS speaker, 0 AS at_ms, text FROM meeting_texts "
-                "WHERE kind = 'summary' AND lower(text) LIKE lower(?) LIMIT ?",
+                "WHERE kind = 'summary' AND lower(text) LIKE lower(?) "
+                f"AND meeting_id IN (SELECT id FROM meetings WHERE {visible()}) LIMIT ?",
                 (f"%{query}%", limit),
             ).fetchall()
         else:
             rows = self.conn.execute(
                 "SELECT meeting_id, speaker, at_ms, text FROM transcript_turns "
-                "WHERE lower(text) LIKE lower(?) ORDER BY meeting_id, seq LIMIT ?",
+                "WHERE lower(text) LIKE lower(?) "
+                f"AND meeting_id IN (SELECT id FROM meetings WHERE {visible()}) "
+                "ORDER BY meeting_id, seq LIMIT ?",
                 (f"%{query}%", limit),
             ).fetchall()
         return [
@@ -911,10 +1023,14 @@ class Dao:
         meeting_id: str | None = None,
         open_only: bool = False,
         limit: int = 500,
+        include_hidden: bool = False,
     ) -> list[ActionItem]:
-        """Across every meeting unless one is named. Mine first, newest meeting first."""
+        """Across every meeting unless one is named. Mine first, newest meeting first.
+        Those of meetings on hidden calendar accounts are left out (D82)."""
         where: list[str] = []
         args: list[Any] = []
+        if not include_hidden:
+            where.append(visible("m"))
         if meeting_id:
             where.append("a.meeting_id = ?")
             args.append(meeting_id)
@@ -936,16 +1052,18 @@ class Dao:
         it draws, and a library of two hundred meetings is not two hundred queries.
         """
         rows = self.conn.execute(
-            "SELECT meeting_id, COUNT(*) AS total, "
-            "SUM(CASE WHEN done_at IS NULL THEN 1 ELSE 0 END) AS still_open "
-            "FROM action_items GROUP BY meeting_id"
+            "SELECT a.meeting_id AS meeting_id, COUNT(*) AS total, "
+            "SUM(CASE WHEN a.done_at IS NULL THEN 1 ELSE 0 END) AS still_open "
+            "FROM action_items a JOIN meetings m ON m.id = a.meeting_id "
+            f"WHERE {visible('m')} GROUP BY a.meeting_id"
         ).fetchall()
         return {row["meeting_id"]: (int(row["total"]), int(row["still_open"])) for row in rows}
 
     def action_item(self, item_id: int) -> ActionItem | None:
         row = self.conn.execute(
             "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at "
-            "FROM action_items a JOIN meetings m ON m.id = a.meeting_id WHERE a.id = ?",
+            f"FROM action_items a JOIN meetings m ON m.id = a.meeting_id "
+            f"WHERE a.id = ? AND {visible('m')}",
             (item_id,),
         ).fetchone()
         return _row_to_action(row) if row else None
@@ -999,7 +1117,8 @@ class Dao:
         counts: dict[str, int] = {}
         spelling: dict[str, str] = {}
         for row in self.conn.execute(
-            "SELECT tag FROM meeting_tags ORDER BY created_at, rowid"
+            "SELECT t.tag AS tag FROM meeting_tags t JOIN meetings m ON m.id = t.meeting_id "
+            f"WHERE {visible('m')} ORDER BY t.created_at, t.rowid"
         ).fetchall():
             key = row["tag"].casefold()
             spelling.setdefault(key, row["tag"])

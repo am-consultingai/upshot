@@ -171,7 +171,7 @@ def plan(
     doomed_meetings: list[Candidate] = []
     spared: list[tuple[str, str]] = []
 
-    for meeting in dao.list_meetings(limit=100_000):
+    for meeting in dao.list_meetings(limit=100_000, include_hidden=True):
         age = age_days(meeting, now)
         old_enough_to_purge = transcript_days is not None and age >= transcript_days
         old_enough_to_strip = audio_days is not None and age >= audio_days

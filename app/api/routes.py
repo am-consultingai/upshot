@@ -2495,7 +2495,7 @@ def test_router() -> APIRouter:
         created: list[str] = []
         if body.get("reset"):
             # Test isolation: each spec starts from an empty library.
-            for meeting in svc.dao.list_meetings(limit=10_000):
+            for meeting in svc.dao.list_meetings(limit=10_000, include_hidden=True):
                 svc.dao.clear_turns(meeting.id)
             svc.conn.execute("DELETE FROM jobs")
             # Cascades from meetings too; said here so the reset does not depend on
@@ -2737,7 +2737,10 @@ def test_router() -> APIRouter:
                 )
                 # By seq, which is the order they were given in — not the inbox's order,
                 # which puts mine first.
-                stored = sorted(svc.dao.action_items(meeting_id=meeting.id), key=lambda a: a.seq)
+                stored = sorted(
+                    svc.dao.action_items(meeting_id=meeting.id, include_hidden=True),
+                    key=lambda a: a.seq,
+                )
                 pairs = list(zip(model, stored, strict=False))
                 for entry in entries:
                     if entry.get("source") == "user":

@@ -323,7 +323,9 @@ class MeetingService:
         from app.audio.writer import track_files
 
         repaired: list[str] = []
-        for meeting in self.dao.list_meetings(state=MeetingState.RECORDING, limit=1000):
+        for meeting in self.dao.list_meetings(
+            state=MeetingState.RECORDING, limit=1000, include_hidden=True
+        ):
             if meeting.id == recording:
                 continue
             tracks = track_files(meeting.path)
@@ -374,7 +376,7 @@ class MeetingService:
     def finish_interrupted_deletes(self) -> int:
         """At start: meetings whose deletion was asked for as the app closed. How many."""
         done = 0
-        for meeting in self.dao.list_meetings(limit=100_000):
+        for meeting in self.dao.list_meetings(limit=100_000, include_hidden=True):
             if (Path(meeting.folder) / DELETING_MARKER).exists():
                 try:
                     self.purge(meeting)
