@@ -65,8 +65,7 @@ export interface SetupBackend {
   snapshot(): SetupSnapshot;
   subscribe(listener: () => void): () => void;
 
-  /** `profile`: a browser profile to open Google's page in (z8tj1hca86). */
-  connectCalendar(profile?: string): void;
+  connectCalendar(): void;
   cancelCalendar(): void;
 
   /** Install, then go straight on to sign-in: ticking the card is the only click. */
