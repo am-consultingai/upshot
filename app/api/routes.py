@@ -1646,12 +1646,11 @@ def calendar_of(request: Request) -> Any:
     """The Google connection, made on first use: most runs never touch it."""
     svc = services_of(request)
     if svc.calendar is None:
-        from app.gcal.oauth import CalendarAuth, back_link
+        from app.gcal.oauth import CalendarAuth
 
         svc.calendar = CalendarAuth(
             svc.config.secrets,
             publish=lambda **payload: svc.events.publish("calendar", **payload),
-            app_url=back_link(svc.config.server_port),
         )
     return svc.calendar
 

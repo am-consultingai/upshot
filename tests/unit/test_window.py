@@ -22,6 +22,7 @@ class FakeDesktop:
         self.linger = linger
         self.foreground: list[int] = []
         self.refuse_foreground: set[int] = set()
+        self.keys: list[tuple[int, int]] = []
 
     def add(self, hwnd: int, title: str = window.WINDOW_TITLE) -> None:
         self.windows[hwnd] = {"title": title, "closing": None}
@@ -60,6 +61,9 @@ class FakeDesktop:
     def PostMessage(self, hwnd: int, message: int, *args: Any) -> None:
         self.windows[hwnd]["closing"] = self.linger
 
+    def keybd_event(self, key: int, scan: int, flags: int, extra: int) -> None:
+        self.keys.append((key, flags))
+
     def SetForegroundWindow(self, hwnd: int) -> None:
         if hwnd in self.refuse_foreground or hwnd not in self.windows:
             self.windows.pop(hwnd, None)
@@ -77,8 +81,13 @@ def desktop(monkeypatch: pytest.MonkeyPatch) -> FakeDesktop:
     con = types.ModuleType("win32con")
     con.WM_CLOSE = 0x10  # type: ignore[attr-defined]
     con.SW_RESTORE = 9  # type: ignore[attr-defined]
+    con.VK_MENU = 0x12  # type: ignore[attr-defined]
+    con.KEYEVENTF_KEYUP = 2  # type: ignore[attr-defined]
+    api = types.ModuleType("win32api")
+    api.keybd_event = fake.keybd_event  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "win32gui", gui)
     monkeypatch.setitem(sys.modules, "win32con", con)
+    monkeypatch.setitem(sys.modules, "win32api", api)
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(window, "_closing", set())
     monkeypatch.setattr(window.time, "sleep", lambda s: None)
@@ -128,3 +137,15 @@ def test_a_start_after_a_quit_opens_a_window(
     window.close_all()
     assert window.open_window("http://127.0.0.1:8078/") == "app"
     assert launched, "no new window was started"
+
+
+def test_after_the_sign_in_upshot_is_brought_to_the_front(desktop: FakeDesktop) -> None:
+    """With an Alt press around it, which Windows takes as the user's own switch."""
+    desktop.add(101)
+    assert window.bring_to_front() is True
+    assert desktop.foreground == [101]
+    assert desktop.keys == [(0x12, 0), (0x12, 2)], "Alt down, then up"
+
+
+def test_nothing_to_bring_forward_without_a_window(desktop: FakeDesktop) -> None:
+    assert window.bring_to_front() is False and desktop.keys == []
