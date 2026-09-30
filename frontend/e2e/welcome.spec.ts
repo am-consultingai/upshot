@@ -326,3 +326,31 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     if (step !== steps.at(-1)) await forwardButton().click();
   }
 });
+
+test("a_connected_calendar_can_be_swapped_for_another_account_in_setup", async ({ page }) => {
+  // Connected already, as a second pass through setup finds it; then another account.
+  let account = "dana@example.com";
+  const status = () => ({
+    configured: true, state: "connected", account, auth_url: null, error: null,
+    scope: "", opens_externally: true,
+  });
+  await page.route("**/api/calendar/status", (route) => route.fulfill({ json: status() }));
+  let connects = 0;
+  await page.route("**/api/calendar/connect", (route) => {
+    connects += 1;
+    account = "noa@example.com"; // Google's account chooser, a different account picked
+    return route.fulfill({
+      json: { ...status(), state: "connecting", auth_url: "https://accounts.google.com/x", opened: true },
+    });
+  });
+  await gotoApp(page, "/welcome");
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("calendar-connected")).toContainText("dana@example.com");
+
+  await page.getByTestId("calendar-switch").click();
+  expect(connects).toBe(1);
+  // The new account arrives and setup moves on by itself, as after a first connect.
+  await expect(page.getByTestId("setup-step-services")).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId("setup-back").click();
+  await expect(page.getByTestId("calendar-connected")).toContainText("noa@example.com");
+});

@@ -51,6 +51,9 @@ class FakeGoogle:
         self.expires_in = 3600
         #: Called while the code is exchanged: what a poll sees in that moment.
         self.during_exchange: Any = None
+        #: Who signs in, and the refresh token the next code exchange hands out.
+        self.account = "dana@example.com"
+        self.next_refresh = "r-1"
 
     def consent(self, auth_url: str) -> dict[str, str]:
         query = {k: v[0] for k, v in parse_qs(urlparse(auth_url).query).items()}
@@ -87,11 +90,12 @@ class FakeGoogle:
                     return httpx.Response(400, json={"error": "invalid_grant"})
                 if form["redirect_uri"] != self.redirect_uri:
                     return httpx.Response(400, json={"error": "redirect_uri_mismatch"})
+                self.refresh_tokens.add(self.next_refresh)
                 return httpx.Response(
                     200,
                     json={
                         "access_token": self._access(),
-                        "refresh_token": "r-1",
+                        "refresh_token": self.next_refresh,
                         "expires_in": self.expires_in,
                         "scope": self.granted_scope,
                         "token_type": "Bearer",
@@ -112,7 +116,7 @@ class FakeGoogle:
             bearer = request.headers.get("authorization", "").removeprefix("Bearer ")
             if bearer not in self.access_tokens:
                 return httpx.Response(401, json={"error": {"code": 401}})
-            return httpx.Response(200, json={"summary": "dana@example.com", "items": []})
+            return httpx.Response(200, json={"summary": self.account, "items": []})
         return httpx.Response(404)
 
 
@@ -275,6 +279,44 @@ def test_the_done_page_carries_the_back_link(google: FakeGoogle, clock: Clock) -
     finally:
         calendar.close()
     assert '<a class="back" href="upshot:open">Back to Upshot</a>' in page
+
+
+def test_another_account_replaces_the_first_and_revokes_it(
+    auth: CalendarAuth, google: FakeGoogle
+) -> None:
+    """Setup's "Use a different account": the new account in, the old one's access
+    revoked, and the change announced so its cached events are dropped."""
+    connect(auth, google)
+    google.account, google.next_refresh = "noa@example.com", "r-2"
+    auth.events.clear()  # type: ignore[attr-defined]
+    connect(auth, google)
+    status = auth.status()
+    assert (status["state"], status["account"]) == ("connected", "noa@example.com")
+    assert auth._secrets.get(REFRESH_SECRET) == "r-2"
+    assert google.revoked == ["r-1"], "the first account's access is revoked"
+    assert {"state": "connected", "account_changed": True} in auth.events  # type: ignore[attr-defined]
+
+
+def test_the_same_account_again_revokes_nothing(auth: CalendarAuth, google: FakeGoogle) -> None:
+    """Revoking the older token of the same account would revoke its grant, new token too."""
+    connect(auth, google)
+    google.next_refresh = "r-2"
+    auth.events.clear()  # type: ignore[attr-defined]
+    connect(auth, google)
+    assert google.revoked == [] and auth._secrets.get(REFRESH_SECRET) == "r-2"
+    assert {"state": "connected"} in auth.events  # type: ignore[attr-defined]
+
+
+def test_switching_while_connected_keeps_the_account_until_it_succeeds(
+    auth: CalendarAuth, google: FakeGoogle
+) -> None:
+    connect(auth, google)
+    auth.start()
+    assert auth.status()["state"] == "connecting"
+    auth.cancel()
+    status = auth.status()
+    assert (status["state"], status["account"]) == ("connected", "dana@example.com")
+    assert google.revoked == []
 
 
 def test_status_while_waiting_offers_the_url_again(auth: CalendarAuth) -> None:

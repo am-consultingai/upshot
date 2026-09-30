@@ -142,6 +142,9 @@ class CalendarAuth:
         #: "connecting" until that ends: between the two the status read "disconnected"
         #: with no error, and first-run setup took that for a cancel (machine B, 2026-09-30).
         self._finishing = False
+        #: The last completed connection replaced another account's (Use a different
+        #: account): its cached events must go before the new account's arrive.
+        self._switched = False
         self._access: tuple[str, float] | None = None  # token, expires at (monotonic)
         self._error: str | None = None
         #: Set when Google rejects the client itself. Every refresh would fail the same
@@ -272,6 +275,7 @@ class CalendarAuth:
                 self._finishing = True
         if not current:
             return False, "This sign-in has already finished. Go back to Upshot."
+        self._switched = False
         try:
             ok, message = self._finish(pending, params)
         finally:
@@ -279,7 +283,7 @@ class CalendarAuth:
                 self._finishing = False
         with self._lock:
             self._error = None if ok else message
-        self._announce()
+        self._announce(account_changed=self._switched)
         return ok, message
 
     def _finish(self, pending: _Pending, params: dict[str, str]) -> tuple[bool, str]:
@@ -319,11 +323,22 @@ class CalendarAuth:
         if not refresh:
             return False, "Google did not return a lasting token. Connect again."
         self._client_rejected = False
+        previous_refresh = self._secrets.get(REFRESH_SECRET)
+        previous_account = self._secrets.get(ACCOUNT_SECRET)
         self._remember_access(token)
         self._secrets.set(REFRESH_SECRET, str(refresh))
         account = self._account()
         if account:
             self._secrets.set(ACCOUNT_SECRET, account)
+        # Another account than before ("Use a different account" in setup): the old one's
+        # access is revoked, best effort, and its cached events are dropped. Only when
+        # both addresses are known and differ: revoking the same account's older token
+        # would revoke its grant, the new token with it.
+        if previous_account and account and account != previous_account:
+            self._switched = True
+            if previous_refresh and previous_refresh != refresh:
+                self._revoke(previous_refresh)
+            log.info("google calendar: switched to another account")
         self._secrets.delete(LEGACY_NAME_SECRET)
         log.info("google calendar connected")
         return True, "Upshot is connected to your Google Calendar."
@@ -463,12 +478,13 @@ class CalendarAuth:
         self.cancel()
         self._http.close()
 
-    def _announce(self) -> None:
+    def _announce(self, *, account_changed: bool = False) -> None:
         self._connected_cache = None  # every state change passes through here
         if self._publish is None:
             return
         try:
-            self._publish(state=self.status()["state"])
+            extra = {"account_changed": True} if account_changed else {}
+            self._publish(state=self.status()["state"], **extra)
         except Exception as exc:  # an event is advisory; never let it break the flow
             log.warning("calendar event not published: %s", exc)
 

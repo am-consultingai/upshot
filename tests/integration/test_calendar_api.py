@@ -112,3 +112,31 @@ def test_links_leaving_the_app_go_to_the_default_browser(  # type: ignore[no-unt
     for bad in ("file:///C:/Windows/System32/calc.exe", "C:\\Windows\\notepad.exe", "javascript:x"):
         assert client.post("/api/open", json={"url": bad}).status_code == 422, bad
     assert len(opened) == 1, "nothing but http(s) is ever opened"
+
+
+def test_another_account_drops_the_first_ones_cached_events(tmp_path: Path, app_home: Path) -> None:
+    """Setup's "Use a different account": the old account's events leave the cache."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.clock import FakeClock
+    from app.config import default_config
+    from app.db.dao import connect as db_connect
+    from app.events import EventBus
+    from app.gcal.events import CalendarEvent
+    from app.services import build_calendar
+
+    clock = FakeClock()
+    auth, sync, _source = build_calendar(
+        default_config(), db_connect(tmp_path / "index.db"), EventBus(), clock
+    )
+    start = datetime(2026, 9, 30, 9, tzinfo=UTC)
+    sync.store.replace_window(
+        "primary", start, start + timedelta(days=1),
+        [CalendarEvent("primary", "e1", "Standup", start, start + timedelta(minutes=15))],
+        synced_at=start,
+    )  # fmt: skip
+    assert sync.store.count() == 1
+    auth._publish(state="connected")  # the same account again: kept
+    assert sync.store.count() == 1
+    auth._publish(state="connected", account_changed=True)
+    assert sync.store.count() == 0

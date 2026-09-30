@@ -630,6 +630,7 @@ export const en = {
   "firstRun.calendar.connect": "Connect with Google",
   "firstRun.calendar.waiting": "Finish in the Google tab that opened",
   "firstRun.calendar.cancel": "Cancel",
+  "firstRun.calendar.switch": "Use a different account",
   "firstRun.calendar.connectedAs": "Connected as {account}",
   "firstRun.calendar.partial": "Permission wasn't given. Leave the box ticked on Google's page.",
   "firstRun.calendar.cancelled": "Cancelled.",
