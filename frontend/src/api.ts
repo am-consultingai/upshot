@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 import type { Language } from "./lib/transcribeAgain";
+import type { LocaleFormats } from "./lib/timeFormat";
 /** The only place that talks to the backend. Cookie auth + the CSRF double-submit. */
 
 export interface Meeting {
@@ -24,6 +25,11 @@ export interface Meeting {
   tags?: string[];
   /** The stage that failed, so a row can say "summary failed" rather than "failed". */
   failed_stage?: string | null;
+  /** What the user wrote about the meeting, and when they say it starts and ends. */
+  description?: string | null;
+  planned_start?: string | null;
+  planned_end?: string | null;
+  title_source?: string | null;
 }
 
 /** A stretch of the conversation about one thing, as the summarizer divided it. */
@@ -424,6 +430,8 @@ export const api = {
       `/api/meetings?${new URLSearchParams(params).toString()}`,
     ),
   meeting: (id: string) => request<MeetingDetail>(`/api/meetings/${id}`),
+  /** Windows' short date and time patterns (sShortDate, sShortTime). */
+  locale: () => request<LocaleFormats>("/api/locale"),
   summaryHtml: (id: string) =>
     request<string>(`/api/meetings/${id}/summary.html`),
   transcript: (id: string) =>

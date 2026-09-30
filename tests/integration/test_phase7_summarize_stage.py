@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -405,3 +406,18 @@ def test_the_shipped_prompt_asks_for_the_lead_and_the_next_step() -> None:
     assert '<p class="next">' in text
     assert "no heading before it" in text
     assert "`chapters`" in text and "`due_at`" in text and "`detail`" in text
+
+
+def test_the_users_description_reaches_the_prompt(tmp_path: Path) -> None:
+    """Written in the details dialog when recording started: the model reads it first."""
+    h, meeting = prepared(tmp_path, summary__language="en")
+    h.dao.update_meeting(
+        meeting.id, title="Pricing review", title_source="user",
+        description="Decide the new tier.",
+    )  # fmt: skip
+    llm = FakeLlm()
+    summarize.run(h.context(h.dao.require_meeting(meeting.id), JobStage.SUMMARIZE,
+                            services=Services(llm=llm)))  # fmt: skip
+    sent = json.dumps(llm.calls, ensure_ascii=False)
+    assert "Meeting title (from the user): Pricing review" in sent
+    assert "Decide the new tier." in sent

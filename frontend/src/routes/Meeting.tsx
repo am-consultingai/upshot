@@ -11,6 +11,7 @@ import MeetingRail from "../components/MeetingRail";
 import MeetingChips from "../components/MeetingChips";
 import Menu from "../components/Menu";
 import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
+import { openMeetingInfo } from "../components/MeetingInfoDialog";
 import Tooltip from "../components/Tooltip";
 import StateBadge from "../components/StateBadge";
 import { Spinner } from "../components/BusyButton";
@@ -439,6 +440,7 @@ export default function MeetingPage() {
                   },
                 ]
               : []),
+            { id: "details", label: t("meeting.editDetails"), run: () => openMeetingInfo(id) },
             { id: "rename", label: t("meeting.rename"), run: () => setDraft(meeting.data?.title ?? "") },
             { id: "calendar", label: t("meeting.calendarEvent"), run: () => setDetails(true) },
             {
@@ -499,6 +501,17 @@ export default function MeetingPage() {
               </header>
 
               <MeetingChips meeting={meeting.data} onPeople={() => setDetails(true)} />
+
+              {meeting.data.description && (
+                <p
+                  data-testid="meeting-description"
+                  dir="auto"
+                  className="mb-4 whitespace-pre-line text-sm text-secondary"
+                  onDoubleClick={() => openMeetingInfo(id)}
+                >
+                  {meeting.data.description}
+                </p>
+              )}
 
               {/*
                * A proposed match is a question only the user can answer, so it stays on

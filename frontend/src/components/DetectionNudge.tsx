@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type Prompt } from "../api";
 import { useI18n } from "../i18n";
+import { openMeetingInfo } from "./MeetingInfoDialog";
 import BusyButton from "./BusyButton";
 
 /** The app's own name for a process, which is all anyone wants to read. */
@@ -28,7 +29,11 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
           ? { calendar_id: prompt.calendar_id, event_id: prompt.event_id }
           : undefined,
       ),
-    onSuccess: () => queryClient.invalidateQueries(),
+    onSuccess: (started) => {
+      void queryClient.invalidateQueries();
+      // A calendar event brings its own details; otherwise ask, alongside the recording.
+      if (!(prompt?.calendar_id && prompt.event_id)) openMeetingInfo(started.meeting_id);
+    },
   });
   const dismiss = useMutation({
     mutationFn: api.dismissPrompt,

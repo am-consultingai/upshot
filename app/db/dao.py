@@ -42,6 +42,9 @@ MEETING_COLUMNS = (
     "created_at",
     "updated_at",
     "speaker_names",
+    "description",
+    "planned_start",
+    "planned_end",
 )
 
 
@@ -68,6 +71,10 @@ class Meeting:
     error: str | None = None
     #: JSON: transcript speaker slot -> the name the user gave it. See :attr:`speakers`.
     speaker_names: str | None = None
+    #: What the user wrote about it, and when they say it starts and ends (all optional).
+    description: str | None = None
+    planned_start: str | None = None
+    planned_end: str | None = None
 
     @property
     def path(self) -> Path:
