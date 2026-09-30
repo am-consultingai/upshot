@@ -2073,7 +2073,7 @@
     },
     "/api/meetings/{meeting_id}": {
       "delete": {
-        "description": "Remove a meeting: its folder on disk and its rows. There is no undo.",
+        "description": "Remove a meeting: its folder on disk and its rows. There is no undo.\n\nWhatever is running for it stops: its waiting jobs are dropped, and a stage in progress\nstops at its next checkpoint (between chunks of speech when transcribing). The meeting\nis gone from every list at once; its files go as soon as the stage has let go of them,\nwhich the worker does (``pending``). A marker in the folder finishes an interrupted\ndeletion at the next start.",
         "operationId": "delete_meeting_api_meetings__meeting_id__delete",
         "parameters": [
           {

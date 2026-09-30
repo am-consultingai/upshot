@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -708,7 +709,7 @@ def _action_counts(pair: tuple[int, int] | None) -> dict[str, int]:
 
 def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     meeting = svc.dao.get_meeting(meeting_id)
-    if meeting is None:
+    if meeting is None or svc.queue.deleting(meeting_id):
         raise HTTPException(404, "no such meeting")
     payload = meeting.as_dict()
     # Which way the transcript and the notes run, for any Whisper language: the list of
@@ -791,6 +792,8 @@ def list_meetings(
 ) -> dict[str, Any]:
     svc = services_of(request)
     meetings = svc.dao.list_meetings(frm=from_, to=to, q=q, state=state, limit=limit)
+    # A meeting being deleted is gone as far as anyone can see, while its stage stops.
+    meetings = [meeting for meeting in meetings if not svc.queue.deleting(meeting.id)]
     # What each meeting still owes, so the list can say it without opening anything: one
     # grouped query for the whole page rather than one per row.
     counts = svc.dao.action_item_counts()
@@ -1147,24 +1150,44 @@ def get_audio(request: Request, meeting_id: str, track: str = "mix") -> Response
 
 @router.delete("/meetings/{meeting_id}")
 def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
-    """Remove a meeting: its folder on disk and its rows. There is no undo."""
+    """Remove a meeting: its folder on disk and its rows. There is no undo.
+
+    Whatever is running for it stops: its waiting jobs are dropped, and a stage in progress
+    stops at its next checkpoint (between chunks of speech when transcribing). The meeting
+    is gone from every list at once; its files go as soon as the stage has let go of them,
+    which the worker does (``pending``). A marker in the folder finishes an interrupted
+    deletion at the next start.
+    """
+    from app.meetings import DELETING_MARKER
+
     svc = services_of(request)
     meeting = svc.dao.require_meeting(meeting_id)
     recorder = svc.recorder
     if recorder is not None and recorder.committed and recorder.meeting_id == meeting_id:
         raise HTTPException(409, "this meeting is still recording")
 
+    svc.queue.request_delete(meeting_id)
+    if svc.queue.running_for(meeting_id) is not None:
+        with contextlib.suppress(OSError):
+            meeting.path.mkdir(parents=True, exist_ok=True)
+            (meeting.path / DELETING_MARKER).write_text("", encoding="utf-8")
+        svc.events.publish("meeting", meeting_id=meeting_id, action="deleted")
+        log.info("meeting %s: deleting once its running stage stops", meeting_id)
+        return {"deleted": meeting_id, "folder": str(meeting.path), "pending": True}
     try:
         # Never delete outside the data root, whatever the database says the folder is.
         folder = svc.meetings.purge(meeting)
     except ValueError as exc:
+        svc.queue.deleted(meeting_id)
         raise HTTPException(400, str(exc)) from exc
     except OSError as exc:
         # Windows will not unlink a file something has open. Saying so beats deleting the
         # row against a folder that survived, which orphans it with nothing pointing at it.
+        svc.queue.deleted(meeting_id)
         raise HTTPException(409, str(exc)) from exc
+    svc.queue.deleted(meeting_id)
     svc.events.publish("meeting", meeting_id=meeting_id, action="deleted")
-    return {"deleted": meeting_id, "folder": str(folder)}
+    return {"deleted": meeting_id, "folder": str(folder), "pending": False}
 
 
 @router.get("/retention")

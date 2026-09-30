@@ -17,7 +17,7 @@ from typing import Any
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
-from app.errors import Deferred, PermanentError, Preempted
+from app.errors import Cancelled, Deferred, PermanentError, Preempted
 from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
 from app.pipeline.context import StageContext
@@ -149,6 +149,11 @@ class Worker:
             self._mark_running(job)
             try:
                 stage_fn(context)
+                if self.queue.deleting(job.meeting_id):
+                    raise Cancelled(f"{job.stage} finished, but the meeting is being deleted")
+            except Cancelled as exc:
+                log.info("%s", exc)  # the deletion itself is finished below
+                return
             except Preempted:
                 self.queue.release(job)
                 self.stats.preempted += 1
@@ -167,7 +172,30 @@ class Worker:
                 if handler is not None:
                     logging.getLogger().removeHandler(handler)
                     handler.close()
+                # However the stage ended: a meeting deleted meanwhile goes now.
+                self.finish_delete(job.meeting_id)
             self._on_success(job, context)
+
+    def finish_delete(self, meeting_id: str) -> None:
+        """The deletion asked for while a stage ran (``queue.request_delete``), now that
+        the stage has let go of the meeting's files. Nothing to do otherwise."""
+        if not self.queue.deleting(meeting_id):
+            return
+        meeting = self.dao.get_meeting(meeting_id)
+        meetings = getattr(self.services, "meetings", None) if self.services else None
+        try:
+            if meeting is not None and meetings is not None:
+                meetings.purge(meeting)
+            elif meeting is not None:
+                self.dao.delete_meeting(meeting_id)
+        except (OSError, ValueError) as exc:
+            # A file still held (Windows): the marker stays, and the next start finishes it.
+            log.warning("meeting %s: could not finish deleting it: %s", meeting_id, exc)
+            return
+        finally:
+            self.queue.deleted(meeting_id)
+        if self.services is not None and getattr(self.services, "events", None) is not None:
+            self.services.events.publish("meeting", meeting_id=meeting_id, action="deleted")
 
     def _stage(self, job: Job) -> JobStage | None:
         try:
@@ -188,6 +216,8 @@ class Worker:
                 self.dao.set_state(job.meeting_id, target)
 
     def _on_success(self, job: Job, context: StageContext | None = None) -> None:
+        if self.dao.get_meeting(job.meeting_id) is None:
+            return  # deleted as the stage finished: nothing to move on
         self.queue.complete(job)
         self.stats.completed += 1
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}

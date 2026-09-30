@@ -67,6 +67,10 @@ def slugify(text: str, limit: int = 40) -> str:
     return slug[:limit]
 
 
+#: In a meeting's folder: its deletion was asked for while a stage ran. The next start
+#: finishes it (``finish_interrupted_deletes``) if the app closed before the stage stopped.
+DELETING_MARKER = ".deleting"
+
 #: Titles something automatic may replace. A title the user typed never is.
 AUTOMATIC_TITLES = frozenset({"window", "llm", "calendar"})
 
@@ -343,6 +347,18 @@ class MeetingService:
         self.dao.delete_meeting(meeting.id)
         log.info("deleted meeting %s and %s", meeting.id, folder)
         return folder
+
+    def finish_interrupted_deletes(self) -> int:
+        """At start: meetings whose deletion was asked for as the app closed. How many."""
+        done = 0
+        for meeting in self.dao.list_meetings(limit=100_000):
+            if (Path(meeting.folder) / DELETING_MARKER).exists():
+                try:
+                    self.purge(meeting)
+                    done += 1
+                except (OSError, ValueError) as exc:
+                    log.warning("could not finish deleting %s: %s", meeting.id, exc)
+        return done
 
     def drop_audio(self, meeting: Meeting, *, when: datetime | None = None) -> int:
         """Remove the raw audio and keep everything derived from it (D38).
