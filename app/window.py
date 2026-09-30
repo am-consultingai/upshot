@@ -299,6 +299,46 @@ def focus_existing() -> bool:
     return True
 
 
+def bring_to_front() -> bool:
+    """Put Upshot's open window in front, from the background. False if there is none.
+
+    After Google's sign-in, which runs in the user's browser, Upshot should be where the
+    user comes back to. Windows gives the foreground only to the program the user is in
+    (the browser), so a plain SetForegroundWindow from here just flashes the taskbar
+    button. A synthetic Alt press around the call is the usual way past that lock: Windows
+    treats the next foreground change as the user's own.
+    """
+    if sys.platform != "win32":
+        return False
+    import win32api
+    import win32con
+    import win32gui
+
+    found: list[int] = []
+
+    def visit(hwnd: int, _: object) -> bool:
+        if hwnd not in _closing and win32gui.IsWindowVisible(hwnd) and _is_ours(win32gui, hwnd):
+            found.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(visit, None)
+    if not found:
+        return False
+    hwnd = found[0]
+    try:
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        finally:
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    except Exception as exc:
+        log.info("could not bring the Upshot window to the front: %s", exc)
+        return False
+    return True
+
+
 def open_window(url: str) -> str:
     """Show Upshot's window: focus the open one, or start one at ``url``.
 

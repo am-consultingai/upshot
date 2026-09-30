@@ -125,7 +125,7 @@ class CalendarAuth:
         client_loader: Callable[[], OAuthClient | None] = load,
         http: httpx.Client | None = None,
         publish: Callable[..., Any] | None = None,
-        app_url: str | None = None,
+        on_complete: Callable[[bool], object] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         connect_timeout_s: float = CONNECT_TIMEOUT_S,
     ) -> None:
@@ -133,7 +133,9 @@ class CalendarAuth:
         self._client_loader = client_loader
         self._http = http or httpx.Client(timeout=HTTP_TIMEOUT_S)
         self._publish = publish
-        self._app_url = app_url
+        #: Called once Google's redirect has been handled, connected or not: the app
+        #: brings its window back in front (the sign-in ran in the user's browser).
+        self._on_complete = on_complete
         self._now = monotonic
         self._connect_timeout_s = connect_timeout_s
         self._lock = threading.Lock()
@@ -284,6 +286,11 @@ class CalendarAuth:
         with self._lock:
             self._error = None if ok else message
         self._announce(account_changed=self._switched)
+        if self._on_complete is not None:
+            try:
+                self._on_complete(ok)
+            except Exception as exc:  # advisory: the connection itself is done
+                log.info("could not bring Upshot back after the sign-in: %s", exc)
         return ok, message
 
     def _finish(self, pending: _Pending, params: dict[str, str]) -> tuple[bool, str]:
@@ -488,10 +495,6 @@ class CalendarAuth:
         except Exception as exc:  # an event is advisory; never let it break the flow
             log.warning("calendar event not published: %s", exc)
 
-    @property
-    def app_url(self) -> str | None:
-        return self._app_url
-
 
 def _json(response: httpx.Response) -> dict[str, Any]:
     try:
@@ -499,20 +502,6 @@ def _json(response: httpx.Response) -> dict[str, Any]:
     except ValueError:
         return {}
     return body if isinstance(body, dict) else {}
-
-
-def back_link(port: int) -> str:
-    """Where the sign-in's last page sends the user back to Upshot.
-
-    On Windows the ``upshot:open`` link (the installer registers the scheme, D70): it brings
-    Upshot's own window forward. A plain http link opened Upshot as a tab in the browser the
-    sign-in ran in, beside the window that was waiting for it (machine B, 2026-09-30).
-    """
-    import sys
-
-    if sys.platform == "win32":
-        return "upshot:open"
-    return f"http://127.0.0.1:{port}/settings#calendar"
 
 
 # --------------------------------------------------------------------------- listener
@@ -526,12 +515,11 @@ place-items:center;background:#f6f7f9;color:#111}}
 main{{max-width:28rem;padding:2rem;text-align:center}}
 h1{{font-size:1.25rem;margin:0 0 .5rem}} p{{margin:.25rem 0;color:#444}}
 a{{color:#2451d6}}
-a.back{{display:inline-block;margin:1rem 0 .5rem;padding:.5rem 1.25rem;border-radius:.5rem;
-background:#0f6b5c;color:#fff;text-decoration:none;font-weight:600}}
 @media (prefers-color-scheme:dark){{body{{background:#0b0f19;color:#eee}}p{{color:#bbb}}
 a{{color:#8fb0ff}}}}
 </style></head>
-<body><main><h1>{title}</h1><p>{message}</p><p>{next}</p></main></body></html>
+<body><main><h1>{title}</h1><p>{message}</p><p>{next}</p></main>
+<script>setTimeout(function(){{window.close();}},1500);</script></body></html>
 """
 
 
@@ -549,16 +537,14 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         pending: _Pending = self.server.pending  # type: ignore[attr-defined]
         self.server.finished = True  # type: ignore[attr-defined]  # exactly one callback
         ok, message = auth.complete(pending, query)
-        back = auth.app_url
+        # No link back: Upshot brings its own window forward (on_complete). A link to the
+        # app opened it as a tab here, and an upshot: link made Chrome ask "Open Upshot?"
+        # (machine B, 2026-09-30). The page tries to close itself; Chrome allows that
+        # only for some tabs, so it also says the tab can be closed.
         page = PAGE.format(
             title="Connected" if ok else "Not connected",
             message=html.escape(message),
-            next=(
-                f'<a class="back" href="{html.escape(back)}">Back to Upshot</a>'
-                "<br>You can close this tab."
-                if back
-                else "You can close this tab."
-            ),
+            next="Upshot is back in front. You can close this tab.",
         ).encode("utf-8")
         self.send_response(200 if ok else 400)
         self.send_header("Content-Type", "text/html; charset=utf-8")
