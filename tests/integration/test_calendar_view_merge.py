@@ -18,19 +18,22 @@ import pytest
 
 from app.gcal.events import Attendee, CalendarEvent, EventStore
 from app.pipeline.states import MeetingState
-from tests.fixtures.api import build_harness
+from tests.fixtures.api import build_harness, seed_calendar_account
 
 NOW = datetime(2026, 9, 21, 9, 0, tzinfo=UTC)
 
 
 @pytest.fixture
 def api(tmp_path: Path, app_home: Path):  # type: ignore[no-untyped-def]
-    return build_harness(tmp_path)
+    harness = build_harness(tmp_path)
+    harness.account = seed_calendar_account(harness.services)
+    return harness
 
 
 def _cache(api, event_id: str, start: datetime, minutes: int = 60, **extra):  # type: ignore[no-untyped-def]
     end = start + timedelta(minutes=minutes)
     event = CalendarEvent(
+        account_id=api.account,
         calendar_id="primary",
         event_id=event_id,
         title=extra.pop("title", "Design review"),
@@ -43,7 +46,9 @@ def _cache(api, event_id: str, start: datetime, minutes: int = 60, **extra):  # 
         conference_url="https://meet.google.com/abc-defg-hij",
         **extra,
     )
-    EventStore(api.services.conn).replace_window("primary", start, end, [event], synced_at=NOW)
+    EventStore(api.services.conn).replace_window(
+        api.account, "primary", start, end, [event], synced_at=NOW
+    )
     return event
 
 

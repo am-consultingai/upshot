@@ -61,7 +61,10 @@ def run(ctx: StageContext) -> None:
         "sent": False,
     }
 
-    if mode == "draft":
+    # A meeting on hidden calendar accounts only (D82) is not there for the user: it is
+    # neither announced nor sent. It is prepared as a draft, for when it is shown again.
+    hidden = ctx.dao.visible_meeting(ctx.meeting.id) is None
+    if mode == "draft" or hidden:
         # A draft is not a delivery: the job completes, the meeting stays RENDERED.
         ctx.hold_state = True
         # Render, store, notify. The user sends from the UI with one click — which also
@@ -71,7 +74,8 @@ def run(ctx: StageContext) -> None:
             json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         meta.mirror(ctx.refresh(), delivery=record)
-        _notify(ctx, notes)
+        if not hidden:
+            _notify(ctx, notes)
         log.info("draft prepared for %s (not sent)", ctx.meeting.id)
         return
 

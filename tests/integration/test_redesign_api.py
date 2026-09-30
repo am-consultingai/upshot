@@ -343,14 +343,18 @@ def test_record_this_calendar_event(api) -> None:  # type: ignore[no-untyped-def
     from datetime import datetime, timedelta
 
     from app.gcal.events import Attendee, CalendarEvent, EventStore
+    from tests.fixtures.api import seed_calendar_account
 
+    account = seed_calendar_account(api.services)
     start = api.clock.now()
     EventStore(api.services.conn).replace_window(
+        account,
         "primary",
         start - timedelta(hours=1),
         start + timedelta(hours=2),
         [
             CalendarEvent(
+                account_id=account,
                 calendar_id="primary",
                 event_id="ev-1",
                 title="Pricing sync",
@@ -379,6 +383,9 @@ def test_record_this_calendar_event(api) -> None:  # type: ignore[no-untyped-def
         assert page["title_source"] == "calendar"
         calendar = page["calendar"]
         assert calendar["event"]["event_id"] == "ev-1"
+        assert calendar["event"]["account_id"] == account
+        assert api.services.dao.calendar_accounts_of(meeting_id) == [account]
+        assert api.services.dao.require_meeting(meeting_id).calendar_account_id == account
         assert calendar["match"]["state"] == "matched"
         assert calendar["match"]["source"] == "user", "chosen, so nothing re-matches it"
         assert calendar["participants"] == ["Dana Levi"]

@@ -14,7 +14,7 @@ import json
 import re
 import sqlite3
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -66,10 +66,13 @@ class CalendarEvent:
     attendees_omitted: bool = False
     conference_url: str | None = None
     updated: str | None = None
+    #: The connected Google account this copy was read from (D82). The same meeting on
+    #: two accounts is two copies with the same ``occurrence``.
+    account_id: str = ""
 
     @property
-    def key(self) -> tuple[str, str]:
-        return (self.calendar_id, self.event_id)
+    def key(self) -> tuple[str, str, str]:
+        return (self.account_id, self.calendar_id, self.event_id)
 
     @property
     def occurrence(self) -> tuple[str, str]:
@@ -101,6 +104,7 @@ class CalendarEvent:
     def as_api(self) -> dict[str, Any]:
         """What the UI receives. Names only; the link; no ids beyond what it needs."""
         return {
+            "account_id": self.account_id,
             "calendar_id": self.calendar_id,
             "event_id": self.event_id,
             "title": self.title,
@@ -153,7 +157,7 @@ def _conference_url(item: dict[str, Any]) -> str | None:
     return None
 
 
-def parse(item: dict[str, Any], calendar_id: str) -> CalendarEvent | None:
+def parse(item: dict[str, Any], calendar_id: str, account_id: str = "") -> CalendarEvent | None:
     """One ``events.list`` item, reduced to what is kept. None for what cannot be placed."""
     if item.get("status") == "cancelled" or "start" not in item or "end" not in item:
         return None
@@ -200,14 +204,15 @@ def parse(item: dict[str, Any], calendar_id: str) -> CalendarEvent | None:
         attendees_omitted=bool(item.get("attendeesOmitted")),
         conference_url=_conference_url(item),
         updated=item.get("updated"),
+        account_id=account_id,
     )
 
 
 # --------------------------------------------------------------------------- the cache
 
 _COLUMNS = (
-    "calendar_id, event_id, ical_uid, recurring_event_id, original_start, title, start_at, "
-    "end_at, all_day, time_zone, status, response, transparent, event_type, visibility, "
+    "account_id, calendar_id, event_id, ical_uid, recurring_event_id, original_start, title, "
+    "start_at, end_at, all_day, time_zone, status, response, transparent, event_type, visibility, "
     "attendees_json, attendee_count, attendees_omitted, conference_url, updated, synced_at"
 )
 
@@ -243,11 +248,17 @@ def _row(row: sqlite3.Row) -> CalendarEvent:
         attendees_omitted=bool(row["attendees_omitted"]),
         conference_url=row["conference_url"],
         updated=row["updated"],
+        account_id=row["account_id"],
     )
 
 
 class EventStore:
-    """The ``calendar_events`` table. A cache: every row can be rebuilt by a sync."""
+    """The ``calendar_events`` table: what was read from every connected account.
+
+    Nothing here is ever deleted (D82). An event Google stops returning keeps its row with
+    ``removed_at`` set, and every read skips those; hiding or removing an account leaves
+    its rows where they are, and the readers are told which accounts to look at.
+    """
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
@@ -269,6 +280,7 @@ class EventStore:
 
     def replace_window(
         self,
+        account_id: str,
         calendar_id: str,
         start: datetime,
         end: datetime,
@@ -279,11 +291,14 @@ class EventStore:
         """Make the window exactly what Google just returned for it.
 
         Google's ``timeMin``/``timeMax`` select events *overlapping* the window, so the
-        same overlap test picks the rows to drop: an event deleted or declined-and-hidden
-        since the last sync disappears here rather than lingering for ever.
+        same overlap test picks the rows that are gone: an event deleted or declined-and-
+        hidden since the last sync is marked ``removed_at`` rather than lingering as if
+        it were still on, and one that comes back is simply live again.
         """
+        synced = iso_utc(synced_at)
         rows = [
             (
+                account_id,
                 e.calendar_id,
                 e.event_id,
                 e.ical_uid,
@@ -304,44 +319,81 @@ class EventStore:
                 int(e.attendees_omitted),
                 e.conference_url,
                 e.updated,
-                iso_utc(synced_at),
+                synced,
             )
             for e in events
         ]
         with self._transaction():
             self.conn.execute(
-                "DELETE FROM calendar_events WHERE calendar_id = ? AND start_at < ? AND end_at > ?",
-                (calendar_id, iso_utc(end), iso_utc(start)),
+                "UPDATE calendar_events SET removed_at = ? WHERE account_id = ? "
+                "AND calendar_id = ? AND start_at < ? AND end_at > ? AND removed_at IS NULL",
+                (synced, account_id, calendar_id, iso_utc(end), iso_utc(start)),
             )
             self.conn.executemany(
-                f"INSERT OR REPLACE INTO calendar_events ({_COLUMNS}) "
-                f"VALUES ({', '.join('?' for _ in range(21))})",
+                f"INSERT OR REPLACE INTO calendar_events ({_COLUMNS}, removed_at) "
+                f"VALUES ({', '.join('?' for _ in range(22))}, NULL)",
                 rows,
             )
         return len(rows)
 
-    def between(self, start: datetime, end: datetime) -> list[CalendarEvent]:
-        """Every cached event overlapping [start, end), earliest first."""
+    def between(
+        self, start: datetime, end: datetime, *, accounts: Collection[str] | None
+    ) -> list[CalendarEvent]:
+        """Live cached events overlapping [start, end), earliest first, of these accounts.
+
+        ``accounts`` is asked for every time, so no reader can forget that some accounts
+        are hidden: ``None`` means every account, for the few callers that mean that.
+        """
+        where = "start_at < ? AND end_at > ? AND removed_at IS NULL"
+        args: list[Any] = [iso_utc(end), iso_utc(start)]
+        if accounts is not None:
+            if not accounts:
+                return []
+            where += f" AND account_id IN ({','.join('?' for _ in accounts)})"
+            args.extend(accounts)
         found = self.conn.execute(
-            f"SELECT {_COLUMNS} FROM calendar_events WHERE start_at < ? AND end_at > ? "
-            "ORDER BY start_at, event_id",
-            (iso_utc(end), iso_utc(start)),
+            f"SELECT {_COLUMNS} FROM calendar_events WHERE {where} "
+            "ORDER BY start_at, account_id, event_id",
+            args,
         ).fetchall()
         return [_row(row) for row in found]
 
-    def get(self, calendar_id: str, event_id: str) -> CalendarEvent | None:
+    def get(self, account_id: str, calendar_id: str, event_id: str) -> CalendarEvent | None:
+        """One event, even one Google no longer returns: a recording may still name it."""
         row = self.conn.execute(
-            f"SELECT {_COLUMNS} FROM calendar_events WHERE calendar_id = ? AND event_id = ?",
-            (calendar_id, event_id),
+            f"SELECT {_COLUMNS} FROM calendar_events "
+            "WHERE account_id = ? AND calendar_id = ? AND event_id = ?",
+            (account_id, calendar_id, event_id),
         ).fetchone()
         return _row(row) if row else None
 
-    def around(self, when: datetime, *, before_s: float, after_s: float) -> list[CalendarEvent]:
-        return self.between(when - timedelta(seconds=before_s), when + timedelta(seconds=after_s))
+    def copies(self, event: CalendarEvent, *, accounts: Collection[str] | None) -> list[str]:
+        """Every account holding a live copy of the same meeting, this one's included."""
+        live = self.between(event.start, event.end, accounts=accounts)
+        found = {e.account_id for e in live if e.occurrence == event.occurrence}
+        found.add(event.account_id)
+        return sorted(a for a in found if a)
 
-    def count(self) -> int:
-        return int(self.conn.execute("SELECT COUNT(*) FROM calendar_events").fetchone()[0])
+    def around(
+        self,
+        when: datetime,
+        *,
+        before_s: float,
+        after_s: float,
+        accounts: Collection[str] | None,
+    ) -> list[CalendarEvent]:
+        return self.between(
+            when - timedelta(seconds=before_s), when + timedelta(seconds=after_s), accounts=accounts
+        )
 
-    def clear(self) -> int:
-        gone = self.conn.execute("DELETE FROM calendar_events").rowcount
-        return int(gone or 0)
+    def count(self, account_id: str | None = None) -> int:
+        if account_id is None:
+            row = self.conn.execute(
+                "SELECT COUNT(*) FROM calendar_events WHERE removed_at IS NULL"
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT COUNT(*) FROM calendar_events WHERE removed_at IS NULL AND account_id = ?",
+                (account_id,),
+            ).fetchone()
+        return int(row[0])

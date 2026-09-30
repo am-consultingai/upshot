@@ -291,13 +291,15 @@ def parse(item: dict[str, Any]) -> Invite:
 
 @dataclass
 class InviteReader:
-    """Fetches invitations, briefly remembering the last few. Raises what the caller
-    should react to: ``CalendarAuthError`` to reconnect, ``CalendarUnavailable`` to try
-    again later."""
+    """Fetches invitations with the token of the account the event is on, briefly
+    remembering the last few. Raises what the caller should react to:
+    ``CalendarAuthError`` to reconnect, ``CalendarUnavailable`` to try again later.
 
-    auth: Any
+    ``accounts`` is the ``CalendarAccounts`` (anything with ``auth_for``)."""
+
+    accounts: Any
     monotonic: Any = None
-    _cache: dict[tuple[str, str], tuple[Invite, float]] = field(default_factory=dict)
+    _cache: dict[tuple[str, str, str], tuple[Invite, float]] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def _now(self) -> float:
@@ -305,14 +307,21 @@ class InviteReader:
 
         return float(self.monotonic() if self.monotonic else time.monotonic())
 
-    def fetch(self, calendar_id: str, event_id: str) -> Invite:
-        key = (calendar_id, event_id)
+    def forget(self, account_id: str | None = None) -> None:
+        """Drop what was read of one account (hidden or removed), or of all of them."""
+        with self._lock:
+            for key in [k for k in self._cache if account_id is None or k[0] == account_id]:
+                self._cache.pop(key, None)
+
+    def fetch(self, account_id: str, calendar_id: str, event_id: str) -> Invite:
+        key = (account_id, calendar_id, event_id)
         now = self._now()
         with self._lock:
             held = self._cache.get(key)
             if held and now - held[1] < CACHE_S:
                 return held[0]
-        body = self.auth.get(f"/calendars/{calendar_id}/events/{event_id}", {"fields": FIELDS})
+        auth = self.accounts.auth_for(account_id)
+        body = auth.get(f"/calendars/{calendar_id}/events/{event_id}", {"fields": FIELDS})
         invite = parse(body)
         with self._lock:
             self._cache[key] = (invite, now)

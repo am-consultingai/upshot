@@ -13,7 +13,7 @@ from app.assistant.tools import DATA_CLOSE, DATA_OPEN, MAX_CHARS, AssistantTools
 from app.db.dao import Turn
 from app.gcal.events import Attendee, CalendarEvent, EventStore
 from app.pipeline.states import MeetingState
-from tests.fixtures.api import build_harness
+from tests.fixtures.api import build_harness, seed_calendar_account
 
 
 def data(text: str) -> Any:
@@ -24,6 +24,7 @@ def data(text: str) -> Any:
 @pytest.fixture
 def tools(tmp_path: Path, app_home: Path) -> AssistantTools:
     h = build_harness(tmp_path)
+    account = seed_calendar_account(h.services)
     dao = h.services.dao
     for meeting_id, title, started in (
         ("m-q4", "Q4 budget review", "2026-09-20T09:30:00Z"),
@@ -41,10 +42,17 @@ def tools(tmp_path: Path, app_home: Path) -> AssistantTools:
     dao.update_meeting(
         "m-q4",
         duration_s=2520,
+        # The shape the matcher writes: the event reference is under "event".
         calendar_json=json.dumps(
-            {"participants": ["Dana Levi", "Ron Katz"], "calendar_id": "c", "event_id": "e1"}
+            {
+                "participants": ["Dana Levi", "Ron Katz"],
+                "event": {"account_id": account, "calendar_id": "c", "event_id": "e1"},
+                "accounts": [account],
+                "match": {"state": "matched", "source": "auto"},
+            }
         ),
     )
+    dao.set_calendar_accounts("m-q4", account, [account])
     dao.set_tags("m-q4", ["finance"])
     dao.index_turns(
         "m-q4",
@@ -62,11 +70,13 @@ def tools(tmp_path: Path, app_home: Path) -> AssistantTools:
         ],
     )
     EventStore(h.services.conn).replace_window(
+        account,
         "c",
         datetime(2026, 9, 20, tzinfo=UTC),
         datetime(2026, 9, 21, tzinfo=UTC),
         [
             CalendarEvent(
+                account_id=account,
                 calendar_id="c",
                 event_id="e1",
                 title="Q4 budget review",

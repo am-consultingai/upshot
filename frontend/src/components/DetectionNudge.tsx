@@ -26,7 +26,11 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
     mutationFn: () =>
       api.startRecording(
         prompt?.calendar_id && prompt.event_id
-          ? { calendar_id: prompt.calendar_id, event_id: prompt.event_id }
+          ? {
+              account_id: prompt.account_id ?? undefined,
+              calendar_id: prompt.calendar_id,
+              event_id: prompt.event_id,
+            }
           : undefined,
       ),
     onSuccess: (started) => {
