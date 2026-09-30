@@ -10,6 +10,7 @@ import {
   durationLabel,
   floorToQuarter,
   formatTime,
+  parseTime,
   quartersOfDay,
 } from "../lib/timeFormat";
 
@@ -41,6 +42,8 @@ function subscribe(listener: () => void) {
 }
 
 const DEFAULT_DURATION = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_OVERNIGHT_MS = 8 * 60 * 60 * 1000;
 
 export default function MeetingInfoHost() {
   const meetingId = useSyncExternalStore(subscribe, () => pending);
@@ -51,8 +54,15 @@ export default function MeetingInfoHost() {
 function MeetingInfoDialog({ meetingId, onClose }: { meetingId: string; onClose: () => void }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const meeting = useQuery({ queryKey: ["meeting", meetingId], queryFn: () => api.meeting(meetingId) });
-  const formats = useQuery({ queryKey: ["locale"], queryFn: api.locale, staleTime: Infinity });
+  const meeting = useQuery({
+    queryKey: ["meeting", meetingId],
+    queryFn: () => api.meeting(meetingId),
+  });
+  const formats = useQuery({
+    queryKey: ["locale"],
+    queryFn: api.locale,
+    staleTime: Infinity,
+  });
   const fmt = formats.data ?? DEFAULT_FORMATS;
   const data = meeting.data;
   if (!data) return null;
@@ -83,50 +93,79 @@ function Form({
   onSaved: () => void;
   t: ReturnType<typeof useI18n>["t"];
 }) {
-  const initialStart = useMemo(
-    () => floorToQuarter(new Date(meeting.planned_start ?? meeting.started_at)),
+  const day = useMemo(
+    () => new Date(meeting.planned_start ?? meeting.started_at),
     [meeting.planned_start, meeting.started_at],
   );
-  const initialDuration = useMemo(() => {
-    if (!meeting.planned_start || !meeting.planned_end) return DEFAULT_DURATION;
-    const minutes = (new Date(meeting.planned_end).getTime() - new Date(meeting.planned_start).getTime()) / 60000;
-    return Math.min(480, Math.max(15, Math.round(minutes / 15) * 15));
-  }, [meeting.planned_start, meeting.planned_end]);
+  // A start already set stays as typed; a fresh one is the quarter hour the recording began in.
+  const initialStart = useMemo(() => (meeting.planned_start ? day : floorToQuarter(day)), [meeting.planned_start, day]);
+  const initialEnd = useMemo(
+    () =>
+      meeting.planned_end ? new Date(meeting.planned_end) : new Date(initialStart.getTime() + DEFAULT_DURATION * 60000),
+    [meeting.planned_end, initialStart],
+  );
 
   const [title, setTitle] = useState(meeting.title ?? "");
   const [description, setDescription] = useState(meeting.description ?? "");
-  const [start, setStart] = useState(initialStart.getTime());
-  const [duration, setDuration] = useState(initialDuration);
+  // Text the user can type anything into; the lists under them are only suggestions.
+  const [startText, setStartText] = useState(time(initialStart));
+  const [endText, setEndText] = useState(time(initialEnd));
+  const [endTouched, setEndTouched] = useState(!!meeting.planned_end);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement | null>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
+  // Once, when the dialog opens. Re-running this on every render (the page refetches in
+  // the background) pulled the focus back to the title while the user typed elsewhere.
   useEffect(() => {
     titleRef.current?.focus();
     titleRef.current?.select();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        closeRef.current();
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
-  const slots = quartersOfDay(initialStart);
+  const start = parseTime(startText, day);
+  const slots = quartersOfDay(day);
   const units = { h: t("meetingInfo.hours"), min: t("meetingInfo.minutes") };
+  const endSuggestions = start
+    ? DURATIONS.map((minutes) => ({
+        at: new Date(start.getTime() + minutes * 60000),
+        minutes,
+      }))
+    : [];
+
+  const changeStart = (text: string) => {
+    setStartText(text);
+    // Until the end has been set by hand, it keeps its distance from the start.
+    const next = parseTime(text, day);
+    if (next && !endTouched) setEndText(time(new Date(next.getTime() + DEFAULT_DURATION * 60000)));
+  };
 
   const save = async () => {
-    setSaving(true);
     setError(null);
-    const body: Record<string, unknown> = {
-      description,
-      planned_start: isoWithOffset(new Date(start)),
-      planned_end: isoWithOffset(new Date(start + duration * 60000)),
-    };
+    const body: Record<string, unknown> = { description };
+    const startAt = startText.trim() ? parseTime(startText, day) : null;
+    let endAt = endText.trim() ? parseTime(endText, day) : null;
+    // 23:30 to 00:30 ends the next day; an end hours before the start is a mistake.
+    if (startAt && endAt && endAt <= startAt && endAt.getTime() + DAY_MS - startAt.getTime() <= MAX_OVERNIGHT_MS) {
+      endAt = new Date(endAt.getTime() + DAY_MS);
+    }
+    if (startText.trim() && !startAt) return setError(t("meetingInfo.badStart"));
+    if (endText.trim() && !endAt) return setError(t("meetingInfo.badEnd"));
+    if (startAt && endAt && endAt <= startAt) return setError(t("meetingInfo.endBeforeStart"));
+    body.planned_start = startAt ? isoWithOffset(startAt) : "";
+    body.planned_end = endAt ? isoWithOffset(endAt) : "";
     const typed = title.trim();
     if (typed && typed !== (meeting.title ?? "")) body.title = typed;
+    setSaving(true);
     try {
       await api.patchMeeting(meeting.id, body);
       onSaved();
@@ -136,7 +175,8 @@ function Form({
     }
   };
 
-  const field = "w-full rounded-md bg-transparent px-2 py-1.5 text-sm text-primary shadow-[var(--shadow-ring)] outline-none";
+  const field =
+    "w-full rounded-md bg-transparent px-2 py-1.5 text-sm text-primary shadow-[var(--shadow-ring)] outline-none";
   return createPortal(
     <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-[4px]">
       <form
@@ -155,7 +195,13 @@ function Form({
         </h2>
         <label className="block space-y-1 text-xs text-secondary">
           <span>{t("meetingInfo.title")}</span>
-          <input ref={titleRef} data-testid="meeting-info-title" value={title} onChange={(e) => setTitle(e.target.value)} className={field} />
+          <input
+            ref={titleRef}
+            data-testid="meeting-info-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className={field}
+          />
         </label>
         <label className="block space-y-1 text-xs text-secondary">
           <span>{t("meetingInfo.description")}</span>
@@ -170,23 +216,36 @@ function Form({
         <div className="flex gap-3">
           <label className="block flex-1 space-y-1 text-xs text-secondary">
             <span>{t("meetingInfo.start")}</span>
-            <select data-testid="meeting-info-start" value={start} onChange={(e) => setStart(Number(e.target.value))} className={field}>
+            <input
+              data-testid="meeting-info-start"
+              list="meeting-info-starts"
+              value={startText}
+              onChange={(e) => changeStart(e.target.value)}
+              className={field}
+            />
+            <datalist id="meeting-info-starts">
               {slots.map((slot) => (
-                <option key={slot.getTime()} value={slot.getTime()}>
-                  {time(slot)}
-                </option>
+                <option key={slot.getTime()} value={time(slot)} />
               ))}
-            </select>
+            </datalist>
           </label>
           <label className="block flex-1 space-y-1 text-xs text-secondary">
             <span>{t("meetingInfo.end")}</span>
-            <select data-testid="meeting-info-duration" value={duration} onChange={(e) => setDuration(Number(e.target.value))} className={field}>
-              {DURATIONS.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {durationLabel(minutes, units)} ({time(new Date(start + minutes * 60000))})
-                </option>
+            <input
+              data-testid="meeting-info-end"
+              list="meeting-info-ends"
+              value={endText}
+              onChange={(e) => {
+                setEndTouched(true);
+                setEndText(e.target.value);
+              }}
+              className={field}
+            />
+            <datalist id="meeting-info-ends">
+              {endSuggestions.map(({ at, minutes }) => (
+                <option key={minutes} value={time(at)} label={durationLabel(minutes, units)} />
               ))}
-            </select>
+            </datalist>
           </label>
         </div>
         <p className="text-xs text-tertiary">{t("meetingInfo.optional")}</p>

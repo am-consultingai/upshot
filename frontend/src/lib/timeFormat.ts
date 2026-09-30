@@ -74,3 +74,27 @@ export function durationLabel(minutes: number, units: { h: string; min: string }
   if (!hours) return `${rest} ${units.min}`;
   return rest ? `${hours} ${units.h} ${rest} ${units.min}` : `${hours} ${units.h}`;
 }
+
+/**
+ * A time the user typed, on the day of `day`: "14:30", "1430", "14.30", "14", "2:30 pm",
+ * "2pm", "2:30 PM". Null when it is not a time.
+ */
+export function parseTime(text: string, day: Date): Date | null {
+  const cleaned = text.trim().toLowerCase().replace(/\s+/g, "");
+  const match = /^(\d{1,2})(?:[:.]?(\d{2}))?(am|pm|a|p)?$/.exec(cleaned);
+  if (!match) return null;
+  let hours = Number(match[1]);
+  const minutes = match[2] ? Number(match[2]) : 0;
+  const meridiem = match[3];
+  if (minutes > 59) return null;
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return null;
+    if (meridiem.startsWith("p") && hours !== 12) hours += 12;
+    if (meridiem.startsWith("a") && hours === 12) hours = 0;
+  } else if (hours > 23) {
+    return null;
+  }
+  const result = new Date(day);
+  result.setHours(hours, minutes, 0, 0);
+  return result;
+}
