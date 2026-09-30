@@ -73,3 +73,58 @@ def test_connect_without_a_client_is_a_409(api) -> None:  # type: ignore[no-unty
     response = api.client().post("/api/calendar/connect")
     assert response.status_code == 409
     assert "no Google client" in response.text
+
+
+# ------------------------------------------------ the browser profile (z8tj1hca86)
+
+
+def test_the_sign_in_opens_in_the_profile_the_user_chose(  # type: ignore[no-untyped-def]
+    api, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import browser_profiles, window
+    from app.browser_profiles import Profile
+
+    monkeypatch.setattr(window, "app_browser", lambda: "chrome.exe")
+    monkeypatch.setattr(
+        browser_profiles,
+        "profiles_of",
+        lambda exe: [Profile("Default", "Person 1", "home@gmail.com"),
+                     Profile("Profile 2", "Work", "dana@company.com")],
+    )  # fmt: skip
+    opened: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        browser_profiles, "open_in_profile", lambda exe, p, url: opened.append((exe, p, url))
+    )
+    client = api.client()
+
+    listed = client.get("/api/calendar/profiles").json()
+    assert listed["browser"] is None or isinstance(listed["browser"], str)
+    assert [p["id"] for p in listed["profiles"]] == ["Default", "Profile 2"]
+    assert listed["last"] == ""
+
+    started = client.post("/api/calendar/connect", json={"profile": "Profile 2"}).json()
+    assert started["opened"] is True
+    assert opened == [("chrome.exe", "Profile 2", started["auth_url"])]
+    assert client.get("/api/calendar/profiles").json()["last"] == "Profile 2", "remembered"
+
+    # A profile that is not there is not opened; the page opens the link itself.
+    client.post("/api/calendar/cancel")
+    unknown = client.post("/api/calendar/connect", json={"profile": "Profile 9"}).json()
+    assert unknown["opened"] is False and len(opened) == 1
+
+
+def test_connect_without_a_profile_still_works(api) -> None:  # type: ignore[no-untyped-def]
+    started = api.client().post("/api/calendar/connect").json()
+    assert started["state"] == "connecting" and started["opened"] is False
+
+
+def test_the_status_carries_the_users_name(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    started = client.post("/api/calendar/connect").json()
+    consent = api.google.consent(started["auth_url"])
+    httpx.get(
+        api.google.redirect_uri + "/",
+        params={"state": consent["state"], "code": "good-code", "scope": SCOPE},
+        timeout=5.0,
+    )
+    assert client.get("/api/calendar/status").json()["name"] == "Dana"

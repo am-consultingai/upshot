@@ -42,6 +42,8 @@ describe("catalogue parity", () => {
     // Each language named in itself, in both catalogues.
     "firstRun.languageEnglish",
     "firstRun.languageHebrew",
+    // A pattern with no words of its own ("{greeting}, {name}"), the same in both.
+    "greeting.named",
   ]);
 
   it("no translation is left as the English string", () => {

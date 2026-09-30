@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CalendarStatus } from "../api";
 import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
+import BrowserProfilePicker, { CopySignInLink, useBrowserProfile } from "./BrowserProfilePicker";
 import SettingRow, { SELECT_CLASS, SettingGroup } from "./SettingRow";
 import { workingHours } from "../lib/calendar";
 
@@ -29,9 +30,18 @@ export default function CalendarSettings() {
     refetchInterval: (query) => (query.state.data?.state === "connecting" ? 3000 : false),
   });
   const settle = (next: CalendarStatus) => queryClient.setQueryData(["calendar"], next);
+  const browser = useBrowserProfile();
 
   const connect = useMutation({
     mutationFn: async () => {
+      // A profile chosen: Upshot opens Google's page in it, from the backend. A page
+      // opened from here would land in the profile this window runs in (z8tj1hca86).
+      if (browser.choice) {
+        consentTab.current = null;
+        const next = await api.calendarConnect(browser.choice);
+        if (!next.opened) window.open(next.auth_url, "_blank");
+        return next;
+      }
       /*
        * Opened before the request, inside the click, because a tab opened after an
        * await is a popup to the browser and gets blocked. It starts blank and is
@@ -125,7 +135,8 @@ export default function CalendarSettings() {
                   <a href={data.auth_url} target="_blank" rel="noreferrer" className="underline">
                     {t("calendar.openAgain")}
                   </a>
-                )}
+                )}{" "}
+                <CopySignInLink url={data.auth_url} />
               </span>
             )}
             {data?.state === "reconnect" && (
@@ -182,6 +193,13 @@ export default function CalendarSettings() {
           >
             {t("calendar.cancel")}
           </BusyButton>
+        )}
+        {(data?.state === "disconnected" || data?.state === "reconnect") && (
+          <BrowserProfilePicker
+            profiles={browser.profiles}
+            choice={browser.choice}
+            onChange={browser.setChoice}
+          />
         )}
         {(data?.state === "disconnected" || data?.state === "reconnect") && (
           <BusyButton

@@ -1805,9 +1805,39 @@ def choose_meeting_event(request: Request, meeting_id: str, body: CalendarChoice
     return _meeting_payload(svc, meeting_id)
 
 
+class CalendarConnect(BaseModel):
+    #: A browser profile folder from /calendar/profiles. Given, Upshot opens Google's page
+    #: in that profile itself; empty, the page opens the returned URL.
+    profile: str = ""
+
+
+@router.get("/calendar/profiles")
+def calendar_profiles(request: Request) -> dict[str, Any]:
+    """The browser profiles Google's sign-in can open in (ClickUp z8tj1hca86).
+
+    Upshot's window runs in one profile of the default browser, and a page it opens lands
+    there whatever has the focus. Chrome and Edge list their profiles; any other browser
+    gets an empty list and the page opens the link, which the user can also copy.
+    """
+    from app import browser_profiles, window
+
+    svc = services_of(request)
+    exe = window.app_browser()
+    found = browser_profiles.profiles_of(exe)
+    return {
+        "browser": browser_profiles.browser_name(exe),
+        "profiles": [profile.as_dict() for profile in found],
+        "last": str(svc.config.get("calendar.browser_profile") or ""),
+    }
+
+
 @router.post("/calendar/connect")
-def calendar_connect(request: Request) -> dict[str, Any]:
-    """Start a connection. The browser opens the returned URL; the rest is the listener's."""
+def calendar_connect(request: Request, body: CalendarConnect | None = None) -> dict[str, Any]:
+    """Start a connection. The browser opens the returned URL; the rest is the listener's.
+
+    With a profile, Upshot opens it in that browser profile and says so (``opened``).
+    """
+    from app import browser_profiles, window
     from app.gcal.oauth import CalendarAuthError
 
     calendar = calendar_of(request)
@@ -1815,7 +1845,21 @@ def calendar_connect(request: Request) -> dict[str, Any]:
         auth_url = calendar.start()
     except CalendarAuthError as exc:
         raise HTTPException(409, str(exc)) from exc
-    return {**calendar_status(request), "auth_url": auth_url}
+    opened = False
+    profile = body.profile if body else ""
+    if profile:
+        exe = window.app_browser()
+        known = {p.id for p in browser_profiles.profiles_of(exe)}
+        if exe and profile in known:
+            try:
+                browser_profiles.open_in_profile(exe, profile, auth_url)
+                opened = True
+            except OSError as exc:
+                log.warning("could not open the sign-in in profile %s: %s", profile, exc)
+            svc = services_of(request)
+            svc.config.set("calendar.browser_profile", profile)
+            svc.config.save()
+    return {**calendar_status(request), "auth_url": auth_url, "opened": opened}
 
 
 @router.post("/calendar/cancel")
