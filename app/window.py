@@ -7,10 +7,17 @@ icon) shows the window, or brings it to the front when it is already open.
 
 The window is a Chromium browser started with ``--app=<url>``: no tabs, no address bar,
 its own taskbar button with the app's icon. Not an embedded WebView2, because Google
-refuses to sign anyone in inside an embedded browser, and connecting the calendar is a
-Google sign-in. The user's default browser is used when it is Chromium-based (they are
-signed in to Google there); otherwise Edge, which every Windows 10 and 11 has. With
+refuses to sign anyone in inside an embedded browser. The user's default browser is used
+when it is Chromium-based; otherwise Edge, which every Windows 10 and 11 has. With
 neither, the page opens as an ordinary tab.
+
+The window runs in a browser profile of its own (``<app home>/browser``), never one of the
+user's. Chrome and Edge open a link from another program in the *last-used* profile, and
+an app window counts: clicking Upshot's window made its profile the last used one, so
+Google's sign-in kept opening there, whichever profile the user had been in (ClickUp
+z8tj1hca86). In a profile of its own, the window leaves the user's choice alone, and every
+link leaving the app (``open_external``) goes to the default browser, into the profile
+the user was last in — as any desktop program's links do.
 """
 
 from __future__ import annotations
@@ -50,8 +57,47 @@ def supports_app_mode(exe: str | None) -> bool:
     return bool(exe) and PureWindowsPath(str(exe)).name.lower() in APP_MODE_BROWSERS
 
 
-def app_command(exe: str, url: str) -> list[str]:
-    return [exe, f"--app={url}"]
+def app_profile_dir() -> Path:
+    """The window's own browser profile: settings and cache, never the user's accounts."""
+    from app import paths
+
+    return paths.app_home() / "browser"
+
+
+def app_command(exe: str, url: str, profile_dir: Path | None = None) -> list[str]:
+    folder = profile_dir or app_profile_dir()
+    return [
+        exe,
+        f"--app={url}",
+        f"--user-data-dir={folder}",
+        # A new profile would otherwise open with the browser's welcome and
+        # default-browser prompts in front of the app.
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+
+
+def open_external(url: str) -> bool:
+    """Open a link in the user's default browser, the way Windows opens any link: in the
+    profile they were last in. False when it was not opened here (not Windows, or not an
+    http(s) link) and the page should open it itself.
+
+    Only http and https: ``os.startfile`` would run anything else, a file path included.
+    """
+    from urllib.parse import urlparse
+
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError("only http and https links are opened")
+    if sys.platform != "win32":
+        return False
+    try:
+        import os
+
+        os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
+    except OSError as exc:
+        log.warning("could not open a link in the default browser: %s", exc)
+        return False
+    return True
 
 
 def _registry(

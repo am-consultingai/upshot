@@ -261,9 +261,6 @@ DEFAULTS: dict[str, Any] = {
         # start and shade the hours outside it; nothing else reads it.
         "work_start": 8,
         "work_end": 18,
-        # The browser profile Google's sign-in last opened in ("Profile 2"), so the next
-        # connect offers it first. Empty: the one the Upshot window runs in.
-        "browser_profile": "",
     },
     "setup": {
         # Whether first-run setup (the /welcome screen) is finished or skipped. Until it

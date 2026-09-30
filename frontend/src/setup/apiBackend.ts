@@ -52,6 +52,8 @@ export class ApiSetupBackend implements SetupBackend {
   private timers = new Map<string, ReturnType<typeof setInterval>>();
   private started = new Map<CliId, number>();
   private disposed = false;
+  /** The server opens Google's page itself (Windows), so no tab is opened here. */
+  private opensExternally = false;
 
   private constructor(state: SetupSnapshot) {
     this.state = state;
@@ -85,6 +87,7 @@ export class ApiSetupBackend implements SetupBackend {
       speakers: { phase: "idle", level: 0 },
       savedStep: saved ? (saved as StepId) : null,
     });
+    backend.opensExternally = !!calendar?.opens_externally;
     backend.learnClis();
     return backend;
   }
@@ -127,15 +130,15 @@ export class ApiSetupBackend implements SetupBackend {
 
   // ------------------------------------------------------------------ calendar
 
-  connectCalendar(profile?: string): void {
+  connectCalendar(): void {
     // Opened inside the click, before any await, or the browser blocks it as a popup;
-    // pointed at Google's page once the server has made it. With a browser profile
-    // chosen, the server opens it there instead: a page opened from here would land in
-    // the profile this window runs in (z8tj1hca86).
-    let tab = profile ? null : window.open("about:blank", "_blank");
+    // pointed at Google's page once the server has made it. On Windows the server opens
+    // it instead, in the user's own browser and last-used profile: this window runs in
+    // Upshot's own profile, signed in to nothing (z8tj1hca86).
+    let tab = this.opensExternally ? null : window.open("about:blank", "_blank");
     this.setCalendar({ phase: "waiting" });
     void api
-      .calendarConnect(profile)
+      .calendarConnect()
       .then((status) => {
         this.setCalendar({ phase: "waiting", authUrl: status.auth_url });
         if (tab) tab.location.href = status.auth_url;
