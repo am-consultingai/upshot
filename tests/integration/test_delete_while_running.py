@@ -129,3 +129,30 @@ def test_a_deletion_the_app_closed_on_is_finished_at_the_next_start(
     assert api.services.meetings.finish_interrupted_deletes() == 1
     assert api.services.dao.get_meeting(meeting.id) is None
     assert not meeting.path.exists()
+
+
+def test_deleting_takes_back_the_meetings_notifications(tmp_path: Path, app_home: Path) -> None:
+    """Machine B: "Meeting ended - Transcribing..." stayed on screen after the delete."""
+    api = build_harness(tmp_path)
+    meeting = make_meeting(api)
+    api.services.notifier.recording_ended(meeting.id, 1)
+    assert api.services.notifier.titles()
+    api.client().delete(f"/api/meetings/{meeting.id}")
+    assert api.services.notifier.withdrawn == [meeting.id]
+    assert not api.services.notifier.titles()
+
+
+def test_windows_notifications_carry_their_meetings_group() -> None:
+    import json
+
+    from app.notify import Toast, WindowsToastNotifier, toast_group
+
+    commands: list[list[str]] = []
+    notifier = WindowsToastNotifier(spawn=lambda c: commands.append(c), app_in_front=lambda: False)
+    notifier.show(Toast(title="Meeting ended", meeting_id="2026-09-30_2024_ec7763_x" * 3))
+    payload = json.loads(commands[-1][-1])
+    assert payload["group"] == toast_group("2026-09-30_2024_ec7763_x" * 3)
+    assert len(payload["group"]) <= 64, "Windows limits a group to 64 characters"
+    notifier.withdraw("2026-09-30_2024_ec7763_x" * 3)
+    removal = json.loads(commands[-1][-1])
+    assert removal["remove_group"] == payload["group"]

@@ -233,7 +233,7 @@ def test_the_toast_process_falls_back_to_a_toast_without_buttons(monkeypatch) ->
     built: list[str] = []
 
     class FakeToast:
-        def __init__(self) -> None:
+        def __init__(self, group: str | None = None) -> None:
             self.text_fields: list[str] = []
 
         def AddAction(self, button: object) -> None:
