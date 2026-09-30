@@ -18,6 +18,7 @@ import ConnectionBanner from "./components/ConnectionBanner";
 import CommandPalette from "./components/CommandPalette";
 import Toaster from "./components/Toaster";
 import ConfirmHost from "./components/ConfirmDialog";
+import MeetingInfoHost from "./components/MeetingInfoDialog";
 import AssistantPanel from "./components/assistant/AssistantPanel";
 import AssistantLauncher from "./components/assistant/AssistantLauncher";
 import Confetti from "./components/Confetti";
@@ -278,6 +279,7 @@ export default function App() {
         <Toaster />
         {celebrate && <Confetti onDone={celebrated} />}
         <ConfirmHost />
+        <MeetingInfoHost />
         {!welcoming && <Sidebar />}
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />

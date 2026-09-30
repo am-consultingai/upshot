@@ -355,7 +355,11 @@ test("the_nudge_starts_the_recording_it_offers", async ({ page, seedBody, seedMo
   await page.getByTestId("detection-nudge-start").click();
   await expect(page.getByTestId("recording-bar")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("detection-nudge")).toHaveCount(0);
+  // No calendar event behind this nudge, so the meeting's details are asked for.
+  await expect(page.getByTestId("meeting-info")).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.getByTestId("recording-bar-stop").click();
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
 });
 
 /**

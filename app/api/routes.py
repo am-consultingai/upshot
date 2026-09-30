@@ -69,6 +69,11 @@ class MeetingPatch(BaseModel):
     discard: bool | None = None
     #: Merged into the stored map: a slot set to null or "" is removed, others are kept.
     speaker_names: dict[str, str | None] | None = None
+    #: The meeting's details, from the dialog shown when recording starts or later. "" (or
+    #: an explicit null) clears one; a field left out is left alone.
+    description: str | None = None
+    planned_start: str | None = None
+    planned_end: str | None = None
 
 
 class ActionItemPatch(BaseModel):
@@ -1039,10 +1044,53 @@ def patch_meeting(request: Request, meeting_id: str, body: MeetingPatch) -> dict
         svc.dao.update_meeting(
             meeting_id, speaker_names=json.dumps(names, ensure_ascii=False) if names else None
         )
+    details = _details(body, meeting)
+    if details:
+        svc.dao.update_meeting(meeting_id, **details)
     if body.discard:
         svc.meetings.discard(meeting_id)
     svc.events.publish("meeting", meeting_id=meeting_id, action="patched")
     return _meeting_payload(svc, meeting_id)
+
+
+def _details(body: MeetingPatch, meeting: Any) -> dict[str, Any]:
+    """The description and planned times a patch sets. Times are ISO 8601 with an offset;
+    the end must come after the start."""
+    from datetime import datetime
+
+    sent = body.model_fields_set
+    fields: dict[str, Any] = {}
+    if "description" in sent:
+        text = (body.description or "").strip()
+        if len(text) > 5000:
+            raise HTTPException(422, "a description is at most 5000 characters")
+        fields["description"] = text or None
+    for name in ("planned_start", "planned_end"):
+        if name not in sent:
+            continue
+        value = (getattr(body, name) or "").strip()
+        if value:
+            try:
+                parsed = datetime.fromisoformat(value)
+            except ValueError as exc:
+                raise HTTPException(422, f"{name} is not an ISO date and time") from exc
+            if parsed.tzinfo is None:
+                raise HTTPException(422, f"{name} needs its time zone offset")
+        fields[name] = value or None
+    start = fields.get("planned_start", meeting.planned_start)
+    end = fields.get("planned_end", meeting.planned_end)
+    if start and end and datetime.fromisoformat(end) <= datetime.fromisoformat(start):
+        raise HTTPException(422, "the end must come after the start")
+    return fields
+
+
+@router.get("/locale")
+def locale_formats() -> dict[str, str]:
+    """The user's short date and time patterns, as Windows shows them (sShortDate,
+    sShortTime): the meeting-details times are written with them."""
+    from app.locale_formats import windows_formats
+
+    return windows_formats().as_dict()
 
 
 @router.get("/meetings/{meeting_id}/transcript")

@@ -188,9 +188,21 @@ def meeting_context(ctx: StageContext) -> str | None:
     calendar invitation is exactly the one that would otherwise carry no date at all.
     Then, where there is one, the calendar invitation (:func:`calendar_context`).
     """
-    parts = [calendar_context(ctx), date_context(ctx.meeting.started_at)]
+    parts = [calendar_context(ctx), details_context(ctx), date_context(ctx.meeting.started_at)]
     joined = "\n\n".join(part for part in parts if part)
     return joined or None
+
+
+def details_context(ctx: StageContext) -> str | None:
+    """What the user wrote about the meeting when recording it, or later: its title as they
+    named it and their description. Nothing when they wrote nothing."""
+    meeting = ctx.meeting
+    lines = []
+    if meeting.title and meeting.title_source == "user":
+        lines.append(f"Meeting title (from the user): {meeting.title}")
+    if meeting.description and meeting.description.strip():
+        lines.append("The user's description of the meeting:\n" + meeting.description.strip())
+    return "\n".join(lines) or None
 
 
 def date_context(started_at: str) -> str | None:

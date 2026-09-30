@@ -102,7 +102,7 @@ def format_pattern(when: datetime, pattern: str, language: str = "en") -> str:
 def default_meeting_title(
     when: datetime, language: str = "en", formats: Formats | None = None
 ) -> str:
-    """"Tuesday 30/09/2026 14:05": the weekday, then the date and time as Windows shows
+    """ "Tuesday 30/09/2026 14:05": the weekday, then the date and time as Windows shows
     them. Always hours and minutes, whatever seconds the short time pattern carries."""
     formats = formats or windows_formats()
     days = WEEKDAYS.get(language, WEEKDAYS["en"])

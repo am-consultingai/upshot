@@ -1,5 +1,13 @@
 import { expect, gotoApp, isoAt, minutesAgo, test, gotoSettings } from "./fixtures";
 
+/** Recording starts with the meeting-details dialog over it; close it to reach the page. */
+async function closeDetails(page: import("@playwright/test").Page): Promise<void> {
+  await expect(page.getByTestId("meeting-info")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("meeting-info")).toHaveCount(0);
+}
+
+
 test("timeline_renders_seeded", async ({ page, seed }) => {
   await seed([
     { id: "e2e-a1", title: "Day one morning", started_at: isoAt(2, 9) },
@@ -133,6 +141,7 @@ test("recording_shows_a_live_waveform_on_every_page", async ({ page, seed }) => 
   await expect(page.getByTestId("recording-bar")).toHaveCount(0);
 
   await page.getByTestId("start-recording").click();
+  await closeDetails(page);
   const bar = page.getByTestId("recording-bar");
   await expect(bar).toBeVisible();
 
@@ -220,6 +229,7 @@ test("the_record_button_becomes_stop_and_stops", async ({ page, seed }) => {
   await seed([]);
   await gotoApp(page);
   await page.getByTestId("start-recording").click();
+  await closeDetails(page);
   await expect(page.getByTestId("recording-bar")).toBeVisible();
   const stop = page.getByTestId("stop-recording");
   await expect(stop).toBeEnabled();
@@ -233,6 +243,7 @@ test("ctrl_r_starts_and_stops_even_on_a_hebrew_keyboard", async ({ page, seed })
   await seed([]);
   await gotoApp(page);
   await page.keyboard.press("Control+KeyR");
+  await closeDetails(page);
   await expect(page.getByTestId("recording-bar")).toBeVisible();
   // Same key again stops it; and the page was never reloaded by the browser's Ctrl+R.
   await page.evaluate(() => ((window as unknown as { stillHere: boolean }).stillHere = true));
@@ -245,6 +256,7 @@ test("a_stop_that_fails_says_so_and_how_else_to_stop", async ({ page, seed }) =>
   await seed([]);
   await gotoApp(page);
   await page.getByTestId("start-recording").click();
+  await closeDetails(page);
   await expect(page.getByTestId("recording-bar")).toBeVisible();
   await page.route("**/api/recording/stop", (route) => route.fulfill({ status: 500, body: "recorder wedged" }));
   await page.getByTestId("recording-bar-stop").click();

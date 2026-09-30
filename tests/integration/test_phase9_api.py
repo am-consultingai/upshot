@@ -621,3 +621,45 @@ def test_the_meeting_carries_the_classifiers_candidates(api) -> None:  # type: i
     )
     body = api.client().get(f"/api/meetings/{ids[0]}").json()
     assert body["language_candidates"] == ["es", "pt", "he"]
+
+
+# ---------------------------------------------------- meeting details (2026-09-30)
+
+
+def test_the_details_dialog_saves_title_description_and_times(api) -> None:  # type: ignore[no-untyped-def]
+    ids = seed(api, 1)
+    client = api.client()
+    body = client.patch(
+        f"/api/meetings/{ids[0]}",
+        json={
+            "title": "Pricing review",
+            "description": "Decide the new tier.\nBring the numbers.",
+            "planned_start": "2026-09-30T14:00:00+03:00",
+            "planned_end": "2026-09-30T14:45:00+03:00",
+        },
+    ).json()
+    assert (body["title"], body["title_source"]) == ("Pricing review", "user")
+    assert body["description"] == "Decide the new tier.\nBring the numbers."
+    assert (body["planned_start"], body["planned_end"]) == (
+        "2026-09-30T14:00:00+03:00", "2026-09-30T14:45:00+03:00",
+    )  # fmt: skip
+    # A field left out is left alone; an empty one is cleared.
+    body = client.patch(f"/api/meetings/{ids[0]}", json={"description": ""}).json()
+    assert body["description"] is None and body["planned_start"] == "2026-09-30T14:00:00+03:00"
+
+
+def test_the_details_are_checked(api) -> None:  # type: ignore[no-untyped-def]
+    ids = seed(api, 1)
+    client = api.client()
+    url = f"/api/meetings/{ids[0]}"
+    assert client.patch(url, json={"planned_start": "tomorrow"}).status_code == 422
+    assert client.patch(url, json={"planned_start": "2026-09-30T14:00:00"}).status_code == 422
+    assert client.patch(url, json={
+        "planned_start": "2026-09-30T14:00:00+03:00", "planned_end": "2026-09-30T13:45:00+03:00",
+    }).status_code == 422, "the end comes after the start"  # fmt: skip
+    assert client.patch(url, json={"description": "x" * 5001}).status_code == 422
+
+
+def test_the_locale_formats_are_windows_or_defaults(api) -> None:  # type: ignore[no-untyped-def]
+    body = api.client().get("/api/locale").json()
+    assert set(body) == {"short_date", "short_time"}
