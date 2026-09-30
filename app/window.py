@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import subprocess
 import sys
+import time
 import webbrowser
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -175,17 +176,29 @@ def give_focus_back() -> str | None:
         return None
 
 
-def close_all() -> int:
-    """Close every Upshot window. How many were asked to close.
+#: Windows asked to close by ``close_all`` and not gone yet: never focused instead of
+#: opening a new one.
+_closing: set[int] = set()
+
+#: How long ``close_all`` waits for a closed window to be gone.
+CLOSE_WAIT_S = 3.0
+
+
+def close_all(*, wait_s: float = CLOSE_WAIT_S) -> int:
+    """Close every Upshot window, and wait (up to ``wait_s``) until they are gone. How
+    many were asked to close.
 
     The window is a browser window, so it outlives the app: quitting (the tray, or the
     installer stopping the app for an upgrade) left a dead page behind, and the next start
     found that window and focused it instead of opening one, which showed nothing on
-    machine B (D74).
+    machine B (D74). Posting WM_CLOSE alone was not enough: the close is asynchronous, so
+    the start that followed still found the closing window, failed to bring it forward
+    ("Invalid window handle") and counted that as shown — the app sat in the tray with
+    no window and no taskbar button (machine B, 2026-09-30).
     """
     if sys.platform != "win32":
         return 0
-    try:  # pragma: no cover - Windows only
+    try:
         import win32con
         import win32gui
 
@@ -198,7 +211,11 @@ def close_all() -> int:
 
         win32gui.EnumWindows(visit, None)
         for hwnd in found:
+            _closing.add(hwnd)
             win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        deadline = time.monotonic() + wait_s
+        while any(win32gui.IsWindow(hwnd) for hwnd in found) and time.monotonic() < deadline:
+            time.sleep(0.05)
         return len(found)
     except Exception as exc:
         log.info("could not close the Upshot windows: %s", exc)
@@ -206,16 +223,17 @@ def close_all() -> int:
 
 
 def focus_existing() -> bool:
-    """Bring an open Upshot window to the front. False when there is none."""
+    """Bring an open Upshot window to the front. False when there is none, or when the
+    one found turns out to be gone (then a new one is opened instead)."""
     if sys.platform != "win32":
         return False
-    import win32con  # pragma: no cover - Windows only
+    import win32con
     import win32gui
 
     found: list[int] = []
 
     def visit(hwnd: int, _: object) -> bool:
-        if win32gui.IsWindowVisible(hwnd) and _is_ours(win32gui, hwnd):
+        if hwnd not in _closing and win32gui.IsWindowVisible(hwnd) and _is_ours(win32gui, hwnd):
             found.append(hwnd)
         return True
 
@@ -228,6 +246,9 @@ def focus_existing() -> bool:
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
         win32gui.SetForegroundWindow(hwnd)
     except Exception as exc:  # Windows may refuse the foreground to a background process
+        if not win32gui.IsWindow(hwnd):
+            log.info("the Upshot window closed as it was brought forward; opening one")
+            return False
         log.info("could not bring the Upshot window forward: %s", exc)
     return True
 
