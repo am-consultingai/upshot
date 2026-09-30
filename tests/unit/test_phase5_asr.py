@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import socket
 import sys
 import wave
 from pathlib import Path
@@ -15,7 +14,6 @@ from app.asr.fake import FakeAsr
 from app.asr.language import spoken_language
 from app.asr.local import LocalAsr, cuda_library_dirs, probe_device
 from app.asr.models import DEFAULT_LANGUAGE, HEBREW, MODELS, OTHER, resolve
-from app.asr.remote import RemoteAsr
 from app.config import default_config
 
 RATE = 16000
@@ -326,95 +324,6 @@ def test_model_resolution_prefers_configured_path(tmp_path: Path, app_home: Path
     fallback = resolve(empty)
     assert fallback.local is False and fallback.reference == MODELS[HEBREW].repo
     assert not resolve(config, OTHER).local, "the override is for the Hebrew model only"
-
-
-# ------------------------------------------------------------------ remote
-
-
-def test_remote_falls_back_when_down(tmp_path: Path) -> None:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    fallback = FakeAsr()
-    remote = RemoteAsr(f"http://127.0.0.1:{port}", fallback, health_timeout=0.2)
-    segments = remote.transcribe(make_wav(tmp_path / "them" / "0001.wav", 20))
-    assert segments, "a dead worker still produces a transcript"
-    assert remote.used_fallback == 1
-    assert remote.warnings and "health check failed" in remote.warnings[0]
-
-
-class FakeWorker:
-    """httpx as a worker would answer it: healthy, and segments for every POST."""
-
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, fail: bool = False) -> None:
-        import httpx
-
-        self.posts: list[dict[str, str]] = []
-        self.fail = fail
-        monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(200, json={}))
-        monkeypatch.setattr(httpx, "post", self.post)
-
-    def post(self, url: str, *, files: object, data: dict[str, str], **kw: object) -> object:
-        import httpx
-
-        self.posts.append(dict(data))
-        if self.fail:
-            raise httpx.ConnectError("the worker went away")
-        text = {"es": "tenemos un problema con el despliegue"}.get(data["language"], "שלום")
-        body = {"segments": [{"id": 0, "start": 0.0, "end": 2.0, "text": text, "words": []}]}
-        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
-
-
-@pytest.mark.parametrize(
-    ("role", "language", "multilingual"),
-    [("hebrew", "he", False), ("other", "es", False), ("other", None, True)],
-)
-def test_remote_sends_the_route_language_and_multilingual(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    role: str,
-    language: str | None,
-    multilingual: bool,
-) -> None:
-    worker = FakeWorker(monkeypatch)
-    remote = RemoteAsr("http://worker", FakeAsr(), role=role)
-    segments = remote.transcribe(
-        make_wav(tmp_path / "them.wav", 3), language=language, multilingual=multilingual
-    )
-    assert worker.posts == [{
-        "route": role, "language": language or "", "multilingual": str(multilingual).lower(),
-        "initial_prompt": "", "word_timestamps": "true",
-    }]  # fmt: skip
-    assert segments and remote.used_fallback == 0
-    if language == "es":
-        assert segments[0].text == "tenemos un problema con el despliegue", "kept as it came"
-    assert remote.describe()["repo"] == MODELS[role].repo
-
-
-def test_the_fallback_uses_the_same_model_and_language(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    FakeWorker(monkeypatch, fail=True)
-    fallback = FakeAsr()
-    fallback.select_role(OTHER)
-    remote = RemoteAsr("http://worker", fallback, role=OTHER)
-    remote.transcribe(make_wav(tmp_path / "them.wav", 3), language="es")
-    remote.transcribe(make_wav(tmp_path / "me.wav", 3), language=None, multilingual=True)
-    assert remote.used_fallback == 2
-    assert [(c["role"], c["language"], c["multilingual"]) for c in fallback.transcribe_calls] == [
-        (OTHER, "es", False), (OTHER, None, True),
-    ]  # fmt: skip
-
-
-@pytest.mark.parametrize("role", [HEBREW, OTHER])
-def test_the_factory_gives_the_worker_and_its_fallback_the_same_role(role: str) -> None:
-    from app.asr.factory import make_backend
-
-    config = default_config(asr__backend="remote", asr__remote_url="http://worker")
-    backend = make_backend(config, role)
-    assert isinstance(backend, RemoteAsr)
-    assert backend.role == role
-    assert isinstance(backend.fallback, LocalAsr) and backend.fallback.role == role
 
 
 # ------------------------------------------------------------------ language

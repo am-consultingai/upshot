@@ -339,47 +339,6 @@ def test_a_missing_model_fails_the_job_by_name_without_a_download(
     assert not transcribe.segments_path(meeting.path).exists()
 
 
-# ------------------------------------------------------- the remote worker (story F)
-
-
-def test_a_remote_run_chooses_the_same_model_and_language_as_a_local_one(
-    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Classified here, transcribed there: the worker is told the route and the language."""
-    import httpx
-
-    from tests.fixtures.models import install_models
-
-    install_models(app_home)
-    posts: list[dict[str, str]] = []
-
-    def post(url: str, *, data: dict[str, str], **kw: object) -> httpx.Response:
-        posts.append(dict(data))
-        body = {"segments": [{"start": 0.0, "end": 2.0, "text": "hola a todos", "words": []}]}
-        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
-
-    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(200, json={}))
-    monkeypatch.setattr(httpx, "post", post)
-    h = harness(tmp_path, asr__backend="remote", asr__remote_url="http://worker",
-                audio__vad="energy")  # fmt: skip
-    meeting = h.meeting()
-    write_chunks(meeting.path, seconds=30)
-
-    class Remote:
-        asr = None
-        classifier = FakeClassifier("es")
-
-    transcribe.run(h.context(meeting, services=Remote()))
-    assert {(p["route"], p["language"], p["multilingual"]) for p in posts} == {
-        ("other", "es", "false")
-    }
-    assert len(posts) == 2, "both tracks, one worker call each"
-    stored = h.dao.require_meeting(meeting.id)
-    assert stored.language == "es"
-    asr = meta.read(meeting.path)["asr"]
-    assert (asr["name"], asr["role"]) == ("remote", "other")
-
-
 # ------------------------------------------------------- transcribe again as… (story E)
 
 

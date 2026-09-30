@@ -279,3 +279,30 @@ def test_working_hours_must_run_forwards_within_a_day(start: int, end: int) -> N
 
     with pytest.raises(ConfigError, match="working hours"):
         default_config(calendar__work_start=start, calendar__work_end=end)
+
+
+def test_a_config_from_before_remote_worker_was_removed_still_starts(tmp_path: Path) -> None:
+    """D81: remote-worker mode is gone. A saved config naming it must not stop the app."""
+    file = tmp_path / "app_config.json"
+    file.write_text(
+        json.dumps(
+            {
+                "profile": "remote-worker",
+                "worker_url": "http://gpu-box:8078",
+                "asr": {"backend": "remote", "remote_url": "http://gpu-box:8078"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg = Config.load(file=file, environ={})
+    assert cfg.get("asr.backend") == "local"
+    assert cfg.get("profile") == "auto"
+    assert cfg.get("worker_url") is None and cfg.get("asr.remote_url") is None
+    assert any("another computer" in notice for notice in cfg.warnings())
+
+
+def test_the_environment_cannot_ask_for_remote_transcription(tmp_path: Path) -> None:
+    cfg = Config.load(file=tmp_path / "absent.json", environ={"UP_ASR__BACKEND": "remote"})
+    assert cfg.get("asr.backend") == "local"
+    with pytest.raises(ConfigError):
+        default_config(asr__backend="remote")
