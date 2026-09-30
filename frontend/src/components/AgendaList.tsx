@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
 import type { CalendarEvent, Meeting } from "../api";
 import { useI18n } from "../i18n";
-import { allDayKeys, dayKey, isToday, recordedIds, timedEvents } from "../lib/calendar";
+import { allDayKeys, dayKey, eventKey, isToday, recordedIds, timedEvents } from "../lib/calendar";
 import { formatClock, formatShortDate } from "../lib/format";
 import { chipWhen, kindOf, type ChipKind } from "./TimeGrid";
+import AccountDots from "./AccountDots";
 
 interface Row {
   key: string;
@@ -14,6 +15,8 @@ interface Row {
   meetingId?: string | null;
   event?: CalendarEvent;
   items?: number;
+  /** The calendar accounts it is on, for its dots. */
+  accounts?: string[];
 }
 
 const DOT: Record<ChipKind, string> = {
@@ -59,7 +62,7 @@ export default function AgendaList({
     const kind = event.meeting_id ? kindOf(meeting) : "scheduled";
     const minutes = (new Date(event.end).getTime() - new Date(event.start).getTime()) / 60_000;
     add({
-      key: `event:${event.calendar_id}:${event.event_id}`,
+      key: eventKey(event),
       start: event.start,
       title: event.title ?? t("calendar.untitled"),
       kind,
@@ -85,6 +88,7 @@ export default function AgendaList({
       ),
       meetingId: meeting.id,
       items: meeting.actions_open,
+      accounts: meeting.calendar_accounts,
     });
   }
   const allDay = new Map<string, CalendarEvent[]>();
@@ -118,7 +122,7 @@ export default function AgendaList({
             </h2>
             {(allDay.get(key) ?? []).map((event) => (
               <button
-                key={`${event.calendar_id}:${event.event_id}`}
+                key={eventKey(event)}
                 type="button"
                 onClick={() => onEvent?.(event)}
                 className="mb-1 me-1 inline-block rounded-xs bg-warning-quiet px-1.5 py-0.5 text-2xs text-warning"
@@ -141,6 +145,7 @@ export default function AgendaList({
                     >
                       {row.title}
                     </span>
+                    <AccountDots item={row.event ?? { calendar_accounts: row.accounts }} />
                     {(row.kind === "live" || row.kind === "failed") && (
                       <span className="shrink-0 font-mono text-2xs text-danger">{row.when.split(" · ").pop()}</span>
                     )}

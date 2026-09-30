@@ -31,7 +31,12 @@ REMOTE = frozenset({"recording.start", "recording.stop", "recording.keep", "meet
 #: Windows lets it, and not the tray process, bring a window to the front.
 PAGES = {"open": "/", "meeting.open": "/m/{meeting}", "meeting.email": "/m/{meeting}"}
 #: Query keys a link may carry, and the request fields they become.
-FIELDS = {"meeting": "meeting_id", "calendar": "calendar_id", "event": "event_id"}
+FIELDS = {
+    "meeting": "meeting_id",
+    "account": "account_id",
+    "calendar": "calendar_id",
+    "event": "event_id",
+}
 #: "Join and record": the meeting link, opened by the link process itself (D76).
 JOIN_KEY = "join"
 
@@ -43,7 +48,8 @@ class Link:
 
 
 def url(action: str, **params: str | None) -> str:
-    """``upshot:recording.start?calendar=primary&event=abc``; empty values are left out."""
+    """``upshot:recording.start?account=ga_1&calendar=primary&event=abc``; empty values are
+    left out."""
     query = urllib.parse.urlencode({key: value for key, value in params.items() if value})
     return f"{SCHEME}:{action}" + (f"?{query}" if query else "")
 

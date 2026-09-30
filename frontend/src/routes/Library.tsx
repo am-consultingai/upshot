@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useMatch } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import {
@@ -18,6 +18,8 @@ import AgendaList from "../components/AgendaList";
 import LibraryRail from "../components/LibraryRail";
 import EventDetails from "../components/EventDetails";
 import Tooltip from "../components/Tooltip";
+import AccountsPopover, { AccountsTrigger } from "../components/AccountsPopover";
+import { useCalendarAccounts } from "../components/AccountDots";
 import { greeting } from "../lib/greeting";
 import type { CalendarEvent } from "../api";
 
@@ -214,7 +216,9 @@ export default function Library() {
                 </span>
                 </Tooltip>
               )}
-              <div className="ms-auto flex gap-0.5 rounded-md bg-surface-3 p-0.5" role="group">
+              <div className="ms-auto flex items-center gap-2">
+              <CalendarsControl />
+              <div className="flex gap-0.5 rounded-md bg-surface-3 p-0.5" role="group">
                 {(["day", "week", "month", "list"] as const).map((option) => (
                   <Tooltip
                     key={option}
@@ -238,6 +242,7 @@ export default function Library() {
                   </Tooltip>
                 ))}
               </div>
+              </div>
             </div>
             <div className="flex min-h-0 flex-1">
               <div className="min-w-0 flex-1 overflow-hidden">
@@ -260,5 +265,50 @@ export default function Library() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Which calendars the view shows (D82): one checkbox per connected account, with its dot
+ * — the legend and the switch at once. Only with two or more accounts: with one there
+ * is nothing to choose between. Hiding here is the same switch as in Settings, and hides
+ * the account everywhere, recordings included.
+ */
+function CalendarsControl() {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const accounts = useCalendarAccounts();
+  const toggle = useMutation({
+    mutationFn: ({ id, visible }: { id: string; visible: boolean }) =>
+      api.calendarSetVisible(id, visible),
+    onSuccess: (next) => {
+      queryClient.setQueryData(["calendar"], next);
+      void queryClient.invalidateQueries();
+    },
+  });
+  if (accounts.length < 2) return null;
+  return (
+    <AccountsTrigger
+      label={t("calendar.accounts")}
+      testid="calendar-accounts"
+      active={accounts.some((account) => !account.visible)}
+    >
+      {(anchor, close) => (
+        <AccountsPopover
+          anchor={anchor}
+          title={t("calendar.accounts")}
+          testid="calendar-accounts-popover"
+          choices={accounts.map((account) => ({
+            id: account.id,
+            label: account.address,
+            color: account.color,
+            checked: account.visible,
+          }))}
+          footnote={t("calendar.accountsHint")}
+          onToggle={(id, visible) => toggle.mutate({ id, visible })}
+          onClose={close}
+        />
+      )}
+    </AccountsTrigger>
   );
 }

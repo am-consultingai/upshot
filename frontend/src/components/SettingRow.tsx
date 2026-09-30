@@ -38,7 +38,7 @@ export default function SettingRow({
   tone,
   configKey,
 }: {
-  label: string;
+  label: ReactNode;
   description?: ReactNode;
   /** Points the label at its control, so clicking the name focuses the thing. */
   htmlFor?: string;

@@ -92,6 +92,24 @@ def calendar_payload(meeting: Meeting) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def event_account(meeting: Meeting) -> str | None:
+    """The account whose copy of the event this meeting is matched to: whose token reads
+    its invitation. From the snapshot, else the column (both are written together)."""
+    ref = calendar_payload(meeting).get("event") or {}
+    account = ref.get("account_id") if isinstance(ref, dict) else None
+    return str(account) if account else meeting.calendar_account_id
+
+
+def _members(payload: dict[str, Any]) -> tuple[str | None, list[str]]:
+    """The matched account and every account of a snapshot; nothing unless it is matched."""
+    if (payload.get("match") or {}).get("state") != "matched":
+        return None, []
+    ref = payload.get("event") or {}
+    account = ref.get("account_id") if isinstance(ref, dict) else None
+    others = [str(a) for a in payload.get("accounts") or [] if a]
+    return (str(account) if account else None), others
+
+
 class MeetingService:
     def __init__(
         self,
@@ -209,7 +227,7 @@ class MeetingService:
         if enrichment.title and title_is_open(meeting):
             fields["title"] = enrichment.title
             fields["title_source"] = "calendar"
-        updated = self.dao.update_meeting(meeting.id, **fields)
+        updated = self._write_calendar(meeting.id, raw, fields)
         log.info(
             "enrichment from %s applied to %s (%s)",
             self.enrichment_source.name,
@@ -259,12 +277,22 @@ class MeetingService:
             fields: dict[str, Any] = {"calendar_json": json.dumps(raw)}
             if meeting.title_source == "calendar":
                 fields["title_source"] = "user"  # keep the name, but it is theirs now
-            return self.dao.update_meeting(meeting_id, **fields)
+            return self._write_calendar(meeting_id, raw, fields)
         fields = {"calendar_json": json.dumps(payload, ensure_ascii=False)}
         if payload.get("title") and meeting.title_source != "user":
             fields["title"] = payload["title"]
             fields["title_source"] = "calendar"
-        return self.dao.update_meeting(meeting_id, **fields)
+        return self._write_calendar(meeting_id, payload, fields)
+
+    def _write_calendar(
+        self, meeting_id: str, payload: dict[str, Any], fields: dict[str, Any]
+    ) -> Meeting:
+        """Store a snapshot and, from it, which calendar accounts the meeting is on (D82).
+        A meeting matched to nothing belongs to no account and is always shown."""
+        self.dao.update_meeting(meeting_id, **fields)
+        account, others = _members(payload)
+        self.dao.set_calendar_accounts(meeting_id, account, others)
+        return self.dao.require_meeting(meeting_id)
 
     # -- lifecycle ---------------------------------------------------------
 

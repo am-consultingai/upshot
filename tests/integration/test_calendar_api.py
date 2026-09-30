@@ -9,7 +9,8 @@ import httpx
 import pytest
 
 from app.config import FakeKeyring
-from app.gcal.oauth import SCOPE, CalendarAuth
+from app.gcal.accounts import AccountRegistry, token_key
+from app.gcal.oauth import SCOPE, CalendarAccounts
 from tests.fixtures.api import build_harness
 from tests.unit.test_gcal_oauth import CLIENT, FakeGoogle
 
@@ -19,8 +20,9 @@ def api(tmp_path: Path, app_home: Path):  # type: ignore[no-untyped-def]
     harness = build_harness(tmp_path)
     google = FakeGoogle()
     harness.google = google
-    harness.services.calendar = CalendarAuth(
+    harness.services.calendar = CalendarAccounts(
         harness.services.config.secrets,
+        AccountRegistry(harness.services.conn, harness.clock),
         client_loader=lambda: CLIENT,
         http=httpx.Client(transport=httpx.MockTransport(google.handler)),
         publish=lambda **payload: harness.services.events.publish("calendar", **payload),
@@ -29,11 +31,11 @@ def api(tmp_path: Path, app_home: Path):  # type: ignore[no-untyped-def]
     harness.services.calendar.close()
 
 
-def test_connect_status_disconnect(api, app_home: Path) -> None:  # type: ignore[no-untyped-def]
-    client = api.client()
-    assert client.get("/api/calendar/status").json()["state"] == "disconnected"
-
-    started = client.post("/api/calendar/connect").json()
+def _sign_in(api, client, address: str | None = None, path: str = "/api/calendar/connect"):  # type: ignore[no-untyped-def]
+    if address is not None:
+        api.google.account = address
+        api.google.next_refresh = f"r-{address}"
+    started = client.post(path).json()
     assert started["state"] == "connecting"
     consent = api.google.consent(started["auth_url"])
     httpx.get(
@@ -41,23 +43,77 @@ def test_connect_status_disconnect(api, app_home: Path) -> None:  # type: ignore
         params={"state": consent["state"], "code": "good-code", "scope": SCOPE},
         timeout=5.0,
     )
+    return client.get("/api/calendar/status").json()
 
-    status = client.get("/api/calendar/status").json()
+
+def test_connect_status_remove(api, app_home: Path) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    assert client.get("/api/calendar/status").json()["state"] == "disconnected"
+
+    status = _sign_in(api, client)
     assert status["state"] == "connected"
     assert status["account"] == "dana@example.com"
+    [account] = status["accounts"]
+    assert account["address"] == "dana@example.com" and account["visible"] is True
+    assert account["state"] == "connected" and account["color"] == 1
     assert any(event.type == "calendar" for event in api.services.events.history)
 
     # The token is in the credential store and nowhere a user or a bundle can read it.
-    assert api.services.config.secrets.get("google_refresh_token") == "r-1"
+    assert api.services.config.secrets.get(token_key(account["id"])) == "r-1"
     api.services.config.save()
     for path in app_home.rglob("*"):
         if path.is_file():
             assert "r-1" not in path.read_text(errors="ignore"), path
     assert "r-1" not in client.get("/api/settings").text
 
-    gone = client.post("/api/calendar/disconnect").json()
+    gone = client.delete(f"/api/calendar/accounts/{account['id']}").json()
     assert gone["revoked"] is True and gone["state"] == "disconnected"
+    assert gone["accounts"] == []
     assert api.google.revoked == ["r-1"]
+    kept = api.services.calendar.registry.get(account["id"])
+    assert kept.removed and kept.address == "dana@example.com", "kept in the database"
+    assert client.delete(f"/api/calendar/accounts/{account['id']}").status_code == 404
+
+
+def test_add_another_calendar(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    _sign_in(api, client)
+    status = _sign_in(api, client, "noa@example.com")
+    assert [a["address"] for a in status["accounts"]] == ["dana@example.com", "noa@example.com"]
+    assert [a["color"] for a in status["accounts"]] == [1, 2]
+    assert api.google.revoked == []
+
+
+def test_hide_and_show_an_account(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    account = _sign_in(api, client)["accounts"][0]["id"]
+    hidden = client.patch(f"/api/calendar/accounts/{account}", json={"visible": False})
+    assert hidden.status_code == 200
+    assert hidden.json()["accounts"][0]["visible"] is False
+    assert api.services.calendar.active_ids() == set()
+    shown = client.patch(f"/api/calendar/accounts/{account}", json={"visible": True}).json()
+    assert shown["accounts"][0]["visible"] is True
+    assert (
+        client.patch("/api/calendar/accounts/ga_nope0000", json={"visible": True}).status_code
+        == 404
+    )
+
+
+def test_reconnect_offers_the_same_account(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    account = _sign_in(api, client)["accounts"][0]["id"]
+    status = _sign_in(api, client, path=f"/api/calendar/accounts/{account}/reconnect")
+    assert api.google.login_hints[-1] == "dana@example.com"
+    assert [a["id"] for a in status["accounts"]] == [account]
+    assert client.post("/api/calendar/accounts/ga_nope0000/reconnect").status_code == 404
+
+
+def test_the_retired_routes_are_gone(api) -> None:  # type: ignore[no-untyped-def]
+    """Nothing deletes calendar data any more (D82): no "forget the cache", and
+    "disconnect" is removing one account."""
+    client = api.client()
+    assert client.delete("/api/calendar/cache").status_code in (404, 405)
+    assert client.post("/api/calendar/disconnect").status_code in (404, 405)
 
 
 def test_calendar_routes_need_csrf(api) -> None:  # type: ignore[no-untyped-def]
@@ -66,11 +122,17 @@ def test_calendar_routes_need_csrf(api) -> None:  # type: ignore[no-untyped-def]
     client = api.client()
     del client.headers[CSRF_HEADER]
     assert client.post("/api/calendar/connect").status_code == 403
-    assert client.post("/api/calendar/disconnect").status_code == 403
+    assert client.delete("/api/calendar/accounts/ga_00000000").status_code == 403
+    assert (
+        client.patch("/api/calendar/accounts/ga_00000000", json={"visible": False}).status_code
+        == 403
+    )
 
 
 def test_connect_without_a_client_is_a_409(api) -> None:  # type: ignore[no-untyped-def]
-    api.services.calendar = CalendarAuth(FakeKeyring(), client_loader=lambda: None)
+    api.services.calendar = CalendarAccounts(
+        FakeKeyring(), AccountRegistry(api.services.conn), client_loader=lambda: None
+    )
     response = api.client().post("/api/calendar/connect")
     assert response.status_code == 409
     assert "no Google client" in response.text
@@ -114,8 +176,9 @@ def test_links_leaving_the_app_go_to_the_default_browser(  # type: ignore[no-unt
     assert len(opened) == 1, "nothing but http(s) is ever opened"
 
 
-def test_another_account_drops_the_first_ones_cached_events(tmp_path: Path, app_home: Path) -> None:
-    """Setup's "Use a different account": the old account's events leave the cache."""
+def test_another_account_keeps_the_first_ones_events(tmp_path: Path, app_home: Path) -> None:
+    """Adding an account never touches another's cached events (D82); before, "Use a
+    different account" emptied the cache."""
     from datetime import UTC, datetime, timedelta
 
     from app.clock import FakeClock
@@ -126,17 +189,16 @@ def test_another_account_drops_the_first_ones_cached_events(tmp_path: Path, app_
     from app.services import build_calendar
 
     clock = FakeClock()
-    auth, sync, _source = build_calendar(
+    accounts, sync, _source = build_calendar(
         default_config(), db_connect(tmp_path / "index.db"), EventBus(), clock
     )
+    first, _ = accounts.registry.add_or_restore("dana@example.com")
     start = datetime(2026, 9, 30, 9, tzinfo=UTC)
     sync.store.replace_window(
-        "primary", start, start + timedelta(days=1),
+        first.id, "primary", start, start + timedelta(days=1),
         [CalendarEvent("primary", "e1", "Standup", start, start + timedelta(minutes=15))],
         synced_at=start,
     )  # fmt: skip
+    second, _ = accounts.registry.add_or_restore("noa@example.com")
+    accounts._announce(account_id=second.id, restored=False)
     assert sync.store.count() == 1
-    auth._publish(state="connected")  # the same account again: kept
-    assert sync.store.count() == 1
-    auth._publish(state="connected", account_changed=True)
-    assert sync.store.count() == 0

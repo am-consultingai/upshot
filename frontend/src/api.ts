@@ -30,6 +30,8 @@ export interface Meeting {
   planned_start?: string | null;
   planned_end?: string | null;
   title_source?: string | null;
+  /** Every calendar account the meeting is on (its dots). Empty: on no calendar. */
+  calendar_accounts?: string[];
 }
 
 /** A stretch of the conversation about one thing, as the summarizer divided it. */
@@ -142,12 +144,31 @@ export interface MeetingDetail extends Meeting {
   language_candidates?: string[];
 }
 
-/** The Google Calendar connection. Never carries a token. */
+/** One connected Google account (D82). Removed accounts are never listed. */
+export interface CalendarAccount {
+  id: string;
+  address: string;
+  /** "reconnect": its token stopped working and it needs signing in again. */
+  state: "connected" | "reconnect";
+  /** Off: everything of this account is hidden everywhere in Upshot. */
+  visible: boolean;
+  /** 1..6: which --account-N colour its dot is. */
+  color: number;
+  error: string | null;
+  last_synced_at?: string | null;
+  sync_error?: string | null;
+  cached_events?: number;
+}
+
+/** The Google Calendar connections. Never carries a token. */
 export interface CalendarStatus {
   /** False when this build has no Google OAuth client baked in. */
   configured: boolean;
+  /** Across every account: "connected" when any is, "connecting" while a sign-in runs. */
   state: "disconnected" | "connecting" | "connected" | "reconnect";
+  /** The first connected account's address. */
   account: string | null;
+  accounts: CalendarAccount[];
   /** Google's consent page, while a connection is waiting on the browser. */
   auth_url: string | null;
   error: string | null;
@@ -159,8 +180,19 @@ export interface CalendarStatus {
   opens_externally?: boolean;
 }
 
+/** Which event: the account it is on, the calendar, and its id. */
+export interface EventRef {
+  account_id?: string;
+  calendar_id: string;
+  event_id: string;
+}
+
 /** A Google Calendar event from the local cache. Names only — never an address. */
 export interface CalendarEvent {
+  /** The account this copy was read from. */
+  account_id: string;
+  /** Every shown account the same meeting is on, when it is on more than one. */
+  accounts?: string[];
   calendar_id: string;
   event_id: string;
   title: string | null;
@@ -210,14 +242,28 @@ export interface Invite {
 
 /** What a recording knows about its calendar event (a snapshot taken when matched). */
 export interface MeetingCalendar {
-  event?: { calendar_id: string; event_id: string; start: string; end: string };
+  event?: {
+    account_id?: string;
+    calendar_id: string;
+    event_id: string;
+    start: string;
+    end: string;
+  };
+  /** Every account the matched event is on. */
+  accounts?: string[];
   title?: string | null;
   participants?: string[];
   participants_more?: number;
   conference_url?: string | null;
   private?: boolean;
   match?: { state: "matched" | "proposed" | "none"; source: "auto" | "user"; reason?: string };
-  candidates?: { calendar_id: string; event_id: string; title: string | null; start: string }[];
+  candidates?: {
+    account_id?: string;
+    calendar_id: string;
+    event_id: string;
+    title: string | null;
+    start: string;
+  }[];
 }
 
 /**
@@ -239,6 +285,7 @@ export interface Settings {
 export interface Prompt {
   kind: "calendar" | "detected";
   title: string;
+  account_id?: string | null;
   calendar_id: string | null;
   event_id: string | null;
   conference_url: string | null;
@@ -437,10 +484,12 @@ export const api = {
   modelCancel: () => request<ModelStatus>("/api/model/cancel", { method: "POST" }),
   deleteMeeting: (id: string) =>
     request<{ deleted: string }>(`/api/meetings/${id}`, { method: "DELETE" }),
-  meetings: (params: Record<string, string> = {}) =>
-    request<{ meetings: Meeting[]; count: number }>(
-      `/api/meetings?${new URLSearchParams(params).toString()}`,
-    ),
+  /** `account` narrows to those calendar accounts ("none": meetings on no calendar). */
+  meetings: (params: Record<string, string> = {}, account?: string[]) => {
+    const query = new URLSearchParams(params);
+    for (const id of account ?? []) query.append("account", id);
+    return request<{ meetings: Meeting[]; count: number }>(`/api/meetings?${query.toString()}`);
+  },
   meeting: (id: string) => request<MeetingDetail>(`/api/meetings/${id}`),
   /** Windows' short date and time patterns (sShortDate, sShortTime). */
   locale: () => request<LocaleFormats>("/api/locale"),
@@ -467,7 +516,7 @@ export const api = {
     ),
   languages: () => request<{ languages: Language[] }>("/api/languages"),
   /** With an event, the recording starts already matched to it ("Record this one"). */
-  startRecording: (event?: { calendar_id: string; event_id: string }) =>
+  startRecording: (event?: EventRef) =>
     request<{ meeting_id: string }>("/api/recording/start", {
       method: "POST",
       body: JSON.stringify(event ?? {}),
@@ -551,23 +600,34 @@ export const api = {
   openLink: (url: string) =>
     request<{ opened: boolean }>("/api/open", { method: "POST", body: JSON.stringify({ url }) }),
   calendarCancel: () => request<CalendarStatus>("/api/calendar/cancel", { method: "POST" }),
-  calendarDisconnect: () =>
-    request<CalendarStatus & { revoked: boolean; revoke_by_hand: string | null }>(
-      "/api/calendar/disconnect",
+  /** Sign in again to an account whose connection stopped working. */
+  calendarReconnect: (id: string) =>
+    request<CalendarStatus & { auth_url: string; opened: boolean }>(
+      `/api/calendar/accounts/${id}/reconnect`,
       { method: "POST" },
+    ),
+  /** Show or hide an account: hidden, all of it is hidden everywhere (D82). */
+  calendarSetVisible: (id: string, visible: boolean) =>
+    request<CalendarStatus>(`/api/calendar/accounts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ visible }),
+    }),
+  /** Remove an account: revoked, and hidden for good until the same address connects. */
+  calendarRemove: (id: string) =>
+    request<CalendarStatus & { revoked: boolean; revoke_by_hand: string | null }>(
+      `/api/calendar/accounts/${id}`,
+      { method: "DELETE" },
     ),
   calendarEvents: (from: string, to: string) =>
     request<{ events: CalendarEvent[] }>(
       `/api/calendar/events?${new URLSearchParams({ from, to }).toString()}`,
     ),
   calendarSyncNow: () => request<CalendarStatus>("/api/calendar/sync", { method: "POST" }),
-  calendarForget: () =>
-    request<CalendarStatus & { deleted: number }>("/api/calendar/cache", { method: "DELETE" }),
   meetingInvite: (id: string) =>
     request<{
       available: boolean;
       /** Why, machine-readably: "unmatched" and "no_connection" are the normal cases. */
-      code?: "unmatched" | "no_connection" | "auth" | "offline" | "deleted";
+      code?: "unmatched" | "no_connection" | "auth" | "offline" | "deleted" | "account_gone";
       reason?: string;
       reconnect?: boolean;
       invite?: Invite;
@@ -580,7 +640,7 @@ export const api = {
     ),
   chooseMeetingEvent: (
     id: string,
-    body: { calendar_id: string; event_id: string } | { none: true },
+    body: EventRef | { none: true },
   ) =>
     request<MeetingDetail>(`/api/meetings/${id}/calendar`, {
       method: "PUT",

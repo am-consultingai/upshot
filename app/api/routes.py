@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from app import meta
 from app.clock import iso
 from app.config import LLM_PROVIDERS
-from app.db.dao import GlossaryTerm, Meeting, capabilities
+from app.db.dao import GlossaryTerm, Meeting, capabilities, transaction
 from app.log import get
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
 from app.services import Services
@@ -135,6 +135,7 @@ class IgnorePost(BaseModel):
 class LauncherAction(BaseModel):
     action: str
     meeting_id: str | None = None
+    account_id: str | None = None
     calendar_id: str | None = None
     event_id: str | None = None
     #: The button also opened the meeting's link ("Join and record"). For the log.
@@ -145,6 +146,8 @@ class StartPost(BaseModel):
     title: str | None = None
     #: "Record this one" on an upcoming calendar event: the recording starts already
     #: matched to it, the way the user would have matched it by hand afterwards.
+    #: ``account_id`` may be left out when only one active account has the event.
+    account_id: str | None = None
     calendar_id: str | None = None
     event_id: str | None = None
 
@@ -301,7 +304,9 @@ def attention(request: Request) -> dict[str, Any]:
     svc = services_of(request)
     items: list[dict[str, Any]] = []
     for job in svc.queue.needing_attention():
-        meeting = svc.dao.get_meeting(job.meeting_id)
+        meeting = svc.dao.visible_meeting(job.meeting_id)
+        if meeting is None and svc.dao.get_meeting(job.meeting_id) is not None:
+            continue  # on a hidden calendar account: not there (D82)
         items.append(
             {
                 "meeting_id": job.meeting_id,
@@ -373,13 +378,11 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
     if body is not None and (body.calendar_id or body.event_id):
         if not body.calendar_id or not body.event_id:
             raise HTTPException(400, "name the event with both calendar_id and event_id")
-        event = _event_store(svc).get(body.calendar_id, body.event_id)
+        event = _event_lookup(svc, body.account_id, body.calendar_id, body.event_id)
         if event is None:
             raise HTTPException(404, "that event is not in the calendar cache")
     meter.release()  # every track: the recorder needs both endpoints
     if event is not None:
-        from app.gcal.source import snapshot
-
         # Created under the event's name, then matched as the user would match it by
         # hand — source "user", so neither the end-of-recording rematch nor a later sync
         # second-guesses a choice that was made by pressing "Record this one".
@@ -388,9 +391,7 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
             title=(body.title if body and body.title else event.title) or None,
             title_source="user" if body and body.title else "calendar",
         )
-        meeting = svc.meetings.choose_event(
-            meeting.id, snapshot(event, state="matched", source="user", confidence=1.0)
-        )
+        meeting = svc.meetings.choose_event(meeting.id, _user_snapshot(svc, event))
     else:
         meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
     from app.audio.devices import NoDeviceError
@@ -538,9 +539,16 @@ def launcher_test_calendar(request: Request, body: TestCalendar) -> dict[str, An
         raise HTTPException(401, "not the launcher")
     if svc.config.get("testing.hooks") is not True:
         raise HTTPException(404, "test hooks are off")
+    # Under the first connected account that is shown, so reminders and matching see them
+    # the way they see that account's own meetings (D82).
+    active = sorted(_active(svc))
+    if not active:
+        raise HTTPException(409, "connect a Google account first: test events need one")
+    account_id = active[0]
     now = svc.clock.now()
     events = [
         CalendarEvent(
+            account_id=account_id,
             calendar_id="upshot-test",
             event_id=item.id,
             title=item.title,
@@ -555,7 +563,12 @@ def launcher_test_calendar(request: Request, body: TestCalendar) -> dict[str, An
         for item in body.events
     ]
     EventStore(svc.conn).replace_window(
-        "upshot-test", now - timedelta(days=1), now + timedelta(days=2), events, synced_at=now
+        account_id,
+        "upshot-test",
+        now - timedelta(days=1),
+        now + timedelta(days=2),
+        events,
+        synced_at=now,
     )
     log.info("test hook: %d calendar event(s) set", len(events))
     return {"events": [e.event_id for e in events]}
@@ -589,8 +602,9 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
         offer = svc.prompts.current if svc.prompts is not None else None
         calendar_id = body.calendar_id or (offer.calendar_id if offer else None)
         event_id = body.event_id or (offer.event_id if offer else None)
+        account_id = body.account_id or (offer.account_id if offer else None)
         event = (
-            StartPost(calendar_id=calendar_id, event_id=event_id)
+            StartPost(account_id=account_id, calendar_id=calendar_id, event_id=event_id)
             if calendar_id and event_id
             else StartPost(title=offer.title)
             if offer is not None and offer.title
@@ -600,7 +614,7 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
             event is not None
             and event.calendar_id
             and event.event_id
-            and _event_store(svc).get(event.calendar_id, event.event_id) is None
+            and _event_or_none(svc, event.account_id, event.calendar_id, event.event_id) is None
         ):
             event = None  # the event left the cache since the toast: record it unnamed
         try:
@@ -681,20 +695,25 @@ def _inferred_calendar(
         ended = _instant(meeting.ended_at) if meeting.ended_at else None
     except ValueError:
         return {}
+    active = _active(svc)
     nearby = (
         events
         if events is not None
-        else _event_store(svc).between(started - SEARCH_MARGIN, (ended or started) + SEARCH_MARGIN)
+        else _event_store(svc).between(
+            started - SEARCH_MARGIN, (ended or started) + SEARCH_MARGIN, accounts=active
+        )
     )
     verdict = match(nearby, started, ended)
     if verdict.state != MATCHED or verdict.best is None:
         return {}
+    best = verdict.best.event
     return snapshot(
-        verdict.best.event,
+        best,
         state=MATCHED,
         source="auto",
         confidence=verdict.confidence,
         reason="matched against the calendar cache when this page was read",
+        accounts=[e.account_id for e in nearby if e.occurrence == best.occurrence],
     )
 
 
@@ -712,8 +731,16 @@ def _action_counts(pair: tuple[int, int] | None) -> dict[str, int]:
     return {"actions_total": total, "actions_open": still_open}
 
 
+def _visible(svc: Services, meeting_id: str) -> Meeting:
+    """The meeting, or 404 — also when it belongs only to hidden calendar accounts."""
+    meeting = svc.dao.visible_meeting(meeting_id)
+    if meeting is None:
+        raise HTTPException(404, "no such meeting")
+    return meeting
+
+
 def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
-    meeting = svc.dao.get_meeting(meeting_id)
+    meeting = svc.dao.visible_meeting(meeting_id)
     if meeting is None or svc.queue.deleting(meeting_id):
         raise HTTPException(404, "no such meeting")
     payload = meeting.as_dict()
@@ -794,9 +821,15 @@ def list_meetings(
     q: str | None = None,
     state: str | None = None,
     limit: int = 200,
+    account: list[str] | None = Query(default=None),
 ) -> dict[str, Any]:
+    """Newest first. ``account`` (repeatable) is the library filter: meetings on any of
+    those calendar accounts, ``none`` for meetings on no account. Meetings of hidden
+    accounts are never listed (D82)."""
     svc = services_of(request)
-    meetings = svc.dao.list_meetings(frm=from_, to=to, q=q, state=state, limit=limit)
+    meetings = svc.dao.list_meetings(
+        frm=from_, to=to, q=q, state=state, limit=limit, accounts=account
+    )
     # A meeting being deleted is gone as far as anyone can see, while its stage stops.
     meetings = [meeting for meeting in meetings if not svc.queue.deleting(meeting.id)]
     # What each meeting still owes, so the list can say it without opening anything: one
@@ -804,12 +837,15 @@ def list_meetings(
     counts = svc.dao.action_item_counts()
     tags = svc.dao.tags_by_meeting()
     failed = svc.dao.failed_stages()
+    members = svc.dao.calendar_accounts_by_meeting()
     return {
         "meetings": [
             {
                 **meeting.as_dict(),
                 **_action_counts(counts.get(meeting.id)),
                 "tags": tags.get(meeting.id, []),
+                # Every calendar account the meeting is on: the dots in the list.
+                "calendar_accounts": members.get(meeting.id, []),
                 # Which stage stopped, so a card can say "transcription failed" without
                 # opening the meeting. Null when nothing has failed.
                 "failed_stage": failed.get(meeting.id),
@@ -829,7 +865,7 @@ def search(request: Request, q: str = "", limit: int = 50) -> dict[str, Any]:
     out whether they were the right one. This answers "show me the sentence".
     """
     svc = services_of(request)
-    hits = svc.dao.search(q, limit=limit)
+    hits = svc.dao.search(q, limit=limit)  # hidden accounts' meetings are left out
     meetings = svc.dao.list_meetings(limit=10_000)
     titles = {meeting.id: (meeting.title, meeting.started_at) for meeting in meetings}
     # The name the user gave the hit's speaker slot (D52). ME stays null: the page says
@@ -940,7 +976,7 @@ def delete_action_item(request: Request, item_id: int) -> dict[str, Any]:
 def add_action_item(request: Request, meeting_id: str, body: ActionItemPost) -> dict[str, Any]:
     """An item the user typed in. It is theirs: no re-summarize removes or rewrites it."""
     svc = services_of(request)
-    if svc.dao.get_meeting(meeting_id) is None:
+    if svc.dao.visible_meeting(meeting_id) is None:
         raise HTTPException(404, "no such meeting")
     if not body.what.strip():
         raise HTTPException(422, "an action item needs something to do")
@@ -969,7 +1005,7 @@ def list_tags(request: Request) -> dict[str, Any]:
 def put_meeting_tags(request: Request, meeting_id: str, body: TagsPut) -> dict[str, Any]:
     """Replace this meeting's tags. Deduplicated case-insensitively; see Dao.set_tags."""
     svc = services_of(request)
-    if svc.dao.get_meeting(meeting_id) is None:
+    if svc.dao.visible_meeting(meeting_id) is None:
         raise HTTPException(404, "no such meeting")
     try:
         tags = svc.dao.set_tags(meeting_id, body.tags)
@@ -988,7 +1024,7 @@ def related_meetings(request: Request, meeting_id: str) -> dict[str, Any]:
     from app.related import related
 
     svc = services_of(request)
-    if svc.dao.get_meeting(meeting_id) is None:
+    if svc.dao.visible_meeting(meeting_id) is None:
         raise HTTPException(404, "no such meeting")
     return {"related": [found.as_api() for found in related(svc.dao, meeting_id)]}
 
@@ -999,7 +1035,7 @@ def ask_meeting(request: Request, meeting_id: str, body: AskPost) -> dict[str, A
     from app.ask import AskError, ask
 
     svc = services_of(request)
-    meeting = svc.dao.get_meeting(meeting_id)
+    meeting = svc.dao.visible_meeting(meeting_id)
     if meeting is None:
         raise HTTPException(404, "no such meeting")
     if not body.question.strip():
@@ -1021,7 +1057,7 @@ def get_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
 @router.patch("/meetings/{meeting_id}")
 def patch_meeting(request: Request, meeting_id: str, body: MeetingPatch) -> dict[str, Any]:
     svc = services_of(request)
-    meeting = svc.dao.get_meeting(meeting_id)
+    meeting = svc.dao.visible_meeting(meeting_id)
     if meeting is None:
         raise HTTPException(404, "no such meeting")
     if body.title is not None:
@@ -1096,7 +1132,7 @@ def locale_formats() -> dict[str, str]:
 @router.get("/meetings/{meeting_id}/transcript")
 def get_transcript(request: Request, meeting_id: str) -> Response:
     svc = services_of(request)
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
     path = meeting.path / "transcript.json"
     if not path.exists():
         raise HTTPException(404, "no transcript yet")
@@ -1106,7 +1142,7 @@ def get_transcript(request: Request, meeting_id: str) -> Response:
 @router.get("/meetings/{meeting_id}/notes")
 def get_notes(request: Request, meeting_id: str) -> Response:
     svc = services_of(request)
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
     path = meeting.path / "notes.json"
     if not path.exists():
         raise HTTPException(404, "no notes yet")
@@ -1116,7 +1152,7 @@ def get_notes(request: Request, meeting_id: str) -> Response:
 @router.get("/meetings/{meeting_id}/summary.html")
 def get_summary(request: Request, meeting_id: str) -> Response:
     svc = services_of(request)
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
     path = meeting.path / "summary.html"
     if not path.exists():
         raise HTTPException(404, "not rendered yet")
@@ -1142,7 +1178,7 @@ def get_audio(request: Request, meeting_id: str, track: str = "mix") -> Response
     from app.audio.writer import track_path
 
     svc = services_of(request)
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
 
     if track == "mix":
         # The whole meeting as one stream, mixed on read. Nothing extra on disk, and the
@@ -1209,7 +1245,7 @@ def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
     from app.meetings import DELETING_MARKER
 
     svc = services_of(request)
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
     recorder = svc.recorder
     if recorder is not None and recorder.committed and recorder.meeting_id == meeting_id:
         raise HTTPException(409, "this meeting is still recording")
@@ -1289,7 +1325,7 @@ def retry_stage(
     svc = services_of(request)
     if stage not in {str(item) for item in STAGE_ORDER}:
         raise HTTPException(404, f"no such stage {stage!r}")
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
     if language is not None:
         from app.asr.languages import is_supported
 
@@ -1325,7 +1361,7 @@ def keep_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
     — which is indistinguishable from losing it, whatever the database says.
     """
     svc = services_of(request)
-    meeting = svc.dao.require_meeting(meeting_id)
+    meeting = _visible(svc, meeting_id)
     if meeting.state != MeetingState.DISCARDED:
         raise HTTPException(409, f"{meeting_id} is {meeting.state}, not discarded")
 
@@ -1718,26 +1754,98 @@ def secret_status(request: Request) -> dict[str, Any]:
 # --------------------------------------------------------------------------- calendar
 
 
+def _event_or_none(svc: Services, account_id: str | None, calendar_id: str, event_id: str) -> Any:
+    try:
+        return _event_lookup(svc, account_id, calendar_id, event_id)
+    except HTTPException:
+        return None
+
+
+def _seed_accounts(request: Request, body: dict[str, Any]) -> list[str]:
+    """Test seeding: the calendar accounts a spec asks for, pinned as connected and never
+    synced. Events and meetings that name no account go to the first; without any named,
+    one default account exists as soon as a spec seeds calendar data."""
+    calendar = calendar_of(request)
+    wanted = list(body.get("calendar_accounts") or [])
+    needs_default = body.get("calendar_events") or any(
+        m.get("calendar") for m in body.get("meetings", []) or []
+    )
+    if not wanted and needs_default and not calendar.registry.accounts():
+        wanted = [{"address": "you@example.com"}]
+    for item in wanted:
+        account, _ = calendar.registry.add_or_restore(str(item["address"]))
+        if item.get("id") and item["id"] != account.id:
+            with transaction(calendar.registry.conn):
+                calendar.registry.conn.execute("PRAGMA defer_foreign_keys = ON")
+                calendar.registry.conn.execute(
+                    "UPDATE calendar_sources SET account_id = ? WHERE account_id = ?",
+                    (item["id"], account.id),
+                )
+                calendar.registry.conn.execute(
+                    "UPDATE calendar_accounts SET id = ? WHERE id = ?", (item["id"], account.id)
+                )
+            account = calendar.registry.get(str(item["id"]))
+        if item.get("visible") is False:
+            calendar.registry.set_visible(account.id, False)
+        if item.get("removed"):
+            calendar.registry.remove(account.id)
+        calendar.pin(account.id)
+    return [a.id for a in calendar.registry.accounts(include_removed=True)]
+
+
 def calendar_of(request: Request) -> Any:
-    """The Google connection, made on first use: most runs never touch it."""
+    """The Google accounts, made on first use: most runs never touch them."""
     svc = services_of(request)
     if svc.calendar is None:
-        from app.gcal.oauth import CalendarAuth
+        from app.gcal.accounts import AccountRegistry
+        from app.gcal.oauth import CalendarAccounts
 
-        svc.calendar = CalendarAuth(
+        svc.calendar = CalendarAccounts(
             svc.config.secrets,
+            AccountRegistry(svc.conn, svc.clock),
             publish=lambda **payload: svc.events.publish("calendar", **payload),
         )
     return svc.calendar
 
 
+def _active(svc: Services) -> frozenset[str]:
+    """The accounts whose events are shown and matched: connected, neither hidden nor
+    removed (D82). None at all without a calendar connection."""
+    return svc.calendar.active_ids() if svc.calendar is not None else frozenset()
+
+
+def _event_lookup(svc: Services, account_id: str | None, calendar_id: str, event_id: str) -> Any:
+    """One cached event of an active account. A caller that names no account (an older
+    toast link) gets the one active account that has it; two is a question to ask."""
+    store = _event_store(svc)
+    active = _active(svc)
+    if account_id:
+        return store.get(account_id, calendar_id, event_id) if account_id in active else None
+    found = [e for a in sorted(active) if (e := store.get(a, calendar_id, event_id))]
+    if len(found) > 1:
+        raise HTTPException(400, "this event is on more than one account: name the account")
+    return found[0] if found else None
+
+
+def _user_snapshot(svc: Services, event: Any) -> dict[str, Any]:
+    """An event as the user matched it: final, and on every account that has a copy."""
+    from app.gcal.source import snapshot
+
+    copies = _event_store(svc).copies(event, accounts=_active(svc))
+    return snapshot(event, state="matched", source="user", confidence=1.0, accounts=copies)
+
+
 @router.get("/calendar/status")
 def calendar_status(request: Request) -> dict[str, Any]:
-    """Whether a Google account is connected, and which. Never a token."""
+    """The connected Google accounts and how each is syncing. Never a token.
+
+    Removed accounts are not listed (they are kept in the database, D82)."""
     svc = services_of(request)
     status: dict[str, Any] = calendar_of(request).status()
     if svc.calendar_sync is not None:
         status.update(svc.calendar_sync.status())
+        for account in status.get("accounts") or []:
+            account.update(svc.calendar_sync.status(account["id"]))
     # Whether connecting opens Google's page from here (Windows) or the page opens it.
     status["opens_externally"] = sys.platform == "win32"
     return status
@@ -1746,9 +1854,14 @@ def calendar_status(request: Request) -> dict[str, Any]:
 class CalendarChoice(BaseModel):
     """The event a recording belongs to, as the user picked it; or ``none``."""
 
+    account_id: str | None = None
     calendar_id: str | None = None
     event_id: str | None = None
     none: bool = False
+
+
+class AccountPatch(BaseModel):
+    visible: bool
 
 
 def _event_store(svc: Services) -> Any:
@@ -1766,11 +1879,14 @@ def calendar_events(
     """Cached events overlapping [from, to), each with the recording matched to it.
 
     ``from``/``to`` are local dates (YYYY-MM-DD) or full ISO instants. Served from the
-    cache only, so the calendar view works offline and never waits on Google.
+    cache only, so the calendar view works offline and never waits on Google. Only the
+    active accounts' events; the same meeting on several of them is one event, with
+    ``accounts`` naming them all.
     """
     from datetime import datetime as dt
 
     from app.gcal.events import iso_utc
+    from app.gcal.match import dedupe
     from app.gcal.source import SEARCH_MARGIN
 
     svc = services_of(request)
@@ -1781,19 +1897,30 @@ def calendar_events(
 
     start, end = instant(frm), instant(to)
     store = _event_store(svc)
-    events = store.between(start, end)
+    active = _active(svc)
+    events = store.between(start, end, accounts=active)
+    copies: dict[tuple[str, str], list[Any]] = {}
+    for event in events:
+        copies.setdefault(event.occurrence, []).append(event)
+    shown = sorted(dedupe(events), key=lambda e: (e.start, e.account_id, e.event_id))
     # Matching a recording needs the events around it, not only the ones in view: a
     # recording that began before midnight belongs to an event that began before it too.
-    nearby = list(store.between(start - SEARCH_MARGIN, end + SEARCH_MARGIN))
-    matched: dict[tuple[str, str], str] = {}
+    nearby = list(store.between(start - SEARCH_MARGIN, end + SEARCH_MARGIN, accounts=active))
+    matched: dict[tuple[str, str, str], str] = {}
     for meeting in svc.dao.list_meetings(frm=iso_utc(start - timedelta(days=1)), limit=2000):
         payload = _calendar_of(svc, meeting, nearby)
         ref = payload.get("event") or {}
         if (payload.get("match") or {}).get("state") == "matched" and ref:
-            matched[(str(ref.get("calendar_id")), str(ref.get("event_id")))] = meeting.id
-    return {
-        "events": [{**e.as_api(), "meeting_id": matched.get(e.key)} for e in events],
-    }
+            for account in payload.get("accounts") or [ref.get("account_id")]:
+                key = (str(account), str(ref.get("calendar_id")), str(ref.get("event_id")))
+                matched[key] = meeting.id
+    out = []
+    for event in shown:
+        group = copies.get(event.occurrence, [event])
+        meeting_id = next((matched[e.key] for e in group if e.key in matched), None)
+        accounts = sorted({e.account_id for e in group})
+        out.append({**event.as_api(), "accounts": accounts, "meeting_id": meeting_id})
+    return {"events": out}
 
 
 @router.post("/calendar/sync")
@@ -1804,24 +1931,49 @@ def calendar_sync_now(request: Request) -> dict[str, Any]:
     return calendar_status(request)
 
 
-@router.delete("/calendar/cache")
-def calendar_forget(request: Request) -> dict[str, Any]:
-    """Delete every cached event. While connected, the next sync fetches them again."""
-    svc = services_of(request)
-    gone = svc.calendar_sync.forget() if svc.calendar_sync is not None else 0
-    return {"deleted": gone, **calendar_status(request)}
+@router.patch("/calendar/accounts/{account_id}")
+def calendar_account_patch(request: Request, account_id: str, body: AccountPatch) -> dict[str, Any]:
+    """Show or hide an account. Hidden, everything of it is hidden everywhere in Upshot,
+    and nothing is deleted (D82)."""
+    calendar = calendar_of(request)
+    account = calendar.registry.get(account_id)
+    if account is None or account.removed:
+        raise HTTPException(404, "no such calendar account")
+    calendar.set_visible(account_id, body.visible)
+    return calendar_status(request)
+
+
+@router.delete("/calendar/accounts/{account_id}")
+def calendar_account_remove(request: Request, account_id: str) -> dict[str, Any]:
+    """Remove an account: its access is revoked at Google, and it is hidden for good.
+    Its events and its recordings stay, and connecting the same address brings them back.
+    Says so when the revoke could not be sent."""
+    calendar = calendar_of(request)
+    account = calendar.registry.get(account_id)
+    if account is None or account.removed:
+        raise HTTPException(404, "no such calendar account")
+    result = calendar.remove(account_id)
+    return {**result, **calendar_status(request)}
+
+
+@router.post("/calendar/accounts/{account_id}/reconnect")
+def calendar_account_reconnect(request: Request, account_id: str) -> dict[str, Any]:
+    """Sign in again to an account whose connection stopped working."""
+    return _start_connect(request, reconnect=account_id)
 
 
 @router.get("/meetings/{meeting_id}/calendar")
 def meeting_calendar(request: Request, meeting_id: str) -> dict[str, Any]:
     """What this recording is matched to, and the events it could be matched to instead."""
     svc = services_of(request)
-    meeting = svc.dao.get_meeting(meeting_id)
+    meeting = svc.dao.visible_meeting(meeting_id)
     if meeting is None:
         raise HTTPException(404, "no such meeting")
     started = _instant(meeting.started_at)
     ended = _instant(meeting.ended_at) if meeting.ended_at else started + timedelta(hours=1)
-    nearby = _event_store(svc).between(started - timedelta(hours=2), ended + timedelta(hours=2))
+    nearby = _event_store(svc).between(
+        started - timedelta(hours=2), ended + timedelta(hours=2), accounts=_active(svc)
+    )
     return {
         "calendar": _calendar_of(svc, meeting) or None,
         "candidates": [e.as_api() for e in nearby if not e.all_day and not e.declined],
@@ -1834,14 +1986,16 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
 
     The agenda, the links in it and the files attached to it live in the calendar, which
     is where they are maintained. Editing the event changes what this returns; deleting
-    it takes it away.
+    it takes it away. It is read with the token of the account the event was matched on.
     """
     from app.gcal.oauth import CalendarAuthError, CalendarUnavailable
+    from app.meetings import event_account
 
     svc = services_of(request)
-    meeting = svc.dao.get_meeting(meeting_id)
+    meeting = svc.dao.visible_meeting(meeting_id)
     if meeting is None:
         raise HTTPException(404, "no such meeting")
+    stored = bool(meeting.calendar_json)
     payload = _calendar_of(svc, meeting)
     ref = payload.get("event") or {}
     if (payload.get("match") or {}).get("state") != "matched" or not ref:
@@ -1856,6 +2010,7 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
             "code": "no_connection",
             "reason": "no calendar connection in this process",
         }
+    account = event_account(meeting) if stored else ref.get("account_id")
     if svc.calendar is not None and not svc.calendar.connected():
         # Asked and answered before Google is: never having connected an account is not
         # a fault to report on every meeting, and it reads as one. A connection that has
@@ -1865,8 +2020,21 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
             "code": "no_connection",
             "reason": "no Google account is connected",
         }
+    if not account:
+        return {"available": False, "code": "unmatched", "reason": "no calendar event is matched"}
+    known = svc.calendar.registry.get(str(account)) if svc.calendar is not None else None
+    if known is None or not known.shown:
+        # Still shown through another account it is on, but the event's own account is
+        # removed or hidden: that account is not asked (D82).
+        return {
+            "available": False,
+            "code": "account_gone",
+            "reason": "the event is on a calendar account that is not connected",
+        }
     try:
-        invite = svc.calendar_invites.fetch(str(ref["calendar_id"]), str(ref["event_id"]))
+        invite = svc.calendar_invites.fetch(
+            str(account), str(ref["calendar_id"]), str(ref["event_id"])
+        )
     except CalendarAuthError as exc:
         return {"available": False, "code": "auth", "reason": str(exc), "reconnect": True}
     except CalendarUnavailable as exc:
@@ -1882,64 +2050,55 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
 @router.put("/meetings/{meeting_id}/calendar")
 def choose_meeting_event(request: Request, meeting_id: str, body: CalendarChoice) -> dict[str, Any]:
     """The user says which event this recording was, or that it was none."""
-    from app.gcal.source import snapshot
-
     svc = services_of(request)
-    if svc.dao.get_meeting(meeting_id) is None:
+    if svc.dao.visible_meeting(meeting_id) is None:
         raise HTTPException(404, "no such meeting")
     if body.none:
         svc.meetings.choose_event(meeting_id, None)
     else:
         if not body.calendar_id or not body.event_id:
             raise HTTPException(400, "name the event, or say none")
-        event = _event_store(svc).get(body.calendar_id, body.event_id)
+        event = _event_lookup(svc, body.account_id, body.calendar_id, body.event_id)
         if event is None:
             raise HTTPException(404, "that event is not in the calendar cache")
-        svc.meetings.choose_event(
-            meeting_id, snapshot(event, state="matched", source="user", confidence=1.0)
-        )
+        svc.meetings.choose_event(meeting_id, _user_snapshot(svc, event))
     svc.events.publish("meeting", meeting_id=meeting_id, action="calendar")
     return _meeting_payload(svc, meeting_id)
 
 
-@router.post("/calendar/connect")
-def calendar_connect(request: Request) -> dict[str, Any]:
-    """Start a connection, and open Google's page in the user's default browser.
-
-    Opened from here, not by the page: the page is Upshot's window, which runs in a browser
-    profile of its own, so a tab it opened would have none of the user's Google accounts.
-    Windows opens it in the profile the user was last in (z8tj1hca86). ``opened`` false
-    (not Windows): the page opens ``auth_url`` itself.
-    """
+def _start_connect(request: Request, *, reconnect: str | None = None) -> dict[str, Any]:
     from app import window
     from app.gcal.oauth import CalendarAuthError
 
     calendar = calendar_of(request)
     try:
-        auth_url = calendar.start()
+        auth_url = calendar.start(reconnect=reconnect)
+    except KeyError as exc:
+        raise HTTPException(404, "no such calendar account") from exc
     except CalendarAuthError as exc:
         raise HTTPException(409, str(exc)) from exc
     opened = window.open_external(auth_url)
     return {**calendar_status(request), "auth_url": auth_url, "opened": opened}
 
 
+@router.post("/calendar/connect")
+def calendar_connect(request: Request) -> dict[str, Any]:
+    """Add a Google account: start a connection, and open Google's page in the user's
+    default browser. The account Google returns is added, or restored when its address
+    was connected before (D82); no other account is touched.
+
+    Opened from here, not by the page: the page is Upshot's window, which runs in a browser
+    profile of its own, so a tab it opened would have none of the user's Google accounts.
+    Windows opens it in the profile the user was last in (z8tj1hca86). ``opened`` false
+    (not Windows): the page opens ``auth_url`` itself.
+    """
+    return _start_connect(request)
+
+
 @router.post("/calendar/cancel")
 def calendar_cancel(request: Request) -> dict[str, Any]:
-    calendar = calendar_of(request)
-    calendar.cancel()
-    return calendar.status()  # type: ignore[no-any-return]
-
-
-@router.post("/calendar/disconnect")
-def calendar_disconnect(request: Request) -> dict[str, Any]:
-    """Revoke at Google and forget locally. Says so when the revoke could not be sent."""
-    svc = services_of(request)
-    calendar = calendar_of(request)
-    result = calendar.disconnect()
-    # Revoking without wiping the cache is the common half-measure (Calendar 7).
-    if svc.calendar_sync is not None:
-        svc.calendar_sync.forget()
-    return {**result, **calendar_status(request)}
+    calendar_of(request).cancel()
+    return calendar_status(request)
 
 
 @router.get("/llm/status")
@@ -2518,7 +2677,14 @@ def test_router() -> APIRouter:
             # cannot silently make the reset wrong.
             from app.config import DEFAULTS
 
-            for key in ("language", "theme", "view", "calendar_span", "tooltips_off"):
+            for key in (
+                "language",
+                "theme",
+                "view",
+                "calendar_span",
+                "tooltips_off",
+                "library_accounts",
+            ):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
             # Setup counts as done for every spec except the one about setup, which
             # asks for the opposite below: a spec that died on /welcome must not send
@@ -2533,6 +2699,10 @@ def test_router() -> APIRouter:
             svc.config.save()
         if body.get("reset"):
             svc.conn.execute("DELETE FROM calendar_events")
+            svc.conn.execute("DELETE FROM meeting_calendar_accounts")
+            svc.conn.execute("DELETE FROM calendar_sources")
+            svc.conn.execute("DELETE FROM calendar_accounts")
+        seeded_accounts = _seed_accounts(request, body)
         for item in body.get("calendar_events", []):
             # Seeded the way a sync would leave them, so the grids and the matcher are
             # exercised without a Google account.
@@ -2542,19 +2712,22 @@ def test_router() -> APIRouter:
 
             start = _dt.fromisoformat(str(item["start"]))
             end = _dt.fromisoformat(str(item["end"]))
+            account_id = str(item.get("account_id") or seeded_accounts[0])
             EventStore(svc.conn).replace_window(
+                account_id,
                 str(item.get("calendar_id", "primary")),
                 start,
                 end,
                 [
                     CalendarEvent(
+                        account_id=account_id,
                         calendar_id=str(item.get("calendar_id", "primary")),
                         event_id=str(item["id"]),
                         title=item.get("title"),
                         start=start,
                         end=end,
                         all_day=bool(item.get("all_day")),
-                        ical_uid=f"{item['id']}@seed",
+                        ical_uid=str(item.get("ical_uid") or f"{item['id']}@seed"),
                         response=item.get("response", "accepted"),
                         attendees=tuple(
                             Attendee(name=str(name))
@@ -2698,14 +2871,26 @@ def test_router() -> APIRouter:
                 from app.gcal.source import snapshot as event_snapshot
 
                 ref = dict(item["calendar"])
+                ref.setdefault("account_id", seeded_accounts[0])
                 seeded = _event_store(svc).get(
-                    str(ref.get("calendar_id", "primary")), str(ref.get("event_id"))
+                    str(ref["account_id"]),
+                    str(ref.get("calendar_id", "primary")),
+                    str(ref.get("event_id")),
                 )
                 if seeded is not None:
-                    payload = event_snapshot(seeded, state="matched", source="auto", confidence=1.0)
+                    payload = event_snapshot(
+                        seeded,
+                        state="matched",
+                        source="auto",
+                        confidence=1.0,
+                        accounts=ref.get("accounts") or [],
+                    )
                 else:
                     payload = {
-                        "event": {k: v for k, v in ref.items() if k != "participants"},
+                        "accounts": ref.get("accounts") or [ref["account_id"]],
+                        "event": {
+                            k: v for k, v in ref.items() if k not in ("participants", "accounts")
+                        },
                         "title": item.get("title"),
                         "participants": ref.get("participants", []),
                         "match": {"state": "matched", "source": "auto", "confidence": 1.0},
@@ -2714,6 +2899,11 @@ def test_router() -> APIRouter:
                     meeting.id,
                     calendar_json=json.dumps(payload),
                     title_source="calendar",
+                )
+                svc.dao.set_calendar_accounts(
+                    meeting.id,
+                    str((payload.get("event") or {}).get("account_id") or ref["account_id"]),
+                    payload.get("accounts") or [],
                 )
             if item.get("action_items"):
                 # As a summary would have left them, so the inbox can be exercised

@@ -36,6 +36,8 @@ class Button:
     event_id: str | None = None
     #: A meeting link: "Join" opens it; "Join and record" opens it and starts recording.
     join: str | None = None
+    #: The connected account the calendar event is on (D82).
+    account_id: str | None = None
 
     def link(self) -> str | None:
         """The link the button launches (app/actions.py); None for Dismiss."""
@@ -48,6 +50,7 @@ class Button:
         return actions.url(
             self.action,
             meeting=self.meeting_id,
+            account=self.account_id,
             calendar=self.calendar_id,
             event=self.event_id,
             join=self.join,
@@ -201,10 +204,11 @@ class BaseNotifier:
         event_id: str | None = None,
         minutes_ago: int = 0,
         conference_url: str | None = None,
+        account_id: str | None = None,
     ) -> None:
         """A calendar meeting's start time has come and nothing records it. Said once."""
         name = title or "A meeting"
-        buttons: tuple[Button, ...] = self._start_buttons(calendar_id, event_id)
+        buttons: tuple[Button, ...] = self._start_buttons(calendar_id, event_id, account_id)
         if conference_url:
             buttons = (
                 Button(
@@ -214,6 +218,7 @@ class BaseNotifier:
                     calendar_id,
                     event_id,
                     conference_url,
+                    account_id,
                 ),
                 *buttons,
             )
@@ -267,6 +272,7 @@ class BaseNotifier:
         *,
         calendar_id: str | None = None,
         event_id: str | None = None,
+        account_id: str | None = None,
     ) -> None:
         """A call started and, in the default mode, nothing records it: say so (D64).
 
@@ -279,7 +285,7 @@ class BaseNotifier:
             Toast(
                 title=f"Meeting started: {title or app}",
                 body="Upshot isn't recording it.",
-                buttons=self._start_buttons(calendar_id, event_id),
+                buttons=self._start_buttons(calendar_id, event_id, account_id),
                 key=f"call:{process}",
                 quiet_in_front=True,
             )
@@ -296,9 +302,18 @@ class BaseNotifier:
         )
 
     @staticmethod
-    def _start_buttons(calendar_id: str | None, event_id: str | None) -> tuple[Button, ...]:
+    def _start_buttons(
+        calendar_id: str | None, event_id: str | None, account_id: str | None = None
+    ) -> tuple[Button, ...]:
         return (
-            Button("Start recording", "recording.start", None, calendar_id, event_id),
+            Button(
+                "Start recording",
+                "recording.start",
+                None,
+                calendar_id,
+                event_id,
+                account_id=account_id,
+            ),
             Button("Dismiss", DISMISS),
         )
 

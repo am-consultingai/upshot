@@ -20,6 +20,10 @@ re-list of the window is one or two idempotent requests with no 410 recovery pat
 Offline is normal, not an error: the cache is served, the status says when it last
 synced, and the next tick tries again. A dead token is the opposite: syncing stops until
 the user reconnects, and nothing retries it.
+
+Every connected account that is shown syncs, each on its own clock and with its own
+failures (D82). A hidden or removed account is not asked at all; its rows stay as they
+were, and it catches up when it is shown again.
 """
 
 from __future__ import annotations
@@ -27,12 +31,13 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from app.clock import Clock, SystemClock
 from app.gcal.events import CalendarEvent, EventStore, iso_utc, parse
-from app.gcal.oauth import CalendarAuth, CalendarAuthError, CalendarUnavailable
+from app.gcal.oauth import CalendarAccounts, CalendarAuthError, CalendarUnavailable
 from app.log import get
 
 log = get(__name__)
@@ -51,32 +56,34 @@ MAX_BACKOFF_S = 300.0
 SLEEP_JUMP_S = 120.0
 
 
+@dataclass
+class _AccountState:
+    """Each account syncs on its own: one dead token or rate limit stops only that one."""
+
+    next_near: float = 0.0
+    next_wide: float = 0.0
+    backoff: float = 0.0
+    auth_stopped: bool = False
+    last_synced_at: datetime | None = None
+    last_error: str | None = None
+
+
 class CalendarSync:
     def __init__(
         self,
-        auth: CalendarAuth,
+        accounts: CalendarAccounts,
         store: EventStore,
         *,
-        calendars: tuple[str, ...] = ("primary",),
         clock: Clock | None = None,
         on_synced: Callable[[], None] | None = None,
         publish: Callable[..., Any] | None = None,
     ) -> None:
-        self.auth = auth
+        self.accounts = accounts
         self.store = store
-        self.calendars = calendars
         self.clock = clock or SystemClock()
         self.on_synced = on_synced
         self.publish = publish
-        self.last_synced_at: datetime | None = None
-        self.last_error: str | None = None
-        self._next_near = 0.0
-        self._next_wide = 0.0
-        self._backoff = 0.0
-        # Set by an authorization failure and cleared by kick(), which reconnecting calls.
-        # Without it the loop asked again every few seconds and logged "stopped until
-        # reconnect" each time (178 lines in 15 minutes on machine A, 2026-09-27).
-        self._auth_stopped = False
+        self._states: dict[str, _AccountState] = {}
         self._last_wall: float | None = None
         self._last_mono: float | None = None
         self._kick = threading.Event()
@@ -87,69 +94,51 @@ class CalendarSync:
     # ------------------------------------------------------------------ public
 
     def connected(self) -> bool:
-        return self.auth.connected()
+        return self.accounts.connected()
 
-    def kick(self) -> None:
-        """Sync everything now: after connecting, and when the user asks."""
-        self._auth_stopped = False
-        self._next_near = self._next_wide = 0.0
-        self._backoff = 0.0
+    def kick(self, account_id: str | None = None) -> None:
+        """Sync now: one account after it connects or is shown, or all when asked."""
+        with self._lock:
+            for key, state in self._states.items():
+                if account_id is None or key == account_id:
+                    state.auth_stopped = False
+                    state.next_near = state.next_wide = state.backoff = 0.0
         self._kick.set()
 
-    def status(self) -> dict[str, Any]:
-        return {
-            "last_synced_at": iso_utc(self.last_synced_at) if self.last_synced_at else None,
-            "sync_error": self.last_error,
-            "cached_events": self.store.count(),
-        }
-
-    def forget(self) -> int:
-        """Delete the cache. Disconnecting does this; so does the Settings button."""
+    def status(self, account_id: str | None = None) -> dict[str, Any]:
+        """One account's sync, or the latest across all of them."""
         with self._lock:
-            gone = self.store.clear()
-            self.last_synced_at = None
-            self.last_error = None
-        log.info("calendar cache cleared (%d events)", gone)
-        return gone
+            if account_id is not None:
+                states = [self._states.get(account_id, _AccountState())]
+            else:
+                states = list(self._states.values())
+        synced = [s.last_synced_at for s in states if s.last_synced_at is not None]
+        errors = [s.last_error for s in states if s.last_error]
+        return {
+            "last_synced_at": iso_utc(max(synced)) if synced else None,
+            "sync_error": errors[0] if errors else None,
+            "cached_events": self.store.count(account_id),
+        }
 
     # ------------------------------------------------------------------ one pass
 
     def tick(self) -> bool:
-        """Do whatever is due. True when something was synced."""
-        if self._auth_stopped or not self.connected():
-            return False
+        """Do whatever is due, for every shown and connected account. True when anything
+        was synced."""
         mono = self.clock.monotonic()
         self._notice_sleep(mono)
-        due_wide = mono >= self._next_wide
-        due_near = mono >= self._next_near
-        if not (due_wide or due_near):
-            return False
-        now = self.clock.now()
-        if due_wide:
-            window = (now - WIDE_SPAN, now + WIDE_SPAN)
-        else:
-            window = (now - NEAR_BACK, now + NEAR_AHEAD)
-        try:
+        active = self.accounts.syncable_ids()
+        synced_any = False
+        count = 0
+        for account_id, calendar_ids in self._sources(active).items():
             with self._lock:
-                count = sum(self.sync_window(cal, *window) for cal in self.calendars)
-                self.last_synced_at = now
-                self.last_error = None
-        except CalendarAuthError as exc:
-            self.last_error = str(exc)
-            self._auth_stopped = True
-            log.warning("calendar sync stopped until reconnect: %s", exc)
+                state = self._states.setdefault(account_id, _AccountState())
+            done = self._tick_account(account_id, calendar_ids, state, mono)
+            if done is not None:
+                synced_any = True
+                count += done
+        if not synced_any:
             return False
-        except CalendarUnavailable as exc:
-            self._backoff = min(MAX_BACKOFF_S, max(NEAR_EVERY_S, self._backoff * 2))
-            self._next_near = mono + self._backoff
-            self.last_error = f"Google Calendar could not be reached ({exc})."
-            log.info("calendar sync deferred %.0fs: %s", self._backoff, exc)
-            return False
-        self._backoff = 0.0
-        self._next_near = mono + NEAR_EVERY_S
-        if due_wide:
-            self._next_wide = mono + WIDE_EVERY_S
-        log.info("calendar synced %s: %d events", "wide" if due_wide else "near", count)
         if self.on_synced is not None:
             try:
                 self.on_synced()
@@ -159,7 +148,53 @@ class CalendarSync:
             self.publish(state="synced", events=count)
         return True
 
-    def sync_window(self, calendar_id: str, start: datetime, end: datetime) -> int:
+    def _sources(self, active: frozenset[str]) -> dict[str, list[str]]:
+        out: dict[str, list[str]] = {}
+        for account_id, calendar_id in self.accounts.registry.sources():
+            if account_id in active:
+                out.setdefault(account_id, []).append(calendar_id)
+        return out
+
+    def _tick_account(
+        self, account_id: str, calendar_ids: list[str], state: _AccountState, mono: float
+    ) -> int | None:
+        if state.auth_stopped:
+            return None
+        due_wide = mono >= state.next_wide
+        due_near = mono >= state.next_near
+        if not (due_wide or due_near):
+            return None
+        now = self.clock.now()
+        if due_wide:
+            window = (now - WIDE_SPAN, now + WIDE_SPAN)
+        else:
+            window = (now - NEAR_BACK, now + NEAR_AHEAD)
+        try:
+            count = sum(self.sync_window(account_id, cal, *window) for cal in calendar_ids)
+        except CalendarAuthError as exc:
+            state.last_error = str(exc)
+            state.auth_stopped = True
+            log.warning("calendar sync of %s stopped until reconnect: %s", account_id, exc)
+            return None
+        except CalendarUnavailable as exc:
+            state.backoff = min(MAX_BACKOFF_S, max(NEAR_EVERY_S, state.backoff * 2))
+            state.next_near = mono + state.backoff
+            state.last_error = f"Google Calendar could not be reached ({exc})."
+            log.info("calendar sync of %s deferred %.0fs: %s", account_id, state.backoff, exc)
+            return None
+        state.last_synced_at = now
+        state.last_error = None
+        state.backoff = 0.0
+        state.next_near = mono + NEAR_EVERY_S
+        if due_wide:
+            state.next_wide = mono + WIDE_EVERY_S
+        log.info(
+            "calendar %s synced %s: %d events", account_id, "wide" if due_wide else "near", count
+        )
+        return count
+
+    def sync_window(self, account_id: str, calendar_id: str, start: datetime, end: datetime) -> int:
+        auth = self.accounts.auth_for(account_id)
         events: list[CalendarEvent] = []
         token: str | None = None
         for _ in range(MAX_PAGES):
@@ -174,15 +209,17 @@ class CalendarSync:
             }
             if token:
                 params["pageToken"] = token
-            body = self.auth.get(f"/calendars/{calendar_id}/events", params)
+            body = auth.get(f"/calendars/{calendar_id}/events", params)
             for item in body.get("items") or []:
-                parsed = parse(item, calendar_id)
+                parsed = parse(item, calendar_id, account_id)
                 if parsed is not None:
                     events.append(parsed)
             token = body.get("nextPageToken")
             if not token:
                 break
-        self.store.replace_window(calendar_id, start, end, events, synced_at=self.clock.now())
+        self.store.replace_window(
+            account_id, calendar_id, start, end, events, synced_at=self.clock.now()
+        )
         return len(events)
 
     def _notice_sleep(self, mono: float) -> None:
@@ -193,7 +230,9 @@ class CalendarSync:
             and (wall - self._last_wall) - (mono - self._last_mono) > SLEEP_JUMP_S
         ):
             log.info("the machine slept; resyncing the calendar")
-            self._next_near = self._next_wide = 0.0
+            with self._lock:
+                for state in self._states.values():
+                    state.next_near = state.next_wide = 0.0
         self._last_wall, self._last_mono = wall, mono
 
     # ------------------------------------------------------------------ thread

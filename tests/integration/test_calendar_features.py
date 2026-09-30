@@ -26,8 +26,9 @@ from app.clock import FakeClock, iso
 from app.config import FakeKeyring
 from app.db.dao import Dao, connect
 from app.detect.evidence import CALENDAR
+from app.gcal.accounts import AccountRegistry, token_key
 from app.gcal.events import EventStore, name_from_email, parse
-from app.gcal.oauth import REFRESH_SECRET, CalendarAuth
+from app.gcal.oauth import CalendarAccounts
 from app.gcal.source import CalendarNow, GoogleCalendarSource
 from app.gcal.sync import CalendarSync
 from app.meetings import MeetingService
@@ -79,7 +80,10 @@ class FakeCalendarApi:
     """Token refresh plus events.list over a list of items the test controls."""
 
     def __init__(self) -> None:
+        #: The first account's events; ``by_token`` holds any other account's.
         self.items: list[dict[str, Any]] = []
+        self.by_token: dict[str, list[dict[str, Any]]] = {}
+        self.addresses: dict[str, str] = {}
         self.offline = False
         self.revoked = False
         self.requests: list[httpx.Request] = []
@@ -92,12 +96,16 @@ class FakeCalendarApi:
         if url.startswith("https://oauth2.googleapis.com/token"):
             if self.revoked:
                 return httpx.Response(400, json={"error": "invalid_grant"})
-            return httpx.Response(200, json={"access_token": "a", "expires_in": 3600})
+            form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+            token = f"a:{form.get('refresh_token', '')}"
+            return httpx.Response(200, json={"access_token": token, "expires_in": 3600})
         if url.startswith("https://oauth2.googleapis.com/revoke"):
             return httpx.Response(200)
+        refresh = request.headers.get("authorization", "").removeprefix("Bearer a:")
+        items = self.by_token.get(refresh, self.items)
         if re.search(r"/events/[^/?]+", url):  # events.get: one invitation
             event_id = re.search(r"/events/([^/?]+)", url).group(1)  # type: ignore[union-attr]
-            for item in self.items:
+            for item in items:
                 if item["id"] == event_id:
                     return httpx.Response(200, json=item)
             return httpx.Response(404, json={"error": {"code": 404}})
@@ -107,10 +115,11 @@ class FakeCalendarApi:
             assert query["singleEvents"] == ["true"]
             inside = [
                 item
-                for item in self.items
+                for item in items
                 if _utc(item["start"]) < _parse(hi) and _utc(item["end"]) > _parse(lo)
             ]
-            return httpx.Response(200, json={"summary": "me@example.com", "items": inside})
+            summary = self.addresses.get(refresh, "me@example.com")
+            return httpx.Response(200, json={"summary": summary, "items": inside})
         return httpx.Response(404)
 
 
@@ -141,17 +150,19 @@ class World:
         self.dao = Dao(self.conn, self.clock)
         self.api = FakeCalendarApi()
         secrets = FakeKeyring()
-        secrets.set(REFRESH_SECRET, "r-1")
         self.secrets = secrets
-        self.auth = CalendarAuth(
+        self.registry = AccountRegistry(self.conn, self.clock)
+        self.accounts = CalendarAccounts(
             secrets,
+            self.registry,
             client_loader=lambda: CLIENT,
             http=httpx.Client(transport=httpx.MockTransport(self.api.handler)),
             monotonic=self.clock.monotonic,
         )
+        self.account = self.add_account("me@example.com", "r-1")
         self.store = EventStore(self.conn)
-        self.sync = CalendarSync(self.auth, self.store, clock=self.clock)
-        self.source = GoogleCalendarSource(self.store, available=self.auth.connected)
+        self.sync = CalendarSync(self.accounts, self.store, clock=self.clock)
+        self.source = GoogleCalendarSource(self.store, active=self.accounts.active_ids)
         self.meetings = MeetingService(
             self.config,
             self.dao,
@@ -161,9 +172,20 @@ class World:
         )
         self.sync.on_synced = self.meetings.rematch_recent
 
+    def add_account(
+        self, address: str, refresh: str, items: list[dict[str, Any]] | None = None
+    ) -> str:
+        """Another connected account, as a sign-in would leave it."""
+        account, _ = self.registry.add_or_restore(address)
+        self.secrets.set(token_key(account.id), refresh)
+        self.api.addresses[refresh] = address
+        if items is not None:
+            self.api.by_token[refresh] = items
+        return account.id
+
     def synced(self) -> None:
         self.sync.kick()
-        assert self.sync.tick(), self.sync.last_error
+        assert self.sync.tick(), self.sync.status()["sync_error"]
 
 
 @pytest.fixture
@@ -177,19 +199,29 @@ def world(tmp_path: Path) -> World:
 def test_first_sync_fills_the_cache(world: World) -> None:
     world.api.items = [g_event("standup", NOW), g_event("later", NOW + timedelta(days=3))]
     world.synced()
-    assert {e.event_id for e in world.store.between(NOW, NOW + timedelta(days=5))} == {
+    assert {
+        e.event_id for e in world.store.between(NOW, NOW + timedelta(days=5), accounts=None)
+    } == {
         "standup",
         "later",
     }
     assert world.sync.status()["last_synced_at"].startswith("2026-09-21T09:00")
 
 
-def test_a_deleted_event_leaves_the_cache_on_the_next_sync(world: World) -> None:
+def test_a_deleted_event_leaves_the_calendar_on_the_next_sync(world: World) -> None:
     world.api.items = [g_event("standup", NOW), g_event("review", NOW + timedelta(hours=1))]
     world.synced()
     world.api.items = [g_event("standup", NOW)]
     world.synced()
-    assert [e.event_id for e in world.store.between(NOW, NOW + timedelta(hours=3))] == ["standup"]
+    live = world.store.between(NOW, NOW + timedelta(hours=3), accounts=None)
+    assert [e.event_id for e in live] == ["standup"]
+    kept = world.store.get(world.account, "primary", "review")
+    assert kept is not None, "marked gone, not deleted (D82)"
+    world.clock.advance(700)
+    world.api.items = [g_event("standup", NOW), g_event("review", NOW + timedelta(hours=1))]
+    world.synced()
+    live = world.store.between(NOW, NOW + timedelta(hours=3), accounts=None)
+    assert [e.event_id for e in live] == ["standup", "review"], "and back when it is back"
 
 
 def test_offline_keeps_the_cache_and_says_when_it_last_synced(world: World) -> None:
@@ -222,7 +254,7 @@ def test_a_revoked_token_is_reported_once_not_every_tick(
     # What machine A had: a refresh token in the Windows credential store (it is per user,
     # not per app home) and a build without the Google client file, so "connected" but
     # every sync refused.
-    world.auth._client_loader = lambda: None
+    world.accounts._google._client_loader = lambda: None
     world.sync.kick()
     with caplog.at_level("WARNING", logger="app.gcal.sync"):
         for _ in range(20):
@@ -252,7 +284,10 @@ def test_timezones_all_day_and_recurrence(world: World) -> None:
     ]
     world.synced()
     by_id = {
-        e.event_id: e for e in world.store.between(NOW - timedelta(days=1), NOW + timedelta(days=5))
+        e.event_id: e
+        for e in world.store.between(
+            NOW - timedelta(days=1), NOW + timedelta(days=5), accounts=None
+        )
     }
     assert by_id["ny"].start == datetime(2026, 9, 21, 13, 0, tzinfo=UTC)
     assert by_id["holiday"].all_day and by_id["holiday"].end - by_id["holiday"].start == timedelta(
@@ -270,7 +305,7 @@ def test_no_description_and_no_email_is_ever_stored(world: World) -> None:
     dump = "\n".join(str(tuple(row)) for row in world.conn.execute("SELECT * FROM calendar_events"))
     assert "@" not in dump.replace("@google.com", ""), "no attendee address in the cache"
     assert "PIN" not in dump and "salaries" not in dump, "the description is never kept"
-    event = world.store.get("primary", "standup")
+    event = world.store.get(world.account, "primary", "standup")
     assert event is not None
     assert [a.name for a in event.others] == ["Dana Levi", "יוסי כהן"]
 
@@ -303,13 +338,23 @@ def test_zoom_links_are_found_in_the_location(world: World) -> None:
     assert parsed.conference_url.startswith("https://us02web.zoom.us/j/123456")
 
 
-def test_disconnect_forgets_the_cache(world: World) -> None:
+def test_removing_an_account_keeps_its_events_but_stops_reading_them(world: World) -> None:
+    """Calendar data is never deleted (D82): a removed account's events stay in the cache,
+    unread and unshown, for when the same address is connected again."""
     world.api.items = [g_event("standup", NOW)]
     world.synced()
-    world.auth.disconnect()
-    world.sync.forget()
-    assert world.store.count() == 0
-    assert world.secrets.get(REFRESH_SECRET) is None
+    world.accounts.remove(world.account)
+    assert world.store.count() == 1
+    assert world.secrets.get(token_key(world.account)) is None
+    assert (
+        world.store.between(NOW, NOW + timedelta(hours=1), accounts=world.accounts.active_ids())
+        == []
+    )
+    before = len(world.api.requests)
+    world.clock.advance(600)
+    world.sync.kick()
+    assert world.sync.tick() is False
+    assert len(world.api.requests) == before, "a removed account is not asked"
 
 
 # =========================================================================== Calendar 4
@@ -408,7 +453,7 @@ def test_a_user_choice_is_never_undone(world: World) -> None:
     world.api.items = [g_event("a", NOW, title="A"), g_event("b", NOW, title="B")]
     world.synced()
     meeting = world.meetings.create(source="manual")
-    event_b = world.store.get("primary", "b")
+    event_b = world.store.get(world.account, "primary", "b")
     assert event_b is not None
     world.meetings.choose_event(meeting.id, snapshot(event_b, state="matched", source="user"))
     world.clock.set(NOW + timedelta(minutes=30))
@@ -460,7 +505,7 @@ def _summarize_prompt(
 
             self.asr = FakeAsr()
             self.llm = FakeLlm()
-            self.calendar_invites = InviteReader(world.auth, monotonic=world.clock.monotonic)
+            self.calendar_invites = InviteReader(world.accounts, monotonic=world.clock.monotonic)
 
     from app.pipeline.context import StageContext
 
@@ -615,7 +660,14 @@ def _detector(tmp_path: Path, world: World) -> Any:
 
     h = build(tmp_path / "det")
     h.clock.set(NOW)
-    h.detector.calendar = CalendarNow(world.store, available=lambda: True)
+    h.detector.calendar = CalendarNow(world.store, active=lambda: {world.account})
+    # The detector's library is its own database: it knows the account too, as the app's
+    # one database would.
+    h.dao.conn.execute(
+        "INSERT INTO calendar_accounts(id, address, visible, color, position, added_at) "
+        "VALUES (?, 'me@example.com', 1, 1, 1, 'now')",
+        (world.account,),
+    )
     h.detector.meetings.enrichment_source = world.source
     return h
 

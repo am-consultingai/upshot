@@ -47,7 +47,13 @@ export type KeyPhase = "idle" | "checking" | "valid" | "invalid";
 export type SpeakerPhase = "idle" | "playing" | "heard" | "silent";
 
 export interface SetupSnapshot {
-  calendar: { available: boolean; phase: CalendarPhase; account?: string; authUrl?: string };
+  /** Every connected Google account (D82); ``phase`` is the sign-in under way, if any. */
+  calendar: {
+    available: boolean;
+    phase: CalendarPhase;
+    accounts: { id: string; address: string }[];
+    authUrl?: string;
+  };
   cli: Record<CliId, CliSnapshot>;
   /**
    * Whether the CLI facts have arrived. Asking the machine what is installed can take

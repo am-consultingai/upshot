@@ -5,6 +5,7 @@ import {
   allDayKeys,
   bucketByDay,
   dayKey,
+  eventKey,
   isSameMonth,
   isToday,
   recordedIds,
@@ -13,6 +14,7 @@ import {
 } from "../lib/calendar";
 import { formatClock } from "../lib/format";
 import { OpenBalloon } from "./TimeGrid";
+import AccountDots from "./AccountDots";
 
 /** Beyond this a cell stops being readable, so the rest collapse into a count. */
 const MAX_CHIPS = 3;
@@ -107,7 +109,7 @@ export default function MonthGrid({
                 .slice(0, MAX_CHIPS)
                 .map((event) => (
                   <Link
-                    key={`${event.calendar_id}:${event.event_id}`}
+                    key={eventKey(event)}
                     to={`/m/${event.meeting_id}`}
                     data-testid="calendar-event"
                     data-recorded="true"
@@ -118,6 +120,7 @@ export default function MonthGrid({
                     <span className="min-w-0 flex-1 truncate">
                       {formatClock(event.start)} {event.title ?? t("calendar.untitled")}
                     </span>
+                    <AccountDots item={event} />
                     <OpenBalloon
                       count={meetings.find((meeting) => meeting.id === event.meeting_id)?.actions_open}
                       label={t("timeline.actionsOpen")}

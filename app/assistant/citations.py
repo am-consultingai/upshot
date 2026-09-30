@@ -81,7 +81,7 @@ class Citer:
         return MARKER.sub(one, text), new
 
     def _check(self, meeting_id: str, at_ms: int | None) -> dict[str, Any] | None:
-        meeting = self.dao.get_meeting(meeting_id)
+        meeting = self.dao.visible_meeting(meeting_id)
         if meeting is None:
             return None
         citation: dict[str, Any] = {

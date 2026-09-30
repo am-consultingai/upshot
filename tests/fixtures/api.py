@@ -145,3 +145,20 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
         services=services,
     )
     return ApiHarness(services=services, app=create_app(services), clock=clock, captures=captures)
+
+
+def seed_calendar_account(services: Any, address: str = "you@example.com") -> str:
+    """A connected calendar account with no Google behind it (D82): pinned, so it counts
+    as connected and is never synced. Its events are written into the cache directly."""
+    from app.gcal.accounts import AccountRegistry
+    from app.gcal.oauth import CalendarAccounts
+
+    if services.calendar is None:
+        services.calendar = CalendarAccounts(
+            services.config.secrets,
+            AccountRegistry(services.conn, services.clock),
+            publish=lambda **payload: services.events.publish("calendar", **payload),
+        )
+    account, _ = services.calendar.registry.add_or_restore(address)
+    services.calendar.pin(account.id)
+    return str(account.id)

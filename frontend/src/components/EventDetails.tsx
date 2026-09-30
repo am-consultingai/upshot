@@ -2,9 +2,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, type CalendarEvent } from "../api";
 import { useI18n } from "../i18n";
-import { isHappening } from "../lib/calendar";
+import { accountsOf, isHappening } from "../lib/calendar";
 import { formatClock } from "../lib/format";
 import BusyButton from "./BusyButton";
+import { AccountDot, useCalendarAccounts } from "./AccountDots";
 
 /**
  * One calendar event, opened from the calendar view: what it is, when, who was invited
@@ -44,6 +45,7 @@ export default function EventDetails({
         <h2 className="display mb-1 text-lg" data-testid="event-title">
           {event.title ?? t("calendar.untitled")}
         </h2>
+        <EventAccounts event={event} />
         <p className="text-sm text-secondary" data-testid="event-time">
           {day}
           {!event.all_day && (
@@ -113,5 +115,24 @@ export default function EventDetails({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Which calendar the event is on, when more than one is connected (D82). */
+function EventAccounts({ event }: { event: CalendarEvent }) {
+  const accounts = useCalendarAccounts();
+  if (accounts.length < 2) return null;
+  const on = new Set(accountsOf(event, accounts));
+  return (
+    <p className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-tertiary" data-testid="event-accounts">
+      {accounts
+        .filter((account) => on.has(account.id))
+        .map((account) => (
+          <span key={account.id} className="inline-flex items-center gap-1">
+            <AccountDot account={account} />
+            <bdi>{account.address}</bdi>
+          </span>
+        ))}
+    </p>
   );
 }

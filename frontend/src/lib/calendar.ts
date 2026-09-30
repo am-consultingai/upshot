@@ -203,6 +203,9 @@ export function periodLabel(span: CalendarSpan, anchor: Date, locale: string): s
 
 /** The fields of a calendar event the grids need. */
 export interface GridEvent {
+  account_id?: string;
+  /** Every shown account the same meeting is on, when more than one. */
+  accounts?: string[];
   calendar_id: string;
   event_id: string;
   start: string;
@@ -212,8 +215,31 @@ export interface GridEvent {
 }
 
 /** A stable key for an event, usable as a React key and a grid item id. */
-export function eventKey(event: { calendar_id: string; event_id: string }): string {
-  return `event:${event.calendar_id}:${event.event_id}`;
+export function eventKey(event: {
+  account_id?: string;
+  calendar_id: string;
+  event_id: string;
+}): string {
+  return `event:${event.account_id ?? ""}:${event.calendar_id}:${event.event_id}`;
+}
+
+/** An account's dot colour: one of six tokens, repeating after that (D82). */
+export function accountColour(color: number): string {
+  const index = ((Math.max(1, Math.round(color)) - 1) % 6) + 1;
+  return `var(--account-${index})`;
+}
+
+/** The accounts an event or a meeting is on, in the order Settings lists them. */
+export function accountsOf(
+  item: { account_id?: string; accounts?: string[]; calendar_accounts?: string[] },
+  listed: { id: string }[],
+): string[] {
+  const ids = new Set([
+    ...(item.accounts ?? []),
+    ...(item.calendar_accounts ?? []),
+    ...(item.account_id ? [item.account_id] : []),
+  ]);
+  return listed.filter((account) => ids.has(account.id)).map((account) => account.id);
 }
 
 /**

@@ -89,8 +89,9 @@ def build(
     from app.gcal.source import CalendarNow
 
     invites = InviteReader(calendar)
+    calendar.on_hidden.append(invites.forget)
 
-    calendar_now = CalendarNow(calendar_sync.store, available=calendar.connected)
+    calendar_now = CalendarNow(calendar_sync.store, active=calendar.active_ids)
     services = Services(
         config=cfg,
         conn=conn,
@@ -153,35 +154,38 @@ def build(
 def build_calendar(
     cfg: Config, conn: sqlite3.Connection, events: EventBus, clock: Clock
 ) -> tuple[Any, Any, Any]:
-    """The Google connection, its event cache and sync, and the enrichment source.
+    """The Google accounts, their event cache and sync, and the enrichment source.
 
-    Built whether or not an account is connected: every piece asks ``connected()`` and
-    does nothing until it is, so connecting in Settings needs no restart.
+    Built whether or not any account is connected: every piece asks which accounts are
+    active and does nothing until one is, so connecting in Settings needs no restart.
+    An older install's one account is adopted first (D82).
     """
     from app import window
+    from app.gcal.accounts import AccountRegistry, adopt_legacy
     from app.gcal.events import EventStore
-    from app.gcal.oauth import CalendarAuth
+    from app.gcal.oauth import CalendarAccounts
     from app.gcal.sync import CalendarSync
 
     store = EventStore(conn)
+    registry = AccountRegistry(conn, clock)
     sync_ref: list[Any] = []
 
     def on_auth(**payload: Any) -> None:
         events.publish("calendar", **payload)
-        if sync_ref and payload.get("state") == "connected":
-            if payload.get("account_changed"):
-                # Another account now: the old one's events must not stay in the cache.
-                sync_ref[0].forget()
-            sync_ref[0].kick()
+        if sync_ref and payload.get("account_id"):
+            # Connected, restored or shown again: that account catches up now.
+            sync_ref[0].kick(payload["account_id"])
 
-    auth = CalendarAuth(
+    accounts = CalendarAccounts(
         cfg.secrets,
+        registry,
         publish=on_auth,
         # The sign-in ran in the user's browser: Upshot's window comes back in front.
         on_complete=lambda ok: window.bring_to_front(),
     )
+    _adopt(conn, registry, cfg, accounts, adopt_legacy)
     sync = CalendarSync(
-        auth,
+        accounts,
         store,
         clock=clock,
         publish=lambda **payload: events.publish("calendar", **payload),
@@ -191,5 +195,28 @@ def build_calendar(
     if str(cfg.get("enrichment.source", "google")) == "google":
         from app.gcal.source import GoogleCalendarSource
 
-        source = GoogleCalendarSource(store, available=auth.connected)
-    return auth, sync, source
+        source = GoogleCalendarSource(store, active=accounts.active_ids)
+    return accounts, sync, source
+
+
+def _adopt(conn: sqlite3.Connection, registry: Any, cfg: Config, accounts: Any, adopt: Any) -> None:
+    """Adopt an older install's account, and rewrite the meta.json of the meetings whose
+    snapshot now names it. Never fatal: the next start tries again."""
+    from app import meta
+    from app.db.dao import Dao
+
+    try:
+        adopted = adopt(registry, cfg.secrets, accounts.probe_refresh)
+    except Exception:
+        log.exception("could not adopt the older Google connection")
+        return
+    if not adopted:
+        return
+    dao = Dao(conn)
+    for meeting_id in adopted[1]:
+        meeting = dao.get_meeting(meeting_id)
+        if meeting is not None and meeting.path.is_dir():
+            try:
+                meta.mirror(meeting)
+            except OSError as exc:
+                log.warning("meta.json of %s not rewritten: %s", meeting_id, exc)

@@ -20,6 +20,7 @@ import {
 import { formatClock } from "../lib/format";
 import { timelineLayout } from "../lib/timeline";
 import Tooltip from "./Tooltip";
+import AccountDots from "./AccountDots";
 
 /** 48px an hour: a 30-minute meeting holds a title and a time, and a working day fits. */
 const PX_PER_MINUTE = 0.8;
@@ -548,6 +549,7 @@ export default function TimeGrid({
                           style={built.style}
                         >
                           {built.body}
+                          <AccountDots item={event} className="absolute end-1 top-1" />
                         </Link>
                       );
                     }
@@ -566,6 +568,7 @@ export default function TimeGrid({
                         style={built.style}
                       >
                         {built.body}
+                        <AccountDots item={event} className="absolute end-1 top-1" />
                       </button>
                     );
                   }

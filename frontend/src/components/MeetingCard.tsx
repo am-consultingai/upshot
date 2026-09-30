@@ -5,6 +5,7 @@ import { formatDuration, formatDurationShort, formatClock, formatElapsed } from 
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 import Menu, { useContextMenu, type MenuItem } from "./Menu";
+import AccountDots from "./AccountDots";
 
 const ETA_PER_STATE: Record<string, number> = {
   TRANSCRIBING: 8 * 60,
@@ -134,9 +135,10 @@ export default function MeetingCard({
         <span className="min-w-0 flex-1">
           <span
             data-testid="meeting-name"
-            className={`block truncate text-sm ${recording ? "text-danger" : "text-primary"}`}
+            className={`flex items-center gap-1.5 text-sm ${recording ? "text-danger" : "text-primary"}`}
           >
-            {meeting.title ?? meeting.id}
+            <span className="min-w-0 truncate">{meeting.title ?? meeting.id}</span>
+            <AccountDots item={meeting} />
           </span>
           <span
             className={`mt-px block truncate font-mono text-2xs tabular-nums ${

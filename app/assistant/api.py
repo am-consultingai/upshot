@@ -226,7 +226,7 @@ def session(request: Request, session_id: str) -> dict[str, Any]:
                 data = part.get("data") or {}
                 meeting_id = str(data.get("meeting_id", ""))
                 if meeting_id not in exists:
-                    exists[meeting_id] = svc.dao.get_meeting(meeting_id) is not None
+                    exists[meeting_id] = svc.dao.visible_meeting(meeting_id) is not None
                 if not exists[meeting_id]:
                     data["missing"] = True
     return {"session": found.as_api(), "messages": messages}

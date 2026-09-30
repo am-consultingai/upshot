@@ -214,6 +214,15 @@
   --speaker-5: #c0668a;
   /* Initials on a speaker colour: white on the deep light-theme hues. */
   --on-speaker: #ffffff;
+  /* Calendar accounts (D82): a dot each, never a fill. Six hues away from the state
+     colours (the accent's teal, the recording red, amber and green) and from nothing
+     else on the page, so a dot says "which account" and nothing more. */
+  --account-1: #2f63d6;
+  --account-2: #8a55d8;
+  --account-3: #c43d8c;
+  --account-4: #607085;
+  --account-5: #9a6b3f;
+  --account-6: #2a8fc4;
 
   /*
    * Elevation, light mode. Offset, blur and NEGATIVE spread each roughly double
@@ -267,6 +276,12 @@
     --speaker-4: #74b99c;
     --speaker-5: #dc8aab;
     --on-speaker: #0e0f11;
+    --account-1: #7ea2f0;
+    --account-2: #b594ee;
+    --account-3: #e57db8;
+    --account-4: #9aa9bb;
+    --account-5: #cfa27a;
+    --account-6: #6cc0e8;
   --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
     --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
 
@@ -300,6 +315,12 @@
   --speaker-4: #74b99c;
   --speaker-5: #dc8aab;
   --on-speaker: #0e0f11;
+  --account-1: #7ea2f0;
+  --account-2: #b594ee;
+  --account-3: #e57db8;
+  --account-4: #9aa9bb;
+  --account-5: #cfa27a;
+  --account-6: #6cc0e8;
   --chevron: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f2f3f5' stroke-width='1.5' stroke-opacity='.55'%3E%3Cpath d='M4 6.5 8 10.5l4-4'/%3E%3C/svg%3E");
 
   /*

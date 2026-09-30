@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AccountPatch": {
+        "properties": {
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "visible"
+        ],
+        "title": "AccountPatch",
+        "type": "object"
+      },
       "ActionItemPatch": {
         "description": "Every field optional. An absent field is left alone; an explicit null clears it —\nwhich is why the handler reads ``model_fields_set`` rather than testing for None.",
         "properties": {
@@ -149,6 +162,17 @@
       "CalendarChoice": {
         "description": "The event a recording belongs to, as the user picked it; or ``none``.",
         "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
           "calendar_id": {
             "anyOf": [
               {
@@ -251,6 +275,17 @@
       },
       "LauncherAction": {
         "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
           "action": {
             "title": "Action",
             "type": "string"
@@ -491,6 +526,17 @@
       },
       "StartPost": {
         "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
           "calendar_id": {
             "anyOf": [
               {
@@ -1130,25 +1176,138 @@
         "summary": "Audio Level"
       }
     },
-    "/api/calendar/cache": {
+    "/api/calendar/accounts/{account_id}": {
       "delete": {
-        "description": "Delete every cached event. While connected, the next sync fetches them again.",
-        "operationId": "calendar_forget_api_calendar_cache_delete",
+        "description": "Remove an account: its access is revoked at Google, and it is hidden for good.\nIts events and its recordings stay, and connecting the same address brings them back.\nSays so when the revoke could not be sent.",
+        "operationId": "calendar_account_remove_api_calendar_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Calendar Forget Api Calendar Cache Delete",
+                  "title": "Response Calendar Account Remove Api Calendar Accounts  Account Id  Delete",
                   "type": "object"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "Calendar Forget"
+        "summary": "Calendar Account Remove"
+      },
+      "patch": {
+        "description": "Show or hide an account. Hidden, everything of it is hidden everywhere in Upshot,\nand nothing is deleted (D82).",
+        "operationId": "calendar_account_patch_api_calendar_accounts__account_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Account Patch Api Calendar Accounts  Account Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Calendar Account Patch"
+      }
+    },
+    "/api/calendar/accounts/{account_id}/reconnect": {
+      "post": {
+        "description": "Sign in again to an account whose connection stopped working.",
+        "operationId": "calendar_account_reconnect_api_calendar_accounts__account_id__reconnect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Account Reconnect Api Calendar Accounts  Account Id  Reconnect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Calendar Account Reconnect"
       }
     },
     "/api/calendar/cancel": {
@@ -1173,7 +1332,7 @@
     },
     "/api/calendar/connect": {
       "post": {
-        "description": "Start a connection, and open Google's page in the user's default browser.\n\nOpened from here, not by the page: the page is Upshot's window, which runs in a browser\nprofile of its own, so a tab it opened would have none of the user's Google accounts.\nWindows opens it in the profile the user was last in (z8tj1hca86). ``opened`` false\n(not Windows): the page opens ``auth_url`` itself.",
+        "description": "Add a Google account: start a connection, and open Google's page in the user's\ndefault browser. The account Google returns is added, or restored when its address\nwas connected before (D82); no other account is touched.\n\nOpened from here, not by the page: the page is Upshot's window, which runs in a browser\nprofile of its own, so a tab it opened would have none of the user's Google accounts.\nWindows opens it in the profile the user was last in (z8tj1hca86). ``opened`` false\n(not Windows): the page opens ``auth_url`` itself.",
         "operationId": "calendar_connect_api_calendar_connect_post",
         "responses": {
           "200": {
@@ -1192,30 +1351,9 @@
         "summary": "Calendar Connect"
       }
     },
-    "/api/calendar/disconnect": {
-      "post": {
-        "description": "Revoke at Google and forget locally. Says so when the revoke could not be sent.",
-        "operationId": "calendar_disconnect_api_calendar_disconnect_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Calendar Disconnect Api Calendar Disconnect Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Calendar Disconnect"
-      }
-    },
     "/api/calendar/events": {
       "get": {
-        "description": "Cached events overlapping [from, to), each with the recording matched to it.\n\n``from``/``to`` are local dates (YYYY-MM-DD) or full ISO instants. Served from the\ncache only, so the calendar view works offline and never waits on Google.",
+        "description": "Cached events overlapping [from, to), each with the recording matched to it.\n\n``from``/``to`` are local dates (YYYY-MM-DD) or full ISO instants. Served from the\ncache only, so the calendar view works offline and never waits on Google. Only the\nactive accounts' events; the same meeting on several of them is one event, with\n``accounts`` naming them all.",
         "operationId": "calendar_events_api_calendar_events_get",
         "parameters": [
           {
@@ -1266,7 +1404,7 @@
     },
     "/api/calendar/status": {
       "get": {
-        "description": "Whether a Google account is connected, and which. Never a token.",
+        "description": "The connected Google accounts and how each is syncing. Never a token.\n\nRemoved accounts are not listed (they are kept in the database, D82).",
         "operationId": "calendar_status_api_calendar_status_get",
         "responses": {
           "200": {
@@ -2023,6 +2161,7 @@
     },
     "/api/meetings": {
       "get": {
+        "description": "Newest first. ``account`` (repeatable) is the library filter: meetings on any of\nthose calendar accounts, ``none`` for meetings on no account. Meetings of hidden\naccounts are never listed (D82).",
         "operationId": "list_meetings_api_meetings_get",
         "parameters": [
           {
@@ -2097,6 +2236,25 @@
               "default": 200,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account"
             }
           }
         ],
@@ -2503,7 +2661,7 @@
     },
     "/api/meetings/{meeting_id}/invite": {
       "get": {
-        "description": "The invitation behind this recording, read from Google now — never from a store.\n\nThe agenda, the links in it and the files attached to it live in the calendar, which\nis where they are maintained. Editing the event changes what this returns; deleting\nit takes it away.",
+        "description": "The invitation behind this recording, read from Google now — never from a store.\n\nThe agenda, the links in it and the files attached to it live in the calendar, which\nis where they are maintained. Editing the event changes what this returns; deleting\nit takes it away. It is read with the token of the account the event was matched on.",
         "operationId": "meeting_invite_api_meetings__meeting_id__invite_get",
         "parameters": [
           {

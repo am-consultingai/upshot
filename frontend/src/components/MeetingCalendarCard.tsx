@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type MeetingCalendar } from "../api";
+import { api, type EventRef, type MeetingCalendar } from "../api";
 import { useI18n } from "../i18n";
 import { formatClock } from "../lib/format";
+import AccountDots from "./AccountDots";
+import { eventKey } from "../lib/calendar";
 
 /**
  * Everything this recording knows about the meeting it was: which calendar event it
@@ -56,7 +58,7 @@ export default function MeetingCalendarCard({
     enabled: isMatched,
   });
   const choose = useMutation({
-    mutationFn: (body: { calendar_id: string; event_id: string } | { none: true }) =>
+    mutationFn: (body: EventRef | { none: true }) =>
       api.chooseMeetingEvent(meetingId, body),
     onSuccess: () => {
       setPicking(false);
@@ -81,7 +83,9 @@ export default function MeetingCalendarCard({
     invited.data && !invited.data.available && !["unmatched", "no_connection"].includes(
       invited.data.code ?? "",
     )
-      ? invited.data.reason
+      ? invited.data.code === "account_gone"
+        ? t("invite.accountGone")
+        : invited.data.reason
       : null;
 
   const title = invite?.title ?? calendar.title ?? null;
@@ -274,7 +278,11 @@ export default function MeetingCalendarCard({
             type="button"
             data-testid="meeting-calendar-confirm"
             onClick={() =>
-              choose.mutate({ calendar_id: proposed.calendar_id, event_id: proposed.event_id })
+              choose.mutate({
+                account_id: proposed.account_id,
+                calendar_id: proposed.calendar_id,
+                event_id: proposed.event_id,
+              })
             }
             className="rounded bg-accent px-2 py-0.5 text-xs text-on-accent"
           >
@@ -294,17 +302,21 @@ export default function MeetingCalendarCard({
       {picking && (
         <ul className="mt-2 space-y-1" data-testid="meeting-calendar-options">
           {(options.data?.candidates ?? []).map((event) => (
-            <li key={`${event.calendar_id}:${event.event_id}`}>
+            <li key={eventKey(event)}>
               <button
                 type="button"
                 data-testid="meeting-calendar-option"
                 onClick={() =>
-                  choose.mutate({ calendar_id: event.calendar_id, event_id: event.event_id })
+                  choose.mutate({
+                    account_id: event.account_id,
+                    calendar_id: event.calendar_id,
+                    event_id: event.event_id,
+                  })
                 }
                 className="w-full rounded px-2 py-1 text-start hover:bg-a-200 active:bg-a-300"
               >
                 <bdi className="text-tertiary">{formatClock(event.start)}</bdi>{" "}
-                {event.title ?? t("calendar.untitled")}
+                {event.title ?? t("calendar.untitled")} <AccountDots item={event} />
               </button>
             </li>
           ))}

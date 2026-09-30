@@ -20,11 +20,18 @@ const GIVE_UP_MS = 10 * 60_000;
 /** A loopback peak above this, while the chime plays, is the chime being heard. */
 const HEARD_PEAK = 0.02;
 
+/** The connected accounts, as the calendar step lists them. */
+function listed(status: CalendarStatus | null): { id: string; address: string }[] {
+  return (status?.accounts ?? []).map(({ id, address }) => ({ id, address }));
+}
+
 /** Google's answers, in the words the calendar step has a line for. */
 function calendarPhase(status: CalendarStatus, current: CalendarPhase): CalendarPhase {
-  if (status.state === "connected") return "connected";
   if (status.state === "connecting") return "waiting";
   const error = status.error ?? "";
+  // Adding another account can fail while the first stays connected: the failure is
+  // what this sign-in came to, and the step says so beside the accounts it still has.
+  if (status.state === "connected" && !(current === "waiting" && error)) return "connected";
   if (!error) return current === "waiting" ? "cancelled" : current;
   if (error.includes("permission to see calendar events")) return "partial";
   if (error.includes("in time")) return "timeout";
@@ -75,7 +82,7 @@ export class ApiSetupBackend implements SetupBackend {
       calendar: {
         available: !!calendar?.configured,
         phase: calendar?.state === "connected" ? "connected" : "idle",
-        account: calendar?.account ?? undefined,
+        accounts: listed(calendar),
       },
       cli: {
         claude: { ...cliFacts(undefined, "claude"), phase: "idle" },
@@ -159,7 +166,7 @@ export class ApiSetupBackend implements SetupBackend {
             }
             return false;
           }
-          this.setCalendar({ phase, account: next.account ?? undefined });
+          this.setCalendar({ phase, accounts: listed(next) });
           return phase !== "waiting";
         });
       })
@@ -171,14 +178,14 @@ export class ApiSetupBackend implements SetupBackend {
 
   cancelCalendar(): void {
     this.stop("calendar");
-    // Cancelling "Use a different account" leaves the account that was connected.
+    // Cancelling "Add another calendar" leaves the accounts that were connected.
     void api
       .calendarCancel()
       .then((status) =>
         this.setCalendar(
           status.state === "connected"
-            ? { phase: "connected", account: status.account ?? undefined }
-            : { phase: "cancelled" },
+            ? { phase: "connected", accounts: listed(status) }
+            : { phase: "cancelled", accounts: listed(status) },
         ),
       )
       .catch(() => this.setCalendar({ phase: "cancelled" }));

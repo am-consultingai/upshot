@@ -167,3 +167,30 @@ def test_deliver_requires_rendered_html(tmp_path: Path) -> None:
     h, meeting = pipeline_to_notes(tmp_path)
     with pytest.raises(FileNotFoundError):
         deliver.run(h.context(meeting, JobStage.DELIVER, services=Services()))
+
+
+def test_a_meeting_of_a_hidden_calendar_account_is_neither_sent_nor_announced(
+    tmp_path: Path,
+) -> None:
+    """Hidden means not there (D82): a retry that reaches such a meeting prepares it as a
+    draft for when it is shown again, and says nothing."""
+    from app.gcal.accounts import AccountRegistry
+
+    with FakeSmtp() as server:
+        h, meeting = pipeline_to_notes(tmp_path, delivery__mode="auto_send")
+        h.config.set("delivery.smtp.host", server.host)
+        h.config.set("delivery.smtp.port", server.port)
+        h.config.set("delivery.smtp.starttls", False)
+        h.config.set("delivery.smtp.from_addr", "me@example.com")
+        h.config.set("delivery.recipients", ["team@example.com"])
+        registry = AccountRegistry(h.dao.conn)
+        account, _ = registry.add_or_restore("work@example.com")
+        h.dao.set_calendar_accounts(meeting.id, account.id)
+        registry.set_visible(account.id, False)
+        notifier = RecordingNotifier()
+        services = Services(notifier=notifier)
+        render.run(h.context(meeting, JobStage.RENDER, services=services))
+        deliver.run(h.context(meeting, JobStage.DELIVER, services=services))
+        assert server.received == []
+        assert notifier.calls == []
+        assert meta.read(meeting.path)["delivery"]["sent"] is False

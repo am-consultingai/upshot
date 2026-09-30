@@ -9,6 +9,7 @@ import { dueCounts } from "../lib/due";
 import { formatClock } from "../lib/format";
 import BusyButton from "./BusyButton";
 import Tooltip from "./Tooltip";
+import AccountDots from "./AccountDots";
 
 /** "in 2h 33m", "in 12m", "now". */
 export function untilLabel(start: string, now: number, words: { in: string; now: string }): string {
@@ -55,7 +56,11 @@ export default function LibraryRail() {
   const { stop } = useRecordingControls();
   const record = useMutation({
     mutationFn: (event: CalendarEvent) =>
-      api.startRecording({ calendar_id: event.calendar_id, event_id: event.event_id }),
+      api.startRecording({
+        account_id: event.account_id,
+        calendar_id: event.calendar_id,
+        event_id: event.event_id,
+      }),
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
@@ -129,8 +134,9 @@ export default function LibraryRail() {
             <p data-testid="rail-up-next-when" className="text-2xs text-tertiary">
               {untilLabel(next.start, now, { in: t("rail.in"), now: t("rail.happeningNow") })}
             </p>
-            <p className="mt-1 truncate text-md font-medium tracking-snug">
-              {next.title ?? t("calendar.untitled")}
+            <p className="mt-1 flex items-center gap-1.5 text-md font-medium tracking-snug">
+              <span className="min-w-0 truncate">{next.title ?? t("calendar.untitled")}</span>
+              <AccountDots item={next} />
             </p>
             <p className="mt-0.5 font-mono text-2xs text-secondary">
               {formatClock(next.start)} – {formatClock(next.end)}

@@ -127,7 +127,7 @@ class AssistantTools:
 
     def get_meeting(self, meeting_id: str) -> str:
         """One meeting: details, the summary as text, and its action items."""
-        meeting = self.svc.dao.get_meeting(meeting_id)
+        meeting = self.svc.dao.visible_meeting(meeting_id)
         if meeting is None:
             return self._missing(meeting_id)
         summary = self.svc.dao.summary_text(meeting.id)
@@ -153,7 +153,7 @@ class AssistantTools:
 
     def get_transcript(self, meeting_id: str, from_ms: int = 0, to_ms: int = 0) -> str:
         """Part of a transcript: lines with the time each was said (``at_ms``)."""
-        meeting = self.svc.dao.get_meeting(meeting_id)
+        meeting = self.svc.dao.visible_meeting(meeting_id)
         if meeting is None:
             return self._missing(meeting_id)
         lines = [
@@ -240,19 +240,25 @@ class AssistantTools:
             end = start + timedelta(days=1)
         end = min(end, start + timedelta(days=62))
         from app.gcal.events import EventStore
+        from app.gcal.match import dedupe
 
         store = (
             self.svc.calendar_sync.store
             if self.svc.calendar_sync is not None
             else EventStore(self.svc.conn)
         )
-        recorded: dict[tuple[str, str], str] = {}
+        # Keyed by the event on every account the recording is on. The reference is under
+        # "event" in a snapshot; it was read from the top level, and never found (D82).
+        recorded: dict[tuple[str, str, str], str] = {}
         for meeting in self.svc.dao.list_meetings(limit=5000):
             payload = calendar_payload(meeting)
-            if payload.get("event_id"):
-                recorded[(str(payload.get("calendar_id", "")), str(payload["event_id"]))] = (
-                    meeting.id
-                )
+            ref = payload.get("event") or {}
+            if (payload.get("match") or {}).get("state") != "matched" or not ref.get("event_id"):
+                continue
+            for account in payload.get("accounts") or [ref.get("account_id") or ""]:
+                key = (str(account), str(ref.get("calendar_id", "")), str(ref["event_id"]))
+                recorded[key] = meeting.id
+        active = self.svc.calendar.active_ids() if self.svc.calendar is not None else frozenset()
         events = [
             {
                 "title": event.title or "",
@@ -262,7 +268,7 @@ class AssistantTools:
                 "attendees": [a.name for a in event.attendees if not a.declined][:30],
                 "recorded_meeting_id": recorded.get(event.key),
             }
-            for event in store.between(start, end)
+            for event in dedupe(store.between(start, end, accounts=active))
             if event.status != "cancelled"
         ]
         return as_data(
@@ -278,7 +284,7 @@ class AssistantTools:
         """Meetings related to this one, and why: people, series, action items, a rare word."""
         from app.related import related
 
-        if self.svc.dao.get_meeting(meeting_id) is None:
+        if self.svc.dao.visible_meeting(meeting_id) is None:
             return self._missing(meeting_id)
         found = related(self.svc.dao, meeting_id)
         return as_data({"meeting_id": meeting_id, "related": [item.as_api() for item in found]})
