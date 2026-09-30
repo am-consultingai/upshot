@@ -112,15 +112,3 @@ def test_links_leaving_the_app_go_to_the_default_browser(  # type: ignore[no-unt
     for bad in ("file:///C:/Windows/System32/calc.exe", "C:\\Windows\\notepad.exe", "javascript:x"):
         assert client.post("/api/open", json={"url": bad}).status_code == 422, bad
     assert len(opened) == 1, "nothing but http(s) is ever opened"
-
-
-def test_the_status_carries_the_users_name(api) -> None:  # type: ignore[no-untyped-def]
-    client = api.client()
-    started = client.post("/api/calendar/connect").json()
-    consent = api.google.consent(started["auth_url"])
-    httpx.get(
-        api.google.redirect_uri + "/",
-        params={"state": consent["state"], "code": "good-code", "scope": SCOPE},
-        timeout=5.0,
-    )
-    assert client.get("/api/calendar/status").json()["name"] == "Dana"

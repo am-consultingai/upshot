@@ -1,8 +1,9 @@
 import type { MessageKey } from "../i18n";
 
 /**
- * The home screen's greeting: by the time of day, and by the user's first name when their
- * Google profile gave one (connecting Google Calendar asks for it). No name, no comma.
+ * The home screen's greeting, by the time of day, and by the user's first name once Upshot
+ * knows one. Google is not asked for it (one consent screen, product owner 2026-09-30), so
+ * for now there is none. No name, no comma.
  */
 export function greetingKey(hour: number): MessageKey {
   if (hour >= 5 && hour < 12) return "greeting.morning";

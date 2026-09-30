@@ -149,8 +149,6 @@ export interface CalendarStatus {
   last_synced_at?: string | null;
   sync_error?: string | null;
   cached_events?: number;
-  /** The user's first name from their Google profile, when they allowed it. */
-  name?: string | null;
   /** The server opens Google's page itself (Windows); the page must not open a tab. */
   opens_externally?: boolean;
 }

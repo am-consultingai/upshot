@@ -127,8 +127,6 @@ export default function Library() {
     queryFn: () => api.calendarEvents(range.from, range.to),
     enabled: !reading,
   });
-  // The user's first name, when connecting Google Calendar brought one (userinfo.profile).
-  const calendarStatus = useQuery({ queryKey: ["calendar"], queryFn: api.calendarStatus, enabled: !reading });
   const [openEvent, setOpenEvent] = useState<CalendarEvent | null>(null);
   const events = calendarEvents.data?.events ?? [];
   const windowed = inRange.data?.meetings ?? [];
@@ -158,7 +156,7 @@ export default function Library() {
               data-testid="greeting"
               className="flex-none px-4 pt-3 text-lg font-semibold tracking-snug text-primary"
             >
-              {greeting(t, new Date().getHours(), calendarStatus.data?.name)}
+              {greeting(t, new Date().getHours())}
             </h1>
             <div
               data-testid="calendar-controls"
