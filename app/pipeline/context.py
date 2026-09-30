@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from app.clock import Clock
 from app.config import Config
 from app.db.dao import Dao, Meeting
-from app.errors import Preempted
+from app.errors import Cancelled, Preempted
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.pipeline.queue import Job, JobQueue
@@ -39,9 +39,17 @@ class StageContext:
         return Path(self.meeting.folder)
 
     def checkpoint(self) -> None:
-        """Called between units of work. Raises :class:`Preempted` when a meeting starts."""
+        """Called between units of work. Raises :class:`Cancelled` when the meeting is being
+        deleted, :class:`Preempted` when a meeting starts."""
+        self.stop_if_deleted()
         if self.should_yield():
             raise Preempted(f"{self.job.stage} yielded to the recorder")
+
+    def stop_if_deleted(self) -> None:
+        """For work that cannot be resumed part-way (a track mid-transcription): stop only
+        for a deletion, never for the recorder."""
+        if self.queue.deleting(self.meeting.id):
+            raise Cancelled(f"{self.job.stage} stopped: the meeting is being deleted")
 
     def refresh(self) -> Meeting:
         self.meeting = self.dao.require_meeting(self.meeting.id)

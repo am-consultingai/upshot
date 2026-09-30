@@ -92,6 +92,9 @@ class JobQueue:
         #: the job, and it must not survive a restart — a forced re-run that outlived the
         #: process would silently re-bill every meeting on disk.
         self._rerun: set[tuple[str, str]] = set()
+        #: Meetings being deleted while a stage of theirs runs: the stage stops at its
+        #: next checkpoint and the worker finishes the deletion (Cancelled).
+        self._deleting: set[str] = set()
 
     # -- writing -----------------------------------------------------------
 
@@ -218,6 +221,28 @@ class JobQueue:
         if count:
             log.info("crash recovery: reset %d running job(s) to pending", count)
         return count
+
+    def request_delete(self, meeting_id: str) -> None:
+        """Stop everything for this meeting: drop its waiting jobs, and ask a running one
+        to stop (``deleting``, read by the stage's checkpoints)."""
+        self._deleting.add(meeting_id)
+        self.conn.execute(
+            "DELETE FROM jobs WHERE meeting_id = ? AND state != 'running'", (meeting_id,)
+        )
+
+    def deleting(self, meeting_id: str) -> bool:
+        return meeting_id in self._deleting
+
+    def deleted(self, meeting_id: str) -> None:
+        """The deletion is done: nothing is left to stop."""
+        self._deleting.discard(meeting_id)
+
+    def running_for(self, meeting_id: str) -> Job | None:
+        row = self.conn.execute(
+            "SELECT * FROM jobs WHERE meeting_id = ? AND state = 'running' LIMIT 1",
+            (meeting_id,),
+        ).fetchone()
+        return _row_to_job(row) if row else None
 
     def request_rerun(self, meeting_id: str, stage: JobStage | str) -> None:
         """Redo this stage from scratch, whatever its output on disk looks like."""

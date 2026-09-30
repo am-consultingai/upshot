@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import wave
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from app.asr.backend import Segment, Word, track_of
@@ -99,6 +99,8 @@ class FakeAsr:
         #: Which model role this stands in for, and every role it was asked to be (R3).
         self.role = HEBREW
         self.roles: list[str] = []
+        #: As LocalAsr's: called between segments, raises to stop (a deletion).
+        self.stop_check: Callable[[], None] | None = None
 
     # -- helpers
 
@@ -157,6 +159,8 @@ class FakeAsr:
                 if self.repetitions > 1:
                     text = pool[(seed + index) % len(pool)]
                 words = self._words(text, start, end)
+                if self.stop_check is not None:
+                    self.stop_check()
                 segments.append(
                     Segment(
                         id=len(segments),

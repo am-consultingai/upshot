@@ -311,6 +311,9 @@ class LocalAsr:
         self.registered_dll_dirs: list[str] = []
         self.fell_back = False
         self.warmups = 0
+        #: Called between segments while transcribing; raises to stop (a deletion). One
+        #: track can take many minutes on the CPU, far too long to wait out.
+        self.stop_check: Callable[[], None] | None = None
 
     # -- loading -----------------------------------------------------------
 
@@ -400,7 +403,12 @@ class LocalAsr:
             condition_on_previous_text=False,  # the repetition-loop guard; do not remove
             beam_size=self.beam_size(),
         )
-        return list(segments)
+        out = []
+        for segment in segments:  # decoded lazily, one window at a time
+            out.append(segment)
+            if self.stop_check is not None:
+                self.stop_check()
+        return out
 
     def beam_size(self) -> int:
         """asr.beam_size, except on the CPU with "CPU acceleration" on: greedy (1).
