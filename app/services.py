@@ -159,7 +159,7 @@ def build_calendar(
     does nothing until it is, so connecting in Settings needs no restart.
     """
     from app.gcal.events import EventStore
-    from app.gcal.oauth import CalendarAuth
+    from app.gcal.oauth import CalendarAuth, back_link
     from app.gcal.sync import CalendarSync
 
     store = EventStore(conn)
@@ -173,7 +173,7 @@ def build_calendar(
     auth = CalendarAuth(
         cfg.secrets,
         publish=on_auth,
-        app_url=f"http://127.0.0.1:{cfg.server_port}/settings#calendar",
+        app_url=back_link(cfg.server_port),
     )
     sync = CalendarSync(
         auth,

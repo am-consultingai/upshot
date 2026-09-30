@@ -49,6 +49,8 @@ class FakeGoogle:
         self.offline = False
         self.client_disabled = False
         self.expires_in = 3600
+        #: Called while the code is exchanged: what a poll sees in that moment.
+        self.during_exchange: Any = None
 
     def consent(self, auth_url: str) -> dict[str, str]:
         query = {k: v[0] for k, v in parse_qs(urlparse(auth_url).query).items()}
@@ -68,6 +70,8 @@ class FakeGoogle:
         url = str(request.url)
         if url.startswith("https://oauth2.googleapis.com/token"):
             self.token_calls += 1
+            if self.during_exchange is not None:
+                self.during_exchange()
             form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
             if self.client_disabled:
                 return httpx.Response(401, json={"error": "invalid_client"})
@@ -230,6 +234,47 @@ def test_a_name_kept_by_an_earlier_build_is_removed_on_connect(
     connect(auth, google)
     assert auth._secrets.get(LEGACY_NAME_SECRET) is None
     assert "name" not in auth.status()
+
+
+def test_a_poll_while_the_code_is_exchanged_still_says_connecting(
+    auth: CalendarAuth, google: FakeGoogle
+) -> None:
+    """Machine B, 2026-09-30: first-run setup polled between Google's redirect and the
+    token, read "disconnected" with no error, and showed "Cancelled" for a connection that
+    succeeded a moment later."""
+    seen: list[str] = []
+    google.during_exchange = lambda: seen.append(auth.status()["state"])
+    connect(auth, google)
+    assert seen == ["connecting"]
+    assert auth.status()["state"] == "connected"
+
+
+def test_the_last_page_leads_back_to_upshots_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On Windows the upshot: link, which brings Upshot's own window forward; a web link
+    opened Upshot as a tab in the sign-in's browser."""
+    import sys
+
+    from app.gcal.oauth import back_link
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert back_link(8078) == "upshot:open"
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert back_link(8078) == "http://127.0.0.1:8078/settings#calendar"
+
+
+def test_the_done_page_carries_the_back_link(google: FakeGoogle, clock: Clock) -> None:
+    calendar = CalendarAuth(
+        FakeKeyring(),
+        client_loader=lambda: CLIENT,
+        http=httpx.Client(transport=httpx.MockTransport(google.handler)),
+        app_url="upshot:open",
+        monotonic=clock,
+    )
+    try:
+        page = connect(calendar, google).text
+    finally:
+        calendar.close()
+    assert '<a class="back" href="upshot:open">Back to Upshot</a>' in page
 
 
 def test_status_while_waiting_offers_the_url_again(auth: CalendarAuth) -> None:
