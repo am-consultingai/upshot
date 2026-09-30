@@ -146,7 +146,6 @@ def auth(google: FakeGoogle, clock: Clock) -> CalendarAuth:
         client_loader=lambda: CLIENT,
         http=httpx.Client(transport=httpx.MockTransport(google.handler)),
         publish=lambda **payload: events.append(payload),
-        app_url="http://127.0.0.1:8000/settings#calendar",
         monotonic=clock,
     )
     calendar.events = events  # type: ignore[attr-defined]
@@ -253,70 +252,27 @@ def test_a_poll_while_the_code_is_exchanged_still_says_connecting(
     assert auth.status()["state"] == "connected"
 
 
-def test_the_last_page_leads_back_to_upshots_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On Windows the upshot: link, which brings Upshot's own window forward; a web link
-    opened Upshot as a tab in the sign-in's browser."""
-    import sys
-
-    from app.gcal.oauth import back_link
-
-    monkeypatch.setattr(sys, "platform", "win32")
-    assert back_link(8078) == "upshot:open"
-    monkeypatch.setattr(sys, "platform", "linux")
-    assert back_link(8078) == "http://127.0.0.1:8078/settings#calendar"
-
-
-def test_the_done_page_carries_the_back_link(google: FakeGoogle, clock: Clock) -> None:
+def test_upshot_comes_back_in_front_when_the_sign_in_ends(google: FakeGoogle, clock: Clock) -> None:
+    """The sign-in runs in the user's browser; afterwards Upshot's window is brought
+    forward, connected or not, and the page has no link to follow (machine B, 2026-09-30:
+    a link opened Upshot as a tab, an upshot: link made Chrome ask "Open Upshot?")."""
+    ended: list[bool] = []
     calendar = CalendarAuth(
         FakeKeyring(),
         client_loader=lambda: CLIENT,
         http=httpx.Client(transport=httpx.MockTransport(google.handler)),
-        app_url="upshot:open",
+        on_complete=ended.append,
         monotonic=clock,
     )
     try:
         page = connect(calendar, google).text
+        consent = google.consent(calendar.start())
+        redirect(google, {"state": consent["state"], "error": "access_denied"})
     finally:
         calendar.close()
-    assert '<a class="back" href="upshot:open">Back to Upshot</a>' in page
-
-
-def test_another_account_replaces_the_first_and_revokes_it(
-    auth: CalendarAuth, google: FakeGoogle
-) -> None:
-    """Setup's "Use a different account": the new account in, the old one's access
-    revoked, and the change announced so its cached events are dropped."""
-    connect(auth, google)
-    google.account, google.next_refresh = "noa@example.com", "r-2"
-    auth.events.clear()  # type: ignore[attr-defined]
-    connect(auth, google)
-    status = auth.status()
-    assert (status["state"], status["account"]) == ("connected", "noa@example.com")
-    assert auth._secrets.get(REFRESH_SECRET) == "r-2"
-    assert google.revoked == ["r-1"], "the first account's access is revoked"
-    assert {"state": "connected", "account_changed": True} in auth.events  # type: ignore[attr-defined]
-
-
-def test_the_same_account_again_revokes_nothing(auth: CalendarAuth, google: FakeGoogle) -> None:
-    """Revoking the older token of the same account would revoke its grant, new token too."""
-    connect(auth, google)
-    google.next_refresh = "r-2"
-    auth.events.clear()  # type: ignore[attr-defined]
-    connect(auth, google)
-    assert google.revoked == [] and auth._secrets.get(REFRESH_SECRET) == "r-2"
-    assert {"state": "connected"} in auth.events  # type: ignore[attr-defined]
-
-
-def test_switching_while_connected_keeps_the_account_until_it_succeeds(
-    auth: CalendarAuth, google: FakeGoogle
-) -> None:
-    connect(auth, google)
-    auth.start()
-    assert auth.status()["state"] == "connecting"
-    auth.cancel()
-    status = auth.status()
-    assert (status["state"], status["account"]) == ("connected", "dana@example.com")
-    assert google.revoked == []
+    assert ended == [True, False]
+    assert "<a " not in page and "upshot:" not in page
+    assert "You can close this tab." in page and "window.close()" in page
 
 
 def test_status_while_waiting_offers_the_url_again(auth: CalendarAuth) -> None:

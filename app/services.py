@@ -158,8 +158,9 @@ def build_calendar(
     Built whether or not an account is connected: every piece asks ``connected()`` and
     does nothing until it is, so connecting in Settings needs no restart.
     """
+    from app import window
     from app.gcal.events import EventStore
-    from app.gcal.oauth import CalendarAuth, back_link
+    from app.gcal.oauth import CalendarAuth
     from app.gcal.sync import CalendarSync
 
     store = EventStore(conn)
@@ -176,7 +177,8 @@ def build_calendar(
     auth = CalendarAuth(
         cfg.secrets,
         publish=on_auth,
-        app_url=back_link(cfg.server_port),
+        # The sign-in ran in the user's browser: Upshot's window comes back in front.
+        on_complete=lambda ok: window.bring_to_front(),
     )
     sync = CalendarSync(
         auth,
