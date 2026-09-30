@@ -51,18 +51,14 @@ API_URL = "https://www.googleapis.com/calendar/v3"
 #: settings or ACLs, and a picker of calendars would add ``calendar.calendars.readonly``.
 SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
 
-#: The user's name, to greet them by (2026-09-30). Optional: Google lets the user untick it,
-#: and a connection without it is still a connection; Upshot then greets without a name.
-PROFILE_SCOPE = "https://www.googleapis.com/auth/userinfo.profile"
-SCOPES = (SCOPE, PROFILE_SCOPE)
-USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
-
 REFRESH_SECRET = "google_refresh_token"
 #: The connected account's address, for Settings to show. It is not a credential, but it
 #: is personal, so it stays beside the token rather than in the config file.
 ACCOUNT_SECRET = "google_account"
-#: The user's first name, from their Google profile. Personal, so beside the token too.
-NAME_SECRET = "google_name"
+#: The user's first name, kept by builds of 2026-09-30 that asked Google for the profile
+#: scope. No longer asked for (one consent screen instead of two, product owner): anything
+#: stored is removed at the next connect or disconnect.
+LEGACY_NAME_SECRET = "google_name"
 
 #: How long the listener waits for the browser to come back.
 CONNECT_TIMEOUT_S = 300.0
@@ -95,7 +91,7 @@ def authorization_url(client: OAuthClient, redirect_uri: str, challenge: str, st
         "client_id": client.client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": " ".join(SCOPES),
+        "scope": SCOPE,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "state": state,
@@ -189,7 +185,6 @@ class CalendarAuth:
             "configured": self.client() is not None,
             "state": state,
             "account": account,
-            "name": self._secrets.get(NAME_SECRET) if account else None,
             "auth_url": pending.auth_url if pending else None,
             "error": error,
             "scope": SCOPE,
@@ -320,11 +315,7 @@ class CalendarAuth:
         account = self._account()
         if account:
             self._secrets.set(ACCOUNT_SECRET, account)
-        name = self._name(token) if PROFILE_SCOPE in str(token.get("scope", "")).split() else None
-        if name:
-            self._secrets.set(NAME_SECRET, name)
-        else:
-            self._secrets.delete(NAME_SECRET)
+        self._secrets.delete(LEGACY_NAME_SECRET)
         log.info("google calendar connected")
         return True, "Upshot is connected to your Google Calendar."
 
@@ -341,22 +332,6 @@ class CalendarAuth:
             return None
         summary = body.get("summary")
         return str(summary) if summary else None
-
-    def _name(self, token: dict[str, Any]) -> str | None:
-        """The user's first name (or full name), from the profile scope. None if unknown;
-        not knowing it is not a failure."""
-        access = str(token.get("access_token", ""))
-        try:
-            response = self._http.get(USERINFO_URL, headers={"Authorization": f"Bearer {access}"})
-        except httpx.HTTPError as exc:
-            log.warning("google connect: could not read the profile name: %s", exc)
-            return None
-        if response.status_code != 200:
-            log.warning("google connect: profile name refused (%s)", response.status_code)
-            return None
-        body = _json(response)
-        name = str(body.get("given_name") or body.get("name") or "").strip()
-        return name or None
 
     # ------------------------------------------------------------------ tokens
 
@@ -456,7 +431,7 @@ class CalendarAuth:
         revoked = self._revoke(refresh or access or "") if (refresh or access) else True
         self._secrets.delete(REFRESH_SECRET)
         self._secrets.delete(ACCOUNT_SECRET)
-        self._secrets.delete(NAME_SECRET)
+        self._secrets.delete(LEGACY_NAME_SECRET)
         with self._lock:
             self._access = None
             self._error = None
