@@ -624,6 +624,7 @@ export const he: Record<MessageKey, string> = {
   "firstRun.calendar.connect": "התחברות עם Google",
   "firstRun.calendar.waiting": "השלימו בלשונית Google שנפתחה",
   "firstRun.calendar.cancel": "ביטול",
+  "firstRun.calendar.switch": "חיבור חשבון אחר",
   "firstRun.calendar.connectedAs": "מחובר בתור {account}",
   "firstRun.calendar.partial": "לא ניתנה הרשאה. השאירו את התיבה מסומנת בדף של Google.",
   "firstRun.calendar.cancelled": "בוטל.",

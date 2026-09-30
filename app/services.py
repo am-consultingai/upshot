@@ -168,6 +168,9 @@ def build_calendar(
     def on_auth(**payload: Any) -> None:
         events.publish("calendar", **payload)
         if sync_ref and payload.get("state") == "connected":
+            if payload.get("account_changed"):
+                # Another account now: the old one's events must not stay in the cache.
+                sync_ref[0].forget()
             sync_ref[0].kick()
 
     auth = CalendarAuth(

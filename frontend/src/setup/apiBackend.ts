@@ -171,7 +171,17 @@ export class ApiSetupBackend implements SetupBackend {
 
   cancelCalendar(): void {
     this.stop("calendar");
-    void api.calendarCancel().finally(() => this.setCalendar({ phase: "cancelled" }));
+    // Cancelling "Use a different account" leaves the account that was connected.
+    void api
+      .calendarCancel()
+      .then((status) =>
+        this.setCalendar(
+          status.state === "connected"
+            ? { phase: "connected", account: status.account ?? undefined }
+            : { phase: "cancelled" },
+        ),
+      )
+      .catch(() => this.setCalendar({ phase: "cancelled" }));
   }
 
   // ------------------------------------------------------------------ AI

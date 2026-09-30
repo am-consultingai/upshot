@@ -72,9 +72,21 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
           </p>
         )}
         {phase === "connected" ? (
-          <Note tone="good" testId="calendar-connected">
-            {fill(t("firstRun.calendar.connectedAs"), { account: calendar.account ?? "" })}
-          </Note>
+          <div className="space-y-3">
+            <Note tone="good" testId="calendar-connected">
+              {fill(t("firstRun.calendar.connectedAs"), { account: calendar.account ?? "" })}
+            </Note>
+            {/* Another Google account: the same sign-in, with Google's account chooser.
+                Until it succeeds, the account above stays connected. */}
+            <button
+              type="button"
+              data-testid="calendar-switch"
+              className={QUIET}
+              onClick={() => backend.connectCalendar()}
+            >
+              {t("firstRun.calendar.switch")}
+            </button>
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <BusyButton
