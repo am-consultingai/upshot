@@ -180,6 +180,17 @@
         "title": "CalendarChoice",
         "type": "object"
       },
+      "CalendarConnect": {
+        "properties": {
+          "profile": {
+            "default": "",
+            "title": "Profile",
+            "type": "string"
+          }
+        },
+        "title": "CalendarConnect",
+        "type": "object"
+      },
       "ChatPost": {
         "properties": {
           "context": {
@@ -1127,8 +1138,25 @@
     },
     "/api/calendar/connect": {
       "post": {
-        "description": "Start a connection. The browser opens the returned URL; the rest is the listener's.",
+        "description": "Start a connection. The browser opens the returned URL; the rest is the listener's.\n\nWith a profile, Upshot opens it in that browser profile and says so (``opened``).",
         "operationId": "calendar_connect_api_calendar_connect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CalendarConnect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -1141,6 +1169,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Calendar Connect"
@@ -1216,6 +1254,27 @@
           }
         },
         "summary": "Calendar Events"
+      }
+    },
+    "/api/calendar/profiles": {
+      "get": {
+        "description": "The browser profiles Google's sign-in can open in (ClickUp z8tj1hca86).\n\nUpshot's window runs in one profile of the default browser, and a page it opens lands\nthere whatever has the focus. Chrome and Edge list their profiles; any other browser\ngets an empty list and the page opens the link, which the user can also copy.",
+        "operationId": "calendar_profiles_api_calendar_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Calendar Profiles Api Calendar Profiles Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Calendar Profiles"
       }
     },
     "/api/calendar/status": {

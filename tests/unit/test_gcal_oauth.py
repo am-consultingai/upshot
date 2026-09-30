@@ -21,6 +21,8 @@ from app.config import FakeKeyring
 from app.gcal import client as gclient
 from app.gcal.oauth import (
     ACCOUNT_SECRET,
+    NAME_SECRET,
+    PROFILE_SCOPE,
     REFRESH_SECRET,
     SCOPE,
     CalendarAuth,
@@ -42,7 +44,8 @@ class FakeGoogle:
         self.refresh_tokens = {"r-1"}
         self.access_tokens: set[str] = set()
         self.issued = 0
-        self.granted_scope = SCOPE
+        self.granted_scope = f"{SCOPE} {PROFILE_SCOPE}"
+        self.profile = {"name": "Dana Levi", "given_name": "Dana"}
         self.revoked: list[str] = []
         self.token_calls = 0
         self.offline = False
@@ -103,6 +106,11 @@ class FakeGoogle:
             self.revoked.append(token)
             self.refresh_tokens.discard(token)
             return httpx.Response(200)
+        if url.startswith("https://www.googleapis.com/oauth2/v3/userinfo"):
+            bearer = request.headers.get("authorization", "").removeprefix("Bearer ")
+            if bearer not in self.access_tokens or PROFILE_SCOPE not in self.granted_scope:
+                return httpx.Response(401, json={"error": "invalid_token"})
+            return httpx.Response(200, json=self.profile)
         if url.startswith("https://www.googleapis.com/calendar/v3/calendars/primary/events"):
             bearer = request.headers.get("authorization", "").removeprefix("Bearer ")
             if bearer not in self.access_tokens:
@@ -171,9 +179,14 @@ def test_consent_url_asks_for_exactly_what_is_needed() -> None:
     url = authorization_url(CLIENT, "http://127.0.0.1:5555", "chal", "st")
     query = {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
     assert url.startswith("https://accounts.google.com/o/oauth2/v2/auth?")
-    assert query["scope"] == "https://www.googleapis.com/auth/calendar.events.readonly"
+    assert query["scope"].split() == [
+        "https://www.googleapis.com/auth/calendar.events.readonly",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    ], "calendar events, and the profile for the user's name; nothing else"
     assert query["code_challenge_method"] == "S256"
-    assert query["access_type"] == "offline" and query["prompt"] == "consent"
+    assert query["access_type"] == "offline"
+    # The account chooser every time (z8tj1hca86), and a fresh refresh token.
+    assert query["prompt"].split() == ["select_account", "consent"]
     assert query["redirect_uri"] == "http://127.0.0.1:5555"
     assert "client_secret" not in query, "the secret never goes into a URL"
 
@@ -217,6 +230,28 @@ def test_connect_stores_the_token_in_the_secret_store(
     assert auth._secrets.get(REFRESH_SECRET) == "r-1"
     assert "r-1" not in json.dumps(status), "status never carries a token"
     assert {"state": "connected"} in auth.events  # type: ignore[attr-defined]
+
+
+def test_connect_learns_the_users_first_name(auth: CalendarAuth, google: FakeGoogle) -> None:
+    connect(auth, google)
+    assert auth.status()["name"] == "Dana"
+    assert auth._secrets.get(NAME_SECRET) == "Dana"
+
+
+def test_an_unticked_profile_box_still_connects_without_a_name(
+    auth: CalendarAuth, google: FakeGoogle
+) -> None:
+    """The name is optional: without it Upshot greets without one."""
+    google.granted_scope = SCOPE
+    connect(auth, google)
+    status = auth.status()
+    assert status["state"] == "connected" and status["name"] is None
+
+
+def test_no_given_name_falls_back_to_the_full_name(auth: CalendarAuth, google: FakeGoogle) -> None:
+    google.profile = {"name": "Dana"}
+    connect(auth, google)
+    assert auth.status()["name"] == "Dana"
 
 
 def test_status_while_waiting_offers_the_url_again(auth: CalendarAuth) -> None:
@@ -379,6 +414,7 @@ def test_disconnect_revokes_at_google_and_forgets_locally(
     assert google.revoked == ["r-1"]
     assert auth._secrets.get(REFRESH_SECRET) is None
     assert auth._secrets.get(ACCOUNT_SECRET) is None
+    assert auth._secrets.get(NAME_SECRET) is None, "the name goes with the account"
     assert auth.status()["state"] == "disconnected"
     with pytest.raises(CalendarAuthError):
         auth.access_token()

@@ -18,6 +18,7 @@ import AgendaList from "../components/AgendaList";
 import LibraryRail from "../components/LibraryRail";
 import EventDetails from "../components/EventDetails";
 import Tooltip from "../components/Tooltip";
+import { greeting } from "../lib/greeting";
 import type { CalendarEvent } from "../api";
 
 /** Explicit, so the message keys stay type-checked rather than cast away. */
@@ -126,6 +127,8 @@ export default function Library() {
     queryFn: () => api.calendarEvents(range.from, range.to),
     enabled: !reading,
   });
+  // The user's first name, when connecting Google Calendar brought one (userinfo.profile).
+  const calendarStatus = useQuery({ queryKey: ["calendar"], queryFn: api.calendarStatus, enabled: !reading });
   const [openEvent, setOpenEvent] = useState<CalendarEvent | null>(null);
   const events = calendarEvents.data?.events ?? [];
   const windowed = inRange.data?.meetings ?? [];
@@ -151,6 +154,12 @@ export default function Library() {
          */}
         {!reading ? (
           <>
+            <h1
+              data-testid="greeting"
+              className="flex-none px-4 pt-3 text-lg font-semibold tracking-snug text-primary"
+            >
+              {greeting(t, new Date().getHours(), calendarStatus.data?.name)}
+            </h1>
             <div
               data-testid="calendar-controls"
               className="flex h-13 flex-none items-center gap-2 border-b border-line-subtle px-4"

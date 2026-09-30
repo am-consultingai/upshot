@@ -47,7 +47,7 @@ export type KeyPhase = "idle" | "checking" | "valid" | "invalid";
 export type SpeakerPhase = "idle" | "playing" | "heard" | "silent";
 
 export interface SetupSnapshot {
-  calendar: { available: boolean; phase: CalendarPhase; account?: string };
+  calendar: { available: boolean; phase: CalendarPhase; account?: string; authUrl?: string };
   cli: Record<CliId, CliSnapshot>;
   /**
    * Whether the CLI facts have arrived. Asking the machine what is installed can take
@@ -65,7 +65,8 @@ export interface SetupBackend {
   snapshot(): SetupSnapshot;
   subscribe(listener: () => void): () => void;
 
-  connectCalendar(): void;
+  /** `profile`: a browser profile to open Google's page in (z8tj1hca86). */
+  connectCalendar(profile?: string): void;
   cancelCalendar(): void;
 
   /** Install, then go straight on to sign-in: ticking the card is the only click. */

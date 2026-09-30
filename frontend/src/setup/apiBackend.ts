@@ -127,16 +127,19 @@ export class ApiSetupBackend implements SetupBackend {
 
   // ------------------------------------------------------------------ calendar
 
-  connectCalendar(): void {
+  connectCalendar(profile?: string): void {
     // Opened inside the click, before any await, or the browser blocks it as a popup;
-    // pointed at Google's page once the server has made it.
-    let tab = window.open("about:blank", "_blank");
+    // pointed at Google's page once the server has made it. With a browser profile
+    // chosen, the server opens it there instead: a page opened from here would land in
+    // the profile this window runs in (z8tj1hca86).
+    let tab = profile ? null : window.open("about:blank", "_blank");
     this.setCalendar({ phase: "waiting" });
     void api
-      .calendarConnect()
+      .calendarConnect(profile)
       .then((status) => {
+        this.setCalendar({ phase: "waiting", authUrl: status.auth_url });
         if (tab) tab.location.href = status.auth_url;
-        else tab = window.open(status.auth_url, "_blank");
+        else if (!status.opened) tab = window.open(status.auth_url, "_blank");
         let closedFor = 0;
         this.poll("calendar", async () => {
           const next = await api.calendarStatus();
