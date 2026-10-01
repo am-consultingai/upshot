@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useMatch } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import {
@@ -18,9 +18,6 @@ import AgendaList from "../components/AgendaList";
 import LibraryRail from "../components/LibraryRail";
 import EventDetails from "../components/EventDetails";
 import Tooltip from "../components/Tooltip";
-import AccountsPopover, { AccountsTrigger } from "../components/AccountsPopover";
-import { useCalendarAccounts } from "../components/AccountDots";
-import { useCalendarFilter } from "../lib/calendarFilter";
 import { greeting } from "../lib/greeting";
 import type { CalendarEvent } from "../api";
 
@@ -119,11 +116,10 @@ export default function Library() {
    * to explain it, which reads as meetings having been deleted. The list is the
    * thing you navigate with and it should not change because a different pane did.
    */
-  // "Filter by calendar" narrows the grid as it narrows the list beside it (D82).
-  const filter = useCalendarFilter();
+  // Hidden calendar accounts are left out by the server (D82): nothing to filter here.
   const inRange = useQuery({
-    queryKey: ["meetings", range.from, range.to, { account: filter.query }],
-    queryFn: () => api.meetings({ from: range.from, to: range.to, limit: "500" }, filter.query),
+    queryKey: ["meetings", range.from, range.to],
+    queryFn: () => api.meetings({ from: range.from, to: range.to, limit: "500" }),
     enabled: !reading,
   });
   // Google Calendar events, from the local cache. Empty until an account is connected.
@@ -133,7 +129,7 @@ export default function Library() {
     enabled: !reading,
   });
   const [openEvent, setOpenEvent] = useState<CalendarEvent | null>(null);
-  const events = (calendarEvents.data?.events ?? []).filter(filter.showsEvent);
+  const events = calendarEvents.data?.events ?? [];
   const windowed = inRange.data?.meetings ?? [];
   const period = periodParts(span, anchor, locale);
 
@@ -219,9 +215,7 @@ export default function Library() {
                 </span>
                 </Tooltip>
               )}
-              <div className="ms-auto flex items-center gap-2">
-              <CalendarsControl />
-              <div className="flex gap-0.5 rounded-md bg-surface-3 p-0.5" role="group">
+              <div className="ms-auto flex gap-0.5 rounded-md bg-surface-3 p-0.5" role="group">
                 {(["day", "week", "month", "list"] as const).map((option) => (
                   <Tooltip
                     key={option}
@@ -244,7 +238,6 @@ export default function Library() {
                   </button>
                   </Tooltip>
                 ))}
-              </div>
               </div>
             </div>
             <div className="flex min-h-0 flex-1">
@@ -271,47 +264,3 @@ export default function Library() {
   );
 }
 
-/**
- * Which calendars the view shows (D82): one checkbox per connected account, with its dot
- * — the legend and the switch at once. Only with two or more accounts: with one there
- * is nothing to choose between. Hiding here is the same switch as in Settings, and hides
- * the account everywhere, recordings included.
- */
-function CalendarsControl() {
-  const { t } = useI18n();
-  const queryClient = useQueryClient();
-  const accounts = useCalendarAccounts();
-  const toggle = useMutation({
-    mutationFn: ({ id, visible }: { id: string; visible: boolean }) =>
-      api.calendarSetVisible(id, visible),
-    onSuccess: (next) => {
-      queryClient.setQueryData(["calendar"], next);
-      void queryClient.invalidateQueries();
-    },
-  });
-  if (accounts.length < 2) return null;
-  return (
-    <AccountsTrigger
-      label={t("calendar.accounts")}
-      testid="calendar-accounts"
-      active={accounts.some((account) => !account.visible)}
-    >
-      {(anchor, close) => (
-        <AccountsPopover
-          anchor={anchor}
-          title={t("calendar.accounts")}
-          testid="calendar-accounts-popover"
-          choices={accounts.map((account) => ({
-            id: account.id,
-            label: account.address,
-            color: account.color,
-            checked: account.visible,
-          }))}
-          footnote={t("calendar.accountsHint")}
-          onToggle={(id, visible) => toggle.mutate({ id, visible })}
-          onClose={close}
-        />
-      )}
-    </AccountsTrigger>
-  );
-}
