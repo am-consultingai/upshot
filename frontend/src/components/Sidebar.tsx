@@ -16,7 +16,7 @@ import { useSetupWarnings } from "../lib/setup";
 import { confirmDialog } from "./ConfirmDialog";
 import { toast } from "./Toaster";
 import AccountsPopover, { AccountsTrigger } from "./AccountsPopover";
-import { useCalendarAccounts } from "./AccountDots";
+import { useCalendarFilter, type CalendarFilter } from "../lib/calendarFilter";
 import type { MessageKey } from "../locales/en";
 
 /**
@@ -76,7 +76,7 @@ export default function Sidebar() {
   const open = useMatch("/m/:id");
   const openId = open?.params.id;
 
-  const libraryFilter = useLibraryFilter();
+  const libraryFilter = useCalendarFilter();
   const meetings = useQuery({
     queryKey: ["meetings", { account: libraryFilter.query }],
     queryFn: () => api.meetings({}, libraryFilter.query),
@@ -423,48 +423,7 @@ export default function Sidebar() {
   );
 }
 
-/**
- * Which calendars the library list shows (D82). A view of the list only: it hides
- * nothing anywhere else, and unlike hiding an account it deletes nothing from sight in
- * search or the calendar. Remembered the way the calendar's span is. Every calendar
- * ticked is no filter at all, which is also what an empty saved list means.
- */
-function useLibraryFilter() {
-  const queryClient = useQueryClient();
-  const accounts = useCalendarAccounts().filter((account) => account.visible);
-  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
-  const [override, setOverride] = useState<string[] | null>(null);
-  const saved = ((settings.data?.config ?? {}) as { ui?: { library_accounts?: string[] } }).ui
-    ?.library_accounts;
-  const chosen = override ?? saved ?? [];
-  const every = [...accounts.map((account) => account.id), "none"];
-  // Ids of accounts since hidden or removed fall out on their own.
-  const kept = chosen.filter((id) => every.includes(id));
-  const active = kept.length > 0 && kept.length < every.length;
-  const remember = useMutation({
-    mutationFn: (values: Record<string, unknown>) => api.putSettings(values),
-    onSuccess: (next) => queryClient.setQueryData(["settings"], next),
-  });
-  const set = (next: string[]) => {
-    const all = next.length === 0 || every.every((id) => next.includes(id));
-    const value = all ? [] : next;
-    setOverride(value);
-    remember.mutate({ "ui.library_accounts": value });
-  };
-  return {
-    accounts,
-    active,
-    /** What the list asks for: undefined is everything. */
-    query: active ? kept : undefined,
-    checked: (id: string) => !active || kept.includes(id),
-    toggle: (id: string, on: boolean) => {
-      const current = active ? kept : every;
-      set(on ? [...current, id] : current.filter((item) => item !== id));
-    },
-  };
-}
-
-function LibraryFilter({ filter }: { filter: ReturnType<typeof useLibraryFilter> }) {
+function LibraryFilter({ filter }: { filter: CalendarFilter }) {
   const { t } = useI18n();
   if (filter.accounts.length === 0) return null;
   return (

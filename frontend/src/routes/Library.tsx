@@ -20,6 +20,7 @@ import EventDetails from "../components/EventDetails";
 import Tooltip from "../components/Tooltip";
 import AccountsPopover, { AccountsTrigger } from "../components/AccountsPopover";
 import { useCalendarAccounts } from "../components/AccountDots";
+import { useCalendarFilter } from "../lib/calendarFilter";
 import { greeting } from "../lib/greeting";
 import type { CalendarEvent } from "../api";
 
@@ -118,9 +119,11 @@ export default function Library() {
    * to explain it, which reads as meetings having been deleted. The list is the
    * thing you navigate with and it should not change because a different pane did.
    */
+  // "Filter by calendar" narrows the grid as it narrows the list beside it (D82).
+  const filter = useCalendarFilter();
   const inRange = useQuery({
-    queryKey: ["meetings", range.from, range.to],
-    queryFn: () => api.meetings({ from: range.from, to: range.to, limit: "500" }),
+    queryKey: ["meetings", range.from, range.to, { account: filter.query }],
+    queryFn: () => api.meetings({ from: range.from, to: range.to, limit: "500" }, filter.query),
     enabled: !reading,
   });
   // Google Calendar events, from the local cache. Empty until an account is connected.
@@ -130,7 +133,7 @@ export default function Library() {
     enabled: !reading,
   });
   const [openEvent, setOpenEvent] = useState<CalendarEvent | null>(null);
-  const events = calendarEvents.data?.events ?? [];
+  const events = (calendarEvents.data?.events ?? []).filter(filter.showsEvent);
   const windowed = inRange.data?.meetings ?? [];
   const period = periodParts(span, anchor, locale);
 

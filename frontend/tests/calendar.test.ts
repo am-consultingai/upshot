@@ -233,3 +233,15 @@ describe("several calendar accounts (D82)", () => {
     expect(accountsOf({}, listed)).toEqual([]);
   });
 });
+
+import { eventOnAccounts } from "../src/lib/calendarFilter";
+
+describe("filter by calendar, in the calendar view (D82)", () => {
+  it("shows an event when any account it is on was chosen", () => {
+    expect(eventOnAccounts({ account_id: "ga_a" }, ["ga_a"])).toBe(true);
+    expect(eventOnAccounts({ account_id: "ga_a" }, ["ga_b", "none"])).toBe(false);
+    // The same meeting on two accounts, folded into one event: either account keeps it.
+    expect(eventOnAccounts({ account_id: "ga_a", accounts: ["ga_a", "ga_b"] }, ["ga_b"])).toBe(true);
+    expect(eventOnAccounts({}, ["ga_a"])).toBe(false);
+  });
+});

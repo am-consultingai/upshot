@@ -134,7 +134,7 @@ test("shortcuts_pause_while_the_popover_is_open", async ({ page, seedBody }) => 
   await expect(page.getByTestId("span-day")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("the_library_filter_narrows_the_list_and_survives_a_reload", async ({ page, seedBody }) => {
+test("the_calendar_filter_narrows_the_list_and_the_calendar_and_survives_a_reload", async ({ page, seedBody }) => {
   await twoAccounts(seedBody);
   await gotoApp(page, "/");
   const cards = page.getByTestId("meeting-card");
@@ -149,9 +149,10 @@ test("the_library_filter_narrows_the_list_and_survives_a_reload", async ({ page,
 
   await page.reload();
   await expect(page.getByTestId("meeting-card")).toHaveCount(1);
-  // The filter is the list's only: the calendar still shows both accounts' events.
+  // The calendar view follows the same filter: only the chosen account's events.
   await page.getByTestId("span-day").click();
-  await expect(page.getByTestId("calendar-gevent")).toHaveCount(2);
+  await expect(page.getByTestId("calendar-gevent")).toHaveCount(1);
+  await expect(page.getByTestId("calendar-gevent")).toContainText("Dentist call");
 });
 
 test("settings_lists_the_accounts_hides_and_removes", async ({ page, seedBody }) => {
