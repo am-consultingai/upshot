@@ -2677,14 +2677,7 @@ def test_router() -> APIRouter:
             # cannot silently make the reset wrong.
             from app.config import DEFAULTS
 
-            for key in (
-                "language",
-                "theme",
-                "view",
-                "calendar_span",
-                "tooltips_off",
-                "library_accounts",
-            ):
+            for key in ("language", "theme", "view", "calendar_span", "tooltips_off"):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
             # Setup counts as done for every spec except the one about setup, which
             # asks for the opposite below: a spec that died on /welcome must not send

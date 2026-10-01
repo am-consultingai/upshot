@@ -106,11 +106,6 @@ export default function CalendarSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.data?.state]);
 
-  const show = useMutation({
-    mutationFn: ({ id, visible }: { id: string; visible: boolean }) =>
-      api.calendarSetVisible(id, visible),
-    onSuccess: everywhere,
-  });
   const remove = useMutation({
     mutationFn: async (account: CalendarAccount) => {
       const sure = await confirmDialog({
@@ -141,7 +136,7 @@ export default function CalendarSettings() {
           <>
             <span className="block">{t("calendar.what")}</span>
             {accounts.length > 0 && (
-              <span className="mt-1 block">{t("calendar.hiddenEverywhere")}</span>
+              <span className="mt-1 block">{t("calendar.hideFromFilter")}</span>
             )}
             {connecting && (
               <span className="mt-1 block" data-testid="calendar-waiting">
@@ -233,18 +228,6 @@ export default function CalendarSettings() {
             </span>
           }
         >
-          <label className="flex items-center gap-2 text-xs text-secondary">
-            <input
-              type="checkbox"
-              role="switch"
-              data-testid={`calendar-account-visible-${account.id}`}
-              checked={account.visible}
-              disabled={show.isPending}
-              onChange={(event) => show.mutate({ id: account.id, visible: event.target.checked })}
-              className="size-4 accent-[var(--accent)]"
-            />
-            {t("calendar.show")}
-          </label>
           {account.state === "reconnect" && (
             <BusyButton
               data-testid={`calendar-account-reconnect-${account.id}`}
