@@ -77,10 +77,7 @@ export default function Sidebar() {
   const openId = open?.params.id;
 
   const libraryFilter = useCalendarFilter();
-  const meetings = useQuery({
-    queryKey: ["meetings", { account: libraryFilter.query }],
-    queryFn: () => api.meetings({}, libraryFilter.query),
-  });
+  const meetings = useQuery({ queryKey: ["meetings"], queryFn: () => api.meetings() });
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
   const openItems = useQuery({
     queryKey: ["action-items", "open"],
@@ -433,20 +430,13 @@ function LibraryFilter({ filter }: { filter: CalendarFilter }) {
           anchor={anchor}
           title={t("library.filter")}
           testid="library-filter-popover"
-          choices={[
-            ...filter.accounts.map((account) => ({
-              id: account.id,
-              label: account.address,
-              color: account.color,
-              checked: filter.checked(account.id),
-            })),
-            {
-              id: "none",
-              label: t("library.noCalendar"),
-              color: null,
-              checked: filter.checked("none"),
-            },
-          ]}
+          choices={filter.accounts.map((account) => ({
+            id: account.id,
+            label: account.address,
+            color: account.color,
+            checked: filter.checked(account.id),
+          }))}
+          footnote={t("calendar.accountsHint")}
           onToggle={filter.toggle}
           onClose={close}
         />

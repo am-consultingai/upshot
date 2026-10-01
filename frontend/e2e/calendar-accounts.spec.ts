@@ -60,35 +60,62 @@ test("two_accounts_show_their_events_with_their_dots", async ({ page, seedBody }
   await expect(cards.filter({ hasText: "Hallway chat" }).getByTestId("account-dots")).toHaveCount(0);
 });
 
-test("hiding_an_account_hides_its_events_and_its_recordings_everywhere", async ({ page, seedBody }) => {
+
+
+
+
+
+
+test("add_another_calendar_starts_a_sign_in", async ({ page, seedBody }) => {
+  await twoAccounts(seedBody);
+  let connects = 0;
+  await page.route("**/api/calendar/connect", async (route) => {
+    connects += 1;
+    const status = await (await page.request.get("/api/calendar/status")).json();
+    return route.fulfill({
+      json: { ...status, state: "connecting", auth_url: "https://accounts.google.com/x", opened: true },
+    });
+  });
+  await gotoSettings(page, "calendar");
+  await page.getByTestId("calendar-add").click();
+  await expect.poll(() => connects).toBe(1);
+});
+
+async function hide(page: import("@playwright/test").Page, id: string, visible = false) {
+  await page.getByTestId("library-filter").click();
+  const box = page.getByTestId(`library-filter-popover-${id}`).locator("input");
+  if (visible) await box.check();
+  else await box.uncheck();
+  await page.keyboard.press("Escape");
+}
+
+test("unticking_a_calendar_in_the_filter_hides_it_everywhere", async ({ page, seedBody }) => {
   await twoAccounts(seedBody);
   await dayView(page);
-  await page.getByTestId("calendar-accounts").click();
-  const popover = page.getByTestId("calendar-accounts-popover");
-  await expect(popover).toBeVisible();
-  await popover.getByTestId(`calendar-accounts-popover-${HOME.id}`).locator("input").uncheck();
+  await expect(page.getByTestId("meeting-card")).toHaveCount(3);
+  await hide(page, HOME.id);
 
-  await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Dentist call" })).toHaveCount(0);
-  await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Work planning" })).toHaveCount(1);
+  // The list and the calendar view both lose it...
   await expect(page.getByTestId("meeting-card").filter({ hasText: "Dentist call" })).toHaveCount(0);
   await expect(page.getByTestId("meeting-card").filter({ hasText: "Hallway chat" })).toHaveCount(1);
-  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Dentist call" })).toHaveCount(0);
+  await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Work planning" })).toHaveCount(1);
+  await expect(page.getByTestId("library-filter")).toHaveAttribute("aria-expanded", "false");
 
-  // Search finds nothing of it, and its page is not there.
+  // ...and so do search and the meeting's own page.
   await gotoApp(page, "/search?q=Dentist");
   await expect(page.getByTestId("search-result")).toHaveCount(0);
-  const answer = await page.request.get("/api/meetings/m-home");
-  expect(answer.status()).toBe(404);
+  expect((await page.request.get("/api/meetings/m-home")).status()).toBe(404);
 
-  // Shown again, it is all back.
+  // Ticked again, it is all back, after a reload too.
   await dayView(page);
-  await page.getByTestId("calendar-accounts").click();
-  await page.getByTestId(`calendar-accounts-popover-${HOME.id}`).locator("input").check();
+  await hide(page, HOME.id, true);
   await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Dentist call" })).toHaveCount(1);
+  await page.reload();
   await expect(page.getByTestId("meeting-card").filter({ hasText: "Dentist call" })).toHaveCount(1);
 });
 
-test("a_meeting_on_both_accounts_stays_while_one_is_hidden", async ({ page, seedBody }) => {
+test("a_meeting_on_both_calendars_stays_while_one_is_hidden", async ({ page, seedBody }) => {
   await seedBody({
     reset: true,
     calendar_accounts: [WORK, HOME],
@@ -110,82 +137,38 @@ test("a_meeting_on_both_accounts_stays_while_one_is_hidden", async ({ page, seed
   const offsite = page.getByTestId("calendar-gevent").filter({ hasText: "Offsite" });
   await expect(offsite).toHaveCount(1); // one meeting, drawn once
   await expect(offsite.locator("[data-account]")).toHaveCount(2); // with both dots
-  await page.getByTestId("calendar-accounts").click();
-  await page.getByTestId(`calendar-accounts-popover-${HOME.id}`).locator("input").uncheck();
+  await hide(page, HOME.id);
   await expect(page.getByTestId("meeting-card").filter({ hasText: "Offsite" })).toHaveCount(1);
+  await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Offsite" })).toHaveCount(1);
 });
 
-test("the_calendars_button_appears_only_with_two_accounts", async ({ page, seedBody }) => {
-  await seedBody({
-    reset: true,
-    calendar_accounts: [WORK],
-    calendar_events: [{ id: "ev", title: "Solo", start: isoAt(0, 10), end: isoAt(0, 11) }],
-  });
+test("the_filter_is_the_only_switch", async ({ page, seedBody }) => {
+  await twoAccounts(seedBody);
   await dayView(page);
+  // No second switch in the calendar bar...
   await expect(page.getByTestId("calendar-accounts")).toHaveCount(0);
-  await expect(page.getByTestId("account-dots")).toHaveCount(0);
-});
-
-test("shortcuts_pause_while_the_popover_is_open", async ({ page, seedBody }) => {
-  await twoAccounts(seedBody);
-  await dayView(page);
-  await page.getByTestId("calendar-accounts").click();
-  await page.keyboard.press("m");
-  await expect(page.getByTestId("span-day")).toHaveAttribute("aria-pressed", "true");
-});
-
-test("the_calendar_filter_narrows_the_list_and_the_calendar_and_survives_a_reload", async ({ page, seedBody }) => {
-  await twoAccounts(seedBody);
-  await gotoApp(page, "/");
-  const cards = page.getByTestId("meeting-card");
-  await expect(cards).toHaveCount(3);
-  await page.getByTestId("library-filter").click();
-  const popover = page.getByTestId("library-filter-popover");
-  await popover.getByTestId(`library-filter-popover-${WORK.id}`).locator("input").uncheck();
-  await popover.getByTestId("library-filter-popover-none").locator("input").uncheck();
-  await expect(cards).toHaveCount(1);
-  await expect(cards.first()).toContainText("Dentist call");
-  await page.keyboard.press("Escape");
-
-  await page.reload();
-  await expect(page.getByTestId("meeting-card")).toHaveCount(1);
-  // The calendar view follows the same filter: only the chosen account's events.
-  await page.getByTestId("span-day").click();
-  await expect(page.getByTestId("calendar-gevent")).toHaveCount(1);
-  await expect(page.getByTestId("calendar-gevent")).toContainText("Dentist call");
-});
-
-test("settings_lists_the_accounts_hides_and_removes", async ({ page, seedBody }) => {
-  await twoAccounts(seedBody);
+  // ...and none in Settings, which says where it is and still offers Remove.
   await gotoSettings(page, "calendar");
   await expect(page.getByTestId(`calendar-account-${WORK.id}`)).toContainText(WORK.address);
-  await expect(page.getByTestId(`calendar-account-${HOME.id}`)).toContainText(HOME.address);
-  await expect(page.getByTestId("calendar-add")).toBeVisible();
+  await expect(page.locator('[data-testid^="calendar-account-visible-"]')).toHaveCount(0);
+  await expect(page.getByTestId(`calendar-account-remove-${WORK.id}`)).toBeVisible();
+});
 
-  // Hide from Settings: the same switch as the calendar's.
-  await page.getByTestId(`calendar-account-visible-${HOME.id}`).uncheck();
+test("a_calendar_hidden_in_the_filter_says_so_in_settings", async ({ page, seedBody }) => {
+  await twoAccounts(seedBody);
+  await gotoApp(page, "/");
+  await hide(page, HOME.id);
+  await gotoSettings(page, "calendar");
   await expect(page.getByTestId(`calendar-account-status-${HOME.id}`)).toContainText("Hidden");
-  await expect(page.getByTestId("meeting-card").filter({ hasText: "Dentist call" })).toHaveCount(0);
-  await page.getByTestId(`calendar-account-visible-${HOME.id}`).check();
+});
 
-  // Remove asks first, then the account is not listed; its recording is hidden.
+test("removing_a_calendar_asks_first_and_then_it_is_gone", async ({ page, seedBody }) => {
+  await twoAccounts(seedBody);
+  await gotoSettings(page, "calendar");
   await page.getByTestId(`calendar-account-remove-${WORK.id}`).click();
   await page.getByTestId("confirm-ok").click();
   await expect(page.getByTestId(`calendar-account-${WORK.id}`)).toHaveCount(0);
   await expect(page.getByTestId("meeting-card").filter({ hasText: "Work planning" })).toHaveCount(0);
-});
-
-test("add_another_calendar_starts_a_sign_in", async ({ page, seedBody }) => {
-  await twoAccounts(seedBody);
-  let connects = 0;
-  await page.route("**/api/calendar/connect", async (route) => {
-    connects += 1;
-    const status = await (await page.request.get("/api/calendar/status")).json();
-    return route.fulfill({
-      json: { ...status, state: "connecting", auth_url: "https://accounts.google.com/x", opened: true },
-    });
-  });
-  await gotoSettings(page, "calendar");
-  await page.getByTestId("calendar-add").click();
-  await expect.poll(() => connects).toBe(1);
+  await page.getByTestId("library-filter").click();
+  await expect(page.getByTestId(`library-filter-popover-${WORK.id}`)).toHaveCount(0);
 });
