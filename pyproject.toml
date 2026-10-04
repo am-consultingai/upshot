@@ -20,6 +20,12 @@ dependencies = [
     "pillow>=11.0",
     "faster-whisper>=1.1",
     "onnxruntime>=1.20",
+    # Speaker diarization, always on (DECISIONS.md D85): ONNX rather than pyannote/torch
+    # (D28). sherpa-onnx-core is listed explicitly: it is a runtime dependency of
+    # sherpa-onnx that resolvers do not always pull in, and without it the import fails
+    # on a missing libonnxruntime.
+    "sherpa-onnx>=1.13",
+    "sherpa-onnx-core>=1.13",
     "pystray>=0.19; sys_platform == 'win32'",
     "pyaudiowpatch>=0.2.12.7; sys_platform == 'win32'",
     "pywin32>=308; sys_platform == 'win32'",
@@ -33,12 +39,6 @@ dependencies = [
 upshot = "app.tray:main"
 
 [project.optional-dependencies]
-# Speaker diarization. Opt-in: the default install stays small, and this pulls a second
-# native runtime. ONNX rather than pyannote/torch — DECISIONS.md D28.
-# sherpa-onnx-core is listed explicitly: it is a runtime dependency of
-# sherpa-onnx that resolvers do not always pull in, and without it the
-# import fails on a missing libonnxruntime.
-diarization = ["sherpa-onnx>=1.13", "sherpa-onnx-core>=1.13"]
 # Alternative summarization providers. Anthropic ships in the base install; these are
 # opt-in so the default installer stays small.
 openai = ["openai>=1.0"]

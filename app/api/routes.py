@@ -879,10 +879,9 @@ def search(request: Request, q: str = "", limit: int = 50) -> dict[str, Any]:
                 "meeting_title": titles.get(hit.meeting_id, (None, None))[0],
                 "meeting_started_at": titles.get(hit.meeting_id, (None, None))[1],
                 "speaker": hit.speaker,
+                # Any slot can be named, the microphone's included (D85).
                 "speaker_name": (
-                    None
-                    if not hit.speaker or hit.speaker == "ME"
-                    else speakers.get(hit.meeting_id, {}).get(hit.speaker)
+                    speakers.get(hit.meeting_id, {}).get(hit.speaker) if hit.speaker else None
                 ),
                 "at_ms": hit.at_ms,
                 "text": hit.text,
@@ -2809,6 +2808,7 @@ def test_router() -> APIRouter:
                     svc.conn.execute("UPDATE jobs SET state = ? WHERE id = ?", (state, job.id))
             if item.get("turns"):
                 from app.asr.backend import Segment, TranscriptFile
+                from app.asr.diarize import track_of
                 from app.db.dao import Turn
 
                 turns = list(item["turns"])
@@ -2828,7 +2828,7 @@ def test_router() -> APIRouter:
                     segments=[
                         Segment(
                             id=index,
-                            track="me" if turn.get("speaker", "ME") == "ME" else "them",
+                            track=track_of(turn.get("speaker", "ME")),
                             speaker=turn.get("speaker", "ME"),
                             start=turn.get("at_ms", 0) / 1000,
                             end=(

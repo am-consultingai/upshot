@@ -16,11 +16,11 @@ from app import glossary as glossary_module
 from app import meta
 from app.asr.backend import AsrBackend, Segment
 from app.asr.classify import Classifier, LanguageDecision
-from app.asr.diarize import LONG_TRACK_MINUTES, assign_speakers
+from app.asr.diarize import LONG_TRACK_MINUTES
 from app.asr.models import HEBREW
 from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
-from app.audio.writer import ChunkRecord, recover, track_files, track_path
+from app.audio.writer import track_files
 from app.log import get
 from app.pipeline.artifacts import up_to_date
 from app.pipeline.context import StageContext
@@ -237,7 +237,6 @@ def run(ctx: StageContext) -> None:
         return
 
     _check_installation(ctx)
-    records = recover(folder)
     echo_model = _measure_echo(ctx)
 
     # One pass per track over the whole file. Lost audio was written as silence, so the
@@ -267,12 +266,13 @@ def run(ctx: StageContext) -> None:
                 multilingual=decision.multilingual,
             )
             segments.extend(track_segments)
+        segments.sort(key=lambda segment: (segment.start, segment.track))
+        segments = [segment.shifted(0.0, new_id=index) for index, segment in enumerate(segments)]
+        # Before the cleaned copy goes: the microphone is diarized without the far side's
+        # echo, which would otherwise be heard as another person in the room.
+        segments = _diarize(ctx, segments, asr_inputs)
     finally:
         _discard_clean(folder)
-    segments.sort(key=lambda segment: (segment.start, segment.track))
-    segments = [segment.shifted(0.0, new_id=index) for index, segment in enumerate(segments)]
-
-    segments = _diarize(ctx, segments, records)
 
     # What the meeting was in, as the classifier heard it: it picks the summary's language
     # and the page's direction.
@@ -319,43 +319,53 @@ def _discard_clean(folder: Path) -> None:
         directory.rmdir()
 
 
-def _diarize(
-    ctx: StageContext, segments: list[Segment], records: list[ChunkRecord]
-) -> list[Segment]:
-    """Split THEM into THEM_1/2/3 over the whole track, when diarization is enabled.
+def _diarize(ctx: StageContext, segments: list[Segment], inputs: dict[str, Path]) -> list[Segment]:
+    """Split each track into its voices, over the whole track (D29, D85).
 
     Diarizing per chunk would be worthless: the speaker ids would not agree across chunk
-    boundaries. So the loopback track is reassembled on the meeting's timeline (gaps
-    become silence) and clustered once.
+    boundaries. Each track is a single file on the meeting's timeline (gaps are silence),
+    so each is clustered once. The microphone's quiet clusters are folded into its main
+    voice first; then one voice keeps ``ME``/``THEM`` and several are numbered.
     """
-    from app.asr.diarize import make_diarizer, speaker_count
+    from app.asr.diarize import ME, THEM, label_track, make_diarizer, merge_minor_speakers
 
     diarizer = make_diarizer(ctx.config)
     if diarizer is None:
         return segments
     rate = ctx.config.sample_rate
-    wav = track_path(ctx.folder, "them")
-    if not wav.exists():
-        return segments
-    track, track_rate = read_wav(wav)
-    if track_rate != rate:  # pragma: no cover - written at the storage rate
-        return segments
-    if not len(track):
-        return segments
-    minutes = len(track) / rate / 60
-    if minutes > LONG_TRACK_MINUTES:
-        log.warning("diarizing %.0f minutes in one pass; this is memory-hungry", minutes)
-    ctx.checkpoint()
-    turns = diarizer.diarize(track, rate)
-    diarizer.unload()
-    speakers = speaker_count(turns)
-    log.info("diarization found %d speaker(s) in %d turn(s)", speakers, len(turns))
-    ctx.metrics["diarization"] = {
-        "backend": diarizer.name,
-        "speakers": speakers,
-        "turns": len(turns),
-    }
-    return assign_speakers(segments, turns)
+    found: dict[str, dict[str, int]] = {}
+    try:
+        for track, base in (("me", ME), ("them", THEM)):
+            wav = inputs.get(track)
+            if wav is None or not wav.exists():
+                continue
+            audio, track_rate = read_wav(wav)
+            if track_rate != rate or not len(audio):  # pragma: no cover - storage rate
+                continue
+            minutes = len(audio) / rate / 60
+            if minutes > LONG_TRACK_MINUTES:
+                log.warning("diarizing %.0f minutes in one pass; this is memory-hungry", minutes)
+            ctx.checkpoint()
+            try:
+                turns = diarizer.diarize(audio, rate)
+            except Exception as exc:  # a meeting is never lost for want of speaker turns
+                log.warning("could not diarize the %s track; leaving it whole: %s", track, exc)
+                continue
+            if track == "me":
+                turns = merge_minor_speakers(
+                    turns,
+                    min_share=float(ctx.config.get("asr.diarization_mic_min_share", 0.05)),
+                    min_seconds=float(ctx.config.get("asr.diarization_mic_min_seconds", 20.0)),
+                )
+            voices = len({turn.speaker for turn in turns})
+            log.info("diarization: %d voice(s) on the %s track", voices, track)
+            found[track] = {"speakers": voices, "turns": len(turns)}
+            segments = label_track(segments, turns, track=track, base=base)
+    finally:
+        diarizer.unload()
+    if found:
+        ctx.metrics["diarization"] = {"backend": diarizer.name, **found}
+    return segments
 
 
 def _describe(backend: AsrBackend) -> dict[str, Any]:

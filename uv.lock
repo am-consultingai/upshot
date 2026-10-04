@@ -1897,16 +1897,14 @@ dependencies = [
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
     { name = "rapidfuzz" },
+    { name = "sherpa-onnx" },
+    { name = "sherpa-onnx-core" },
     { name = "soxr" },
     { name = "uvicorn" },
     { name = "windows-toasts", marker = "sys_platform == 'win32'" },
 ]
 
 [package.optional-dependencies]
-diarization = [
-    { name = "sherpa-onnx" },
-    { name = "sherpa-onnx-core" },
-]
 openai = [
     { name = "openai" },
 ]
@@ -1947,13 +1945,13 @@ requires-dist = [
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=308" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapidfuzz", specifier = ">=3.10" },
-    { name = "sherpa-onnx", marker = "extra == 'diarization'", specifier = ">=1.13" },
-    { name = "sherpa-onnx-core", marker = "extra == 'diarization'", specifier = ">=1.13" },
+    { name = "sherpa-onnx", specifier = ">=1.13" },
+    { name = "sherpa-onnx-core", specifier = ">=1.13" },
     { name = "soxr", specifier = ">=0.5" },
     { name = "uvicorn", specifier = ">=0.38" },
     { name = "windows-toasts", marker = "sys_platform == 'win32'", specifier = ">=1.3" },
 ]
-provides-extras = ["diarization", "openai"]
+provides-extras = ["openai"]
 
 [package.metadata.requires-dev]
 dev = [

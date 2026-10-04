@@ -7,11 +7,10 @@ const GAP_PX = 1;
 /** Enough readings to fill a very wide screen; older ones are dropped. */
 const HISTORY = 1500;
 
-const COLOUR = { me: "#059669", them: "#2563eb" } as const;
+const COLOUR = "#0d9488";
 const PAUSED = "#d4d4d4";
 const AXIS = "#e5e5e5";
 
-type Track = keyof typeof COLOUR;
 interface Reading {
   me: number;
   them: number;
@@ -24,8 +23,18 @@ function toFraction(value: number): number {
 }
 
 /**
- * A scrolling two-lane waveform of the meeting being recorded, newest at the right edge,
- * mirrored about each lane's centre the way Audacity draws a track.
+ * The two tracks as one level, the way they would sound played together: uncorrelated
+ * signals add in power, so the mixed RMS is the root of the summed squares. Only the
+ * picture is mixed; the recorder still writes the microphone and the computer's audio
+ * to separate files.
+ */
+export function mixLevel(me: number, them: number): number {
+  return Math.sqrt(me * me + them * them);
+}
+
+/**
+ * A scrolling waveform of the meeting being recorded, both tracks mixed into one lane,
+ * newest at the right edge, mirrored about the centre the way Audacity draws a track.
  *
  * Fed by `/api/recording/levels`, which only ever reads the recorder: it cannot open a
  * device, so leaving this on screen after Stop can never take the microphone.
@@ -57,16 +66,13 @@ export default function RecordingWaveform() {
       const step = BAR_PX + GAP_PX;
       const readings = history.current.slice(-Math.floor(width / step));
       const origin = width - readings.length * step;
-      const lane = height / 2;
-      (["me", "them"] as Track[]).forEach((track, index) => {
-        const middle = lane * index + lane / 2;
-        context.fillStyle = AXIS;
-        context.fillRect(0, middle - 0.5, width, 1);
-        readings.forEach((reading, position) => {
-          const half = Math.max(0.5, toFraction(reading[track]) * (lane / 2 - 2));
-          context.fillStyle = reading.paused ? PAUSED : COLOUR[track];
-          context.fillRect(origin + position * step, middle - half, BAR_PX, half * 2);
-        });
+      const middle = height / 2;
+      context.fillStyle = AXIS;
+      context.fillRect(0, middle - 0.5, width, 1);
+      readings.forEach((reading, position) => {
+        const half = Math.max(0.5, toFraction(mixLevel(reading.me, reading.them)) * (middle - 2));
+        context.fillStyle = reading.paused ? PAUSED : COLOUR;
+        context.fillRect(origin + position * step, middle - half, BAR_PX, half * 2);
       });
     };
 
@@ -93,14 +99,8 @@ export default function RecordingWaveform() {
 
   return (
     // Time runs left to right whatever the interface language, as it does on any timeline.
-    <div dir="ltr" className="relative h-20 w-full rounded border border-danger bg-raised" data-testid="recording-waveform">
-      <canvas ref={canvas} className="block size-full" />
-      <span className="pointer-events-none absolute start-1.5 top-0.5 text-[10px] font-medium" style={{ color: COLOUR.me }}>
-        {t("recording.me")}
-      </span>
-      <span className="pointer-events-none absolute start-1.5 top-1/2 text-[10px] font-medium" style={{ color: COLOUR.them }}>
-        {t("recording.them")}
-      </span>
+    <div dir="ltr" className="relative h-12 w-full rounded border border-danger bg-raised" data-testid="recording-waveform">
+      <canvas ref={canvas} className="block size-full" aria-label={t("recording.waveform")} />
     </div>
   );
 }

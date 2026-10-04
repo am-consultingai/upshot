@@ -1,7 +1,9 @@
-"""Speaker diarization — splitting ``THEM`` into ``THEM_1/2/3`` (DESIGN.md §11).
+"""Speaker diarization — splitting each track into its voices (DESIGN.md §11, D85).
 
-Two-track capture already gives ME vs THEM as a hardware fact; this only subdivides the
-loopback track. Off by default: it is a second native runtime and an extra download.
+Two-track capture already gives ME vs THEM as a hardware fact; this subdivides each
+track. One voice on a track keeps the track's own label (``ME``, ``THEM``); two or more
+are numbered (``ME_1``, ``ME_2``; ``THEM_1``, ``THEM_2``). Always on: the models come
+with the installer, and a machine without them transcribes without speaker turns.
 
 ONNX rather than pyannote/torch — the reasoning and the measured costs are in
 DECISIONS.md D28. The seam is the ``Diarizer`` protocol, so a torch implementation can be
@@ -22,7 +24,15 @@ from app.log import get
 
 log = get(__name__)
 
+ME = "ME"
 THEM = "THEM"
+
+
+def track_of(slot: str) -> str:
+    """Which recorded track a speaker slot came from: ``ME``/``ME_n`` is the microphone."""
+    return "me" if slot == ME or slot.startswith(f"{ME}_") else "them"
+
+
 LONG_TRACK_MINUTES = 120
 
 
@@ -74,6 +84,41 @@ def label_for(speaker: int, base: str = THEM) -> str:
 
 def speaker_count(turns: Sequence[SpeakerTurn]) -> int:
     return len({turn.speaker for turn in turns})
+
+
+def merge_minor_speakers(
+    turns: Sequence[SpeakerTurn], *, min_share: float = 0.05, min_seconds: float = 20.0
+) -> list[SpeakerTurn]:
+    """Fold voices that barely spoke into the one that spoke most.
+
+    For the microphone track: what is left of the far side after echo subtraction, a
+    cough, a door — the clusterer calls each of these a voice, and a one-person meeting
+    would show a second person in the room. A voice under ``min_seconds`` or under
+    ``min_share`` of the track's talk is not one. The voice that spoke most always stays.
+    """
+    totals: dict[int, float] = {}
+    for turn in turns:
+        totals[turn.speaker] = totals.get(turn.speaker, 0.0) + turn.duration
+    if len(totals) <= 1:
+        return normalize_turns(turns)
+    dominant = min(totals.items(), key=lambda item: (-item[1], item[0]))[0]
+    floor = max(min_seconds, min_share * sum(totals.values()))
+    minor = {speaker for speaker, total in totals.items() if total < floor and speaker != dominant}
+    return normalize_turns(
+        [
+            SpeakerTurn(turn.start, turn.end, dominant if turn.speaker in minor else turn.speaker)
+            for turn in turns
+        ]
+    )
+
+
+def label_track(
+    segments: Sequence[Segment], turns: Sequence[SpeakerTurn], *, track: str, base: str
+) -> list[Segment]:
+    """One voice keeps the track's own label; two or more are numbered from 1."""
+    if speaker_count(turns) <= 1:
+        return list(segments)
+    return assign_speakers(segments, turns, track=track, base=base)
 
 
 def assign_speakers(
@@ -243,7 +288,9 @@ class OnnxDiarizer:
 
 
 def make_diarizer(config: Config) -> Diarizer | None:
-    """``None`` when diarization is off — the caller skips the whole step."""
+    """``None`` when diarization is off or its models are not on this machine — the caller
+    skips the whole step. The installer fetches them (app/prepare.py); transcription never
+    downloads one (R12), and a meeting is never lost for want of speaker turns."""
     kind = str(config.get("asr.diarization", "off"))
     if kind == "off":
         return None
@@ -253,6 +300,13 @@ def make_diarizer(config: Config) -> Diarizer | None:
         from app.asr.models import resolve_diarization
 
         models = resolve_diarization(config)
+        if not models.present:
+            log.warning(
+                "diarization models are missing (%s, %s); transcribing without speaker turns",
+                models.segmentation,
+                models.embedding,
+            )
+            return None
         return OnnxDiarizer(
             str(models.segmentation),
             str(models.embedding),

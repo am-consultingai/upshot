@@ -2,7 +2,7 @@
 """PyInstaller one-dir build.
 
 Hidden imports are declared explicitly: PyInstaller's static analysis cannot see
-CTranslate2's extension loading, onnxruntime's capi DLLs, the comtypes-generated
+CTranslate2's extension loading, onnxruntime's capi DLLs, sherpa-onnx's native library, the comtypes-generated
 interfaces pycaw builds at runtime, keyring's Windows backend, or pystray's win32 backend.
 Missing one of these produces an executable that starts and then fails at the first
 meeting — which is why `--selftest imports` runs against the freeze in the build.
@@ -20,6 +20,7 @@ hiddenimports = [
     "onnxruntime.capi",
     "onnxruntime.capi._pybind_state",
     "faster_whisper",
+    "sherpa_onnx",
     "keyring.backends.Windows",
     "pystray._win32",
     "PIL._tkinter_finder",
@@ -71,7 +72,12 @@ if not (ROOT / "vendor" / "THIRD-PARTY-NOTICES.txt").exists():
 datas.append((str(ROOT / "vendor" / "THIRD-PARTY-NOTICES.txt"), "."))
 datas += collect_data_files("faster_whisper")  # the bundled Silero VAD model
 
-binaries = collect_dynamic_libs("onnxruntime") + collect_dynamic_libs("ctranslate2")
+binaries = (
+    collect_dynamic_libs("onnxruntime")
+    + collect_dynamic_libs("ctranslate2")
+    # Diarization (app/asr/diarize.py): sherpa-onnx loads its native library at import.
+    + collect_dynamic_libs("sherpa_onnx")
+)
 
 a = Analysis(
     [str(ROOT / "app" / "tray.py")],

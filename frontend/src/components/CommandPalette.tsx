@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
 import { api, type SearchHit } from "../api";
 import { useI18n } from "../i18n";
+import { hitSpeaker } from "../lib/speakers";
 import { boost, score } from "../lib/score";
 import { applyTheme, type Theme } from "../theme";
 import type { MessageKey } from "../locales/en";
@@ -190,7 +191,7 @@ export default function CommandPalette() {
           sub:
             hit.kind === "transcript"
               ? `${title} · ${
-                  hit.speaker === "ME" ? t("meeting.you") : (hit.speaker_name ?? t("meeting.themSaid"))
+                  hitSpeaker(hit, t)
                 } · ${formatOffset(hit.at_ms / 1000)}`
               : title,
           run: () => {
