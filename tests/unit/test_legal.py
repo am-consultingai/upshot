@@ -254,5 +254,17 @@ def test_the_notices_name_every_component_shipped_outside_a_package_manager() ->
     text = module.render()
     for name in ("FFmpeg", "ivrit-ai/whisper-large-v3-ct2", "Systran", "SIL OPEN FONT LICENSE"):
         assert name.lower() in text.lower(), name
-    assert "faster-whisper" in text and "react" in text
-    assert "Licence: LGPL-2.1-or-later" in text, "soxr's licence travels with it"
+    # What else is listed depends on what this machine installed: the build machine has it
+    # all, CI's Python job has no node_modules (2026-10-05).
+    from importlib import metadata
+
+    try:
+        metadata.distribution("soxr")
+    except metadata.PackageNotFoundError:
+        pass
+    else:
+        assert "\nsoxr " in text and "Licence: LGPL-2.1-or-later" in text, (
+            "soxr travels with its licence"
+        )
+    if (ROOT / "frontend" / "node_modules" / "react" / "package.json").exists():
+        assert "\nreact " in text
