@@ -29,7 +29,8 @@ def prepared(tmp_path: Path, **overrides: object):  # type: ignore[no-untyped-de
     return h, meeting
 
 
-def test_off_by_default_leaves_them_alone(tmp_path: Path) -> None:
+def test_without_its_models_the_tracks_stay_whole(tmp_path: Path) -> None:
+    """Always on, but a machine without the models still gets its transcript (D85)."""
     h, meeting = prepared(tmp_path)
     ctx = h.context(meeting, services=Services())
     transcribe.run(ctx)
@@ -40,7 +41,7 @@ def test_off_by_default_leaves_them_alone(tmp_path: Path) -> None:
     assert "diarization" not in meta.read(meeting.path)
 
 
-def test_diarization_splits_the_them_track(tmp_path: Path) -> None:
+def test_diarization_splits_both_tracks(tmp_path: Path) -> None:
     h, meeting = prepared(tmp_path, asr__diarization="fake", asr__diarization_fake_speakers=3)
     ctx = h.context(meeting, services=Services())
     transcribe.run(ctx)
@@ -50,11 +51,20 @@ def test_diarization_splits_the_them_track(tmp_path: Path) -> None:
     mine = {s.speaker for s in segments if s.track == "me"}
     assert them <= {"THEM_1", "THEM_2", "THEM_3"}
     assert len(them) > 1, "the loopback track was actually split"
-    assert mine == {"ME"}, "the microphone track is a hardware fact and is never relabelled"
+    assert mine <= {"ME_1", "ME_2", "ME_3"}
+    assert len(mine) > 1, "the microphone track was split too"
 
     assert ctx.metrics["diarization"]["backend"] == "fake"
-    assert ctx.metrics["diarization"]["speakers"] == 3
-    assert meta.read(meeting.path)["diarization"]["speakers"] == 3
+    assert ctx.metrics["diarization"]["them"]["speakers"] == 3
+    assert ctx.metrics["diarization"]["me"]["speakers"] == 3
+    assert meta.read(meeting.path)["diarization"]["them"]["speakers"] == 3
+
+
+def test_one_voice_per_track_keeps_me_and_them(tmp_path: Path) -> None:
+    h, meeting = prepared(tmp_path, asr__diarization="fake", asr__diarization_fake_speakers=1)
+    transcribe.run(h.context(meeting, services=Services()))
+    segments, _ = transcribe.load_segments(meeting.path)
+    assert {s.speaker for s in segments} == {"ME", "THEM"}
 
 
 def test_diarized_speakers_reach_the_transcript(tmp_path: Path) -> None:
@@ -65,7 +75,7 @@ def test_diarized_speakers_reach_the_transcript(tmp_path: Path) -> None:
     text = (meeting.path / "transcript.md").read_text(encoding="utf-8")
     assert "THEM_1:" in text
     assert "THEM_2:" in text
-    assert "ME:" in text
+    assert "ME_1:" in text
     assert "**[" in text
 
 

@@ -70,6 +70,14 @@ def _imports(args: argparse.Namespace) -> list[Check]:
             {"modules": len(names)},
         )
     ]
+    # Diarization imports its native runtime only when a meeting is transcribed, so a
+    # freeze missing it would pass import_all_modules and fail at the first meeting.
+    try:
+        import sherpa_onnx  # noqa: F401
+
+        checks.append(Check("sherpa_onnx", True, "diarization runtime imports"))
+    except Exception as exc:
+        checks.append(Check("sherpa_onnx", False, f"diarization runtime: {exc}"))
     return checks
 
 

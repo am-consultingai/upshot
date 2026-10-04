@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
-import { stamp, type Segment, type Speaker } from "../lib/speakers";
+import { isMicSlot, stamp, type Segment, type Speaker } from "../lib/speakers";
 
 /** Where each match is: which segment, and where in its text. */
 interface Match {
@@ -193,7 +193,7 @@ const Transcript = forwardRef<
                   type="button"
                   data-testid="transcript-turn"
                   data-at-ms={Math.round(segment.start * 1000)}
-                  data-track={segment.speaker === "ME" ? "me" : "them"}
+                  data-track={isMicSlot(segment.speaker) ? "me" : "them"}
                   data-speaking={isSpeaking ? "true" : undefined}
                   onClick={() => onSeek(segment.start)}
                   className="me-1.5 align-baseline font-mono text-xs text-accent underline decoration-from-font underline-offset-[3px] hover:brightness-110"

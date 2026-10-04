@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, type SearchHit } from "../api";
 import { useI18n } from "../i18n";
+import { hitSpeaker } from "../lib/speakers";
 import { forgetSearches, recentSearches, rememberSearch } from "../lib/recents";
 import { formatClock, formatDurationShort } from "../lib/format";
 import type { MessageKey } from "../locales/en";
@@ -252,9 +253,7 @@ export default function SearchPage() {
                             ? t("search.kindAction")
                             : hit.kind === "summary"
                               ? t("search.kindSummary")
-                              : hit.speaker === "ME"
-                              ? t("meeting.you")
-                              : (hit.speaker_name ?? t("meeting.themSaid"))}
+                              : hitSpeaker(hit, t)}
                       </span>
                       {hit.kind === "transcript" && (
                         <>

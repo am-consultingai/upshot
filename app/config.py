@@ -76,7 +76,9 @@ DEFAULTS: dict[str, Any] = {
         # (2026-09-27). The GPU always uses beam_size, where the extra beams cost little.
         "cpu_fast": False,
         "initial_prompt_max_tokens": 200,
-        "diarization": "off",  # off|onnx|fake — splits THEM into THEM_1/2/3
+        # onnx|fake|off — splits each track into its voices (D85). Always on in the app;
+        # no setting offers "off", which is for development.
+        "diarization": "onnx",
         "diarization_dir": None,
         "diarization_segmentation_path": None,
         "diarization_embedding_path": None,
@@ -85,6 +87,10 @@ DEFAULTS: dict[str, Any] = {
         "diarization_min_duration_on": 0.3,
         "diarization_min_duration_off": 0.5,
         "diarization_fake_speakers": 2,
+        # The microphone track's floor for a voice: under 20 s or 5 % of its talk is echo
+        # residue or noise, not a second person in the room (D85).
+        "diarization_mic_min_seconds": 20.0,
+        "diarization_mic_min_share": 0.05,
         "fake_language": "he",
         "fake_repetitions": 1,
     },
@@ -411,6 +417,9 @@ _OLD_DEFAULTS: dict[str, Any] = {
     # "null" here. Left alone, an installation that has run once would never read a
     # calendar however plainly the user connected one.
     "enrichment.source": "null",
+    # Diarization was off by default and no setting could turn it on, so "off" in a saved
+    # file is the old default, never a choice. It is always on now (D85).
+    "asr.diarization": "off",
 }
 
 

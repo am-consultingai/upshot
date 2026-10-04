@@ -22,6 +22,25 @@ from app.config import default_config
 from app.prepare import ProgressFile, run
 
 
+@pytest.fixture(autouse=True)
+def speaker_models(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """The diarization download, without the network: writes the two files, records each."""
+    from app.asr import models
+
+    fetched: list[Path] = []
+
+    def download(config: object) -> object:
+        found = models.resolve_diarization(config)  # type: ignore[arg-type]
+        for target in (found.segmentation, found.embedding):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"onnx")
+            fetched.append(target)
+        return found
+
+    monkeypatch.setattr(models, "download_diarization", download)
+    return fetched
+
+
 def read_progress(path: Path) -> dict[str, str]:
     return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
 
@@ -391,3 +410,65 @@ def test_prepare_skips_the_download_when_the_libraries_are_already_there(
     assert code == prepare.EXIT_OK
     assert "GPU libraries: already on this computer" in texts
     assert not target_dir(app_home).exists()
+
+
+# -- the speaker models (D85) ---------------------------------------------------------
+
+
+def test_the_speaker_models_come_after_the_speech_models(
+    app_home: Path, tmp_path: Path, speaker_models: list[Path]
+) -> None:
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    texts: list[str] = []
+    original = progress.write
+
+    def spy(**fields: object) -> None:
+        original(**fields)
+        texts.append(progress.last.get("text", ""))
+
+    progress.write = spy  # type: ignore[method-assign]
+    code = run(default_config(), progress, model=model_manager(app_home),
+               gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert [path.name for path in speaker_models] == ["segmentation.onnx", "embedding.onnx"]
+    speech = max(i for i, text in enumerate(texts) if text.startswith("Speech models"))
+    assert texts.index("Speaker models: downloading") > speech
+
+
+def test_an_upgrade_with_its_speech_models_still_gets_the_speaker_models(
+    app_home: Path, tmp_path: Path, speaker_models: list[Path]
+) -> None:
+    from tests.fixtures.models import install_models
+
+    install_models(app_home)
+    code = run(default_config(), ProgressFile(tmp_path / "p.txt"), gpu_wanted=(False, "x"))
+    assert code == prepare.EXIT_OK
+    assert len(speaker_models) == 2
+
+
+def test_speaker_models_already_here_are_not_fetched_again(
+    app_home: Path, tmp_path: Path, speaker_models: list[Path]
+) -> None:
+    from app.asr.models import resolve_diarization
+
+    found = resolve_diarization(default_config())
+    for target in (found.segmentation, found.embedding):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"onnx")
+    code = prepare.fetch_speaker_models(default_config(), ProgressFile(None), lambda: False)
+    assert code == prepare.EXIT_OK
+    assert speaker_models == []
+
+
+def test_a_failed_speaker_model_download_fails_the_install(app_home: Path, tmp_path: Path) -> None:
+    def broken(config: object) -> object:
+        raise OSError("connection reset")
+
+    progress_path = tmp_path / "prepare.txt"
+    code = prepare.fetch_speaker_models(
+        default_config(), ProgressFile(progress_path), lambda: False, download=broken
+    )
+    assert code == prepare.EXIT_FAILED
+    final = read_progress(progress_path)
+    assert final["stage"] == "model" and final["state"] == "failed"
+    assert "connection reset" in final["error"]

@@ -6,6 +6,7 @@ import pytest
 
 from app import meta
 from app.asr.fake import FakeAsr, FakeClassifier
+from app.audio.writer import track_path
 from app.pipeline.stages import transcribe
 from tests.fixtures.meetings import harness, write_chunks
 
@@ -243,7 +244,7 @@ def test_a_leaking_microphone_is_cancelled_before_transcription(tmp_path: Path) 
     assert classified["me"].parent.name == "clean", "classified on the cleaned track too"
     assert classified == {Path(w).stem: w for w in handed.values()}
 
-    with wave.open(str(transcribe.track_path(meeting.path, "me")), "rb") as raw:
+    with wave.open(str(track_path(meeting.path, "me")), "rb") as raw:
         original = np.frombuffer(raw.readframes(raw.getnframes()), dtype=np.int16)
     assert np.abs(original).max() > 0, "the recording itself is untouched"
 

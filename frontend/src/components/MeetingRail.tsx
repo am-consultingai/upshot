@@ -35,7 +35,12 @@ export default function MeetingRail({
 }) {
   const { t, locale } = useI18n();
   const participants = meeting.calendar?.participants ?? [];
-  const words = { you: t("meeting.you"), them: t("meeting.themSaid"), speaker: t("meeting.speakerN") };
+  const words = {
+    you: t("meeting.you"),
+    them: t("meeting.themSaid"),
+    speaker: t("meeting.speakerN"),
+    mic: t("meeting.micN"),
+  };
   const people = speakers(segments, meeting.speaker_names ?? {}, participants, words);
   // Invited, but not a voice the transcript can name: listed without a bar.
   const heard = new Set(people.map((person) => person.name.toLowerCase()));
@@ -185,10 +190,9 @@ function SpeakerRow({ meeting, person }: { meeting: MeetingDetail; person: Speak
           <button
             type="button"
             data-testid="speaker-name"
-            disabled={person.mine}
             onClick={() => setDraft(person.name)}
-            title={person.mine ? undefined : person.guessed ? t("meeting.speakerGuessed") : t("meeting.renameSpeaker")}
-            className="min-w-0 flex-1 truncate rounded-xs text-start enabled:hover:underline enabled:hover:decoration-dotted enabled:hover:underline-offset-4"
+            title={person.guessed ? t("meeting.speakerGuessed") : t("meeting.renameSpeaker")}
+            className="min-w-0 flex-1 truncate rounded-xs text-start hover:underline hover:decoration-dotted hover:underline-offset-4"
           >
             <bdi>{rename.isPending ? rename.variables : person.name}</bdi>
             {person.guessed && <span className="text-tertiary">?</span>}

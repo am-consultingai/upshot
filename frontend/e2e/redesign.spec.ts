@@ -290,6 +290,14 @@ test("in_the_room_names_the_speakers_with_real_talk_time", async ({ page }) => {
   await page.getByTestId("speaker-name-input").press("Enter");
   await page.reload();
   await expect(page.getByTestId("rail-people")).toContainText("Yoni Barak");
+
+  // The microphone's voice can be named too (D85).
+  await people.filter({ hasText: "You" }).getByTestId("speaker-name").click();
+  await page.getByTestId("speaker-name-input").fill("Noa Golan");
+  await page.getByTestId("speaker-name-input").press("Enter");
+  await page.reload();
+  await expect(people.nth(0)).toContainText("Noa Golan");
+  await expect(people.nth(0)).toHaveAttribute("data-slot", "ME");
 });
 
 test("related_meetings_say_why", async ({ page }) => {

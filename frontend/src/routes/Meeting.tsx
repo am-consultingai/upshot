@@ -360,6 +360,7 @@ export default function MeetingPage() {
     you: t("meeting.you"),
     them: t("meeting.themSaid"),
     speaker: t("meeting.speakerN"),
+    mic: t("meeting.micN"),
   });
   const colourOf = new Map(people.map((person) => [person.slot, person]));
   const bands: Band[] = segments.map((segment, index) => ({

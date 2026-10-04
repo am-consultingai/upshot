@@ -15,6 +15,7 @@ from pathlib import Path
 
 from app import meta
 from app.asr.backend import Segment, TranscriptFile
+from app.asr.diarize import track_of
 from app.asr.language import spoken_language
 from app.db.dao import Turn
 from app.log import get
@@ -112,7 +113,7 @@ def import_transcript(
         segments=[
             Segment(
                 id=index,
-                track="me" if speaker == "ME" else "them",
+                track=track_of(speaker),
                 speaker=speaker,
                 start=start / 1000,
                 end=(next_start if next_start else start + 4000) / 1000,

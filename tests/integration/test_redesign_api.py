@@ -494,5 +494,6 @@ def test_search_hits_carry_the_speakers_name(api) -> None:  # type: ignore[no-un
     api.services.dao.update_meeting("m-a", speaker_names=json.dumps({"THEM": "Dana", "ME": "Avi"}))
     hits = api.client().get("/api/search", params={"q": "churn"}).json()["hits"]
     names = {hit["speaker"]: hit["speaker_name"] for hit in hits if hit["kind"] == "transcript"}
-    assert names == {"THEM": "Dana", "ME": None, "THEM_1": None}
+    # The microphone can be named too (D85).
+    assert names == {"THEM": "Dana", "ME": "Avi", "THEM_1": None}
     assert all(hit["speaker_name"] is None for hit in hits if hit["kind"] == "title")

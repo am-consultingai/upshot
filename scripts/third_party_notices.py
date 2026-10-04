@@ -72,6 +72,18 @@ EXTRA: tuple[tuple[str, str, str], ...] = (
         " unmodified. https://huggingface.co/Systran",
     ),
     (
+        "pyannote segmentation 3.0 (ONNX export by k2-fsa)",
+        "MIT",
+        "Speaker-diarization segmentation model, downloaded by the installer unmodified."
+        " https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
+    ),
+    (
+        "WeSpeaker CAM++ speaker embedding (VoxCeleb, ONNX export by k2-fsa)",
+        "CC-BY-4.0",
+        "Speaker-embedding model for diarization, downloaded by the installer unmodified."
+        " https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models",
+    ),
+    (
         "Frank Ruhl Libre and IBM Plex Sans Hebrew fonts",
         "OFL-1.1",
         "Bundled with the interface; the licence texts follow.",
