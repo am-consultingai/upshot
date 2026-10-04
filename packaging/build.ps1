@@ -44,16 +44,43 @@ $info = [ordered]@{ version = $version; commit = $commit; built = $built }
 [System.IO.File]::WriteAllText((Join-Path $root "app\build_info.json"), ($info | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
 Write-Host "version $version, commit $commit"
 
+Write-Host "== terms =="
+# The installer's licence page, the website and the app all render app\legal\terms.md
+# (D83). A Terms edit that was not rendered would ship one text in the installer and
+# another on the website, so the build refuses it.
+uv run python scripts/build_legal.py --check
+Assert-Exit "the rendered Terms are out of date: run scripts/build_legal.py"
+$termsVersion = (uv run python -c "from app.legal.terms import bundled; print(bundled().version)").Trim()
+Assert-Exit "reading the Terms version"
+Write-Host "terms $termsVersion"
+
 Write-Host "== ffmpeg =="
+# An LGPL build (D84): Upshot only decodes imported files to WAV, which needs nothing from
+# FFmpeg's GPL-only parts (x264, x265 and similar encoders), and the LGPL's obligations are
+# lighter. The marker names the build the cached ffmpeg.exe came from, so a cache filled
+# by an earlier, different build is replaced instead of shipped.
+$ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip"
 $ffmpeg = Join-Path $root "vendor\ffmpeg.exe"
-if (-not (Test-Path $ffmpeg)) {
+$ffmpegMarker = Join-Path $root "vendor\ffmpeg.source.txt"
+$ffmpegLicence = Join-Path $root "vendor\ffmpeg-LICENSE.txt"
+$cachedFrom = if (Test-Path $ffmpegMarker) { (Get-Content $ffmpegMarker -Raw).Trim() } else { "" }
+if (-not (Test-Path $ffmpeg) -or $cachedFrom -ne $ffmpegUrl) {
     New-Item -ItemType Directory -Force -Path (Join-Path $root "vendor") | Out-Null
-    $zip = Join-Path $env:TEMP "ffmpeg.zip"
-    Invoke-WebRequest -UseBasicParsing -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath (Join-Path $env:TEMP "ffmpeg") -Force
-    $found = Get-ChildItem -Path (Join-Path $env:TEMP "ffmpeg") -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-    Copy-Item $found.FullName $ffmpeg
+    $zip = Join-Path $env:TEMP "ffmpeg-lgpl.zip"
+    $unpacked = Join-Path $env:TEMP "ffmpeg-lgpl"
+    if (Test-Path $unpacked) { Remove-Item -Recurse -Force $unpacked }
+    Invoke-WebRequest -UseBasicParsing -Uri $ffmpegUrl -OutFile $zip
+    Expand-Archive -Path $zip -DestinationPath $unpacked -Force
+    $found = Get-ChildItem -Path $unpacked -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+    Copy-Item $found.FullName $ffmpeg -Force
+    $licence = Get-ChildItem -Path $unpacked -Recurse -Filter LICENSE.txt | Select-Object -First 1
+    if ($licence) { Copy-Item $licence.FullName $ffmpegLicence -Force }
+    [System.IO.File]::WriteAllText($ffmpegMarker, $ffmpegUrl)
 }
+# Whatever the cache says, refuse to ship a GPL build.
+$ffmpegConfig = (& $ffmpeg -hide_banner -version) -join " "
+if ($ffmpegConfig -match "--enable-gpl") { throw "vendor\ffmpeg.exe is a GPL build; delete it and build again" }
+Write-Host "ffmpeg: LGPL build from $ffmpegUrl"
 
 Write-Host "== frontend =="
 Push-Location (Join-Path $root "frontend")
@@ -62,6 +89,12 @@ Assert-Exit "npm ci"
 npm run build
 Assert-Exit "npm run build"
 Pop-Location
+
+Write-Host "== third-party notices =="
+# Every component the app ships and its licence, from what is installed here (the
+# Windows-only packages included); the spec bundles it beside upshot.exe.
+uv run python scripts/third_party_notices.py vendor\THIRD-PARTY-NOTICES.txt
+Assert-Exit "third-party notices"
 
 Write-Host "== PyInstaller =="
 # --noconfirm replaces dist\upshot; nothing is removed by hand.
@@ -120,7 +153,7 @@ $iscc = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup 6 not found (Program Files (x86) or LOCALAPPDATA\Programs)" }
-$isccArgs = @("/DAppVersion=$version", "/DAppCommit=$commit")
+$isccArgs = @("/DAppVersion=$version", "/DAppCommit=$commit", "/DTermsVersion=$termsVersion")
 if ($Sign) {
     # Inno signs the uninstaller it generates (and Setup itself) through this tool; $f is
     # the file, $q a double quote.
