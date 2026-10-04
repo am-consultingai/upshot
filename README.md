@@ -49,3 +49,23 @@ The ivrit.ai models are released under the
 from OpenAI's [Whisper](https://github.com/openai/whisper). The two stock Whisper models
 are OpenAI's weights converted for faster-whisper by SYSTRAN, released under the MIT
 licence.
+
+## Licence
+
+Two licences apply, one to the code and one to the app:
+
+- **The source code** in this repository is licensed under the
+  [Business Source License 1.1](LICENSE). You may copy, modify and redistribute it, and use
+  it in production as an individual for personal purposes or as an organization with fewer
+  than 20 people, as long as you do not offer it, or anything built from it, as a competing
+  product or service. Each version becomes available under the Apache License 2.0 four years
+  after it is published. Any other production use needs a commercial licence:
+  office@amconsultingai.com.
+- **The official Upshot app**, as built, signed and distributed by AM Consulting, is licensed
+  under its [Terms of Service](https://upshot.amconsultingai.com/terms.html), which every user
+  accepts when installing it.
+
+Third-party components keep their own licences. The installer ships them in
+`THIRD-PARTY-NOTICES.txt` (written by `scripts/third_party_notices.py`), and the fonts carry
+theirs beside them in `frontend/src/fonts/`. "Upshot" and the Upshot and AM Consulting logos
+are trademarks of AM Consulting; neither licence grants any right to use them.
