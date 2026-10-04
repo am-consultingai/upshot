@@ -9,6 +9,9 @@
 #ifndef AppCommit
   #define AppCommit "unknown"
 #endif
+#ifndef TermsVersion
+  #error TermsVersion is not defined: build.ps1 passes it (/DTermsVersion=...), read from app\legal\terms.md
+#endif
 #define AppExe "upshot.exe"
 ; The running app's single-instance mutex (app/instance.py MUTEX_NAME).
 #define AppMutex "Local\upshot"
@@ -56,6 +59,12 @@ SignedUninstaller=yes
 #endif
 ; A running copy holds its files open; ask it to close rather than failing half-way.
 CloseApplications=yes
+; The Terms of Service, which must be accepted to install (D83). Rendered from
+; app\legal\terms.md by scripts\build_legal.py; the app records the acceptance from the
+; registry value below and asks again in the app only when a newer version needs it.
+; A silent install (/SILENT, /VERYSILENT) accepts on behalf of the user it installs for,
+; as section 1 of the Terms says.
+LicenseFile=terms.txt
 
 [Messages]
 BeveledLabel=Powered by AM Consulting
@@ -75,9 +84,14 @@ Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: 
 ; (app/window.py); every other start opens it.
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--background"
 
+[Registry]
+; The Terms version accepted on the licence page (app/legal/terms.py installer_record).
+; Written only by a finished install, which cannot happen without "I accept".
+Root: HKCU; Subkey: "Software\AM Consulting\Upshot"; ValueType: string; ValueName: "TermsAccepted"; ValueData: "{#TermsVersion}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+Root: HKCU; Subkey: "Software\AM Consulting"; Flags: uninsdeletekeyifempty
+
 #ifndef NoLinkScheme
 ; /DNoLinkScheme builds an installer without it, for the Defender A/B test (D71).
-[Registry]
 ; The upshot: scheme, for this user only: a notification's buttons launch
 ; "upshot:recording.start?..." and upshot.exe hands the action to the running app without
 ; opening a window (app/actions.py, D70).

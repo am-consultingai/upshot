@@ -47,6 +47,7 @@ class Services:
     calendar: Any = None  # app.gcal.oauth.CalendarAuth
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
     calendar_invites: Any = None  # app.gcal.invite.InviteReader
+    terms: Any = None  # app.legal.terms.TermsService
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -58,6 +59,8 @@ class Services:
             self.detector.stop()
         if self.calendar_sync is not None:
             self.calendar_sync.stop()
+        if self.terms is not None:
+            self.terms.stop()
         # A connect in progress holds a listening socket open for up to five minutes.
         if self.calendar is not None:
             self.calendar.close()
@@ -107,6 +110,11 @@ def build(
         calendar_invites=invites,
     )
     calendar_sync.on_synced = lambda: services.meetings.rematch_recent()
+    from app.legal.terms import TermsService
+
+    services.terms = TermsService(
+        cfg, clock=clock, publish=lambda **payload: events.publish("legal", **payload)
+    )
     from app.notify import make_notifier
 
     services.notifier = make_notifier(cfg, events=events)

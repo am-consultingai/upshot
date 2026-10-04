@@ -1,0 +1,87 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { api } from "../api";
+import { useI18n } from "../i18n";
+import { fill } from "../setup/ui";
+
+const DISMISSED = "upshot.terms.dismissed";
+
+/**
+ * An update to the Terms that does not need the whole screen (D83): a change that is
+ * not material, which "OK" accepts, or one announced before it takes effect, which can
+ * be read now and dismissed until it applies. A material change in effect is the Terms
+ * screen's job, not this banner's.
+ */
+export default function TermsNotice() {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const legal = useQuery({ queryKey: ["legal"], queryFn: api.legal, refetchInterval: 60 * 60 * 1000 });
+  const [dismissed, setDismissed] = useState<string | null>(() => readDismissed());
+  const accept = useMutation({
+    mutationFn: (version: string) => api.acceptTerms(version),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["legal"] }),
+  });
+
+  const notice = legal.data?.gate ? null : legal.data?.notice;
+  if (!notice) return null;
+  const key = `${notice.kind}:${notice.version}`;
+  if (notice.kind === "upcoming" && dismissed === key) return null;
+
+  const read = () =>
+    navigate(notice.kind === "upcoming" ? `/terms?version=${encodeURIComponent(notice.version)}` : "/terms");
+  return (
+    <div data-testid="terms-notice" role="status" className="border-b border-line bg-surface-2">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2 text-sm">
+        <span>
+          {fill(t(notice.kind === "upcoming" ? "terms.noticeUpcoming" : "terms.noticeChanged"), {
+            date: notice.effective,
+          })}
+        </span>
+        <button type="button" className="underline" onClick={read} data-testid="terms-notice-read">
+          {t("terms.read")}
+        </button>
+        {notice.kind === "changed" ? (
+          <button
+            type="button"
+            className="ms-auto rounded-md px-2 py-1 hover:bg-a-200"
+            disabled={accept.isPending}
+            onClick={() => accept.mutate(notice.version)}
+            data-testid="terms-notice-ok"
+          >
+            {t("terms.ok")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ms-auto rounded-md px-2 py-1 hover:bg-a-200"
+            onClick={() => {
+              writeDismissed(key);
+              setDismissed(key);
+            }}
+            aria-label={t("terms.dismiss")}
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function readDismissed(): string | null {
+  try {
+    return window.localStorage.getItem(DISMISSED);
+  } catch {
+    return null;
+  }
+}
+
+function writeDismissed(value: string): void {
+  try {
+    window.localStorage.setItem(DISMISSED, value);
+  } catch {
+    // A private window: the banner comes back next time, which is harmless.
+  }
+}

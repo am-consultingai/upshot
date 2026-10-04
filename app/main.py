@@ -59,6 +59,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     svc = services or build(config)
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
+    from app.legal.api import router as legal_router
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
 
@@ -83,6 +84,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.state.services = svc
     app.include_router(router)
     app.include_router(assistant_router)
+    app.include_router(legal_router)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())
@@ -198,6 +200,11 @@ def start_background(services: Services) -> None:
     # Idle until a Google account is connected; see app/gcal/sync.py.
     if services.calendar_sync is not None:
         services.calendar_sync.start()
+    # The installer's licence page is the first acceptance; the website may hold a newer
+    # version of the Terms than this build shipped with (D83).
+    if services.terms is not None:
+        services.terms.adopt_installer_acceptance()
+        services.terms.start()
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point

@@ -10,6 +10,8 @@ import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
 import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
+import TermsPage from "./routes/Terms";
+import TermsNotice from "./components/TermsNotice";
 import { setupPending } from "./lib/speech";
 import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
@@ -232,6 +234,8 @@ export default function App() {
     // status; these only say "look again now" so the banner comes and goes at once.
     source.addEventListener("detector", invalidate);
     source.addEventListener("prompt", invalidate);
+    // A newer version of the Terms arrived from the website, or was accepted (D83).
+    source.addEventListener("legal", invalidate);
     return () => {
       source.close();
       delete document.documentElement.dataset.stream;
@@ -268,9 +272,18 @@ export default function App() {
   // history state, and the confetti is for the first arrival only).
   const celebrate = (routeState as { celebrate?: boolean } | null)?.celebrate === true;
   const celebrated = useCallback(() => navigateTo(pathname, { replace: true, state: null }), [navigateTo, pathname]);
-  const welcoming = pathname === "/welcome" || pathname === "/setup-mock";
+  /*
+   * The Terms come before everything, setup included (D83): until the version in effect
+   * is accepted, every path leads to them, and they have the window to themselves.
+   */
+  const legal = useQuery({ queryKey: ["legal"], queryFn: api.legal });
+  const termsGate = legal.isSuccess && legal.data.gate;
+  const onTerms = pathname === "/terms";
+  const sendToTerms = termsGate && !onTerms;
+  const welcoming = pathname === "/welcome" || pathname === "/setup-mock" || (onTerms && termsGate);
   const assistant = useAssistantToggle();
-  const sendToSetup = saved.isSuccess && setupPending(saved.data?.config) && !welcoming;
+  const sendToSetup =
+    saved.isSuccess && setupPending(saved.data?.config) && !welcoming && !termsGate && legal.isSuccess;
 
   return (
     <I18nContext.Provider value={value}>
@@ -283,17 +296,21 @@ export default function App() {
         {!welcoming && <Sidebar />}
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />
+          {!welcoming && <TermsNotice />}
           <RecordingBar />
           {!welcoming && (
             <DetectionNudge prompt={active ? null : (status.data?.prompt ?? null)} />
           )}
           {/* How meetings are recorded is asked in first-run setup (D64), not over the library. */}
           <main className="flex min-h-0 flex-1">
-            {sendToSetup ? (
+            {sendToTerms ? (
+              <Navigate to="/terms" replace />
+            ) : sendToSetup ? (
               <Navigate to="/welcome" replace />
             ) : (
             <Routes>
               <Route path="/welcome" element={<Welcome />} />
+              <Route path="/terms" element={<TermsPage />} />
               {MockSetup && (
                 <Route
                   path="/setup-mock"
