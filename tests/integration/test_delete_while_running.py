@@ -156,3 +156,20 @@ def test_windows_notifications_carry_their_meetings_group() -> None:
     notifier.withdraw("2026-09-30_2024_ec7763_x" * 3)
     removal = json.loads(commands[-1][-1])
     assert removal["remove_group"] == payload["group"]
+
+
+def test_a_refused_delete_says_why_and_is_logged(
+    tmp_path: Path, app_home: Path, caplog: Any
+) -> None:
+    """A folder outside the data root is refused, and the refusal reaches the log."""
+    api = build_harness(tmp_path)
+    elsewhere = tmp_path / "elsewhere" / "m1"
+    meeting = api.services.dao.insert_meeting(
+        meeting_id="m1", folder=elsewhere, source="manual",
+        started_at="2026-09-30T10:00:00+03:00", title="Weekly sync",
+    )  # fmt: skip
+    response = api.client().delete(f"/api/meetings/{meeting.id}")
+    assert response.status_code == 400
+    assert "outside the data folder" in response.json()["detail"]
+    assert api.services.dao.get_meeting(meeting.id) is not None
+    assert "m1: not deleted" in caplog.text
