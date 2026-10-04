@@ -10,7 +10,9 @@ from app.asr.diarize import (
     assign_speakers,
     concat_track,
     label_for,
+    label_track,
     make_diarizer,
+    merge_minor_speakers,
     normalize_turns,
     speaker_count,
 )
@@ -147,7 +149,8 @@ def test_fake_diarizer_speaker_count_is_configurable() -> None:
 
 
 def test_diarizer_is_selected_by_config() -> None:
-    assert make_diarizer(default_config()) is None, "off by default"
+    assert default_config().get("asr.diarization") == "onnx", "always on (D85)"
+    assert make_diarizer(default_config(asr__diarization="off")) is None
     fake = make_diarizer(default_config(asr__diarization="fake"))
     assert fake is not None and fake.name == "fake"
     from app.config import Config
@@ -163,3 +166,55 @@ def test_onnx_backend_reports_missing_models(tmp_path) -> None:  # type: ignore[
     pytest.importorskip("sherpa_onnx")
     with pytest.raises(RuntimeError, match="missing or unreadable"):
         backend.load()
+
+
+def test_without_its_models_diarization_is_skipped_not_failed(app_home) -> None:  # type: ignore[no-untyped-def]
+    assert make_diarizer(default_config()) is None
+
+
+def test_a_saved_off_is_the_old_default_and_is_forgotten(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    from app.config import Config
+
+    saved = tmp_path / "app_config.json"
+    saved.write_text(json.dumps({"setup": {"done": True}, "asr": {"diarization": "off"}}))
+    assert Config.load(file=saved, environ={}).get("asr.diarization") == "onnx"
+
+
+# ------------------------------------------------------------------ the microphone (D85)
+
+
+def test_a_voice_that_barely_spoke_is_folded_into_the_main_one() -> None:
+    turns = [SpeakerTurn(0.0, 300.0, 4), SpeakerTurn(300.0, 305.0, 2), SpeakerTurn(310.0, 600.0, 4)]
+    assert speaker_count(merge_minor_speakers(turns)) == 1
+
+
+def test_two_people_in_the_room_stay_two() -> None:
+    turns = [SpeakerTurn(0.0, 120.0, 0), SpeakerTurn(120.0, 200.0, 1), SpeakerTurn(200.0, 300.0, 0)]
+    merged = merge_minor_speakers(turns)
+    assert speaker_count(merged) == 2
+    assert [turn.speaker for turn in merged] == [0, 1, 0]
+
+
+def test_a_short_meeting_keeps_its_main_voice() -> None:
+    """Every voice under the floor: the one that spoke most is still there."""
+    turns = [SpeakerTurn(0.0, 8.0, 1), SpeakerTurn(8.0, 10.0, 0)]
+    assert merge_minor_speakers(turns) == [SpeakerTurn(0.0, 8.0, 0), SpeakerTurn(8.0, 10.0, 0)]
+
+
+def test_one_voice_keeps_the_track_label() -> None:
+    segments = [seg(0, "me", 0.0, 2.0), seg(1, "them", 1.0, 3.0)]
+    one = [SpeakerTurn(0.0, 3.0, 0)]
+    assert [s.speaker for s in label_track(segments, one, track="me", base="ME")] == ["ME", "THEM"]
+    assert [s.speaker for s in label_track(segments, one, track="them", base="THEM")] == [
+        "ME",
+        "THEM",
+    ]
+
+
+def test_several_voices_on_the_microphone_are_numbered() -> None:
+    segments = [seg(0, "me", 0.0, 2.0), seg(1, "me", 2.0, 4.0), seg(2, "them", 0.0, 4.0)]
+    two = [SpeakerTurn(0.0, 2.0, 0), SpeakerTurn(2.0, 4.0, 1)]
+    labelled = label_track(segments, two, track="me", base="ME")
+    assert [s.speaker for s in labelled] == ["ME_1", "ME_2", "THEM"]

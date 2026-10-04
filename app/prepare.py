@@ -8,7 +8,9 @@ install, in the open. It fetches, in order:
    large-v3 for Hebrew, then stock large-v3 for every other language, ~6.7 GB), through
    the same ``ModelSet`` the app uses: pinned revisions, resumable, checked file by file,
    refused up front when the drive cannot hold all of them;
-2. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
+2. the two speaker-diarization models (``models.download_diarization``, ~37 MB, D85),
+   reported under the ``model`` stage so the installer needs no new page;
+3. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
    model.
 
     upshot.exe --prepare --progress-file P [--cancel-file C] [--no-gpu]
@@ -146,6 +148,42 @@ def follow(
     return EXIT_NO_SPACE if code == "no_space" else EXIT_FAILED
 
 
+def fetch_speaker_models(
+    config: Config,
+    progress: ProgressFile,
+    cancelled: Callable[[], bool],
+    *,
+    download: Callable[[Config], object] | None = None,
+) -> int:
+    """The diarization models (D85), after the speech models and as part of their stage.
+
+    ~37 MB in two files, so it reports at the start and the end rather than by the byte.
+    Also runs on an upgrade whose speech models are already here, which is how an install
+    from before D85 gets them. A failure fails the install like a speech model's would:
+    diarization is always on, and running the installer again finishes it.
+    """
+    from app.asr.models import download_diarization, resolve_diarization
+
+    if resolve_diarization(config).present:
+        return EXIT_OK
+    if cancelled():
+        progress.write(
+            stage="model", state="cancelled", text="Speaker models: stopped; it continues later"
+        )
+        return EXIT_CANCELLED
+    progress.write(stage="model", state="working", percent=100, text="Speaker models: downloading")
+    try:
+        (download or download_diarization)(config)
+    except Exception as exc:
+        log.warning("prepare: the speaker models were not downloaded: %s", exc)
+        progress.write(
+            stage="model", state="failed", text="Speaker models: not downloaded", error=str(exc),
+        )  # fmt: skip
+        return EXIT_FAILED
+    log.info("prepare: speaker models ready")
+    return EXIT_OK
+
+
 def run(
     config: Config,
     progress: ProgressFile,
@@ -173,6 +211,9 @@ def run(
         code = follow("model", "Speech models", model, progress, cancelled, poll=poll)
         if code != EXIT_OK:
             return code
+    code = fetch_speaker_models(config, progress, cancelled)
+    if code != EXIT_OK:
+        return code
 
     if gpu:
         from app.asr import cuda_libs
