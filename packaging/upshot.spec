@@ -46,6 +46,8 @@ datas = [
     (str(ROOT / "app" / "llm" / "prompts"), "app/llm/prompts"),
     (str(ROOT / "app" / "db" / "schema.sql"), "app/db"),
     (str(ROOT / "app" / "db" / "migrations"), "app/db/migrations"),
+    # The Terms the app shows and records acceptance of (app/legal/terms.py, D83).
+    (str(ROOT / "app" / "legal" / "terms.md"), "app/legal"),
 ]
 # The version and commit, stamped by build.ps1 (app/version.py).
 if (ROOT / "app" / "build_info.json").exists():
@@ -62,6 +64,11 @@ datas.append((str(ROOT / "frontend" / "dist"), "frontend/dist"))
 if (ROOT / "app" / "gcal" / "google_oauth_client.json").exists():
     datas.append((str(ROOT / "app" / "gcal" / "google_oauth_client.json"), "app/gcal"))
 datas.append((str(ROOT / "vendor" / "ffmpeg.exe"), "."))
+# Every third-party component and its licence, written by build.ps1
+# (scripts/third_party_notices.py). ffmpeg's GPL notice and the speech models' are in it.
+if not (ROOT / "vendor" / "THIRD-PARTY-NOTICES.txt").exists():
+    raise SystemExit("upshot.spec: vendor/THIRD-PARTY-NOTICES.txt is missing; run packaging/build.ps1")
+datas.append((str(ROOT / "vendor" / "THIRD-PARTY-NOTICES.txt"), "."))
 datas += collect_data_files("faster_whisper")  # the bundled Silero VAD model
 
 binaries = collect_dynamic_libs("onnxruntime") + collect_dynamic_libs("ctranslate2")
