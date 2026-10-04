@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type Job } from "../api";
+import { api, reason, type Job } from "../api";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 import { formatElapsed, formatShortDate } from "../lib/format";
@@ -299,6 +299,12 @@ export default function MeetingPage() {
       void queryClient.invalidateQueries();
       navigate("/");
     },
+    onError: (error) =>
+      toast({
+        title: t("toast.deleteFailed").replace("{title}", meeting.data?.title ?? id),
+        sub: reason(error),
+        tone: "danger",
+      }),
   });
   const askToDelete = async () => {
     const title = meeting.data?.title ?? id;

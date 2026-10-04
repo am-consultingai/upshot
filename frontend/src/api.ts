@@ -380,6 +380,18 @@ export function csrfToken(): string {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
+/** What a failed request says, for a person: the server's ``detail`` without the status. */
+export function reason(error: unknown): string {
+  const text = String(error instanceof Error ? error.message : error).replace(/^\d+: /, "");
+  try {
+    const detail = (JSON.parse(text) as { detail?: unknown }).detail;
+    if (typeof detail === "string") return detail;
+  } catch {
+    // Not JSON: the text is the reason.
+  }
+  return text;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);

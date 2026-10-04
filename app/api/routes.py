@@ -1230,11 +1230,13 @@ def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
         folder = svc.meetings.purge(meeting)
     except ValueError as exc:
         svc.queue.deleted(meeting_id)
+        log.warning("meeting %s: not deleted: %s", meeting_id, exc)
         raise HTTPException(400, str(exc)) from exc
     except OSError as exc:
         # Windows will not unlink a file something has open. Saying so beats deleting the
         # row against a folder that survived, which orphans it with nothing pointing at it.
         svc.queue.deleted(meeting_id)
+        log.warning("meeting %s: not deleted: %s", meeting_id, exc)
         raise HTTPException(409, str(exc)) from exc
     svc.queue.deleted(meeting_id)
     svc.events.publish("meeting", meeting_id=meeting_id, action="deleted")

@@ -384,6 +384,7 @@ export const en = {
   "timeline.failedShort": "failed",
   "timeline.agendaEmpty": "Nothing recorded or scheduled this month.",
   "toast.deleted": "Deleted “{title}”",
+  "toast.deleteFailed": "Could not delete “{title}”",
   "toast.resummarizing": "Summarizing again — this row updates when it is done.",
   "workspace.commands": "All commands",
   "workspace.darkTheme": "Switch to dark",

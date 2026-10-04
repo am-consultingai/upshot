@@ -379,6 +379,7 @@ export const he: Record<MessageKey, string> = {
   "timeline.failedShort": "נכשל",
   "timeline.agendaEmpty": "אין הקלטות או אירועים בחודש הזה.",
   "toast.deleted": "„{title}” נמחקה",
+  "toast.deleteFailed": "לא ניתן היה למחוק את „{title}”",
   "toast.resummarizing": "מסכם מחדש — השורה תתעדכן כשזה יסתיים.",
   "workspace.commands": "כל הפקודות",
   "workspace.darkTheme": "מעבר למצב כהה",

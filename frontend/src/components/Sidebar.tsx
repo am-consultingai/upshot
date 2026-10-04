@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
-import { api } from "../api";
+import { api, reason } from "../api";
 import { useI18n } from "../i18n";
 import { groupByDay } from "../lib/timeline";
 import { formatBytes, formatDayLabel } from "../lib/format";
@@ -123,6 +123,9 @@ export default function Sidebar() {
     if (!yes) return;
     remove.mutate(id, {
       onSuccess: () => toast({ title: t("toast.deleted").replace("{title}", title) }),
+      // A refused delete leaves the row where it was; without this it looks like a dead click.
+      onError: (error) =>
+        toast({ title: t("toast.deleteFailed").replace("{title}", title), sub: reason(error), tone: "danger" }),
     });
   };
 
