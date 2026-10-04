@@ -134,6 +134,10 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
         captures[track] = capture
         return capture
 
+    from app.legal.terms import TermsService
+
+    # Nothing accepted yet and no installer record: the state a fresh install starts in.
+    services.terms = TermsService(config, home=tmp_path, clock=clock, installer=lambda: None)
     services.recorder = Recorder(config, make, clock=clock)
     services.worker = Worker(
         dao=dao,

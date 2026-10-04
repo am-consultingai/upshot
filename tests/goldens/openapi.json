@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AcceptPost": {
+        "properties": {
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "AcceptPost",
+        "type": "object"
+      },
       "AccountPatch": {
         "properties": {
           "visible": {
@@ -1763,6 +1776,158 @@
           }
         },
         "summary": "Launcher Test Calendar"
+      }
+    },
+    "/api/legal": {
+      "get": {
+        "description": "Whether the Terms must be shown, and which version is in effect.",
+        "operationId": "legal_state_api_legal_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Legal State Api Legal Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Legal State"
+      }
+    },
+    "/api/legal/accept": {
+      "post": {
+        "operationId": "accept_api_legal_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Accept Api Legal Accept Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept"
+      }
+    },
+    "/api/legal/check": {
+      "post": {
+        "description": "Look for a newer version now, as the daily check does.",
+        "operationId": "check_api_legal_check_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Check Api Legal Check Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check"
+      }
+    },
+    "/api/legal/decline": {
+      "post": {
+        "description": "Not accepting the Terms ends the session: the app quits, as the tray's Quit does.\n\nFalse where nothing listens for the request (from source, or off Windows); the screen\nthen says to close Upshot instead.",
+        "operationId": "decline_api_legal_decline_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Decline Api Legal Decline Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Decline"
+      }
+    },
+    "/api/legal/terms": {
+      "get": {
+        "description": "One version of the Terms, rendered: the one in effect unless ``version`` names another.",
+        "operationId": "terms_document_api_legal_terms_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Terms Document Api Legal Terms Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Terms Document"
       }
     },
     "/api/llm/install": {
