@@ -77,6 +77,8 @@ export interface SeedBody {
   reset?: boolean;
   /** First-run setup finished or not; only welcome.spec.ts asks for `false`. */
   setup_done?: boolean;
+  /** True: the Terms count as not accepted, so the app shows them first (D83). */
+  terms_pending?: boolean;
   meetings?: SeedMeeting[];
   /** Connected calendar accounts, with no Google behind them. Without any, one is made
    * ("you@example.com") as soon as calendar data is seeded. */

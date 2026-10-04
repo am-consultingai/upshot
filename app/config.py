@@ -272,6 +272,19 @@ DEFAULTS: dict[str, Any] = {
         # there. Empty once setup is finished, or before it has begun.
         "step": "",
     },
+    "legal": {
+        # The Terms version this user accepted, when, and where: on the installer's licence
+        # page ("installer") or in the app ("app"). Empty until then, and the interface
+        # shows the Terms until it is not (app/legal/terms.py, D83).
+        "accepted_version": "",
+        "accepted_at": "",
+        "accepted_via": "",
+        # Whether to look for a newer version of the Terms on the website, and how often.
+        # The request carries nothing of the user's (app/legal/terms.py check_now).
+        "check": True,
+        "check_hours": 24,
+        "manifest_url": "https://upshot.amconsultingai.com/legal/terms.json",
+    },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},

@@ -2684,6 +2684,13 @@ def test_router() -> APIRouter:
             # every spec after it there too.
             svc.config.set("setup.done", True)
             svc.config.set("setup.step", "")
+            # The Terms likewise: accepted, unless a spec asks for them pending (D83).
+            if svc.terms is not None:
+                svc.config.set("legal.accepted_version", svc.terms.bundled.version)
+            svc.config.save()
+        if "terms_pending" in body and svc.terms is not None:
+            pending = bool(body["terms_pending"])
+            svc.config.set("legal.accepted_version", "" if pending else svc.terms.bundled.version)
             svc.config.save()
         if "setup_done" in body:
             svc.config.set("setup.done", bool(body["setup_done"]))

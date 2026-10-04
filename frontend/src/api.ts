@@ -439,6 +439,31 @@ export function reason(error: unknown): string {
   return text;
 }
 
+/** The Terms of Service as the app sees them (app/legal/terms.py, D83). */
+export interface LegalMeta {
+  version: string;
+  effective: string;
+  material: boolean;
+  summary: string;
+}
+
+export interface LegalState {
+  accepted_version: string | null;
+  accepted_at: string | null;
+  accepted_via: "installer" | "app" | null;
+  current: LegalMeta;
+  /** True: the Terms replace every other screen until they are accepted. */
+  gate: boolean;
+  notice: (LegalMeta & { kind: "changed" | "upcoming" }) | null;
+  page: string;
+}
+
+export interface TermsDocument extends LegalMeta {
+  title: string;
+  html: string;
+  sha256: string;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
@@ -477,6 +502,13 @@ export const api = {
   deleteAssistantSession: (id: string) =>
     request<{ deleted: string }>(`/api/assistant/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
   status: () => request<Status>("/api/status"),
+  legal: () => request<LegalState>("/api/legal"),
+  terms: (version?: string) =>
+    request<TermsDocument>(`/api/legal/terms${version ? `?version=${encodeURIComponent(version)}` : ""}`),
+  acceptTerms: (version: string) =>
+    request<LegalState>("/api/legal/accept", { method: "POST", body: JSON.stringify({ version }) }),
+  /** Not accepting quits the app; `quitting` is false where nothing can be asked to quit. */
+  declineTerms: () => request<{ quitting: boolean }>("/api/legal/decline", { method: "POST" }),
   audioDevices: () => request<AudioDevices>("/api/audio/devices"),
   model: () => request<ModelStatus>("/api/model"),
   /** Starts the download in the background; a second call while one runs joins it. */

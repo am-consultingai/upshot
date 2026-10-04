@@ -622,3 +622,36 @@ kbd {
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
+
+/*
+ * The Terms of Service (routes/Terms.tsx, D83): the backend's rendering of
+ * app/legal/terms.md, which is English and reads left to right whatever the UI language.
+ */
+.terms-text {
+  direction: ltr;
+  text-align: left;
+}
+.terms-text h3 {
+  font-weight: 600;
+  margin-block-start: 1.4em;
+}
+.terms-text section:first-child h3 {
+  margin-block-start: 0;
+}
+.terms-text p,
+.terms-text ul {
+  margin-block-start: 0.6em;
+}
+.terms-text ul {
+  list-style: disc;
+  padding-inline-start: 1.25em;
+}
+.terms-text li + li {
+  margin-block-start: 0.3em;
+}
+.terms-text strong {
+  font-weight: 600;
+}
+.terms-text a {
+  text-decoration: underline;
+}

@@ -65,6 +65,13 @@ def main() -> int:
     config.set("llm.gemini_base_url", "http://127.0.0.1:9")
     config.set("llm.openai_base_url", "http://127.0.0.1:9")
     config.set("llm.ollama_url", "http://127.0.0.1:9")
+    # The Terms count as accepted and the website is never asked for a newer version:
+    # the seed route keeps them accepted for every spec but the one about them (D83).
+    from app.legal.terms import bundled
+
+    config.set("legal.check", False)
+    config.set("legal.manifest_url", "http://127.0.0.1:9/legal/terms.json")
+    config.set("legal.accepted_version", bundled().version)
     # The assistant spawns a stand-in for the Claude CLI: it makes real MCP calls to this
     # server and streams recorded stream-json, and spends nothing.
     fake_cli = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "fake_claude.py"
