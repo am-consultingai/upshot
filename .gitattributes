@@ -1,0 +1,6 @@
+# The Terms (D83): the published copy's SHA-256 is taken over LF text, and the installer's
+# licence page is CRLF on purpose. Neither may be converted by a checkout.
+app/legal/terms.md text eol=lf
+site/legal/terms.md text eol=lf
+site/legal/terms.json text eol=lf
+packaging/terms.txt -text

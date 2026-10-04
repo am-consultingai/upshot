@@ -87,6 +87,10 @@ def _ascii(text: str) -> str:
     return text.replace("\n", "\r\n")
 
 
+def _lf(text: str) -> str:
+    return text.replace("\r\n", "\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="fail if an output is out of date")
@@ -95,7 +99,9 @@ def main(argv: list[str] | None = None) -> int:
     stale = []
     for path, content in outputs(terms).items():
         current = path.read_bytes().decode("utf-8") if path.exists() else None
-        if current == content:
+        # Line endings are git's business, not a difference: a Windows checkout has CRLF
+        # where this writes LF (the build on machine A, 2026-10-05).
+        if current is not None and _lf(current) == _lf(content):
             continue
         stale.append(path.relative_to(ROOT))
         if not args.check:
