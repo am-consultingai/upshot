@@ -43,15 +43,15 @@ $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $info = [ordered]@{ version = $version; commit = $commit; built = $built }
 # The official build's Sentry DSNs (D87), from the gitignored packaging\release.local.json.
 # A DSN only lets the app send crash reports and feedback, so it ships; it stays out of
-# the repository so that a build from source has none and sends nothing. The auth token
-# is never read here: only the publish step uses it, and the scan below refuses a build
-# that carries one.
+# the repository so that a build from source has none and sends nothing. The secrets it
+# lists (the Sentry auth token, the update signing keys) are never read into the build:
+# only the publish step uses them, and the scan below refuses a build that carries one.
 $releaseLocal = Join-Path $PSScriptRoot "release.local.json"
-$tokenFiles = @()
+$secretFiles = @()
 if (Test-Path $releaseLocal) {
     $release = Get-Content -Raw -Encoding UTF8 $releaseLocal | ConvertFrom-Json
     $info.sentry = [ordered]@{ dsn = $release.sentry.desktop.dsn; frontend_dsn = $release.sentry.frontend.dsn }
-    $tokenFiles = @($release.sentry.auth_token_files | Where-Object { $_ })
+    $secretFiles = @($release.secret_files | Where-Object { $_ })
     Write-Host "reports: on (DSNs from packaging\release.local.json)"
 } elseif ($Sign) {
     Write-Warning "packaging\release.local.json is missing: this signed build will send no crash reports or feedback"
@@ -148,13 +148,13 @@ try {
 }
 
 Write-Host "== no secrets in the build =="
-# A Sentry auth token must never ship (D87). The scan covers what went into the freeze as
-# well as what came out: PyInstaller compresses Python modules, so a token in a .py file
-# is only visible in app\.
+# Neither the Sentry auth token nor an update signing key may ever ship (D87). The scan
+# covers what went into the freeze as well as what came out: PyInstaller compresses
+# Python modules, so a secret in a .py file is only visible in app\.
 $scanArgs = @("app", "frontend\dist", "vendor", "dist\upshot")
-foreach ($f in $tokenFiles) { $scanArgs += @("--token-file", $f) }
+foreach ($f in $secretFiles) { $scanArgs += @("--secret-file", $f) }
 uv run python scripts/scan_secrets.py @scanArgs
-Assert-Exit "the secret scan (a Sentry auth token is in the build)"
+Assert-Exit "the secret scan (a secret is in the build)"
 
 $signer = Join-Path $PSScriptRoot "sign.ps1"
 function Sign-File([string]$path) {
