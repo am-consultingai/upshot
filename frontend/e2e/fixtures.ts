@@ -83,6 +83,8 @@ export interface SeedBody {
   reports_available?: boolean;
   /** One crash report already sent, for "Show exactly what was sent" (D87). */
   crash_report?: boolean;
+  /** Feedback can be sent, to a sender that goes nowhere (D87). */
+  feedback_available?: boolean;
   /** First-run setup finished or not; only welcome.spec.ts asks for `false`. */
   setup_done?: boolean;
   /** True: the Terms count as not accepted, so the app shows them first (D83). */

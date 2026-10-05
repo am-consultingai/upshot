@@ -9,6 +9,7 @@ keeps at most ``OUTBOX_MAX`` items: a machine offline for a month does not fill 
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 import uuid
@@ -50,15 +51,46 @@ class Dsn:
         return f"Sentry sentry_version=7, sentry_key={self.key}, sentry_client=upshot/1"
 
 
-def envelope(item_type: str, payload: dict[str, Any]) -> bytes:
+@dataclass(frozen=True)
+class Attachment:
+    """A file sent with an item: a feedback screenshot, or a summary the user chose to add."""
+
+    filename: str
+    content_type: str
+    data: bytes
+
+    def kept(self) -> dict[str, str]:
+        return {
+            "filename": self.filename,
+            "content_type": self.content_type,
+            "data": base64.b64encode(self.data).decode("ascii"),
+        }
+
+    @classmethod
+    def from_kept(cls, kept: dict[str, str]) -> Attachment:
+        return cls(kept["filename"], kept["content_type"], base64.b64decode(kept["data"]))
+
+
+def envelope(
+    item_type: str, payload: dict[str, Any], attachments: list[Attachment] | None = None
+) -> bytes:
     event_id = str(payload.get("event_id") or uuid.uuid4().hex)
     sent_at = datetime.now(UTC).isoformat()
-    lines = [
-        json.dumps({"event_id": event_id, "sent_at": sent_at}),
-        json.dumps({"type": item_type}),
-        json.dumps(payload, ensure_ascii=False),
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    parts = [
+        json.dumps({"event_id": event_id, "sent_at": sent_at}).encode(),
+        json.dumps({"type": item_type, "length": len(body)}).encode(),
+        body,
     ]
-    return ("\n".join(lines) + "\n").encode("utf-8")
+    for attachment in attachments or []:
+        header = {
+            "type": "attachment",
+            "length": len(attachment.data),
+            "filename": attachment.filename,
+            "content_type": attachment.content_type,
+        }
+        parts += [json.dumps(header).encode(), attachment.data]
+    return b"\n".join(parts) + b"\n"
 
 
 class SentryClient:
@@ -67,9 +99,14 @@ class SentryClient:
         self.outbox = outbox
         self._http = http
 
-    def send(self, item_type: str, payload: dict[str, Any]) -> bool:
+    def send(
+        self,
+        item_type: str,
+        payload: dict[str, Any],
+        attachments: list[Attachment] | None = None,
+    ) -> bool:
         """Keep it, then try to deliver everything kept. True when this one went."""
-        path = self._keep(item_type, payload)
+        path = self._keep(item_type, payload, attachments or [])
         return path in self._deliver()
 
     def flush(self) -> int:
@@ -83,7 +120,8 @@ class SentryClient:
         for path in sorted(self.outbox.glob("*.json")):
             try:
                 kept = json.loads(path.read_text(encoding="utf-8"))
-                body = envelope(kept["type"], kept["payload"])
+                files = [Attachment.from_kept(a) for a in kept.get("attachments", [])]
+                body = envelope(kept["type"], kept["payload"], files)
             except (OSError, ValueError, KeyError):
                 path.unlink(missing_ok=True)  # a broken item would block the rest for ever
                 continue
@@ -110,13 +148,18 @@ class SentryClient:
                 log.info("diagnostics: Sentry refused a report (%s)", response.status_code)
         return accepted
 
-    def _keep(self, item_type: str, payload: dict[str, Any]) -> Path:
+    def _keep(self, item_type: str, payload: dict[str, Any], attachments: list[Attachment]) -> Path:
         self.outbox.mkdir(parents=True, exist_ok=True)
         kept = sorted(self.outbox.glob("*.json"))
         for old in kept[: max(0, len(kept) - OUTBOX_MAX + 1)]:
             old.unlink(missing_ok=True)
         path = self.outbox / f"{time.time_ns()}-{item_type}.json"
-        path.write_text(json.dumps({"type": item_type, "payload": payload}), encoding="utf-8")
+        record = {
+            "type": item_type,
+            "payload": payload,
+            "attachments": [a.kept() for a in attachments],
+        }
+        path.write_text(json.dumps(record), encoding="utf-8")
         return path
 
     def _client(self) -> httpx.Client:

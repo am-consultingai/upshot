@@ -15,6 +15,7 @@ import TermsNotice from "./components/TermsNotice";
 import UpdateNotice from "./components/UpdateNotice";
 import ReportsNotice from "./components/ReportsNotice";
 import ErrorBoundary from "./components/ErrorBoundary";
+import FeedbackDialog from "./components/FeedbackDialog";
 import { setupPending } from "./lib/speech";
 import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
@@ -295,6 +296,7 @@ export default function App() {
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
         <CommandPalette />
         <Toaster />
+        <FeedbackDialog />
         {celebrate && <Confetti onDone={celebrated} />}
         <ConfirmHost />
         <MeetingInfoHost />
