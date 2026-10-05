@@ -206,3 +206,16 @@ def test_releases_are_published_from_main_only(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(publish_release, "run", run)
     with pytest.raises(publish_release.PublishError, match="from main"):
         publish_release.check_repository("v0.3.0")
+
+
+def test_a_dry_run_can_name_a_test_server_but_a_real_release_cannot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    release = Release(tmp_path, monkeypatch, "0.3.0")
+    base = "http://127.0.0.1:8399/"
+    assert publish_release.main(release.argv("--download-base", base)) == 0
+    manifest = json.loads((release.out / "stable.json").read_text(encoding="utf-8"))
+    assert manifest["url"] == f"{base}Upshot-0.3.0-Setup.exe"
+    real = ["--installer", str(release.installer), "--download-base", base]
+    assert publish_release.main(real) == 1
+    assert "--dry-run only" in capsys.readouterr().err
