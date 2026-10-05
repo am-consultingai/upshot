@@ -7,6 +7,7 @@ import json
 import sys
 import threading
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -231,12 +232,15 @@ def test_a_path_the_app_refuses_is_uploaded_when_this_process_can_read_it(tmp_pa
 def test_discovery_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UPSHOT_URL", raising=False)
     monkeypatch.setenv("UP_HOME", str(tmp_path))
-    assert list(upshot.candidates())[:2] == ["http://127.0.0.1:8000", "http://127.0.0.1:8010"]
+    assert [b for b, _ in upshot.candidates()][:2] == [
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8010",
+    ]
     (tmp_path / "server.port").write_text("8023", encoding="utf-8")
-    assert next(upshot.candidates()) == "http://127.0.0.1:8023"
+    assert next(upshot.candidates()) == ("http://127.0.0.1:8023", upshot.RECORDED_TIMEOUT_S)
     monkeypatch.setenv("UPSHOT_URL", "http://127.0.0.1:9999/")
-    assert list(upshot.candidates()) == ["http://127.0.0.1:9999"]
-    assert list(upshot.candidates("http://127.0.0.1:7777")) == ["http://127.0.0.1:7777"]
+    assert [b for b, _ in upshot.candidates()] == ["http://127.0.0.1:9999"]
+    assert [b for b, _ in upshot.candidates("http://127.0.0.1:7777")] == ["http://127.0.0.1:7777"]
 
 
 def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,9 +259,75 @@ def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(
         upshot,
         "candidates",
-        lambda url=None: iter(["http://127.0.0.1:8000", "http://127.0.0.1:8010"]),
+        lambda url=None: iter([("http://127.0.0.1:8000", 2.0), ("http://127.0.0.1:8010", 2.0)]),
     )
     assert upshot.discover().base == "http://127.0.0.1:8010"
-    monkeypatch.setattr(upshot, "candidates", lambda url=None: iter(["http://127.0.0.1:8000"]))
+    monkeypatch.setattr(
+        upshot, "candidates", lambda url=None: iter([("http://127.0.0.1:8000", 2.0)])
+    )
     with pytest.raises(upshot.NotRunning, match="Start Upshot"):
         upshot.discover()
+
+
+def test_a_slow_upshot_is_busy_not_gone() -> None:
+    """Machine B, 2026-10-05: under a CPU-bound transcription Upshot answered more slowly
+    than the bridge waited, and Claude was told it was not running."""
+    import socket
+    import threading
+    import time
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen()
+    port = server.getsockname()[1]
+    accepted: list[socket.socket] = []
+
+    def accept() -> None:
+        connection, _ = server.accept()  # accepts, never answers
+        accepted.append(connection)
+
+    threading.Thread(target=accept, daemon=True).start()
+    app = upshot.Upshot(f"http://127.0.0.1:{port}", timeout=0.5)
+    started = time.monotonic()
+    with pytest.raises(upshot.Busy, match="busy"):
+        app.get("tr_x")
+    assert time.monotonic() - started < 5
+    server.close()
+    for connection in accepted:
+        connection.close()
+
+
+def test_the_bridge_keeps_the_upshot_it_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    found: list[str] = []
+
+    class App:
+        info: ClassVar[dict[str, bool]] = {"enabled": True}
+
+        def refresh(self) -> None:
+            found.append("refresh")
+
+    def discover(url: str | None = None) -> App:
+        found.append("discover")
+        return App()
+
+    monkeypatch.setattr(tools, "discover", discover)
+    bridge = tools.Bridge()
+    bridge.upshot()
+    bridge.upshot()
+    bridge.upshot()
+    assert found == ["discover", "refresh", "refresh"]
+
+
+def test_a_busy_upshot_is_said_plainly(monkeypatch: pytest.MonkeyPatch) -> None:
+    class App:
+        info: ClassVar[dict[str, bool]] = {"enabled": True}
+
+        def refresh(self) -> None:
+            raise upshot.Busy(upshot.BUSY)
+
+    monkeypatch.setattr(tools, "discover", lambda url=None: App())
+    bridge = tools.Bridge()
+    bridge._app = App()  # type: ignore[assignment]
+    with pytest.raises(ToolError, match="busy") as caught:
+        bridge.upshot()
+    assert "isn't running" not in str(caught.value)
