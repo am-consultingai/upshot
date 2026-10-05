@@ -406,3 +406,21 @@ def test_once_up_to_date_an_old_download_is_cleared(tmp_path: Path) -> None:
     later = service(tmp_path, Site(manifest_dict()), current="0.3.0")
     assert later.check_now()["ready"] is False
     assert not list((tmp_path / "updates").glob("Upshot-*"))
+
+
+def test_a_test_server_may_stand_in_for_github_but_the_manifest_must_still_be_signed(
+    tmp_path: Path,
+) -> None:
+    body = manifest_dict(url="http://127.0.0.1:8399/Upshot-0.3.0-Setup.exe")
+    site = Site(body)
+    site.files["/Upshot-0.3.0-Setup.exe"] = INSTALLER
+    refused = service(tmp_path / "a", site)
+    assert refused.check_now()["phase"] == "failed", "not this repository's releases"
+    allowed = service(tmp_path / "b", site)
+    allowed.config.set("updates.download_prefix", "http://127.0.0.1:8399/")
+    assert allowed.check_now()["phase"] == "ready"
+    stranger = Site(body, key=STRANGER)
+    stranger.files["/Upshot-0.3.0-Setup.exe"] = INSTALLER
+    unsigned = service(tmp_path / "c", stranger)
+    unsigned.config.set("updates.download_prefix", "http://127.0.0.1:8399/")
+    assert unsigned.check_now()["phase"] == "failed", "the prefix widens nothing else"

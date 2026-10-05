@@ -161,7 +161,8 @@ class UpdateInstaller:
         if self._safe_since is None:
             self._safe_since = now
         quiet_for = (now - self._safe_since).total_seconds()
-        if not mandatory and quiet_for < QUIET_S:
+        quiet_s = float(self.config.get("updates.quiet_minutes") or QUIET_S / 60) * 60
+        if not mandatory and quiet_for < quiet_s:
             return False
         return self.install(ready, why="mandatory" if mandatory else "idle")
 
