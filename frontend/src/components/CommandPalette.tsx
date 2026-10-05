@@ -118,6 +118,13 @@ export default function CommandPalette() {
       { id: "nav.timeline", group: "palette.navigate", label: t("nav.timeline"), keys: "G L", run: go("/") },
       { id: "nav.actions", group: "palette.navigate", label: t("nav.actions"), keys: "G A", run: go("/actions") },
       {
+        id: "nav.transcriptions",
+        group: "palette.navigate",
+        label: t("nav.transcriptions"),
+        keys: "G T",
+        run: go("/transcriptions"),
+      },
+      {
         id: "assistant",
         group: "palette.do",
         label: t("assistant.open"),

@@ -66,6 +66,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     from app.assistant.api import router as assistant_router
     from app.legal.api import router as legal_router
     from app.transcription.api import router as transcription_router
+    from app.transcription.api import ui_router as transcription_ui_router
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
 
@@ -92,6 +93,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(assistant_router)
     app.include_router(legal_router)
     app.include_router(transcription_router)
+    app.include_router(transcription_ui_router)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())

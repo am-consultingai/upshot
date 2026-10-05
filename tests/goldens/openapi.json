@@ -3696,6 +3696,48 @@
         "summary": "List Tags"
       }
     },
+    "/api/transcription/add-to-claude-desktop": {
+      "post": {
+        "description": "Open the bundled ``.mcpb`` with the OS: Claude Desktop shows its Install dialog.",
+        "operationId": "add_to_claude_desktop_api_transcription_add_to_claude_desktop_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Add To Claude Desktop Api Transcription Add To Claude Desktop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Add To Claude Desktop"
+      }
+    },
+    "/api/transcription/connect": {
+      "get": {
+        "description": "The commands and paths Settings shows, with this install's real path and port.",
+        "operationId": "connect_api_transcription_connect_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Connect Api Transcription Connect Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Connect"
+      }
+    },
     "/api/v1/info": {
       "get": {
         "description": "Who answers, and what it will take. Open with the switch off, so a client can say\nthe switch is off rather than guess; the bridge finds the app by ``app: \"upshot\"``.",

@@ -7,6 +7,7 @@ import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
+import TranscriptionServiceSettings from "../components/TranscriptionServiceSettings";
 import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
 import Tooltip from "../components/Tooltip";
@@ -41,6 +42,7 @@ const SECTIONS: SettingsSection[] = [
   { id: "calendar", label: "settings.groupCalendar" },
   { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents" },
   { id: "prompt", label: "settings.prompt" },
+  { id: "transcription", label: "settings.groupTranscription" },
 ];
 
 export default function Settings() {
@@ -242,6 +244,7 @@ export default function Settings() {
       {section === "calendar" && <CalendarSettings />}
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}
+      {section === "transcription" && <TranscriptionServiceSettings />}
       </div>
     </section>
     </PinnedContext.Provider>

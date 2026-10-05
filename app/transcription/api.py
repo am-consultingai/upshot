@@ -237,6 +237,8 @@ def describe(svc: Services, job: Transcription) -> dict[str, Any]:
     payload = job.as_dict()
     payload["position"] = svc.scheduler.position(job) if svc.scheduler else None
     payload["waiting_reason"] = waiting_reason(svc, job)
+    # Which way the transcript runs: the RTL list lives in app/asr/languages.py only.
+    payload["direction"] = languages.direction_for(job.language)
     payload["links"] = links(job.id)
     return payload
 
@@ -618,3 +620,107 @@ def info(request: Request) -> dict[str, Any]:
         "max_upload_mb": int(float(svc.config.get("transcription.max_upload_mb", 4096))),
         "max_hours": max_hours(svc),
     }
+
+
+# --------------------------------------------------------------------------- the page's own
+
+#: For Settings → "Transcription for other apps": how to connect Claude. Under ``/api``,
+#: not ``/api/v1``, so CSRF protects it like every other route of the page's.
+ui_router = APIRouter(prefix="/api/transcription")
+
+BRIDGE_DIR = "mcp"
+BRIDGE_EXE = "upshot-mcp.exe"
+BUNDLE_NAME = "upshot-transcribe.mcpb"
+SERVER_NAME = "upshot-transcribe"
+#: A made-up install folder for the e2e server, so the copy buttons have a real shape.
+TEST_INSTALL_DIR = "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot"
+
+
+def install_dir() -> str | None:
+    """Where the installed app lives (the frozen exe's folder); None in a source checkout."""
+    import sys
+
+    if getattr(sys, "frozen", False):
+        return str(Path(sys.executable).parent)
+    from app.main import test_mode
+
+    return TEST_INSTALL_DIR if test_mode() else None
+
+
+def wsl_path(windows_path: str) -> str:
+    r"""``C:\Users\x`` → ``/mnt/c/Users/x``: the default automount root."""
+    drive, _, rest = windows_path.partition(":")
+    return f"/mnt/{drive.lower()}{rest.replace(chr(92), '/')}"
+
+
+def desktop_config_paths() -> list[str]:
+    """Claude Desktop keeps its config in one of two places: under ``%APPDATA%`` for the
+    regular installer, under the package's folder for the Microsoft Store build (MSIX)."""
+    import os
+
+    found: list[str] = []
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        packages = Path(local) / "Packages"
+        if packages.is_dir():
+            for package in sorted(packages.glob("Claude_*")):
+                found.append(
+                    str(
+                        package / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json"
+                    )
+                )
+    roaming = os.environ.get("APPDATA")
+    if roaming:
+        found.append(str(Path(roaming) / "Claude" / "claude_desktop_config.json"))
+    return found
+
+
+@ui_router.get("/connect")
+def connect(request: Request) -> dict[str, Any]:
+    """The commands and paths Settings shows, with this install's real path and port."""
+    svc = services_of(request)
+    port = svc.config.server_port
+    folder = install_dir()
+    bridge = f"{folder}\\{BRIDGE_DIR}\\{BRIDGE_EXE}" if folder else None
+    bundle = Path(folder) / BRIDGE_DIR / BUNDLE_NAME if folder else None
+    api_url = f"http://127.0.0.1:{port}/api/v1"
+    desktop_config = (
+        {"mcpServers": {SERVER_NAME: {"command": bridge, "args": []}}} if bridge else None
+    )
+    return {
+        "enabled": bool(svc.config.get("transcription.service_enabled", True)),
+        "api_url": api_url,
+        "install_dir": folder,
+        "bridge": bridge,
+        "bundle_available": bool(bundle and bundle.exists())
+        or (bundle is not None and folder == TEST_INSTALL_DIR),
+        "wsl_command": (
+            f'claude mcp add {SERVER_NAME} -- "{wsl_path(bridge)}" --wsl-distro "$WSL_DISTRO_NAME"'
+            if bridge
+            else None
+        ),
+        "windows_command": f'claude mcp add {SERVER_NAME} -- "{bridge}"' if bridge else None,
+        "desktop_config": json.dumps(desktop_config, indent=2) if desktop_config else None,
+        "desktop_config_paths": desktop_config_paths(),
+        "curl_example": f"curl -F file=@clip.mp4 {api_url}/transcriptions",
+        "keep_days": svc.config.get("transcription.keep_days"),
+    }
+
+
+@ui_router.post("/add-to-claude-desktop")
+def add_to_claude_desktop(request: Request) -> dict[str, Any]:
+    """Open the bundled ``.mcpb`` with the OS: Claude Desktop shows its Install dialog."""
+    folder = install_dir()
+    bundle = Path(folder) / BRIDGE_DIR / BUNDLE_NAME if folder else None
+    if folder == TEST_INSTALL_DIR:
+        services_of(request).extras["opened_bundle"] = str(bundle)
+        return {"opened": True}
+    if bundle is None or not bundle.exists():
+        raise HTTPException(404, "the Claude Desktop bundle comes with the installed app")
+    import os
+
+    startfile = getattr(os, "startfile", None)
+    if startfile is None:  # pragma: no cover - Windows only
+        raise HTTPException(501, "opening the bundle needs Windows")
+    startfile(str(bundle))  # pragma: no cover - Windows only
+    return {"opened": True}  # pragma: no cover
