@@ -73,6 +73,9 @@ def test_registry_rearm() -> None:
         pytest.skip("RegNotifyChangeKeyValue is Windows-only")
     import winreg
 
+    # A machine on which nothing has ever used the microphone has no ConsentStore key to
+    # watch (the GitHub Windows runner); Windows creates it on first use, so this does.
+    winreg.CreateKey(winreg.HKEY_CURRENT_USER, MICROPHONE_KEY).Close()
     wakes: list[float] = []
     watcher = ConsentStoreWatcher(lambda: wakes.append(time.monotonic()), key=MICROPHONE_KEY)
     thread = watcher.start()
