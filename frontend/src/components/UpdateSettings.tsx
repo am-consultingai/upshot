@@ -4,6 +4,7 @@ import { api, type UpdateState } from "../api";
 import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
 import SettingRow, { SettingGroup } from "./SettingRow";
+import { openFeedback } from "./FeedbackDialog";
 
 const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent";
 const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
@@ -64,6 +65,12 @@ export default function UpdateSettings() {
         }
       >
         <span />
+      </SettingRow>
+
+      <SettingRow label={t("feedback.title")} description={t("feedback.settingsHint")}>
+        <button type="button" data-testid="open-feedback" className={SECONDARY} onClick={openFeedback}>
+          {t("feedback.open")}
+        </button>
       </SettingRow>
 
       <SettingRow

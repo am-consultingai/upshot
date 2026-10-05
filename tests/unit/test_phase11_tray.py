@@ -91,7 +91,7 @@ def test_restart_to_update_appears_only_with_a_ready_update_and_waits_for_a_reco
 def test_every_state_produces_a_menu() -> None:
     for recorder in RecorderState:
         spec = icon_for(AppState(recorder=recorder))
-        assert len(spec.menu) == 5
+        assert len(spec.menu) == 6  # Send feedback… joined (D87)
         assert spec.tooltip
 
 

@@ -51,6 +51,7 @@ class Services:
     updates: Any = None  # app.updates.service.UpdateService
     installer: Any = None  # app.updates.install.UpdateInstaller
     reporter: Any = None  # app.diagnostics.reporter.CrashReporter
+    feedback: Any = None  # app.diagnostics.feedback.FeedbackSender
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -136,6 +137,19 @@ def build(
 
     # Crash reports, only with consent and a DSN (D87).
     services.reporter = CrashReporter(cfg)
+    from app import paths as _paths
+    from app.diagnostics.feedback import FeedbackSender
+    from app.version import build_info as _build_info
+
+    # Feedback from inside the app, anonymous unless the user adds an email (D87).
+    _info = _build_info()
+    services.feedback = FeedbackSender(
+        cfg,
+        dsn=_info.sentry_dsn,
+        version=_info.version,
+        commit=_info.commit,
+        home=_paths.app_home(),
+    )
     from app.updates.service import UpdateService
 
     recorder = services.recorder
