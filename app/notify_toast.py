@@ -45,6 +45,7 @@ def show(payload: dict[str, Any]) -> None:
     aumid = payload.get("aumid")
     # WindowsToaster drops actions with a warning, so anything with buttons has to go
     # through the interactable one (DETECTION.md §6: the buttons are the mechanism).
+    toaster: InteractableWindowsToaster | WindowsToaster
     if buttons:
         toaster = (
             InteractableWindowsToaster("Upshot", notifierAUMID=str(aumid))
