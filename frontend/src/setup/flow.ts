@@ -6,14 +6,14 @@
  * the summaries. What the user confirms on the mock is what ships.
  */
 
-export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "audio";
+export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "reports" | "audio";
 
 /**
  * What the progress track shows: the three AI screens are one stop on it, "AI setup"
  * (product owner, 2026-09-28), so the track does not grow and shrink as the key step
  * comes and goes.
  */
-export type CrumbId = "welcome" | "calendar" | "aiSetup" | "audio";
+export type CrumbId = "welcome" | "calendar" | "aiSetup" | "reports" | "audio";
 
 export function crumbOf(step: StepId): CrumbId {
   return step === "services" || step === "ai" || step === "key" ? "aiSetup" : step;
@@ -28,7 +28,7 @@ export function crumbOf(step: StepId): CrumbId {
  * automatically. The last step is the sound check, with how meetings are recorded under
  * it, and its Done finishes setup: there is no summary screen (product owner, 2026-09-28).
  */
-export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
+export function stepsFor(machine: { calendarAvailable: boolean; reportsAvailable?: boolean }): StepId[] {
   return [
     "welcome",
     ...(machine.calendarAvailable ? (["calendar"] as const) : []),
@@ -37,6 +37,8 @@ export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
     "ai",
     // An API key, only when no subscription was signed in (`withoutUnneeded`).
     "key",
+    // Crash reports, asked once (D87), and only in a build that can send them.
+    ...(machine.reportsAvailable ? (["reports"] as const) : []),
     "audio",
   ];
 }

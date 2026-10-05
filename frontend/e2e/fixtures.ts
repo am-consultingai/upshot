@@ -79,6 +79,10 @@ export interface SeedBody {
   update_ready?: string;
   /** The start after an update to this version: the "Updated to" toast (D87). */
   update_installed?: string;
+  /** As if the build carried a DSN, with a sender that goes nowhere (D87). */
+  reports_available?: boolean;
+  /** One crash report already sent, for "Show exactly what was sent" (D87). */
+  crash_report?: boolean;
   /** First-run setup finished or not; only welcome.spec.ts asks for `false`. */
   setup_done?: boolean;
   /** True: the Terms count as not accepted, so the app shows them first (D83). */

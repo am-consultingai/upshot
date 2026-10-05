@@ -65,6 +65,8 @@ export interface SetupSnapshot {
   speakers: { phase: SpeakerPhase; level: number };
   /** The step setup was left on, for resuming after the app closed mid-way. */
   savedStep: StepId | null;
+  /** Crash reports (D87): asked only in a build that can send them. */
+  reports: { available: boolean; consent: "unset" | "on" | "off" };
 }
 
 export interface SetupBackend {
@@ -90,6 +92,8 @@ export interface SetupBackend {
   /** Keep the language chosen in setup as the app's language. */
   setLanguage(language: "en" | "he"): void;
   saveStep(step: StepId): void;
+  /** The answer to "send crash reports?", saved at once (D87). */
+  setCrashReports(on: boolean): void;
   finish(choices: SetupChoices): Promise<void>;
 }
 
