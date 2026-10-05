@@ -257,3 +257,77 @@ def test_source_maps_are_uploaded_for_the_release_with_the_token_kept_off_the_co
 def test_without_maps_or_a_token_the_upload_is_skipped_not_failed(tmp_path: Path) -> None:
     said = publish_release.upload_sourcemaps({}, "0.3.0", "abc", tmp_path / "none")
     assert said.startswith("skipped")
+
+
+def test_promote_signs_the_beta_release_as_stable_without_releasing_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    release = Release(tmp_path, monkeypatch, "0.4.0")
+    site = tmp_path / "site-updates"
+    monkeypatch.setattr(publish_release, "SITE_UPDATES", site)
+    assert (
+        publish_release.main(
+            [
+                "--installer",
+                str(release.installer),
+                "--dry-run",
+                "--out",
+                str(site),
+                "--channel",
+                "beta",
+            ]
+        )
+        == 0
+    )
+    ran: list[tuple[str, ...]] = []
+    monkeypatch.setattr(publish_release, "check_repository", lambda tag: None)
+    monkeypatch.setattr(publish_release, "run", lambda *c, capture=False: ran.append(c) or "")
+    monkeypatch.setattr(
+        publish_release, "publish_manifest", lambda channel, message: ran.append(("push", channel))
+    )
+    monkeypatch.setattr(publish_release, "read_back", lambda channel, manifest: None)
+    assert publish_release.main(["--promote", "--rollout", "25"]) == 0
+    stable = json.loads((site / "stable.json").read_text(encoding="utf-8"))
+    beta = json.loads((site / "beta.json").read_text(encoding="utf-8"))
+    assert stable["channel"] == "stable" and stable["rollout"] == 25
+    assert {k: v for k, v in stable.items() if k not in ("channel", "rollout", "published")} == {
+        k: v for k, v in beta.items() if k not in ("channel", "rollout", "published")
+    }
+    from app.updates.manifest import verify
+
+    verify(
+        (site / "stable.json").read_bytes(),
+        (site / "stable.json.sig").read_bytes(),
+        [publish_release.PUBLIC_KEYS[0][1]],
+    )
+    assert ("gh", "release", "edit", "v0.4.0", "--prerelease=false") in ran and (
+        "push",
+        "stable",
+    ) in ran
+    assert not any(c[:3] == ("gh", "release", "create") for c in ran), "never released twice"
+
+
+def test_a_tampered_beta_manifest_is_not_promoted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release = Release(tmp_path, monkeypatch, "0.4.0")
+    site = tmp_path / "site-updates"
+    monkeypatch.setattr(publish_release, "SITE_UPDATES", site)
+    publish_release.main(
+        [
+            "--installer",
+            str(release.installer),
+            "--dry-run",
+            "--out",
+            str(site),
+            "--channel",
+            "beta",
+        ]
+    )
+    beta = site / "beta.json"
+    beta.write_text(
+        beta.read_text(encoding="utf-8").replace('"0.4.0"', '"0.4.1"'), encoding="utf-8"
+    )
+    monkeypatch.setattr(publish_release, "check_repository", lambda tag: None)
+    assert publish_release.main(["--promote"]) == 1
+    assert not (site / "stable.json").exists()

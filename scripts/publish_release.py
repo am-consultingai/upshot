@@ -5,6 +5,7 @@
         [--notes notes.json] [--dry-run --out <dir>]
     uv run python scripts/publish_release.py --set-rollout 50 [--channel stable]
     uv run python scripts/publish_release.py --halt [--channel stable]
+    uv run python scripts/publish_release.py --promote [--rollout 10]
     uv run python scripts/publish_release.py --show-signers <installer>
 
 Run in WSL on the build machine, after ``packaging\\build.ps1 -Sign`` has produced the
@@ -393,6 +394,34 @@ def publish(args: argparse.Namespace) -> None:
     print(f"published: {SITE_URL}{args.channel}.json serves {version} to {rollout}% of copies")
 
 
+def promote(args: argparse.Namespace) -> None:
+    """Beta to stable: the same release, a stable manifest for it (A5, the runbook).
+
+    A version is published once; promoting it does not tag or release again. The beta
+    manifest is checked against the app's keys first, so only what installed copies
+    already trust can be promoted. The GitHub Release stops being a pre-release.
+    """
+    beta = SITE_UPDATES / "beta.json"
+    if not beta.exists():
+        raise PublishError("nothing is published on beta to promote")
+    data = beta.read_bytes()
+    check_signed(data, beta.with_name("beta.json.sig").read_bytes(), json.loads(data))
+    check_repository(None)
+    manifest = {
+        **json.loads(data),
+        "channel": "stable",
+        "rollout": args.rollout if args.rollout is not None else 10,
+        "published": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    key = release_key.key_path(release_key.DEFAULT_DIR, args.key)
+    write_signed(manifest, SITE_UPDATES, key)
+    run("gh", "release", "edit", f"v{manifest['version']}", "--prerelease=false")
+    word = f"at {manifest['rollout']}%"
+    publish_manifest("stable", f"updates: {manifest['version']} promoted to stable {word}")
+    read_back("stable", manifest)
+    print(f"{manifest['version']} on stable: {word}")
+
+
 def change_rollout(args: argparse.Namespace, rollout: int) -> None:
     current = SITE_UPDATES / f"{args.channel}.json"
     if not current.exists():
@@ -445,11 +474,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--set-rollout", type=int, choices=range(0, 101), metavar="0-100")
     parser.add_argument("--halt", action="store_true")
+    parser.add_argument("--promote", action="store_true", help="beta's release to stable")
     parser.add_argument("--show-signers", metavar="INSTALLER")
     args = parser.parse_args(argv)
     try:
         if args.show_signers:
             show_signers(Path(args.show_signers).expanduser())
+        elif args.promote:
+            promote(args)
         elif args.halt:
             change_rollout(args, 0)
         elif args.set_rollout is not None:
