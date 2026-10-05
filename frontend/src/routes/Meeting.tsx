@@ -651,6 +651,12 @@ export default function MeetingPage() {
                   {waiting.message}
                 </p>
               )}
+              {/* First in, first out with file transcriptions (D86, R5): say what it waits behind. */}
+              {current?.state === "pending" && (meeting.data?.files_ahead ?? 0) > 0 && (
+                <p data-testid="files-ahead" className="mb-3 max-w-prose text-xs text-secondary">
+                  {t("meeting.filesAhead").replace("{n}", String(meeting.data?.files_ahead ?? 0))}
+                </p>
+              )}
 
               {failed.length > 0 && (
                 <div data-testid="stage-failed" className="mb-4 rounded-lg bg-danger-quiet p-3 text-sm">

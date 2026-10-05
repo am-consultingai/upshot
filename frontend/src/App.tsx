@@ -8,6 +8,8 @@ import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
+import TranscriptionsPage from "./routes/Transcriptions";
+import { applyEvent, type TranscriptionEvent } from "./lib/transcriptions";
 import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
 import TermsPage from "./routes/Terms";
@@ -69,7 +71,9 @@ function useShortcuts(onRecord: () => void) {
       if (pendingG.current !== null) {
         window.clearTimeout(pendingG.current);
         pendingG.current = null;
-        const to = { l: "/", a: "/actions", s: "/search", ",": "/settings" }[event.key.toLowerCase()];
+        const to = { l: "/", a: "/actions", t: "/transcriptions", s: "/search", ",": "/settings" }[
+          event.key.toLowerCase()
+        ];
         if (to) {
           event.preventDefault();
           navigate(to);
@@ -236,6 +240,11 @@ export default function App() {
     source.addEventListener("prompt", invalidate);
     // A newer version of the Terms arrived from the website, or was accepted (D83).
     source.addEventListener("legal", invalidate);
+    // File transcriptions (D86) report progress every second: they update their own list
+    // and nothing else, or each one would refetch the whole app.
+    source.addEventListener("transcription", (event) => {
+      applyEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as TranscriptionEvent);
+    });
     return () => {
       source.close();
       delete document.documentElement.dataset.stream;
@@ -336,6 +345,7 @@ export default function App() {
               </Route>
               {/* The inbox carries its own bar and rail, like a meeting, so it is not in a Full column. */}
               <Route path="/actions" element={<ActionsPage />} />
+              <Route path="/transcriptions" element={<Full><TranscriptionsPage /></Full>} />
               <Route path="/search" element={<Full><SearchPage /></Full>} />
               <Route path="/settings" element={<Full wide><Settings /></Full>} />
               {/*

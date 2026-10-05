@@ -128,6 +128,8 @@ export interface SearchHit {
 export interface MeetingDetail extends Meeting {
   audio_tracks?: Record<string, AudioTrack>;
   jobs: Job[];
+  /** File transcriptions that run before this meeting's waiting job (D86). */
+  files_ahead?: number;
   evidence: { code: string; weight: number; detail: string }[];
   /** When the retention policy removed the raw audio. Null while it is still there. */
   audio_deleted_at?: string | null;
@@ -422,6 +424,59 @@ export interface AssistantSession {
   updated_at: string;
 }
 
+/** A file transcription job, as `/api/v1/transcriptions` reports it (D86). */
+export interface Transcription {
+  id: string;
+  state: "pending" | "running" | "done" | "failed" | "cancelled";
+  source_name: string;
+  source_kind: "upload" | "path";
+  size_bytes: number | null;
+  duration_s: number | null;
+  options: { language: string; diarize: boolean; prompt: string; max_words_per_cue: number };
+  client: "ui" | "api" | "mcp";
+  language: string | null;
+  language_conf: number | null;
+  phase: "decode" | "check" | "language" | "transcribe" | "diarize" | null;
+  progress: number;
+  attempts: number;
+  error: string | null;
+  queued_at: string;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  position: number | null;
+  waiting_reason: "recording" | "policy:when_idle" | "policy:scheduled" | "queue" | "retry" | null;
+  direction: "ltr" | "rtl";
+  links: Record<string, string>;
+}
+
+/** The stored result (`result.json`, version 1): the stable contract. */
+export interface TranscriptionResult {
+  version: number;
+  id: string;
+  source_name: string;
+  duration_s: number;
+  language: string | null;
+  speakers: string[];
+  diarized: boolean;
+  segments: { id: number; start: number; end: number; speaker: string; text: string }[];
+}
+
+/** Settings → "Transcription for other apps": this install's commands and paths. */
+export interface TranscriptionConnect {
+  enabled: boolean;
+  api_url: string;
+  install_dir: string | null;
+  bridge: string | null;
+  bundle_available: boolean;
+  wsl_command: string | null;
+  windows_command: string | null;
+  desktop_config: string | null;
+  desktop_config_paths: string[];
+  curl_example: string;
+  keep_days: number | null;
+}
+
 export function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)up_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
@@ -469,7 +524,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (method !== "GET") {
     headers.set("X-CSRF-Token", csrfToken());
-    if (init.body && !headers.has("Content-Type")) {
+    // A FormData body sets its own multipart Content-Type, boundary included; naming
+    // one here would lose the boundary and the server could not read the parts.
+    if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
   }
@@ -743,4 +800,24 @@ export const api = {
     }>("/api/attention"),
   audioUrl: (id: string, track: string) =>
     `/api/meetings/${id}/audio?track=${track}`,
+  transcriptions: () =>
+    request<{ transcriptions: Transcription[] }>("/api/v1/transcriptions?limit=200"),
+  transcriptionResult: (id: string) =>
+    request<TranscriptionResult>(`/api/v1/transcriptions/${encodeURIComponent(id)}/result?format=json`),
+  transcriptionText: (id: string) =>
+    request<string>(`/api/v1/transcriptions/${encodeURIComponent(id)}/result?format=txt&timestamps=true`),
+  cancelTranscription: (id: string) =>
+    request<Transcription>(`/api/v1/transcriptions/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+  retryTranscription: (id: string) =>
+    request<Transcription>(`/api/v1/transcriptions/${encodeURIComponent(id)}/retry`, { method: "POST" }),
+  deleteTranscription: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/api/v1/transcriptions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  transcriptionConnect: () => request<TranscriptionConnect>("/api/transcription/connect"),
+  addToClaudeDesktop: () =>
+    request<{ opened: boolean }>("/api/transcription/add-to-claude-desktop", { method: "POST" }),
+  /** For a plain `<a href>` download: the page's cookie goes with it (D86). */
+  transcriptionDownloadUrl: (id: string, format: string) =>
+    `/api/v1/transcriptions/${encodeURIComponent(id)}/result?format=${format}`,
 };
