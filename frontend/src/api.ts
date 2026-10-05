@@ -314,6 +314,17 @@ export interface Status {
   storage_bytes?: number;
   fts: boolean;
   now: string;
+  /** Which build answered (app/version.py). */
+  build?: BuildInfo;
+}
+
+export interface BuildInfo {
+  version: string;
+  commit: string | null;
+  built: string | null;
+  frozen: boolean;
+  /** This build can send crash reports and feedback (it carries a DSN, D87). */
+  reports: boolean;
 }
 
 export interface LlmProvider {
@@ -458,6 +469,42 @@ export interface LegalState {
   page: string;
 }
 
+/** The next version of the app, and how far it has got (app/updates, D87). */
+export interface UpdateOffer {
+  channel: "stable" | "beta";
+  version: string;
+  size: number;
+  critical: boolean;
+  /** Installs at the first safe moment whatever the setting: critical, or this copy is too old. */
+  mandatory: boolean;
+  min_version: string | null;
+  published: string | null;
+  notes: Partial<Record<"en" | "he", string>>;
+  notes_url: string | null;
+}
+
+export interface UpdateState {
+  phase: "idle" | "checking" | "downloading" | "waiting" | "ready" | "failed";
+  current: string;
+  channel: "stable" | "beta";
+  auto_install: boolean;
+  /** False when run from source: it says what is available but never installs. */
+  enabled: boolean;
+  available: UpdateOffer | null;
+  held_back: string | null;
+  progress: { bytes: number; total: number } | null;
+  ready: boolean;
+  last_checked_at: string | null;
+  last_error: string | null;
+  install?: {
+    can_install: boolean;
+    /** What a ready update waits for; null when nothing does. */
+    waiting_for: "recording" | "call" | "jobs" | "meeting" | null;
+    /** What the start after an update found. */
+    last: { result: "updated" | "failed"; from: string; to: string } | null;
+  };
+}
+
 export interface TermsDocument extends LegalMeta {
   title: string;
   html: string;
@@ -509,6 +556,11 @@ export const api = {
     request<LegalState>("/api/legal/accept", { method: "POST", body: JSON.stringify({ version }) }),
   /** Not accepting quits the app; `quitting` is false where nothing can be asked to quit. */
   declineTerms: () => request<{ quitting: boolean }>("/api/legal/decline", { method: "POST" }),
+  updates: () => request<UpdateState>("/api/updates"),
+  /** Answers at once; progress arrives as `updates` events. */
+  checkUpdates: () => request<UpdateState>("/api/updates/check", { method: "POST" }),
+  /** The app quits and the installer starts it again on the new version. */
+  installUpdate: () => request<{ installing: string }>("/api/updates/install", { method: "POST" }),
   audioDevices: () => request<AudioDevices>("/api/audio/devices"),
   model: () => request<ModelStatus>("/api/model"),
   /** Starts the download in the background; a second call while one runs joins it. */

@@ -75,6 +75,10 @@ export interface SeedBody {
   /** Clear the library, the events and the saved appearance first. Also marks
    * first-run setup done, so no spec lands on /welcome by accident. */
   reset?: boolean;
+  /** A verified update to this version, ready to install; its installer starts nothing (D87). */
+  update_ready?: string;
+  /** The start after an update to this version: the "Updated to" toast (D87). */
+  update_installed?: string;
   /** First-run setup finished or not; only welcome.spec.ts asks for `false`. */
   setup_done?: boolean;
   /** True: the Terms count as not accepted, so the app shows them first (D83). */

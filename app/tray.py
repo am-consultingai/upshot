@@ -114,8 +114,16 @@ class TrayApp:
             detector_mode=str(self.services.config.get("detection.mode", "shadow")),
             ending=bool(recorder is not None and recorder.holding),
             worker_alive=worker is None or worker.is_alive(),
+            update_ready=self._update_ready(),
         )
         return self.state
+
+    def _update_ready(self) -> str | None:
+        installer = self.services.installer
+        if installer is None or not installer.can_install:
+            return None
+        ready = installer.updates.ready()
+        return str(ready["version"]) if ready else None
 
     def _title(self) -> str | None:
         recorder = self.services.recorder
@@ -167,6 +175,13 @@ class TrayApp:
         elif action is Action.QUIT:
             self.quit_by_user = True
             self.stop()
+        elif action is Action.UPDATE and services.installer is not None:
+            # "Restart to update": the installer starts, the app quits, and the installer
+            # starts it again (D87). Refused only while recording; the item is greyed then.
+            try:
+                services.installer.install_now()
+            except (LookupError, RuntimeError) as exc:
+                log.info("restart to update refused: %s", exc)
         self.refresh()
 
     def show_window(self) -> str:

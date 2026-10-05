@@ -48,6 +48,13 @@ TICK_S = 60.0
 #: A version whose install failed this many times is no longer installed by itself.
 MAX_ATTEMPTS = 2
 MARKER = "installing.json"
+#: What can hold an update back, by the code ``why_not_now`` returns.
+REASONS = {
+    "recording": "a meeting is being recorded",
+    "call": "a call is in progress",
+    "jobs": "a meeting is being transcribed or summarized",
+    "meeting": "a meeting starts soon",
+}
 
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -112,17 +119,18 @@ class UpdateInstaller:
     # ------------------------------------------------------------------ the moment
 
     def why_not_now(self, *, user_asked: bool = False) -> str | None:
-        """None when this is a safe moment; otherwise what is in the way."""
+        """None when this is a safe moment; otherwise what is in the way, as a code from
+        ``REASONS`` (the interface says it in the user's language)."""
         if self.recording():
-            return "a meeting is being recorded"
+            return "recording"
         if user_asked:
             return None
         if self.in_call():
-            return "a call is in progress"
+            return "call"
         if self.jobs_busy():
-            return "a meeting is being transcribed or summarized"
+            return "jobs"
         if self.meeting_soon():
-            return "a meeting starts soon"
+            return "meeting"
         return None
 
     def ready(self) -> dict[str, Any] | None:
@@ -147,7 +155,7 @@ class UpdateInstaller:
         now = self.clock.now()
         if reason is not None:
             if self._safe_since is not None:
-                log.info("update %s waits: %s", ready["version"], reason)
+                log.info("update %s waits: %s", ready["version"], REASONS[reason])
             self._safe_since = None
             return False
         if self._safe_since is None:
@@ -177,7 +185,7 @@ class UpdateInstaller:
             raise RuntimeError("this copy cannot install updates (run from source)")
         reason = self.why_not_now(user_asked=True)
         if reason is not None:
-            raise RuntimeError(f"not now: {reason}")
+            raise RuntimeError(f"not now: {REASONS[reason]}")
         self.install(ready, why="asked")
         return {"installing": ready["version"]}
 

@@ -39,6 +39,7 @@ class Action(StrEnum):
     PAUSE = "recording.pause"
     OPEN = "dashboard.open"
     QUIT = "app.quit"
+    UPDATE = "app.update"
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,8 @@ class AppState:
     #: The call's app let go and the recording saves itself soon (D77).
     ending: bool = False
     worker_alive: bool = True
+    #: A verified update this copy can install now: "Restart to update" (D87).
+    update_ready: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,16 @@ def menu_for(state: AppState) -> tuple[MenuItem, ...]:
         MenuItem("Stop recording", Action.STOP, enabled=active),
         MenuItem("Resume" if paused else "Pause", Action.PAUSE, enabled=active),
         MenuItem("Open Upshot", Action.OPEN, enabled=True, default=True),
+        # Greyed out while recording: an update never cuts a meeting short (D87).
+        *(
+            (
+                MenuItem(
+                    f"Restart to update to {state.update_ready}", Action.UPDATE, enabled=not active
+                ),
+            )
+            if state.update_ready
+            else ()
+        ),
         MenuItem("Quit", Action.QUIT, enabled=True),
     )
 

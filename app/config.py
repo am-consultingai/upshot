@@ -336,6 +336,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "profile": ("auto", "gpu-live", "cpu-deferred"),
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),
     "ui.language": ("en", "he"),
+    "updates.channel": ("stable", "beta"),
     "summary.language": ("en", "he", "auto"),
     "asr.backend": ("local", "fake"),
     "asr.device": ("auto", "cpu", "cuda"),

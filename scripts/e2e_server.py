@@ -23,6 +23,9 @@ from app.services import build
 
 def main() -> int:
     os.environ.setdefault("UP_TEST_MODE", "1")
+    # Never ask the real website for an update (D87): a check finishing mid-spec would
+    # overwrite the state a spec seeded.
+    os.environ.setdefault("UP_UPDATES__CHECK", "false")
     home = Path(os.environ.get("UP_HOME") or tempfile.mkdtemp(prefix="ma-e2e-"))
     home.mkdir(parents=True, exist_ok=True)
     os.environ["UP_HOME"] = str(home)
