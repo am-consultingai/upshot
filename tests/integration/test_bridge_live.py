@@ -214,3 +214,30 @@ def test_the_bridge_uploads_when_asked_to(h: ApiHarness, tmp_path: Path) -> None
     with running(h) as url:
         job = Upshot(url).upload(source, {"language": "auto", "diarize": True, "prompt": ""})
     assert job["source_kind"] == "upload" and job["client"] == "mcp"
+
+
+async def test_an_unfinished_job_says_how_to_finish_it(h: ApiHarness, tmp_path: Path) -> None:
+    """A first call that cannot wait long enough must not lose its save_to: Claude Desktop
+    times a tool call out well before a minute."""
+    source = wav(tmp_path / "talk.wav", 6)
+    with running(h, worker=False) as url:
+        _, text = await call(
+            url, "transcribe_file",
+            {"path": str(source), "format": "srt", "save_to": str(tmp_path), "wait_seconds": 0},
+        )  # fmt: skip
+        hint = json.loads(text)["next"]
+        assert "wait_seconds=25" in hint and "format=srt" in hint and f"save_to={tmp_path}" in hint
+        h.services.worker.drain()  # type: ignore[union-attr]
+        job_id = json.loads(text)["id"]
+        error, saved = await call(
+            url, "get_transcription", {"id": job_id, "format": "srt", "save_to": str(tmp_path)}
+        )
+    assert not error and (tmp_path / "talk.srt").exists(), saved
+
+
+def test_no_call_is_held_open_long_enough_for_claude_to_give_up() -> None:
+    sys.path.insert(0, str(CLIENTS))
+    from upshot_mcp import tools
+
+    assert tools.MAX_WAIT_S <= 30 and tools.DEFAULT_WAIT_S <= tools.MAX_WAIT_S
+    assert tools._seconds(55) == tools.MAX_WAIT_S

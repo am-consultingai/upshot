@@ -12,8 +12,10 @@ from upshot_mcp.protocol import Call, Tool, ToolError
 from upshot_mcp.upshot import NotRunning, Upshot, UpshotError, discover
 
 #: A tool call is held open for at most this long; past it, the reply carries an id to
-#: come back with. Clients time tools out at about a minute.
-MAX_WAIT_S = 55
+#: come back with. Claude Desktop gave up on a 55-second call ("MCP error -32001: Request
+#: timed out") while 25-second ones went through, so the wait stays well inside that.
+MAX_WAIT_S = 30
+DEFAULT_WAIT_S = 25
 #: Characters of transcript per reply. Claude Code's default limit for one tool result is
 #: 25 000 tokens, and Hebrew takes far more tokens per character than English.
 PART_CHARS = 20_000
@@ -73,7 +75,7 @@ class Bridge:
         }
         app = self.upshot()
         job = self._submit(app, str(args.get("path") or ""), options)
-        job = self._wait(app, job, _seconds(args.get("wait_seconds", 50)), call)
+        job = self._wait(app, job, _seconds(args.get("wait_seconds", DEFAULT_WAIT_S)), call)
         return self._answer(app, job, fmt, str(args.get("save_to") or ""), 0, 0)
 
     def get_transcription(self, call: Call) -> str:
@@ -141,6 +143,11 @@ class Bridge:
         if job["state"] == "cancelled":
             raise ToolError(f"The transcription of {job['source_name']} was cancelled.")
         if job["state"] != "done":
+            again = f"id={job['id']}, wait_seconds={DEFAULT_WAIT_S}"
+            if fmt != "text":
+                again += f", format={fmt}"
+            if save_to:
+                again += f", save_to={save_to}"
             return json.dumps(
                 {
                     "id": job["id"],
@@ -150,8 +157,8 @@ class Bridge:
                     "position": job.get("position"),
                     "waiting_reason": job.get("waiting_reason"),
                     "status": _status(job),
-                    "next": "Not done yet. Call get_transcription with this id and "
-                    "wait_seconds=55 until it is done.",
+                    "next": f"Not done yet. Call get_transcription with {again}, and again "
+                    "until it is done.",
                 },
                 ensure_ascii=False,
             )
@@ -340,7 +347,12 @@ def tools(bridge: Bridge) -> list[Tool]:
                         "default": "",
                         "description": "Optional names or terms said in the recording.",
                     },
-                    "wait_seconds": {"type": "number", "default": 50, "maximum": MAX_WAIT_S},
+                    "wait_seconds": {
+                        "type": "number",
+                        "default": DEFAULT_WAIT_S,
+                        "maximum": MAX_WAIT_S,
+                        "description": "How long to wait for the result in this call.",
+                    },
                     **common,
                 },
                 "required": ["path"],
