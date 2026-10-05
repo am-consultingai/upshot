@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import httpx
@@ -153,6 +154,10 @@ def test_connect_opens_googles_page_in_the_default_browser(  # type: ignore[no-u
     assert started["opened"] is True and opened == [started["auth_url"]]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="on Windows the server opens it: the test above; this one ran a real browser on CI",
+)
 def test_where_the_server_cannot_open_it_the_page_does(api) -> None:  # type: ignore[no-untyped-def]
     started = api.client().post("/api/calendar/connect").json()
     assert started["state"] == "connecting" and started["opened"] is False
