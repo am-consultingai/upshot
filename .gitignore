@@ -57,6 +57,9 @@ scripts/windows/run-app.local.psd1
 # account. build.ps1 stamps them into the build; a build from source has none and sends
 # nothing. The Sentry auth token is never in the repo at all.
 packaging/release.local.json
+# Private keys, the update signing keys among them (scripts/release_key.py, D87). They
+# live outside the repository; this stops one copied in by mistake from being committed.
+*.key
 CLAUDE.local.md
 # Local scratch tools: they name this machine's browser build and folders.
 frontend/.pw-local.config.ts
