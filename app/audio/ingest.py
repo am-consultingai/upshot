@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
+import time
 import wave
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,8 +54,27 @@ def ffmpeg_path(config: Config | None = None) -> str | None:
     return shutil.which("ffmpeg")
 
 
-def to_wav(source: Path, target: Path, *, config: Config | None = None, rate: int = 16000) -> Path:
-    """Convert anything ffmpeg understands into 16 kHz mono WAV."""
+#: How often a cancellable conversion asks whether to stop.
+POLL_S = 1.0
+
+
+def to_wav(
+    source: Path,
+    target: Path,
+    *,
+    config: Config | None = None,
+    rate: int = 16000,
+    input_args: Sequence[str] = (),
+    extra_args: Sequence[str] = (),
+    stop_check: Callable[[], None] | None = None,
+) -> Path:
+    """Convert anything ffmpeg understands into 16 kHz mono WAV.
+
+    ``input_args`` go before ``-i`` (``-protocol_whitelist file``), ``extra_args`` after it
+    (``-vn``, so a video track is never decoded). With ``stop_check``, ffmpeg runs in the
+    background and ``stop_check`` is called about once a second; whatever it raises kills
+    ffmpeg, removes the partial WAV and propagates (a cancelled file transcription, D86).
+    """
     binary = ffmpeg_path(config)
     if binary is None:
         raise UnsupportedAudio(
@@ -60,9 +82,15 @@ def to_wav(source: Path, target: Path, *, config: Config | None = None, rate: in
             "or set ffmpeg_path"
         )
     target.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        binary, "-y", *input_args, "-i", str(source), *extra_args,
+        "-ac", "1", "-ar", str(rate), str(target),
+    ]  # fmt: skip
+    if stop_check is not None:
+        return _to_wav_cancellable(command, source, target, stop_check)
     try:
         result = subprocess.run(
-            [binary, "-y", "-i", str(source), "-ac", "1", "-ar", str(rate), str(target)],
+            command,
             capture_output=True,
             check=False,
             timeout=FFMPEG_TIMEOUT_S,
@@ -74,11 +102,60 @@ def to_wav(source: Path, target: Path, *, config: Config | None = None, rate: in
             f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
         ) from exc
     if result.returncode != 0 or not target.exists():
-        raise UnsupportedAudio(
-            f"ffmpeg could not convert {source.name}: "
-            f"{result.stderr.decode(errors='replace')[-300:]}"
-        )
+        raise _conversion_failed(source, result.stderr)
     return target
+
+
+def _conversion_failed(source: Path, stderr: bytes) -> UnsupportedAudio:
+    text = stderr.decode(errors="replace")
+    if "does not contain any stream" in text or "matches no streams" in text:
+        return UnsupportedAudio(f"{source.name} has no audio")
+    return UnsupportedAudio(f"ffmpeg could not convert {source.name}: {text[-300:]}")
+
+
+def _to_wav_cancellable(
+    command: list[str], source: Path, target: Path, stop_check: Callable[[], None]
+) -> Path:
+    """``to_wav`` with ffmpeg in the background, polled so that it can be stopped."""
+    # stderr to a file, not a pipe: ffmpeg writes progress there for as long as it runs,
+    # and an unread pipe fills and stalls it.
+    with tempfile.TemporaryFile() as errors:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=errors,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        deadline = time.monotonic() + FFMPEG_TIMEOUT_S
+        try:
+            while True:
+                try:
+                    returncode = process.wait(timeout=POLL_S)
+                    break
+                except subprocess.TimeoutExpired:
+                    stop_check()
+                    if time.monotonic() > deadline:
+                        raise UnsupportedAudio(
+                            f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
+                        ) from None
+        except BaseException:
+            process.kill()
+            process.wait()
+            target.unlink(missing_ok=True)
+            raise
+        errors.seek(0)
+        stderr = errors.read()
+    if returncode != 0 or not target.exists():
+        target.unlink(missing_ok=True)
+        raise _conversion_failed(source, stderr)
+    return target
+
+
+def wav_duration_s(path: Path) -> float:
+    """From the header alone: a long file's samples are never loaded to learn its length."""
+    with wave.open(str(path), "rb") as handle:
+        return handle.getnframes() / float(handle.getframerate())
 
 
 def read_mono(path: Path, rate: int = 16000) -> np.ndarray:
