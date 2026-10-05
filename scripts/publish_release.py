@@ -235,6 +235,42 @@ def local_settings() -> dict[str, Any]:
         ) from exc
 
 
+def upload_sourcemaps(
+    settings: dict[str, Any],
+    version: str,
+    commit: str,
+    directory: Path,
+    runner: Any = subprocess.run,
+) -> str:
+    """The front end's source maps, for this release only (D87, C5).
+
+    ``build.ps1`` moves them out of the app into ``dist/sourcemaps`` with the bundles they
+    describe. Sentry's own CLI uploads them under ``app:///assets``, the path the server
+    gives every page frame, so a crash report from the interface reads as source. The
+    token goes in the environment, never on the command line or the screen.
+    """
+    sentry = settings.get("sentry") or {}
+    token_file = Path(
+        os.path.expanduser(str(settings.get("sentry_token_file", "~/.config/sentry/token")))
+    )
+    project = (sentry.get("frontend") or {}).get("project")
+    if not directory.is_dir() or not list(directory.glob("*.map")):
+        return f"skipped (no source maps in {directory})"
+    if not token_file.exists() or not project:
+        return "skipped (no Sentry token or front-end project on this machine)"
+    command = [
+        "npx", "--yes", "@sentry/cli@2", "sourcemaps", "upload",
+        "--org", str(sentry["org"]), "--project", str(project),
+        "--release", f"upshot@{version}", "--dist", commit,
+        "--url-prefix", "app:///assets", str(directory),
+    ]  # fmt: skip
+    env = {**os.environ, "SENTRY_AUTH_TOKEN": token_file.read_text(encoding="utf-8").strip()}
+    result = runner(command, env=env, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return f"failed (exit {result.returncode}): interface reports arrive minified"
+    return f"uploaded {len(list(directory.glob('*.map')))} maps"
+
+
 def sentry_release(settings: dict[str, Any], version: str, commit: str) -> str:
     sentry = settings.get("sentry") or {}
     token_file = Path(
@@ -346,6 +382,11 @@ def publish(args: argparse.Namespace) -> None:
         release.append("--prerelease")
     run(*release)
     print(f"GitHub release {tag} created with {installer.name}")
+    # Before the manifest: the first crash report from the new version already reads.
+    maps = (
+        Path(args.sourcemaps).expanduser() if args.sourcemaps else installer.parent / "sourcemaps"
+    )
+    print(f"Sentry source maps: {upload_sourcemaps(settings, version, commit, maps)}")
     publish_manifest(args.channel, f"updates: {version} on {args.channel} at {rollout}%")
     print(f"Sentry release upshot@{version}: {sentry_release(settings, version, commit)}")
     read_back(args.channel, manifest)
@@ -393,6 +434,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--key", default=SIGNING_KEY)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--out", default="dist/updates-test")
+    parser.add_argument(
+        "--sourcemaps",
+        help="the front end's source maps (default: the installer's folder, sourcemaps/)",
+    )
     parser.add_argument(
         "--download-base",
         help="a test server instead of GitHub Releases (with --dry-run; the copy needs "

@@ -144,6 +144,10 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
     services.updates = UpdateService(
         config, home=tmp_path, clock=clock, current_version="0.2.0", frozen=False
     )
+    from app.diagnostics.reporter import CrashReporter
+
+    # A run from source: no DSN, so nothing can be sent whatever the answer (D87).
+    services.reporter = CrashReporter(config, dsn="", home=tmp_path, background=False)
     from app.updates.install import UpdateInstaller
 
     # Never starts a real installer: a run from source has none to run.

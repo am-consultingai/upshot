@@ -50,6 +50,7 @@ class Services:
     terms: Any = None  # app.legal.terms.TermsService
     updates: Any = None  # app.updates.service.UpdateService
     installer: Any = None  # app.updates.install.UpdateInstaller
+    reporter: Any = None  # app.diagnostics.reporter.CrashReporter
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -131,6 +132,10 @@ def build(
         from app.audio.factory import make_capture
 
         services.recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=clock)
+    from app.diagnostics.reporter import CrashReporter
+
+    # Crash reports, only with consent and a DSN (D87).
+    services.reporter = CrashReporter(cfg)
     from app.updates.service import UpdateService
 
     recorder = services.recorder

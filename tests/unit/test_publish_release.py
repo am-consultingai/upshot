@@ -219,3 +219,41 @@ def test_a_dry_run_can_name_a_test_server_but_a_real_release_cannot(
     real = ["--installer", str(release.installer), "--download-base", base]
     assert publish_release.main(real) == 1
     assert "--dry-run only" in capsys.readouterr().err
+
+
+def test_source_maps_are_uploaded_for_the_release_with_the_token_kept_off_the_command(
+    tmp_path: Path,
+) -> None:
+    maps = tmp_path / "sourcemaps"
+    maps.mkdir()
+    (maps / "index-AbC.js").write_text("x", encoding="utf-8")
+    (maps / "index-AbC.js.map").write_text("{}", encoding="utf-8")
+    token = tmp_path / "token"
+    token.write_text("sntrys_not_a_real_token_value\n", encoding="utf-8")
+    settings = {
+        "sentry": {"org": "acme", "frontend": {"project": "upshot-front"}},
+        "sentry_token_file": str(token),
+    }
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    class Done:
+        returncode = 0
+
+    def runner(command: list[str], **kwargs: Any) -> Done:
+        calls.append((command, kwargs["env"]))
+        return Done()
+
+    said = publish_release.upload_sourcemaps(settings, "0.3.0", "abcdef123456", maps, runner)
+    assert said == "uploaded 1 maps"
+    command, env = calls[0]
+    assert command[:5] == ["npx", "--yes", "@sentry/cli@2", "sourcemaps", "upload"]
+    assert command[command.index("--release") + 1] == "upshot@0.3.0"
+    assert command[command.index("--dist") + 1] == "abcdef123456"
+    assert command[command.index("--url-prefix") + 1] == "app:///assets"
+    assert env["SENTRY_AUTH_TOKEN"] == "sntrys_not_a_real_token_value"
+    assert not any("sntrys_" in part for part in command)
+
+
+def test_without_maps_or_a_token_the_upload_is_skipped_not_failed(tmp_path: Path) -> None:
+    said = publish_release.upload_sourcemaps({}, "0.3.0", "abc", tmp_path / "none")
+    assert said.startswith("skipped")

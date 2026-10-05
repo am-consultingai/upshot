@@ -2741,7 +2741,27 @@ def test_router() -> APIRouter:
                 svc.installer.can_install = False
                 svc.installer._installing = False
                 (svc.installer.updates.home / "installing.json").unlink(missing_ok=True)
+            # Crash reports: not asked yet, nothing sent, and no DSN, as from source.
+            svc.config.set("diagnostics.crash_reports", "unset")
+            if svc.reporter is not None:
+                svc.reporter.dsn = ""
+                for name in ("last-report.json", "sent.json"):
+                    (svc.reporter.home / name).unlink(missing_ok=True)
             svc.config.save()
+        if body.get("reports_available") and svc.reporter is not None:
+            # As if the build carried a DSN, with a sender that goes nowhere: a spec must
+            # never reach Sentry (D87).
+            svc.reporter.dsn = (
+                "https://0123456789abcdef0123456789abcdef@o1.ingest.example.invalid/1"
+            )
+            svc.reporter.frontend_dsn = (
+                "https://0123456789abcdef0123456789abcdef@o1.ingest.example.invalid/2"
+            )
+            svc.reporter._send = lambda _kind, _event: True
+            svc.reporter.background = False
+        if body.get("crash_report") and svc.reporter is not None:
+            svc.config.set("diagnostics.crash_reports", "on")
+            svc.reporter.report_exception(RuntimeError("seeded for a spec"), where="spec")
         if body.get("update_ready") and svc.updates is not None:
             seed_update_ready(svc, str(body["update_ready"]))
         if body.get("update_installed") and svc.installer is not None:

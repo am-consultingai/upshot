@@ -312,6 +312,14 @@ DEFAULTS: dict[str, Any] = {
         # GitHub Releases. The manifest must still be signed with a built-in key.
         "download_prefix": None,
     },
+    "diagnostics": {
+        # Crash reports (app/diagnostics, D87): asked once in setup. "unset" until then,
+        # and nothing is sent unless this is "on" and the build carries a DSN.
+        "crash_reports": "unset",
+        # Random, made with the first report, linked to nothing: lets Sentry count how
+        # many installs a crash reaches. Never sent with feedback.
+        "install_id": None,
+    },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},
@@ -342,6 +350,7 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),
     "ui.language": ("en", "he"),
     "updates.channel": ("stable", "beta"),
+    "diagnostics.crash_reports": ("unset", "on", "off"),
     "summary.language": ("en", "he", "auto"),
     "asr.backend": ("local", "fake"),
     "asr.device": ("auto", "cpu", "cuda"),

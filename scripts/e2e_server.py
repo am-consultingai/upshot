@@ -23,9 +23,6 @@ from app.services import build
 
 def main() -> int:
     os.environ.setdefault("UP_TEST_MODE", "1")
-    # Never ask the real website for an update (D87): a check finishing mid-spec would
-    # overwrite the state a spec seeded.
-    os.environ.setdefault("UP_UPDATES__CHECK", "false")
     home = Path(os.environ.get("UP_HOME") or tempfile.mkdtemp(prefix="ma-e2e-"))
     home.mkdir(parents=True, exist_ok=True)
     os.environ["UP_HOME"] = str(home)
@@ -74,6 +71,10 @@ def main() -> int:
 
     config.set("legal.check", False)
     config.set("legal.manifest_url", "http://127.0.0.1:9/legal/terms.json")
+    # Nor for an update (D87): a check finishing mid-spec would overwrite the state a
+    # spec seeded, and "Check now" must not leave the machine either.
+    config.set("updates.check", False)
+    config.set("updates.manifest_base", "http://127.0.0.1:9/updates/")
     config.set("legal.accepted_version", bundled().version)
     # The assistant spawns a stand-in for the Claude CLI: it makes real MCP calls to this
     # server and streams recorded stream-json, and spends nothing.
