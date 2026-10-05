@@ -433,6 +433,8 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
     from app.api.routes import router
     from app.assistant.api import router as assistant_router
     from app.legal.api import router as legal_router
+    from app.transcription.api import router as transcription_router
+    from app.transcription.api import ui_router as transcription_ui_router
 
     frontend = Path(__file__).resolve().parents[2] / "frontend" / "src"
     if not frontend.is_dir():  # pragma: no cover - a source-only check
@@ -445,7 +447,13 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
 
     patterns = [
         re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", route.path) + "$")
-        for route in [*router.routes, *assistant_router.routes, *legal_router.routes]  # type: ignore[attr-defined]
+        for route in [
+            *router.routes,
+            *assistant_router.routes,
+            *legal_router.routes,
+            *transcription_router.routes,
+            *transcription_ui_router.routes,
+        ]  # type: ignore[attr-defined]
     ]
     missing = sorted(path for path in called if not any(p.match(path) for p in patterns))
     assert not missing, f"the UI calls endpoints the server does not serve: {missing}"

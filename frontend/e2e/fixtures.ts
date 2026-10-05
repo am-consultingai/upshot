@@ -71,6 +71,19 @@ export interface SeedEvent {
   conference_url?: string | null;
 }
 
+export interface SeedTranscription {
+  state?: "pending" | "running" | "done" | "failed" | "cancelled";
+  source_name?: string;
+  source_kind?: "upload" | "path";
+  client?: "ui" | "api" | "mcp";
+  language?: string;
+  duration_s?: number;
+  phase?: string;
+  progress?: number;
+  last_error?: string;
+  segments?: { speaker?: string; start?: number; end?: number; text: string }[];
+}
+
 export interface SeedBody {
   /** Clear the library, the events and the saved appearance first. Also marks
    * first-run setup done, so no spec lands on /welcome by accident. */
@@ -80,6 +93,8 @@ export interface SeedBody {
   /** True: the Terms count as not accepted, so the app shows them first (D83). */
   terms_pending?: boolean;
   meetings?: SeedMeeting[];
+  /** File transcriptions (D86) in any state; a done one gets a result.json from `segments`. */
+  transcriptions?: SeedTranscription[];
   /** Connected calendar accounts, with no Google behind them. Without any, one is made
    * ("you@example.com") as soon as calendar data is seeded. */
   calendar_accounts?: { id?: string; address: string; visible?: boolean; removed?: boolean }[];
@@ -208,7 +223,7 @@ export async function gotoApp(page: Page, path = "/"): Promise<void> {
  */
 export async function gotoSettings(
   page: Page,
-  section: "audio" | "appearance" | "calendar" | "summaries" | "prompt" = "audio",
+  section: "audio" | "appearance" | "calendar" | "summaries" | "prompt" | "transcription" = "audio",
 ): Promise<void> {
   await gotoApp(page, `/settings#${section}`);
   await expect(page.getByTestId(`settings-section-${section}`)).toHaveAttribute(
