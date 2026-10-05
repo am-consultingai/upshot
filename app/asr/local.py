@@ -314,6 +314,9 @@ class LocalAsr:
         #: Called between segments while transcribing; raises to stop (a deletion). One
         #: track can take many minutes on the CPU, far too long to wait out.
         self.stop_check: Callable[[], None] | None = None
+        #: Called with each segment's end time while transcribing: a file job's progress
+        #: (D86). Set and cleared by the caller, like ``stop_check``.
+        self.on_segment: Callable[[float], None] | None = None
 
     # -- loading -----------------------------------------------------------
 
@@ -408,6 +411,8 @@ class LocalAsr:
             out.append(segment)
             if self.stop_check is not None:
                 self.stop_check()
+            if self.on_segment is not None:
+                self.on_segment(float(segment.end))
         return out
 
     def beam_size(self) -> int:

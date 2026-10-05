@@ -121,6 +121,44 @@ def label_track(
     return assign_speakers(segments, turns, track=track, base=base)
 
 
+def diarize_track(
+    diarizer: Diarizer,
+    audio: np.ndarray,
+    rate: int,
+    segments: Sequence[Segment],
+    *,
+    track: str,
+    base: str,
+    config: Config,
+) -> tuple[list[Segment], dict[str, int] | None]:
+    """Split one whole track into its voices and label its segments (D29, D85).
+
+    Shared by the meeting's transcribe stage and the file engine (D86), so both diarize
+    alike. Returns the relabelled segments and ``{"speakers", "turns"}``, or the segments
+    unchanged and ``None`` when the diarizer failed: a transcript is never lost for want
+    of speaker turns. The microphone's quiet clusters are folded into its main voice
+    first.
+    """
+    minutes = len(audio) / rate / 60
+    if minutes > LONG_TRACK_MINUTES:
+        log.warning("diarizing %.0f minutes in one pass; this is memory-hungry", minutes)
+    try:
+        turns = diarizer.diarize(audio, rate)
+    except Exception as exc:
+        log.warning("could not diarize the %s track; leaving it whole: %s", track, exc)
+        return list(segments), None
+    if track == "me":
+        turns = merge_minor_speakers(
+            turns,
+            min_share=float(config.get("asr.diarization_mic_min_share", 0.05)),
+            min_seconds=float(config.get("asr.diarization_mic_min_seconds", 20.0)),
+        )
+    voices = len({turn.speaker for turn in turns})
+    log.info("diarization: %d voice(s) on the %s track", voices, track)
+    found = {"speakers": voices, "turns": len(turns)}
+    return label_track(segments, turns, track=track, base=base), found
+
+
 def assign_speakers(
     segments: Sequence[Segment],
     turns: Sequence[SpeakerTurn],
