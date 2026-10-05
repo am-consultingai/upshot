@@ -147,7 +147,10 @@ class UpdateService:
         data = client.get(url).raise_for_status().content
         signature = client.get(url.copy_with(path=url.path + ".sig")).raise_for_status().content
         verify(data, signature, self.public_keys)
-        return parse(data, channel=channel, download_prefix=self.download_prefix)
+        # A test server (the machine B run) may stand in for GitHub Releases. The manifest
+        # still has to verify against the built-in keys, so this widens nothing.
+        prefix = str(self.config.get("updates.download_prefix") or self.download_prefix)
+        return parse(data, channel=channel, download_prefix=prefix)
 
     def check_now(self, *, download: bool = True) -> dict[str, Any]:
         """Look for a newer version, and fetch it when one is offered to this copy."""

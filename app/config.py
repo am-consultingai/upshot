@@ -306,6 +306,11 @@ DEFAULTS: dict[str, Any] = {
         "download_kbps": 0,
         # This copy's place in a staged rollout, 0-99, drawn once. Never sent anywhere.
         "bucket": None,
+        # How long the moment must stay safe before an automatic install.
+        "quiet_minutes": 10,
+        # Testing only: where an installer may come from instead of this repository's
+        # GitHub Releases. The manifest must still be signed with a built-in key.
+        "download_prefix": None,
     },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
