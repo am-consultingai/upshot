@@ -48,7 +48,26 @@ class Services:
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
     calendar_invites: Any = None  # app.gcal.invite.InviteReader
     terms: Any = None  # app.legal.terms.TermsService
+    #: app.transcription.store.TranscriptionStore: file transcription jobs (D86).
+    transcriptions: Any = None
+    #: app.transcription.scheduler.Scheduler: one FIFO across meeting and file jobs.
+    scheduler: Any = None
     extras: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Here rather than in build(): tests and the selftest assemble Services by hand,
+        # and file transcription is part of every one of them.
+        if self.transcriptions is None:
+            from app.transcription.store import TranscriptionStore
+
+            config = self.config
+            self.transcriptions = TranscriptionStore(
+                self.conn, lambda: config.data_root, self.clock, events=self.events
+            )
+        if self.scheduler is None:
+            from app.transcription.scheduler import Scheduler
+
+            self.scheduler = Scheduler(self.queue, self.transcriptions)
 
     def close(self) -> None:
         if self.worker is not None:
@@ -155,6 +174,8 @@ def build(
             clock=clock,
             recorder=services.recorder,
             services=services,
+            transcriptions=services.transcriptions,
+            scheduler=services.scheduler,
         )
     return services
 
