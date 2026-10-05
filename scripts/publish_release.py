@@ -25,7 +25,8 @@ installer. A release:
 
 ``--set-rollout`` and ``--halt`` (rollout 0) re-sign and publish the current manifest only.
 ``--dry-run`` does the checks and writes a signed manifest to ``--out`` without tagging,
-releasing, committing or pushing: for the machine B test (B7), which serves it locally.
+releasing, committing or pushing: for the machine B test (B7), which serves it locally,
+with ``--download-base`` naming that server instead of GitHub Releases.
 Nothing secret is printed.
 """
 
@@ -146,13 +147,16 @@ def build_manifest(
     min_version: str | None,
     notes: dict[str, str],
     now: datetime,
+    download_base: str = DOWNLOAD_PREFIX,
 ) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
         "channel": channel,
         "version": version,
         "published": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "url": f"{DOWNLOAD_PREFIX}v{version}/{installer.name}",
+        "url": f"{download_base}v{version}/{installer.name}"
+        if download_base == DOWNLOAD_PREFIX
+        else f"{download_base}{installer.name}",
         "size": installer.stat().st_size,
         "sha256": sha256_of(installer),
         "signer": signer,
@@ -165,20 +169,25 @@ def build_manifest(
     return manifest
 
 
-def write_signed(manifest: dict[str, Any], directory: Path, key: Path) -> Path:
+def write_signed(
+    manifest: dict[str, Any], directory: Path, key: Path, download_base: str = DOWNLOAD_PREFIX
+) -> Path:
     """Write ``<channel>.json`` and its ``.sig``, then check both as an installed copy would."""
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"{manifest['channel']}.json"
     target.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     release_key.sign(key, target)
-    check_signed(target.read_bytes(), target.with_name(target.name + ".sig").read_bytes(), manifest)
+    signature = target.with_name(target.name + ".sig").read_bytes()
+    check_signed(target.read_bytes(), signature, manifest, download_base)
     return target
 
 
-def check_signed(data: bytes, signature: bytes, expected: dict[str, Any]) -> None:
+def check_signed(
+    data: bytes, signature: bytes, expected: dict[str, Any], download_base: str = DOWNLOAD_PREFIX
+) -> None:
     try:
         verify(data, signature, [key for _name, key in PUBLIC_KEYS])
-        parsed = parse(data, channel=expected["channel"])
+        parsed = parse(data, channel=expected["channel"], download_prefix=download_base)
     except ManifestError as exc:
         raise PublishError(f"installed copies would refuse this manifest: {exc}") from exc
     if parsed.version != expected["version"] or parsed.sha256 != expected["sha256"]:
@@ -312,10 +321,14 @@ def publish(args: argparse.Namespace) -> None:
         min_version=args.min_version,
         notes=notes,
         now=datetime.now(UTC),
+        download_base=args.download_base or DOWNLOAD_PREFIX,
     )
     key = release_key.key_path(release_key.DEFAULT_DIR, args.key)
+    if args.download_base and not args.dry_run:
+        raise PublishError("--download-base is for a test server, with --dry-run only")
     if args.dry_run:
-        out = write_signed(manifest, Path(args.out).expanduser(), key)
+        base = args.download_base or DOWNLOAD_PREFIX
+        out = write_signed(manifest, Path(args.out).expanduser(), key, base)
         print(f"dry run: {out} written and verified ({version}, rollout {rollout}%)")
         return
 
@@ -380,6 +393,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--key", default=SIGNING_KEY)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--out", default="dist/updates-test")
+    parser.add_argument(
+        "--download-base",
+        help="a test server instead of GitHub Releases (with --dry-run; the copy needs "
+        "updates.download_prefix set to the same)",
+    )
     parser.add_argument("--set-rollout", type=int, choices=range(0, 101), metavar="0-100")
     parser.add_argument("--halt", action="store_true")
     parser.add_argument("--show-signers", metavar="INSTALLER")
