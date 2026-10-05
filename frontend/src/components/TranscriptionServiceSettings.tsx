@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, reason } from "../api";
 import { useI18n } from "../i18n";
-import type { MessageKey } from "../locales/en";
 import SettingRow, { SettingGroup } from "./SettingRow";
 import { toast } from "./Toaster";
+
+const CLAUDE_DOWNLOAD = "https://claude.ai/download";
 
 function CopyButton({ text, testid }: { text: string; testid: string }) {
   const { t } = useI18n();
@@ -28,53 +30,27 @@ function Command({ text, testid }: { text: string; testid: string }) {
     <code
       data-testid={`${testid}-text`}
       dir="ltr"
-      className="block max-w-full overflow-x-auto whitespace-pre rounded-md bg-surface-2 px-2.5 py-1.5 font-mono text-2xs"
+      className="mt-1.5 block max-w-full overflow-x-auto whitespace-pre rounded-md bg-surface-2 px-2.5 py-1.5 font-mono text-2xs"
     >
       {text}
     </code>
   );
 }
 
-function CommandRow({
-  label,
-  hint,
-  text,
-  testid,
-  note,
-}: {
-  label: MessageKey;
-  hint: MessageKey;
-  text: string | null;
-  testid: string;
-  note?: MessageKey;
-}) {
-  const { t } = useI18n();
-  return (
-    <SettingRow
-      label={t(label)}
-      description={
-        <>
-          {t(hint)}
-          {text && <Command text={text} testid={testid} />}
-          {text && note && <span className="mt-1 block">{t(note)}</span>}
-          {!text && <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>}
-        </>
-      }
-    >
-      {text && <CopyButton text={text} testid={testid} />}
-    </SettingRow>
-  );
-}
-
 /**
- * Settings → "Transcription for other apps" (D86, R3): the switch, and how to connect
- * Claude in one step, with this install's real path and port.
+ * Settings → "Transcription for other apps" (D86, R3; plan revision 5): the switch, then
+ * one card for each Claude. Upshot never edits Claude's files: Claude Desktop is handed the
+ * extension and shows its own install window, and Claude Code is given a command to paste.
+ * Whether Upshot is already added there is not shown: knowing would mean reading Claude's
+ * own files.
  */
 export default function TranscriptionServiceSettings() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const connect = useQuery({ queryKey: ["transcription-connect"], queryFn: api.transcriptionConnect });
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [tab, setTab] = useState<"windows" | "wsl">("windows");
+  const [byHand, setByHand] = useState(false);
   const save = useMutation({
     mutationFn: (next: boolean) => api.putSettings({ "transcription.service_enabled": next }),
     onSuccess: () => {
@@ -82,13 +58,27 @@ export default function TranscriptionServiceSettings() {
       void queryClient.invalidateQueries({ queryKey: ["transcription-connect"] });
     },
   });
+  const failed = (error: unknown) => toast({ title: reason(error), tone: "danger" });
   const addToDesktop = useMutation({
     mutationFn: api.addToClaudeDesktop,
     onSuccess: () => toast({ title: t("settings.transcriptionOpened") }),
-    onError: (error) => toast({ title: reason(error), tone: "danger" }),
+    onError: (error) => {
+      setByHand(true);
+      failed(error);
+    },
+  });
+  const showFile = useMutation({
+    mutationFn: api.showClaudeExtension,
+    onSuccess: () => {
+      setByHand(true);
+      toast({ title: t("settings.transcriptionShownFile") });
+    },
+    onError: failed,
   });
   const info = connect.data;
   const on = enabled ?? info?.enabled ?? true;
+  const command = tab === "windows" ? info?.windows_command : info?.wsl_command;
+  const installedApp = Boolean(info?.bridge);
 
   return (
     <>
@@ -118,47 +108,108 @@ export default function TranscriptionServiceSettings() {
         <SettingRow
           label={t("settings.transcriptionDesktop")}
           description={
-            info?.bundle_available ? t("settings.transcriptionDesktopHint") : t("settings.transcriptionInstalledOnly")
-          }
-        >
-          <button
-            type="button"
-            data-testid="transcription-add-desktop"
-            disabled={!info?.bundle_available || addToDesktop.isPending}
-            onClick={() => addToDesktop.mutate()}
-            className="h-8 rounded-md bg-accent px-3 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
-          >
-            {t("settings.transcriptionAddDesktop")}
-          </button>
-        </SettingRow>
-        <CommandRow
-          label="settings.transcriptionWsl"
-          hint="settings.transcriptionWslHint"
-          note="settings.transcriptionWslNote"
-          text={info?.wsl_command ?? null}
-          testid="transcription-copy-wsl"
-        />
-        <CommandRow
-          label="settings.transcriptionWindows"
-          hint="settings.transcriptionWindowsHint"
-          text={info?.windows_command ?? null}
-          testid="transcription-copy-windows"
-        />
-        <SettingRow
-          label={t("settings.transcriptionConfig")}
-          description={
-            <>
-              {t("settings.transcriptionConfigHint")}
-              {info?.desktop_config && <Command text={info.desktop_config} testid="transcription-copy-config" />}
-              {info?.desktop_config_paths?.length ? (
-                <span className="mt-1 block" dir="ltr">
-                  {info.desktop_config_paths.join(" · ")}
+            <span data-testid="claude-desktop-card">
+              {t("settings.transcriptionDesktopFor")}
+              {!installedApp ? (
+                <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>
+              ) : info?.claude_desktop ? (
+                <>
+                  <span className="mt-1 block">{t("settings.transcriptionDesktopHint")}</span>
+                  <span className="mt-1 block text-tertiary" data-testid="claude-desktop-warning">
+                    {t("settings.transcriptionWarning")}
+                  </span>
+                  <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5">
+                    <span>{t("settings.transcriptionDidntOpen")}</span>
+                    <button
+                      type="button"
+                      data-testid="claude-show-file"
+                      onClick={() => showFile.mutate()}
+                      className="underline"
+                    >
+                      {t("settings.transcriptionShowFile")}
+                    </button>
+                    <span aria-hidden="true">·</span>
+                    <button
+                      type="button"
+                      data-testid="claude-by-hand"
+                      aria-expanded={byHand}
+                      onClick={() => setByHand(!byHand)}
+                      className="underline"
+                    >
+                      {t("settings.transcriptionByHand")}
+                    </button>
+                  </span>
+                  {byHand && (
+                    <span className="mt-1 block" data-testid="claude-by-hand-steps">
+                      {t("settings.transcriptionByHandSteps")}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="mt-1 block" data-testid="claude-desktop-missing">
+                  {t("settings.transcriptionDesktopMissing")}{" "}
+                  <a href={CLAUDE_DOWNLOAD} target="_blank" rel="noreferrer" className="underline">
+                    {t("settings.transcriptionDesktopDownload")}
+                  </a>
                 </span>
-              ) : null}
-            </>
+              )}
+            </span>
           }
         >
-          {info?.desktop_config && <CopyButton text={info.desktop_config} testid="transcription-copy-config" />}
+          {installedApp && info?.claude_desktop && (
+            <button
+              type="button"
+              data-testid="transcription-add-desktop"
+              disabled={addToDesktop.isPending}
+              onClick={() => addToDesktop.mutate()}
+              className="h-8 rounded-md bg-accent px-3 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+            >
+              {t("settings.transcriptionAddDesktop")}
+            </button>
+          )}
+        </SettingRow>
+
+        <SettingRow
+          label={t("settings.transcriptionCode")}
+          description={
+            <span data-testid="claude-code-card">
+              {t("settings.transcriptionCodeHint")}
+              {installedApp ? (
+                <>
+                  <span role="tablist" className="mt-2 flex gap-1">
+                    {(["windows", "wsl"] as const).map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        role="tab"
+                        aria-selected={tab === name}
+                        data-testid={`claude-code-tab-${name}`}
+                        onClick={() => setTab(name)}
+                        className={`h-6 rounded-md px-2 text-xs ${tab === name ? "bg-a-200 text-primary" : "text-secondary hover:bg-a-200"}`}
+                      >
+                        {t(name === "windows" ? "settings.transcriptionTabWindows" : "settings.transcriptionTabWsl")}
+                      </button>
+                    ))}
+                  </span>
+                  {command && <Command text={command} testid={`transcription-copy-${tab}`} />}
+                  {tab === "wsl" && <span className="mt-1 block">{t("settings.transcriptionWslNote")}</span>}
+                  <span className="mt-1 block">{t("settings.transcriptionCodeTry")}</span>
+                </>
+              ) : (
+                <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>
+              )}
+              {info && !info.claude_code && (
+                <span className="mt-1 block" data-testid="claude-code-missing">
+                  {t("settings.transcriptionCodeMissing")}{" "}
+                  <Link to="/settings#summaries" className="underline">
+                    {t("settings.transcriptionCodeInstall")}
+                  </Link>
+                </span>
+              )}
+            </span>
+          }
+        >
+          {installedApp && command && <CopyButton text={command} testid={`transcription-copy-${tab}`} />}
         </SettingRow>
       </SettingGroup>
 

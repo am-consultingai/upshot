@@ -200,17 +200,25 @@ test("settings_show_how_to_connect_claude_with_this_install", async ({ page, see
   await seedBody({});
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await gotoSettings(page, "transcription");
-  await expect(page.getByTestId("transcription-copy-wsl-text")).toHaveText(
-    'claude mcp add upshot-transcribe -- "/mnt/c/Users/someone/AppData/Local/Programs/Upshot/mcp/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"',
+  // Claude Code: a command per platform, with this install's real path and --scope user.
+  await expect(page.getByTestId("transcription-copy-windows-text")).toHaveText(
+    'claude mcp add --scope user upshot-transcribe -- "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe"',
   );
-  await expect(page.getByTestId("transcription-copy-windows-text")).toContainText(
-    "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe",
+  await page.getByTestId("claude-code-tab-wsl").click();
+  await expect(page.getByTestId("transcription-copy-wsl-text")).toHaveText(
+    'claude mcp add --scope user upshot-transcribe -- "/mnt/c/Users/someone/AppData/Local/Programs/Upshot/mcp/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"',
   );
   await page.getByTestId("transcription-copy-wsl").click();
   await expect(page.getByTestId("transcription-copy-wsl")).toHaveText("Copied");
 
+  // Claude Desktop: the warning is announced before the click, then Claude is handed the file.
+  await expect(page.getByTestId("claude-desktop-warning")).toBeVisible();
   await page.getByTestId("transcription-add-desktop").click();
   await expect(page.getByText("Claude Desktop is asking you to install Upshot")).toBeVisible();
+  // The fallback: the file to install by hand, and where to click.
+  await page.getByTestId("claude-show-file").click();
+  await expect(page.getByText("The extension is in your Downloads folder")).toBeVisible();
+  await expect(page.getByTestId("claude-by-hand-steps")).toContainText("Install Extension");
 
   // The switch: off for programs, and the page keeps working.
   await page.getByTestId("transcription-enabled").uncheck();
