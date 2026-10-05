@@ -87,7 +87,9 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "torch", "tests"],
+    # pydantic's hook collects its mypy plugin, which pulls in mypy itself from a build
+    # venv that also holds the dev tools; nothing at run time uses either.
+    excludes=["tkinter", "matplotlib", "torch", "tests", "mypy", "pydantic.mypy", "pydantic.v1.mypy"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
