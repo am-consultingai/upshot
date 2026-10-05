@@ -1,6 +1,7 @@
 """Local-UI security (SECURITY-AND-AUTH.md §9, TECHNICAL-DESIGN.md §16).
 
-Middleware order is load-bearing and asserted: **Host check → auth → CSRF → routing.**
+Middleware order is load-bearing and asserted: **Host check → Origin guard → auth → CSRF →
+routing.**
 """
 
 from __future__ import annotations
@@ -233,6 +234,42 @@ def write_launcher_key(auth: AuthState, home: Path) -> Path:
     return path
 
 
+#: The file transcription service (D86): open to any local program, with no key. It is
+#: exempt from CSRF, which a program has no cookie for, and behind the Origin guard instead.
+OPEN_API_PREFIX = "/api/v1"
+
+
+def is_open_api(path: str) -> bool:
+    return path == OPEN_API_PREFIX or path.startswith(OPEN_API_PREFIX + "/")
+
+
+class OriginGuardMiddleware:
+    """Keeps websites out of the open API without a key (D86).
+
+    The Host check stops DNS rebinding, but a cross-site ``<form>`` POST to
+    ``127.0.0.1:<port>`` carries a good Host header. Browsers say where a request comes
+    from; programs say nothing. So: refuse ``Sec-Fetch-Site`` ``cross-site`` or
+    ``same-site`` (a page on another port of this machine is same-site), and refuse an
+    ``Origin`` other than the app's own, as ``127.0.0.1`` or ``localhost``. ``null`` is
+    not the app's own.
+    """
+
+    def __init__(self, app: ASGIApp, port: int = 8000) -> None:
+        self.app = app
+        self.own = frozenset({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and is_open_api(str(scope.get("path", ""))):
+            site = _header(scope, "sec-fetch-site").lower()
+            origin = _header(scope, "origin")
+            if site in ("cross-site", "same-site") or (origin and origin not in self.own):
+                log.warning("refused %s from origin %r (%s)", scope.get("path"), origin, site)
+                response = JSONResponse({"detail": "requests from websites are refused"}, 403)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 #: Answered by the assistant's MCP server, which checks its own bearer token instead.
 #: The caller is a CLI process, which has no cookie to double-submit.
 MCP_PREFIX = "/mcp"
@@ -250,6 +287,7 @@ class CsrfMiddleware:
             scope["type"] == "http"
             and scope.get("method") in MUTATING
             and not _is_mcp(str(scope.get("path", "")))
+            and not is_open_api(str(scope.get("path", "")))
             and not self.auth.valid_csrf(_header(scope, CSRF_HEADER))
             and not (
                 str(scope.get("path", "")).startswith(LAUNCHER_PREFIX)
