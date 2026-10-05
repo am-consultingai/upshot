@@ -462,17 +462,18 @@ export interface TranscriptionResult {
   segments: { id: number; start: number; end: number; speaker: string; text: string }[];
 }
 
-/** Settings → "Transcription for other apps": this install's commands and paths. */
+/** Settings → "Transcription for other apps": this install's commands, and which Claude is here. */
 export interface TranscriptionConnect {
   enabled: boolean;
   api_url: string;
   install_dir: string | null;
   bridge: string | null;
-  bundle_available: boolean;
+  /** Claude Desktop from claude.ai ("classic"), from the Microsoft Store ("store"), or none. */
+  claude_desktop: "classic" | "store" | null;
+  /** Whether the `claude` command is on this computer. */
+  claude_code: boolean;
   wsl_command: string | null;
   windows_command: string | null;
-  desktop_config: string | null;
-  desktop_config_paths: string[];
   curl_example: string;
   keep_days: number | null;
 }
@@ -817,6 +818,9 @@ export const api = {
   transcriptionConnect: () => request<TranscriptionConnect>("/api/transcription/connect"),
   addToClaudeDesktop: () =>
     request<{ opened: boolean }>("/api/transcription/add-to-claude-desktop", { method: "POST" }),
+  /** The fallback: the extension copied to Downloads and shown in Explorer. */
+  showClaudeExtension: () =>
+    request<{ path: string }>("/api/transcription/show-claude-extension", { method: "POST" }),
   /** For a plain `<a href>` download: the page's cookie goes with it (D86). */
   transcriptionDownloadUrl: (id: string, format: string) =>
     `/api/v1/transcriptions/${encodeURIComponent(id)}/result?format=${format}`,

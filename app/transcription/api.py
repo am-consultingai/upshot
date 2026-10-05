@@ -630,7 +630,6 @@ ui_router = APIRouter(prefix="/api/transcription")
 
 BRIDGE_DIR = "mcp"
 BRIDGE_EXE = "upshot-mcp.exe"
-BUNDLE_NAME = "upshot-transcribe.mcpb"
 SERVER_NAME = "upshot-transcribe"
 #: A made-up install folder for the e2e server, so the copy buttons have a real shape.
 TEST_INSTALL_DIR = "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot"
@@ -653,74 +652,98 @@ def wsl_path(windows_path: str) -> str:
     return f"/mnt/{drive.lower()}{rest.replace(chr(92), '/')}"
 
 
-def desktop_config_paths() -> list[str]:
-    """Claude Desktop keeps its config in one of two places: under ``%APPDATA%`` for the
-    regular installer, under the package's folder for the Microsoft Store build (MSIX)."""
-    import os
+def bridge_path() -> str | None:
+    folder = install_dir()
+    return f"{folder}\\{BRIDGE_DIR}\\{BRIDGE_EXE}" if folder else None
 
-    found: list[str] = []
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        packages = Path(local) / "Packages"
-        if packages.is_dir():
-            for package in sorted(packages.glob("Claude_*")):
-                found.append(
-                    str(
-                        package / "LocalCache" / "Roaming" / "Claude" / "claude_desktop_config.json"
-                    )
-                )
-    roaming = os.environ.get("APPDATA")
-    if roaming:
-        found.append(str(Path(roaming) / "Claude" / "claude_desktop_config.json"))
-    return found
+
+def claude_code_installed(svc: Services) -> bool:
+    """Whether the ``claude`` command is on this computer: a path lookup, nothing run."""
+    from app.llm.claude_cli import ClaudeCliClient
+
+    try:
+        return ClaudeCliClient(svc.config).resolve() is not None
+    except Exception:  # pragma: no cover - a broken install says "not installed"
+        return False
 
 
 @ui_router.get("/connect")
 def connect(request: Request) -> dict[str, Any]:
-    """The commands and paths Settings shows, with this install's real path and port."""
+    """What Settings shows: this install's commands and whether each Claude is installed.
+    Nothing of Claude's is read: whether Upshot is already added there is not known."""
+    from app.transcription.claude import find_claude_desktop
+
     svc = services_of(request)
     port = svc.config.server_port
     folder = install_dir()
-    bridge = f"{folder}\\{BRIDGE_DIR}\\{BRIDGE_EXE}" if folder else None
-    bundle = Path(folder) / BRIDGE_DIR / BUNDLE_NAME if folder else None
+    bridge = bridge_path()
     api_url = f"http://127.0.0.1:{port}/api/v1"
-    desktop_config = (
-        {"mcpServers": {SERVER_NAME: {"command": bridge, "args": []}}} if bridge else None
-    )
+    desktop = find_claude_desktop()
     return {
         "enabled": bool(svc.config.get("transcription.service_enabled", True)),
         "api_url": api_url,
         "install_dir": folder,
         "bridge": bridge,
-        "bundle_available": bool(bundle and bundle.exists())
-        or (bundle is not None and folder == TEST_INSTALL_DIR),
+        "claude_desktop": "store" if folder == TEST_INSTALL_DIR else desktop.kind,
+        "claude_code": claude_code_installed(svc),
         "wsl_command": (
-            f'claude mcp add {SERVER_NAME} -- "{wsl_path(bridge)}" --wsl-distro "$WSL_DISTRO_NAME"'
+            f'claude mcp add --scope user {SERVER_NAME} -- "{wsl_path(bridge)}" '
+            '--wsl-distro "$WSL_DISTRO_NAME"'
             if bridge
             else None
         ),
-        "windows_command": f'claude mcp add {SERVER_NAME} -- "{bridge}"' if bridge else None,
-        "desktop_config": json.dumps(desktop_config, indent=2) if desktop_config else None,
-        "desktop_config_paths": desktop_config_paths(),
+        "windows_command": (
+            f'claude mcp add --scope user {SERVER_NAME} -- "{bridge}"' if bridge else None
+        ),
         "curl_example": f"curl -F file=@clip.mp4 {api_url}/transcriptions",
         "keep_days": svc.config.get("transcription.keep_days"),
     }
 
 
+def extension_file(svc: Services) -> Path:
+    """The Claude Desktop extension for this install, built afresh."""
+    from app import paths
+    from app.transcription.claude import BUNDLE_NAME, build_bundle
+    from app.version import build_info
+
+    bridge = bridge_path()
+    if bridge is None:
+        raise HTTPException(404, "the Claude Desktop extension comes with the installed app")
+    target = paths.app_home() / "claude" / BUNDLE_NAME
+    return build_bundle(target, bridge=bridge, version=str(build_info().version))
+
+
 @ui_router.post("/add-to-claude-desktop")
 def add_to_claude_desktop(request: Request) -> dict[str, Any]:
-    """Open the bundled ``.mcpb`` with the OS: Claude Desktop shows its Install dialog."""
-    folder = install_dir()
-    bundle = Path(folder) / BRIDGE_DIR / BUNDLE_NAME if folder else None
-    if folder == TEST_INSTALL_DIR:
-        services_of(request).extras["opened_bundle"] = str(bundle)
-        return {"opened": True}
-    if bundle is None or not bundle.exists():
-        raise HTTPException(404, "the Claude Desktop bundle comes with the installed app")
-    import os
+    """Hand Claude Desktop the extension; Claude shows its own install window (D86)."""
+    from app.transcription.claude import find_claude_desktop, hand_to_claude
 
-    startfile = getattr(os, "startfile", None)
-    if startfile is None:  # pragma: no cover - Windows only
-        raise HTTPException(501, "opening the bundle needs Windows")
-    startfile(str(bundle))  # pragma: no cover - Windows only
-    return {"opened": True}  # pragma: no cover
+    svc = services_of(request)
+    bundle = extension_file(svc)
+    if install_dir() == TEST_INSTALL_DIR:
+        svc.extras["opened_bundle"] = str(bundle)
+        return {"opened": True}
+    desktop = find_claude_desktop()
+    if not desktop.installed:
+        raise HTTPException(404, "Claude Desktop isn't installed on this computer")
+    try:
+        hand_to_claude(bundle, desktop)
+    except OSError as exc:  # pragma: no cover - Windows only
+        log.warning("could not hand the extension to Claude Desktop: %s", exc)
+        raise HTTPException(502, "Claude Desktop did not open; add the file by hand") from None
+    return {"opened": True}
+
+
+@ui_router.post("/show-claude-extension")
+def show_claude_extension(request: Request) -> dict[str, Any]:
+    """The fallback: the extension in Downloads, shown in Explorer, to install by hand."""
+    from app import paths
+    from app.transcription.claude import copy_to_downloads, show_in_explorer
+
+    svc = services_of(request)
+    if install_dir() == TEST_INSTALL_DIR:
+        # The e2e server may run on someone's own Windows: never their real Downloads.
+        return {"path": str(copy_to_downloads(extension_file(svc), paths.app_home() / "downloads"))}
+    copy = copy_to_downloads(extension_file(svc))
+    show_in_explorer(copy)  # pragma: no cover - Windows only
+    return {"path": str(copy)}

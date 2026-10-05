@@ -235,6 +235,14 @@ begin
     if ResultCode = 0 then
       Sleep(1500);
   end;
+  { The bridge Claude runs (D86). Claude Desktop keeps it running after an extension is
+    removed (bug z8tj1he4zz), and a running exe cannot be replaced or removed. The client
+    starts it again when it next needs it. }
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM upshot-mcp.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
+    Log('taskkill upshot-mcp.exe: exit ' + IntToStr(ResultCode));
+    if ResultCode = 0 then
+      Sleep(500);
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

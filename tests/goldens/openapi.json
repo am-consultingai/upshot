@@ -3698,7 +3698,7 @@
     },
     "/api/transcription/add-to-claude-desktop": {
       "post": {
-        "description": "Open the bundled ``.mcpb`` with the OS: Claude Desktop shows its Install dialog.",
+        "description": "Hand Claude Desktop the extension; Claude shows its own install window (D86).",
         "operationId": "add_to_claude_desktop_api_transcription_add_to_claude_desktop_post",
         "responses": {
           "200": {
@@ -3719,7 +3719,7 @@
     },
     "/api/transcription/connect": {
       "get": {
-        "description": "The commands and paths Settings shows, with this install's real path and port.",
+        "description": "What Settings shows: this install's commands and whether each Claude is installed.\nNothing of Claude's is read: whether Upshot is already added there is not known.",
         "operationId": "connect_api_transcription_connect_get",
         "responses": {
           "200": {
@@ -3736,6 +3736,27 @@
           }
         },
         "summary": "Connect"
+      }
+    },
+    "/api/transcription/show-claude-extension": {
+      "post": {
+        "description": "The fallback: the extension in Downloads, shown in Explorer, to install by hand.",
+        "operationId": "show_claude_extension_api_transcription_show_claude_extension_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Show Claude Extension Api Transcription Show Claude Extension Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show Claude Extension"
       }
     },
     "/api/v1/info": {

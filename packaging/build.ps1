@@ -101,6 +101,17 @@ Write-Host "== PyInstaller =="
 uv run pyinstaller --noconfirm --clean packaging\upshot.spec
 Assert-Exit "PyInstaller"
 
+Write-Host "== PyInstaller: upshot-mcp (the bridge for Claude, D86) =="
+# Into dist\upshot\mcp\, after the app's freeze has replaced dist\upshot, so the installer's
+# one recursive copy of dist\upshot carries it.
+uv run pyinstaller --noconfirm --clean --distpath dist\upshot --workpath build\upshot-mcp packaging\upshot-mcp.spec
+Assert-Exit "PyInstaller (upshot-mcp)"
+$bridge = Join-Path $root "dist\upshot\mcp\upshot-mcp.exe"
+# A real MCP handshake against the freeze: the answer must name the server.
+$answer = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' | & $bridge
+if (-not ($answer -match '"name":"upshot-transcribe"')) { throw "the frozen upshot-mcp did not answer initialize: $answer" }
+Write-Host "[ok  ] upshot-mcp answers initialize"
+
 Write-Host "== selftest against the freeze =="
 # upshot.exe is a windowed program (console=False): `& upshot.exe` returns at once and
 # prints nothing. Wait for it, and read the verdict from the report file it writes.
@@ -139,6 +150,7 @@ function Sign-File([string]$path) {
 if ($Sign) {
     Write-Host "== sign the app =="
     Sign-File $exe
+    Sign-File $bridge
 }
 
 if ($SkipInstaller) {
