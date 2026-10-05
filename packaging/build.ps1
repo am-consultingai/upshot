@@ -123,7 +123,7 @@ New-Item -ItemType Directory -Force -Path $reports | Out-Null
 $savedHome = $env:UP_HOME
 $env:UP_HOME = Join-Path $reports ("home-" + (Get-Date).ToString("yyyyMMddHHmmss"))
 try {
-    foreach ($suite in @("imports", "pipeline")) {
+    foreach ($suite in @("imports", "pipeline", "transcription")) {
         $report = Join-Path $reports "$suite.json"
         if (Test-Path $report) { Move-Item -Force $report "$report.previous" }
         $p = Start-Process -FilePath $exe -ArgumentList @("--selftest", $suite, "--report", "`"$report`"", "--quiet") -Wait -PassThru
