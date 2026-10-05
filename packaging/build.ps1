@@ -106,6 +106,17 @@ Assert-Exit "npm ci"
 npm run build
 Assert-Exit "npm run build"
 Pop-Location
+# Source maps (D87): Vite writes them without the comment that points a browser at them.
+# They move out of the app into dist\sourcemaps, with the bundles they describe, so
+# publish_release.py can upload them to Sentry for this release; none ships to users.
+$maps = Join-Path $root "dist\sourcemaps"
+if (Test-Path $maps) { Remove-Item -Recurse -Force $maps }
+New-Item -ItemType Directory -Force -Path $maps | Out-Null
+$assets = Join-Path $root "frontend\dist\assets"
+Get-ChildItem $assets -Filter *.js | Copy-Item -Destination $maps
+Get-ChildItem $assets -Filter *.map | Move-Item -Destination $maps
+if (Get-ChildItem (Join-Path $root "frontend\dist") -Recurse -Filter *.map) { throw "a source map is still in frontend\dist" }
+Write-Host "source maps: $((Get-ChildItem $maps -Filter *.map).Count) moved to dist\sourcemaps"
 
 Write-Host "== third-party notices =="
 # Every component the app ships and its licence, from what is installed here (the

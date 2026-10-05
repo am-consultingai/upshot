@@ -374,6 +374,17 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     config = Config.load()
     config.set("server.port", choose_port(config.server_host, config.server_port))
     services = build(config)
+    from app import paths
+    from app.diagnostics import native
+    from app.diagnostics.reporter import set_active
+
+    # Crash reports (D87): first what a crash of the last run left, then this run's watch.
+    # Only the instance that owns the single-instance lock does this.
+    set_active(services.reporter)
+    crash = native.found(paths.app_home())
+    if crash is not None and services.reporter is not None:
+        services.reporter.report_native(crash["frames"], version=crash.get("version"))
+    native.arm(paths.app_home(), version=info.version)
     app = create_app(services)
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
     server.start()
@@ -381,7 +392,6 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     # nothing else before, so the tray build — the one the installer runs — had no
     # detector at all, whatever the mode said.
     start_background(services)
-    from app import paths
     from app.api.security import write_launcher_key
     from app.instance import record_port, watch_quit
 
@@ -409,6 +419,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
             installer.at_quit()
         server.stop()
         services.close()
+        # A clean quit: nothing to report at the next start.
+        native.disarm(paths.app_home())
         guard.release()
     return 0
 

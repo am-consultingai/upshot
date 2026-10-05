@@ -257,3 +257,35 @@ def test_retry_resets_attempts(h: Harness) -> None:
         h.clock.advance(3700)
     job = h.queue.retry(meeting.id, "flaky")
     assert job.state == "pending" and job.attempts == 0 and job.last_error is None
+
+
+def test_only_a_stage_that_failed_for_good_is_reported(h: Harness, tmp_path: Path) -> None:
+    """A retry is not a crash (D87): only the final failure reaches a crash report."""
+    from app.config import Config
+    from app.diagnostics.reporter import CrashReporter, set_active
+
+    sent: list[dict[str, object]] = []
+    config = Config.load(file=tmp_path / "diag_config.json")
+    config.set("diagnostics.crash_reports", "on")
+    reporter = CrashReporter(
+        config,
+        dsn="https://0123456789abcdef0123456789abcdef@o1.ingest.example.io/42",
+        home=tmp_path,
+        send=lambda _kind, event: sent.append(event) or True,
+        background=False,
+    )
+    set_active(reporter)
+    try:
+        meeting = h.meeting()
+        h.stages.fail_times = 99
+        h.queue.enqueue(meeting.id, "flaky")
+        for _ in range(4):
+            h.worker.run_once()
+            h.clock.advance(3700)
+        assert sent == [], "four failed attempts, all to be retried: nothing reported"
+        h.worker.run_once()
+        assert len(sent) == 1
+        assert sent[0]["tags"]["where"] == "stage:flaky"  # type: ignore[index]
+        assert meeting.id not in str(sent[0])
+    finally:
+        set_active(None)

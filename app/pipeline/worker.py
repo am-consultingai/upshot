@@ -269,6 +269,11 @@ class Worker:
         log.warning("stage %s failed (attempt %s): %s", job.stage, updated.attempts, exc)
         if updated.state != "failed":
             return
+        # Failed for good, not a retry: worth a crash report, if the user agreed (D87).
+        if isinstance(exc, Exception):
+            from app.diagnostics.reporter import report
+
+            report(exc, where=f"stage:{job.stage}")
         # A delivery failure must never regress a rendered meeting (DESIGN.md §13).
         if job.stage == JobStage.DELIVER:
             self.dao.update_meeting(job.meeting_id, error=updated.last_error)
