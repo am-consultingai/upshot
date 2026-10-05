@@ -269,3 +269,10 @@ def test_a_broken_calendar_never_blocks_or_breaks_an_update() -> None:
             raise RuntimeError("cache locked")
 
     assert meeting_soon(Broken(), FakeClock()) is False
+
+
+def test_the_quiet_time_can_be_shortened_for_a_test(world: World) -> None:
+    world.config.set("updates.quiet_minutes", 1)
+    assert world.installer.tick() is False
+    world.clock.advance(60)
+    assert world.installer.tick() is True
