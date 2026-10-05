@@ -16,12 +16,25 @@ from typing import Any
 #: The app's preferred port, then the range it falls back to (``app/server.py``).
 PORTS = (8000, *range(8010, 8041))
 CLIENT = "mcp"
-PROBE_TIMEOUT_S = 0.5
+#: How long a port may take to answer the probe. A closed port is refused at once
+#: whatever this says, so it only bounds a port that is open: the one Upshot recorded
+#: gets long enough for an Upshot busy transcribing on the CPU (machine B, 2026-10-05,
+#: where 0.5 s read as "not running"), the fallback range less.
+RECORDED_TIMEOUT_S = 10.0
+PROBE_TIMEOUT_S = 2.0
 CHUNK = 1 << 20
+BUSY = (
+    "Upshot is busy and did not answer in time; anything it is transcribing carries on. "
+    "Ask again in a moment."
+)
 
 
 class NotRunning(Exception):
     """No Upshot answered on this computer."""
+
+
+class Busy(Exception):
+    """Upshot is there but did not answer in time: it is working, not gone."""
 
 
 class UpshotError(Exception):
@@ -71,31 +84,32 @@ def _known_local_appdata() -> str | None:  # pragma: no cover - Windows only
         ctypes.windll.ole32.CoTaskMemFree(out)
 
 
-def candidates(url: str | None = None) -> Iterator[str]:
-    """Where to look, in order: what was given, the port the app recorded, the usual ports."""
+def candidates(url: str | None = None) -> Iterator[tuple[str, float]]:
+    """Where to look, in order, and how long each may take: what was given, the port the
+    app recorded, then the usual ports."""
     given = url or os.environ.get("UPSHOT_URL")
     if given:
-        yield given.rstrip("/")
+        yield given.rstrip("/"), RECORDED_TIMEOUT_S
         return
     try:
         port = int((app_home() / "server.port").read_text(encoding="utf-8").strip())
-        yield f"http://127.0.0.1:{port}"
+        yield f"http://127.0.0.1:{port}", RECORDED_TIMEOUT_S
     except (OSError, ValueError):
         pass
     for port in PORTS:
-        yield f"http://127.0.0.1:{port}"
+        yield f"http://127.0.0.1:{port}", PROBE_TIMEOUT_S
 
 
 def discover(url: str | None = None) -> Upshot:
     """The running Upshot, or :class:`NotRunning`. A stale ``server.port`` or another
     program on the port is skipped: only an answer naming ``app: "upshot"`` counts."""
     seen: set[str] = set()
-    for base in candidates(url):
+    for base, timeout in candidates(url):
         if base in seen:
             continue
         seen.add(base)
         try:
-            info = _get_json(f"{base}/api/v1/info", PROBE_TIMEOUT_S if not url else 5)
+            info = _get_json(f"{base}/api/v1/info", timeout)
         except (OSError, ValueError):
             continue
         if isinstance(info, dict) and info.get("app") == "upshot":
@@ -134,13 +148,24 @@ class Upshot:
                 data = response.read()
         except urllib.error.HTTPError as exc:
             raise UpshotError(exc.code, _detail(exc.read())) from None
+        except TimeoutError:
+            raise Busy(BUSY) from None
         except OSError as exc:
+            if isinstance(getattr(exc, "reason", None), TimeoutError):
+                raise Busy(BUSY) from None
             raise NotRunning(
                 f"Upshot stopped answering ({exc}). Start Upshot, then ask again."
             ) from None
         return data.decode("utf-8") if raw else json.loads(data.decode("utf-8"))
 
     # -- the API
+
+    def refresh(self) -> None:
+        """Ask again whether this is Upshot, and whether its switch is on."""
+        info = self._request("GET", "/api/v1/info", timeout=RECORDED_TIMEOUT_S)
+        if not isinstance(info, dict) or info.get("app") != "upshot":
+            raise NotRunning("Upshot isn't running on this computer. Start Upshot, then ask again.")
+        self.info = info
 
     def submit_path(self, path: str, options: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps({"path": path, **options}).encode("utf-8")
@@ -184,7 +209,7 @@ class Upshot:
     def wait(self, job_id: str, seconds: float) -> dict[str, Any]:
         return self._request(  # type: ignore[no-any-return]
             "GET", f"/api/v1/transcriptions/{_q(job_id)}/wait",
-            query={"timeout": f"{max(0.0, min(seconds, 120)):.1f}"}, timeout=seconds + 15,
+            query={"timeout": f"{max(0.0, min(seconds, 120)):.1f}"}, timeout=seconds + 30,
         )  # fmt: skip
 
     def result(self, job_id: str, fmt: str, **params: Any) -> str:

@@ -9,7 +9,7 @@ from typing import Any
 
 from upshot_mcp import paths
 from upshot_mcp.protocol import Call, Tool, ToolError
-from upshot_mcp.upshot import NotRunning, Upshot, UpshotError, discover
+from upshot_mcp.upshot import Busy, NotRunning, Upshot, UpshotError, discover
 
 #: A tool call is held open for at most this long; past it, the reply carries an id to
 #: come back with. Claude Desktop gave up on a 55-second call ("MCP error -32001: Request
@@ -50,12 +50,25 @@ class Bridge:
     def __init__(self, *, url: str | None = None, wsl_distro: str | None = None) -> None:
         self.url = url
         self.wsl_distro = wsl_distro
+        #: Where Upshot was found, kept across calls: searching again on every call gave a
+        #: busy Upshot one more chance to look absent.
+        self._app: Upshot | None = None
 
     def upshot(self) -> Upshot:
-        try:
-            app = discover(self.url)
-        except NotRunning as exc:
-            raise ToolError(str(exc)) from None
+        app = self._app
+        if app is not None:
+            try:
+                app.refresh()
+            except (NotRunning, UpshotError):
+                app = None  # gone, or a different program on the port now: look again
+            except Busy as exc:
+                raise ToolError(str(exc)) from None
+        if app is None:
+            try:
+                app = discover(self.url)
+            except NotRunning as exc:
+                raise ToolError(str(exc)) from None
+        self._app = app
         if app.info.get("enabled") is False:
             raise ToolError(
                 "Transcription for other apps is off in Upshot. Turn it on in Upshot's "
@@ -202,7 +215,7 @@ class Bridge:
 def _call(fn: Any, *args: Any, **kwargs: Any) -> Any:
     try:
         return fn(*args, **kwargs)
-    except NotRunning as exc:
+    except (NotRunning, Busy) as exc:
         raise ToolError(str(exc)) from None
     except UpshotError as exc:
         raise ToolError(exc.detail) from None
