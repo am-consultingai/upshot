@@ -1,7 +1,7 @@
 Upshot Terms of Service
 =======================
 
-Version 2026-10-05, effective 2026-10-05.
+Version 2026-10-06, effective 2026-10-06.
 
 1. AGREEMENT
 
@@ -143,6 +143,14 @@ any right to cancel a purchase.
 We may provide updates to Upshot. Some updates may be needed for Upshot to
 keep working, to stay secure, or to keep working with third-party services.
 
+Upshot checks our website every few hours for a newer version, downloads it,
+checks that it comes from us, and installs it by itself at a moment when you
+are not recording, no call is in progress and no meeting is about to start,
+or when you quit Upshot. You can turn automatic installation off in
+Settings; an update we mark as important may still install at the first such
+moment. By using Upshot you agree to receive these updates. What the checks
+send is described in the Privacy Policy.
+
 Upshot checks our website about once a day for updated versions of these
 Terms. Each check is an ordinary web request to upshot.amconsultingai.com
 and the service that hosts it. It carries no recordings, transcripts,
@@ -246,11 +254,13 @@ these Terms limits your rights under those licences.
 
 17. FEEDBACK
 
-If you send us feedback, suggestions or ideas about Upshot, you grant us a
-perpetual, irrevocable, worldwide, royalty-free licence to use them for any
-purpose, without any obligation to you. Do not include your content or other
-people's personal information in feedback unless you are entitled to share
-it and want us to see it.
+Upshot lets you send feedback from inside the app, including, if you choose,
+a screenshot of Upshot's window and a rating of a summary. If you send us
+feedback, suggestions or ideas about Upshot, you grant us a perpetual,
+irrevocable, worldwide, royalty-free licence to use them for any purpose,
+without any obligation to you. Do not include your content or other people's
+personal information in feedback unless you are entitled to share it and
+want us to see it.
 
 18. OUR INTELLECTUAL PROPERTY
 
