@@ -319,6 +319,8 @@ def test_sse_emits_state_change(api) -> None:  # type: ignore[no-untyped-def]
 
 def test_openapi_snapshot(api, golden) -> None:  # type: ignore[no-untyped-def]
     document = api.app.openapi()
+    # The build's own version (D87): it changes with every release, the API does not.
+    document["info"]["version"] = "<version>"
     golden("openapi.json", json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False))
 
 
