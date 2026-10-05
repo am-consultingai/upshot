@@ -172,7 +172,7 @@ class UpdateService:
             self.last_error = None
             self.offer, self.held_back = choose(manifests, self.current_version, self.bucket)
             if self.offer is None:
-                self._forget_ready()
+                self.forget_ready()
                 self._set_phase("idle")
             elif (ready := self.ready()) and ready["version"] == self.offer.manifest.version:
                 self._set_phase("ready")
@@ -290,7 +290,7 @@ class UpdateService:
             return None
         return {**record, "path": str(self.home / str(record["file"]))}
 
-    def _forget_ready(self) -> None:
+    def forget_ready(self) -> None:
         (self.home / READY_FILE).unlink(missing_ok=True)
         self._remove_others(keep=None)
 
