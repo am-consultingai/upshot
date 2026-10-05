@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import sys
+from typing import Any
 
 from app.log import get
 
@@ -18,6 +19,12 @@ log = get(__name__)
 
 PW_RENDERFULLCONTENT = 0x00000002
 MAX_SIDE = 1600
+
+
+def is_blank(image: Any) -> bool:
+    """One flat colour: a window that drew nothing, not worth sending."""
+    low, high = image.convert("L").getextrema()
+    return bool(low == high)
 
 
 def capture() -> bytes | None:
@@ -45,7 +52,9 @@ def _capture_windows() -> bytes | None:  # pragma: no cover - Windows only
         return None
     left, top, right, bottom = win32gui.GetWindowRect(hwnd)
     width, height = right - left, bottom - top
-    if width <= 0 or height <= 0:
+    # A minimised window draws nothing: Windows hands back a blank 160x28 strip (seen on
+    # machine A). Say there is nothing to capture rather than attach that.
+    if width <= 0 or height <= 0 or win32gui.IsIconic(hwnd):
         return None
     window_dc = win32gui.GetWindowDC(hwnd)
     source = win32ui.CreateDCFromHandle(window_dc)
@@ -72,6 +81,8 @@ def _capture_windows() -> bytes | None:  # pragma: no cover - Windows only
         memory.DeleteDC()
         source.DeleteDC()
         win32gui.ReleaseDC(hwnd, window_dc)
+    if is_blank(image):
+        return None
     image.thumbnail((MAX_SIDE, MAX_SIDE))
     out = io.BytesIO()
     image.save(out, format="PNG", optimize=True)

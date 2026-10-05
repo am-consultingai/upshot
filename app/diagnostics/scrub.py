@@ -214,12 +214,14 @@ def client_exception(message: str, stack: str) -> dict[str, Any]:
 
 
 def _module_of(path: str) -> str:
-    parts = re.split(r"[\\/]", path)
+    parts = [part for part in re.split(r"[\\/]", path) if part]
     stem = parts[-1].removesuffix(".py") if parts else "?"
     if "app" in parts:
         index = len(parts) - 1 - parts[::-1].index("app")
         dotted = [*parts[index:-1], stem]
         return ".".join(p for p in dotted if p and p != "__init__")
+    if stem == "__init__" and len(parts) > 1:
+        return parts[-2]  # a package's __init__ is named after the package (machine A)
     return stem
 
 
