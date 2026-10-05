@@ -22,6 +22,16 @@ def test_the_state_says_what_is_installed_and_that_a_source_run_does_not_update(
     assert state["current"]
 
 
+def test_the_state_says_whether_this_copy_can_install_and_what_it_waits_for(api) -> None:  # type: ignore[no-untyped-def]
+    state = api.client().get("/api/updates").json()
+    assert state["install"] == {"can_install": False, "waiting_for": None, "last": None}
+
+
+def test_install_now_with_nothing_ready_is_not_found(api) -> None:  # type: ignore[no-untyped-def]
+    response = api.client().post("/api/updates/install")
+    assert response.status_code == 404 and "no update" in response.json()["detail"]
+
+
 def test_check_now_answers_at_once(api) -> None:  # type: ignore[no-untyped-def]
     updates = api.services.updates
     calls: list[bool] = []
