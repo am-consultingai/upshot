@@ -64,7 +64,11 @@ from app.updates.manifest import (  # noqa: E402
     parse,
     verify,
 )
-from scripts import release_key  # noqa: E402
+
+# By its own folder, not as ``scripts.release_key``: on Windows a dependency installs a
+# top-level ``scripts`` package that shadows this folder (CI, 2026-10-06).
+sys.path.insert(0, str(ROOT / "scripts"))
+import release_key  # noqa: E402
 
 SITE_UPDATES = ROOT / "site" / "updates"
 SITE_URL = "https://upshot.amconsultingai.com/updates/"
