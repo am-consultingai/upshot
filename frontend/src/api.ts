@@ -469,6 +469,15 @@ export interface LegalState {
   page: string;
 }
 
+/** Crash reports (app/diagnostics, D87): can this build send, and what did the user say. */
+export interface DiagnosticsState {
+  /** False in a build from source: it carries no DSN and can send nothing. */
+  available: boolean;
+  consent: "unset" | "on" | "off";
+  /** Exactly what was last sent, for anyone who wants to see it. */
+  last_report: Record<string, unknown> | null;
+}
+
 /** The next version of the app, and how far it has got (app/updates, D87). */
 export interface UpdateOffer {
   channel: "stable" | "beta";
@@ -557,6 +566,13 @@ export const api = {
   /** Not accepting quits the app; `quitting` is false where nothing can be asked to quit. */
   declineTerms: () => request<{ quitting: boolean }>("/api/legal/decline", { method: "POST" }),
   updates: () => request<UpdateState>("/api/updates"),
+  diagnostics: () => request<DiagnosticsState>("/api/diagnostics"),
+  /** An error the page caught; the server reports it only with consent (D87, C5). */
+  reportClientError: (body: { kind: string; message: string; stack: string }) =>
+    request<{ reported: boolean }>("/api/diagnostics/client-error", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   /** Answers at once; progress arrives as `updates` events. */
   checkUpdates: () => request<UpdateState>("/api/updates/check", { method: "POST" }),
   /** The app quits and the installer starts it again on the new version. */

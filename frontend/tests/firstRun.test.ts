@@ -37,6 +37,15 @@ describe("stepsFor", () => {
     expect(stepsFor({ calendarAvailable: true })).toEqual(["welcome", "calendar", "services", "ai", "key", "audio"]);
   });
 
+  it("asks about crash reports just before the sound check, only where they can be sent (D87)", () => {
+    expect(stepsFor({ calendarAvailable: true, reportsAvailable: true })).toEqual([
+      "welcome", "calendar", "services", "ai", "key", "reports", "audio",
+    ]);
+    expect(stepsFor({ calendarAvailable: true, reportsAvailable: false })).not.toContain("reports");
+    const track = [...new Set(stepsFor({ calendarAvailable: true, reportsAvailable: true }).map(crumbOf))];
+    expect(track).toEqual(["welcome", "calendar", "aiSetup", "reports", "audio"]);
+  });
+
   it("shows the three AI screens as one stop on the track", () => {
     const track = [...new Set(stepsFor({ calendarAvailable: true }).map(crumbOf))];
     expect(track).toEqual(["welcome", "calendar", "aiSetup", "audio"]);
