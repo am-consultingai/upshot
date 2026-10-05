@@ -79,6 +79,7 @@ class Worker:
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_sweep: float | None = None
+        self._auto_profile: tuple[tuple[Any, Any], str] | None = None
         self.queue.reset_running()
         if self.transcriptions is not None:
             self.transcriptions.reset_running()
@@ -90,8 +91,24 @@ class Worker:
         policy = self.config.job_policy
         if policy != "auto":
             return policy
-        profile = self.config.profile
-        return "after_meeting" if profile == "cpu-deferred" else "asap"
+        return "after_meeting" if self.profile() == "cpu-deferred" else "asap"
+
+    def profile(self) -> str:
+        """``profile = "auto"`` resolved as at start-up (``bootstrap.choose_profile``): a GPU
+        that will run the model transcribes during a meeting, a CPU after it (D60). Taken
+        as is, a saved ``auto`` read as live, so a CPU-only machine transcribed under a
+        recording (machine B, 2026-10-05). Cached per device setting: the plan searches
+        the disk for CUDA and asks the GPU for its memory."""
+        configured = self.config.profile
+        if configured != "auto":
+            return configured
+        key = (self.config.get("asr.device", "auto"), self.config.get("asr.cuda_dir"))
+        if self._auto_profile is None or self._auto_profile[0] != key:
+            from app.asr.local import planned_device
+
+            device = planned_device(self.config)
+            self._auto_profile = (key, "gpu-live" if device == "cuda" else "cpu-deferred")
+        return self._auto_profile[1]
 
     def should_yield(self) -> bool:
         """A starting recording always wins, unless the policy is explicitly ``asap``."""
