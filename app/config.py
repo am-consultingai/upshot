@@ -291,6 +291,22 @@ DEFAULTS: dict[str, Any] = {
         "check_hours": 24,
         "manifest_url": "https://upshot.amconsultingai.com/legal/terms.json",
     },
+    "updates": {
+        # New versions of the app, like Windows Update (app/updates, D87). An installed
+        # copy reads a signed manifest on the website every `check_hours` and keeps the
+        # next installer ready; the request carries nothing of the user's.
+        "check": True,
+        "check_hours": 6,
+        # Install by itself at a safe moment (no recording, no meeting soon), or only say
+        # "Restart to update". A critical update installs either way.
+        "auto_install": True,
+        "channel": "stable",  # stable|beta
+        "manifest_base": "https://upshot.amconsultingai.com/updates/",
+        # 0 is no limit. A download pauses while a meeting is recorded whatever this says.
+        "download_kbps": 0,
+        # This copy's place in a staged rollout, 0-99, drawn once. Never sent anywhere.
+        "bucket": None,
+    },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},

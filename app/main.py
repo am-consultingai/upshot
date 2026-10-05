@@ -60,6 +60,8 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
     from app.legal.api import router as legal_router
+    from app.updates.api import router as updates_router
+    from app.version import build_info
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
 
@@ -76,7 +78,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
 
     app = FastAPI(
         title="Upshot",
-        version="1.0.0",
+        version=build_info().version,
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -85,6 +87,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(router)
     app.include_router(assistant_router)
     app.include_router(legal_router)
+    app.include_router(updates_router)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())
@@ -205,6 +208,9 @@ def start_background(services: Services) -> None:
     if services.terms is not None:
         services.terms.adopt_installer_acceptance()
         services.terms.start()
+    # New versions of the app (D87); only an installed copy checks by itself.
+    if services.updates is not None:
+        services.updates.start()
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
