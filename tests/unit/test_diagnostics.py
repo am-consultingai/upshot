@@ -385,3 +385,22 @@ def test_what_an_ai_cli_said_is_withheld_but_what_failed_is_kept(tmp_path: Path)
     assert value == "Claude Code exited 1: <withheld>"
     elsewhere = scrub.exception_values(_raised_in("app.pipeline.worker", "disk full: C drive"))
     assert elsewhere[-1]["value"] == "disk full: C drive", "only the AI code is withheld"
+
+
+def test_a_blank_capture_is_not_worth_sending() -> None:
+    from PIL import Image
+
+    from app.diagnostics.screenshot import is_blank
+
+    assert is_blank(Image.new("RGB", (160, 28), (255, 255, 255))) is True
+    drawn = Image.new("RGB", (160, 28), (255, 255, 255))
+    drawn.putpixel((5, 5), (0, 0, 0))
+    assert is_blank(drawn) is False
+
+
+def test_a_package_init_frame_is_named_after_the_package() -> None:
+    dump = (
+        "Current thread 0x1 (most recent call first):\n"
+        r'  File "C:\Python\Lib\ctypes\__init__.py", line 538 in string_at' + "\n"
+    )
+    assert scrub.frames_from_fault_dump(dump)[0]["module"] == "ctypes"
