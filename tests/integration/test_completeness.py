@@ -191,3 +191,25 @@ def test_auto_policy_follows_the_profile(tmp_path: Path) -> None:
     )
     assert build(gpu).policy == "asap"
     assert build(cpu).policy == "after_meeting"
+
+
+def test_a_saved_auto_profile_follows_the_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Machine B, 2026-10-05: ``profile = "auto"`` read as live, so a CPU-only machine
+    transcribed under a recording. It resolves from the planned device, as at start-up."""
+    import app.asr.local as local
+
+    devices: list[str] = []
+    monkeypatch.setattr(local, "planned_device", lambda config: devices.append("asked") or plan)
+    h = harness(tmp_path, job_policy="auto", profile="auto")
+    build = lambda: Worker(  # noqa: E731
+        dao=h.dao, queue=h.queue, config=h.config, stages={}, clock=h.clock
+    )
+    plan = "cpu"
+    cpu = build()
+    assert cpu.policy == "after_meeting"
+    assert cpu.policy == "after_meeting"
+    assert devices == ["asked"]  # once, not on every turn of the loop
+    plan = "cuda"
+    assert build().policy == "asap"
