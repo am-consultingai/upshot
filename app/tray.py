@@ -83,6 +83,9 @@ class TrayApp:
         self.state = AppState(detector_mode=str(services.config.get("detection.mode", "shadow")))
         self.icon: Any = None
         self._stop = threading.Event()
+        #: Quit from the tray menu, not by the installer or the uninstaller: only such a
+        #: quit may install a ready update (D87).
+        self.quit_by_user = False
 
     def open_link(self) -> str:
         return self.services.auth.link(self.services.config.server_port)
@@ -162,6 +165,7 @@ class TrayApp:
             # here used to be refused with nowhere to get another.
             self.show_window()
         elif action is Action.QUIT:
+            self.quit_by_user = True
             self.stop()
         self.refresh()
 
@@ -370,11 +374,24 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     record_port(server.bound_port)
     tray = TrayApp(services)
     watch_quit(tray.stop)
-    # The sign-in shortcut passes --background (packaging/installer.iss).
-    tray.on_start(background="--background" in arguments)
+    installer = services.installer
+    if installer is not None:
+        # Once the update installer has started, the app quits so it can be replaced.
+        installer.quit = tray.stop
+    # The sign-in shortcut passes --background (packaging/installer.iss). After an
+    # automatic update the installer passes --background --after-update; the window
+    # comes back only if it was open when the update began (D87).
+    background = "--background" in arguments
+    if "--after-update" in arguments and installer is not None:
+        outcome = installer.outcome or {}
+        background = not outcome.get("window_open", False)
+    tray.on_start(background=background)
     try:
         tray.run()
     finally:
+        if tray.quit_by_user and installer is not None:
+            # The user quit from the tray: a ready update installs now, if it may.
+            installer.at_quit()
         server.stop()
         services.close()
         guard.release()

@@ -49,6 +49,7 @@ class Services:
     calendar_invites: Any = None  # app.gcal.invite.InviteReader
     terms: Any = None  # app.legal.terms.TermsService
     updates: Any = None  # app.updates.service.UpdateService
+    installer: Any = None  # app.updates.install.UpdateInstaller
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -64,6 +65,8 @@ class Services:
             self.terms.stop()
         if self.updates is not None:
             self.updates.stop()
+        if self.installer is not None:
+            self.installer.stop()
         # A connect in progress holds a listening socket open for up to five minutes.
         if self.calendar is not None:
             self.calendar.close()
@@ -157,6 +160,25 @@ def build(
             calendar=calendar_now,
             prompts=services.prompts,
         )
+    from app import window
+    from app.detect.detector import DetectorState
+    from app.updates.install import UpdateInstaller, meeting_soon
+
+    detector = services.detector
+    # When the ready update may install (D87): never over a recording, a call, a
+    # transcription, or a calendar meeting about to start.
+    services.installer = UpdateInstaller(
+        cfg,
+        services.updates,
+        recording=(lambda: recorder.is_active()) if recorder is not None else (lambda: False),
+        in_call=(lambda: detector.state is not DetectorState.IDLE)
+        if detector is not None
+        else (lambda: False),
+        jobs_busy=queue.busy,
+        meeting_soon=lambda: meeting_soon(calendar_now, clock),
+        window_open=lambda: window.count_open() > 0,
+        clock=clock,
+    )
     if with_worker:
         from app.pipeline.stages import registry
 

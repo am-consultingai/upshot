@@ -230,6 +230,26 @@ _closing: set[int] = set()
 CLOSE_WAIT_S = 3.0
 
 
+def count_open() -> int:
+    """How many Upshot windows are open. An update reopens the window if one was (D87)."""
+    if sys.platform != "win32":
+        return 0
+    try:  # pragma: no cover - Windows only
+        import win32gui
+
+        found: list[int] = []
+
+        def visit(hwnd: int, _: object) -> bool:
+            if _is_ours(win32gui, hwnd) and hwnd not in _closing:
+                found.append(hwnd)
+            return True
+
+        win32gui.EnumWindows(visit, None)
+        return len(found)
+    except Exception:
+        return 0
+
+
 def close_all(*, wait_s: float = CLOSE_WAIT_S) -> int:
     """Close every Upshot window, and wait (up to ``wait_s``) until they are gone. How
     many were asked to close.

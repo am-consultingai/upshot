@@ -3698,7 +3698,7 @@
     },
     "/api/updates": {
       "get": {
-        "description": "What is installed, what is available, and how far its download has got.",
+        "description": "What is installed, what is available, how far its download has got, and what an\ninstall waits for.",
         "operationId": "update_state_api_updates_get",
         "responses": {
           "200": {
@@ -3736,6 +3736,27 @@
           }
         },
         "summary": "Check Now"
+      }
+    },
+    "/api/updates/install": {
+      "post": {
+        "description": "For \"Install now\" and \"Restart to update\". The app quits; the installer restarts it.",
+        "operationId": "install_now_api_updates_install_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Install Now Api Updates Install Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Install Now"
       }
     }
   }

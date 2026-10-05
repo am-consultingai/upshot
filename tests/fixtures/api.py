@@ -144,6 +144,12 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
     services.updates = UpdateService(
         config, home=tmp_path, clock=clock, current_version="0.2.0", frozen=False
     )
+    from app.updates.install import UpdateInstaller
+
+    # Never starts a real installer: a run from source has none to run.
+    services.installer = UpdateInstaller(
+        config, services.updates, clock=clock, spawn=lambda command: None, can_install=False
+    )
     services.recorder = Recorder(config, make, clock=clock)
     services.worker = Worker(
         dao=dao,

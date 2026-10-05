@@ -209,8 +209,13 @@ def start_background(services: Services) -> None:
         services.terms.adopt_installer_acceptance()
         services.terms.start()
     # New versions of the app (D87); only an installed copy checks by itself.
+    if services.installer is not None:
+        # First: did an update just install, or fail to? (the marker it left)
+        services.installer.after_start()
     if services.updates is not None:
         services.updates.start()
+    if services.installer is not None:
+        services.installer.start()
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
