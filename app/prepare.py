@@ -242,6 +242,17 @@ def run(
     return EXIT_OK
 
 
+def _report(exc: Exception) -> None:
+    """A crash report, if this user has already agreed (an upgrade; a first install has
+    not been asked yet). Sent before the process exits, not in the background."""
+    try:
+        from app.diagnostics.reporter import CrashReporter
+
+        CrashReporter(Config.load(), background=False).report_exception(exc, where="prepare")
+    except Exception:
+        log.exception("could not report the failure")
+
+
 def main(argv: list[str]) -> int:
     """The ``--prepare`` entry point (app/tray.py)."""
     import argparse
@@ -262,6 +273,7 @@ def main(argv: list[str]) -> int:
     except Exception as exc:  # the installer must always get a last word
         log.exception("prepare failed")
         progress.write(stage="done", state="failed", text="Could not prepare", error=str(exc))
+        _report(exc)
         return EXIT_FAILED
     log.info("prepare finished: exit %d (%s)", code, progress.last.get("text", ""))
     return code

@@ -246,6 +246,33 @@
         "title": "ChatPost",
         "type": "object"
       },
+      "ClientError": {
+        "description": "What the page posts when it catches an error: no more than this, and bounded.",
+        "properties": {
+          "kind": {
+            "maxLength": 40,
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Message",
+            "type": "string"
+          },
+          "stack": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Stack",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ClientError",
+        "type": "object"
+      },
       "GlossaryPut": {
         "properties": {
           "terms": {
@@ -1536,6 +1563,67 @@
           }
         },
         "summary": "Detector Ignore"
+      }
+    },
+    "/api/diagnostics": {
+      "get": {
+        "operationId": "diagnostics_state_api_diagnostics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Diagnostics State Api Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Diagnostics State"
+      }
+    },
+    "/api/diagnostics/client-error": {
+      "post": {
+        "description": "An error the interface caught (C5). Reported only with consent; always answers.",
+        "operationId": "client_error_api_diagnostics_client_error_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientError"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Client Error Api Diagnostics Client Error Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Client Error"
       }
     },
     "/api/events": {

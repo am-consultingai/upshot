@@ -59,6 +59,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     svc = services or build(config)
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
+    from app.diagnostics.api import router as diagnostics_router
     from app.legal.api import router as legal_router
     from app.updates.api import router as updates_router
     from app.version import build_info
@@ -88,6 +89,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(assistant_router)
     app.include_router(legal_router)
     app.include_router(updates_router)
+    app.include_router(diagnostics_router)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())
@@ -232,6 +234,9 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     config = Config.load()
     config.set("server.port", choose_port(config.server_host, config.server_port))
     services = build(config)
+    from app.diagnostics.reporter import set_active
+
+    set_active(services.reporter)  # crash reports, with consent (D87)
     app = create_app(services)
 
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)

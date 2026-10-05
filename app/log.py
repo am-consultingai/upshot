@@ -106,6 +106,7 @@ def _install_excepthooks() -> None:
             sys.__excepthook__(kind, value, tb)
             return
         root.critical("uncaught exception", exc_info=(kind, value, tb))
+        _report(value, "uncaught")
 
     def on_thread_exception(args: Any) -> None:
         if issubclass(args.exc_type, SystemExit):
@@ -115,9 +116,21 @@ def _install_excepthooks() -> None:
             args.thread.name if args.thread else "?",
             exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
         )
+        if args.exc_value is not None:
+            _report(args.exc_value, "thread")
 
     sys.excepthook = on_exception
     threading.excepthook = on_thread_exception
+
+
+def _report(exc: BaseException, where: str) -> None:
+    """A crash report too, if the user agreed (app/diagnostics, D87). Never raises."""
+    try:
+        from app.diagnostics.reporter import report
+
+        report(exc, where=where)
+    except Exception:
+        pass
 
 
 def meeting_log_handler(folder: Path) -> logging.Handler:
