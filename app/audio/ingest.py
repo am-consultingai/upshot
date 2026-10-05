@@ -7,6 +7,7 @@ rather than from the track split.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -214,3 +215,50 @@ def ingest(
     duration_s = round(len(samples) / rate)
     log.info("imported %s → %d chunk(s), %d s", source.name, len(records), duration_s)
     return Imported(records=records, duration_s=duration_s, converted=converted)
+
+
+#: ``Duration: 01:02:03.45`` in ffmpeg's description of its input.
+_DURATION = re.compile(r"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)")
+#: How long describing a file may take; a local file is described in well under a second.
+PROBE_TIMEOUT_S = 60
+
+
+@dataclass(frozen=True)
+class Probe:
+    """What ffmpeg says a file holds, before anything is decoded (D86)."""
+
+    duration_s: float | None
+    has_audio: bool
+
+
+def probe(source: Path, *, config: Config | None = None) -> Probe:
+    """Describe ``source`` with ``ffmpeg -i`` and no output: the build ships no ffprobe.
+
+    Local files only (``-protocol_whitelist file``), as the engine reads them. Raises
+    :class:`UnsupportedAudio` for anything ffmpeg cannot open; a file it opens with no
+    audio stream comes back with ``has_audio=False``.
+    """
+    binary = ffmpeg_path(config)
+    if binary is None:
+        raise UnsupportedAudio("ffmpeg was not found, so this file cannot be read")
+    try:
+        result = subprocess.run(
+            [binary, "-hide_banner", "-protocol_whitelist", "file", "-i", str(source)],
+            capture_output=True,
+            check=False,
+            timeout=PROBE_TIMEOUT_S,
+            stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise UnsupportedAudio(f"ffmpeg took too long to read {source.name}") from exc
+    text = result.stderr.decode(errors="replace")
+    if "Input #0" not in text:
+        raise UnsupportedAudio(f"{source.name} is not audio or video ffmpeg can read")
+    match = _DURATION.search(text)
+    duration = None
+    if match:
+        hours, minutes, seconds = match.groups()
+        duration = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    has_audio = re.search(r"Stream #\S+.*: Audio:", text) is not None
+    return Probe(duration_s=duration, has_audio=has_audio)

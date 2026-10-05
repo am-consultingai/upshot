@@ -14,7 +14,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app import paths
 from app.api.routes import router, test_router
-from app.api.security import AuthMiddleware, CsrfMiddleware, HostHeaderMiddleware
+from app.api.security import (
+    AuthMiddleware,
+    CsrfMiddleware,
+    HostHeaderMiddleware,
+    OriginGuardMiddleware,
+)
 from app.config import Config
 from app.log import get, setup
 from app.services import Services, build
@@ -60,6 +65,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
     from app.legal.api import router as legal_router
+    from app.transcription.api import router as transcription_router
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
 
@@ -85,6 +91,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(router)
     app.include_router(assistant_router)
     app.include_router(legal_router)
+    app.include_router(transcription_router)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())
@@ -138,10 +145,11 @@ def create_app(services: Services | None = None, *, config: Config | None = None
             return shell(candidate)
         return HTMLResponse(INDEX_FALLBACK)
 
-    # Middleware runs in reverse registration order, so this registers
-    # CSRF, then auth, then the host check — and the host check runs first.
+    # Middleware runs in reverse registration order, so this registers CSRF, auth, the
+    # Origin guard and then the host check — and the host check runs first.
     app.add_middleware(CsrfMiddleware, auth=svc.auth)
     app.add_middleware(AuthMiddleware, auth=svc.auth, port=svc.config.server_port)
+    app.add_middleware(OriginGuardMiddleware, port=svc.config.server_port)
     app.add_middleware(HostHeaderMiddleware, port=svc.config.server_port)
     # No CORS middleware at all: no Access-Control-Allow-Origin on any response.
     return app
@@ -230,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
 
     # The launcher asks for fresh links with this; see AuthMiddleware and LINK_PATH.
     write_launcher_key(services.auth, paths.app_home())
+    # Where upshot-mcp finds the app when the port is a fallback (D86), as the tray does.
+    from app.instance import record_port
+
+    record_port(services.config.server_port)
     url = services.auth.link(services.config.server_port)
     log.info("open %s", url)
     print(f"\n  Upshot is running. Open this once to authorize the browser:\n\n  {url}\n")
