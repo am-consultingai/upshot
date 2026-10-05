@@ -2712,11 +2712,9 @@ def test_router() -> APIRouter:
             start = _dt.fromisoformat(str(item["start"]))
             end = _dt.fromisoformat(str(item["end"]))
             account_id = str(item.get("account_id") or seeded_accounts[0])
-            EventStore(svc.conn).replace_window(
-                account_id,
-                str(item.get("calendar_id", "primary")),
-                start,
-                end,
+            # Added, not a window replaced: replacing marks every other event the window
+            # overlaps as removed, so one seeded all-day event hid the timed ones under it.
+            EventStore(svc.conn).add(
                 [
                     CalendarEvent(
                         account_id=account_id,

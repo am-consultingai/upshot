@@ -296,39 +296,30 @@ class EventStore:
         it were still on, and one that comes back is simply live again.
         """
         synced = iso_utc(synced_at)
-        rows = [
-            (
-                account_id,
-                e.calendar_id,
-                e.event_id,
-                e.ical_uid,
-                e.recurring_event_id,
-                e.original_start,
-                e.title,
-                iso_utc(e.start),
-                iso_utc(e.end),
-                int(e.all_day),
-                e.time_zone,
-                e.status,
-                e.response,
-                int(e.transparent),
-                e.event_type,
-                e.visibility,
-                json.dumps([a.as_dict() for a in e.attendees], ensure_ascii=False),
-                e.attendee_count,
-                int(e.attendees_omitted),
-                e.conference_url,
-                e.updated,
-                synced,
-            )
-            for e in events
-        ]
+        rows = _rows(account_id, events, synced)
         with self._transaction():
             self.conn.execute(
                 "UPDATE calendar_events SET removed_at = ? WHERE account_id = ? "
                 "AND calendar_id = ? AND start_at < ? AND end_at > ? AND removed_at IS NULL",
                 (synced, account_id, calendar_id, iso_utc(end), iso_utc(start)),
             )
+            self.conn.executemany(
+                f"INSERT OR REPLACE INTO calendar_events ({_COLUMNS}, removed_at) "
+                f"VALUES ({', '.join('?' for _ in range(22))}, NULL)",
+                rows,
+            )
+        return len(rows)
+
+    def add(self, events: Iterable[CalendarEvent], *, synced_at: datetime) -> int:
+        """Store events and leave every other row as it is: what a seed needs, not a sync.
+
+        ``replace_window`` marks whatever else overlaps the window as removed, so seeding
+        events one at a time that way let a later all-day event remove the timed ones
+        under it (CI, 2026-10-05: tomorrow's all-day leave hid the "up next" event once
+        UTC had passed 21:27).
+        """
+        rows = [row for e in events for row in _rows(e.account_id, [e], iso_utc(synced_at))]
+        with self._transaction():
             self.conn.executemany(
                 f"INSERT OR REPLACE INTO calendar_events ({_COLUMNS}, removed_at) "
                 f"VALUES ({', '.join('?' for _ in range(22))}, NULL)",
@@ -397,3 +388,33 @@ class EventStore:
                 (account_id,),
             ).fetchone()
         return int(row[0])
+
+
+def _rows(account_id: str, events: Iterable[CalendarEvent], synced: str) -> list[tuple[Any, ...]]:
+    return [
+        (
+            account_id,
+            e.calendar_id,
+            e.event_id,
+            e.ical_uid,
+            e.recurring_event_id,
+            e.original_start,
+            e.title,
+            iso_utc(e.start),
+            iso_utc(e.end),
+            int(e.all_day),
+            e.time_zone,
+            e.status,
+            e.response,
+            int(e.transparent),
+            e.event_type,
+            e.visibility,
+            json.dumps([a.as_dict() for a in e.attendees], ensure_ascii=False),
+            e.attendee_count,
+            int(e.attendees_omitted),
+            e.conference_url,
+            e.updated,
+            synced,
+        )
+        for e in events
+    ]
