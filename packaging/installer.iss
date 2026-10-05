@@ -87,7 +87,9 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; Parameters: "--ba
 [Registry]
 ; The Terms version accepted on the licence page (app/legal/terms.py installer_record).
 ; Written only by a finished install, which cannot happen without "I accept".
-Root: HKCU; Subkey: "Software\AM Consulting\Upshot"; ValueType: string; ValueName: "TermsAccepted"; ValueData: "{#TermsVersion}"; Flags: uninsdeletevalue uninsdeletekeyifempty
+; Not by an automatic update (/UPDATE=1, D87): that install is silent, so nobody saw the
+; licence page, and newer Terms are accepted in the app (the gate of D83) instead.
+Root: HKCU; Subkey: "Software\AM Consulting\Upshot"; ValueType: string; ValueName: "TermsAccepted"; ValueData: "{#TermsVersion}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Check: not IsUpdate
 Root: HKCU; Subkey: "Software\AM Consulting"; Flags: uninsdeletekeyifempty
 
 #ifndef NoLinkScheme
@@ -103,8 +105,13 @@ Root: HKCU; Subkey: "Software\Classes\upshot\shell\open\command"; ValueType: str
 
 [Run]
 ; --setup-again: first-run setup opens after every install, on the saved choices (D69).
-Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap --setup-again"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated
+; Not after an automatic update (D87): setup appearing out of nowhere reads as a reset.
+Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap --setup-again"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated; Check: not IsUpdate
+Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap"; StatusMsg: "Preparing..."; Flags: runhidden waituntilterminated; Check: IsUpdate
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; An automatic update is silent, so the entry above never runs: start Upshot again, in
+; the tray. --after-update tells it why it started (D87).
+Filename: "{app}\{#AppExe}"; Parameters: "--background --after-update"; Flags: nowait runasoriginaluser; Check: IsUpdate
 
 ; User data (meetings, recordings, settings, the speech model) lives in
 ; %LOCALAPPDATA%\upshot, outside {app}, so the uninstaller leaves it alone. It only
@@ -176,6 +183,14 @@ begin
   Result := HasSwitch('/NORAMCHECK=1');
 end;
 
+{ An automatic update: Upshot downloaded this installer and started it silently
+  (app/updates, D87). Setup does not reopen, the Terms are not accepted on the user's
+  behalf, and Upshot starts again afterwards. }
+function IsUpdate: Boolean;
+begin
+  Result := HasSwitch('/UPDATE=1');
+end;
+
 { The download is no longer a choice in the wizard. A silent install that must not
   download (the Sandbox runner's jobs) passes /NOMODEL=1. }
 function ModelDownloadSkipped: Boolean;
@@ -212,7 +227,7 @@ end;
   its child processes (a notification being shown) with it. }
 procedure StopUpshot;
 var
-  Exe: String;
+  Exe, Args: String;
   ResultCode, I: Integer;
 begin
   Exe := ExpandConstant('{app}\{#AppExe}');
@@ -229,9 +244,16 @@ begin
     else
       Log('Upshot did not quit within 10 seconds.');
   end;
-  if Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
+  { Not /T on an automatic update: Upshot started this installer, and a tree kill could
+    take the installer down with it. A notification is upshot.exe --toast, which /IM
+    finds either way. }
+  if IsUpdate then
+    Args := '/F /IM {#AppExe}'
+  else
+    Args := '/F /T /IM {#AppExe}';
+  if Exec(ExpandConstant('{sys}\taskkill.exe'), Args, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
     { 0: stopped; 128: none was running }
-    Log('taskkill {#AppExe}: exit ' + IntToStr(ResultCode));
+    Log('taskkill ' + Args + ': exit ' + IntToStr(ResultCode));
     if ResultCode = 0 then
       Sleep(1500);
   end;
