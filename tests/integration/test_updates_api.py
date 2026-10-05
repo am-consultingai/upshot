@@ -32,6 +32,19 @@ def test_install_now_with_nothing_ready_is_not_found(api) -> None:  # type: igno
     assert response.status_code == 404 and "no update" in response.json()["detail"]
 
 
+def test_joining_beta_checks_at_once_but_only_when_checks_are_on(api) -> None:  # type: ignore[no-untyped-def]
+    calls: list[bool] = []
+    api.services.updates.check_in_background = lambda: calls.append(True) or {}
+    client = api.client()
+    api.services.config.set("updates.check", False)
+    client.put("/api/settings", json={"values": {"updates.channel": "beta"}})
+    assert calls == [], "checks off (the e2e server): no request to the real website"
+    api.services.config.set("updates.check", True)
+    client.put("/api/settings", json={"values": {"updates.channel": "stable"}})
+    assert calls == [True]
+    assert client.get("/api/updates").json()["channel"] == "stable"
+
+
 def test_check_now_answers_at_once(api) -> None:  # type: ignore[no-untyped-def]
     updates = api.services.updates
     calls: list[bool] = []

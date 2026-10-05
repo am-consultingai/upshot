@@ -1657,6 +1657,13 @@ def put_settings(request: Request, body: SettingsPut) -> dict[str, Any]:
     svc.config.validate()
     svc.config.save()
     svc.events.publish("settings", changed=sorted(body.values))
+    if (
+        "updates.channel" in body.values
+        and svc.updates is not None
+        and svc.config.get("updates.check", True)
+    ):
+        # Joining beta should show what beta has now, not in six hours (D87).
+        svc.updates.check_in_background()
     return get_settings(request)
 
 
@@ -2630,6 +2637,40 @@ def _seed_audio(svc: Services, folder: Path, seconds: float) -> None:
 # --------------------------------------------------------------------------- test seed
 
 
+def seed_update_ready(svc: Services, version: str) -> None:
+    """A verified update waiting to install, for the browser specs (D87).
+
+    The installer it points at is two bytes, and the copy's installer is replaced by one
+    that starts nothing: "Restart to update" in a spec must never run a program.
+    """
+    import json as _json
+
+    from app.updates.manifest import DOWNLOAD_PREFIX, Manifest, Offer
+
+    updates = svc.updates
+    updates.home.mkdir(parents=True, exist_ok=True)
+    name = f"Upshot-{version}-Setup.exe"
+    (updates.home / name).write_bytes(b"MZ")
+    record = {"version": version, "file": name, "sha256": "0" * 64, "mandatory": False}
+    (updates.home / "ready.json").write_text(_json.dumps(record), encoding="utf-8")
+    manifest = Manifest(
+        channel="stable",
+        version=version,
+        url=f"{DOWNLOAD_PREFIX}v{version}/{name}",
+        size=2,
+        sha256="0" * 64,
+        signer="0" * 40,
+        rollout=100,
+        notes={"en": "Faster summaries.", "he": "סיכומים מהירים יותר."},
+    )
+    updates.offer = Offer(manifest, mandatory=False)
+    updates.phase = "ready"
+    if svc.installer is not None:
+        svc.installer.can_install = True
+        svc.installer.spawn = lambda command: None
+        svc.installer.quit = None
+
+
 def test_router() -> APIRouter:
     """Mounted **only** when UP_TEST_MODE=1; its absence is itself asserted."""
     seed = APIRouter(prefix="/api/test")
@@ -2686,7 +2727,31 @@ def test_router() -> APIRouter:
             # The Terms likewise: accepted, unless a spec asks for them pending (D83).
             if svc.terms is not None:
                 svc.config.set("legal.accepted_version", svc.terms.bundled.version)
+            # Updates: nothing found, nothing ready, the default settings (D87).
+            svc.config.set("updates.channel", "stable")
+            svc.config.set("updates.auto_install", True)
+            if svc.updates is not None:
+                svc.updates.offer = None
+                svc.updates.phase = "idle"
+                svc.updates.last_error = None
+                svc.updates.forget_ready()
+            if svc.installer is not None:
+                # As the e2e server starts: from source, nothing installing, no marker.
+                svc.installer.outcome = None
+                svc.installer.can_install = False
+                svc.installer._installing = False
+                (svc.installer.updates.home / "installing.json").unlink(missing_ok=True)
             svc.config.save()
+        if body.get("update_ready") and svc.updates is not None:
+            seed_update_ready(svc, str(body["update_ready"]))
+        if body.get("update_installed") and svc.installer is not None:
+            # The start after an update: what the toast and Settings say (D87).
+            svc.installer.outcome = {
+                "result": "updated",
+                "from": "0.0.1",
+                "to": str(body["update_installed"]),
+                "window_open": True,
+            }
         if "terms_pending" in body and svc.terms is not None:
             pending = bool(body["terms_pending"])
             svc.config.set("legal.accepted_version", "" if pending else svc.terms.bundled.version)

@@ -12,6 +12,7 @@ import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
 import TermsPage from "./routes/Terms";
 import TermsNotice from "./components/TermsNotice";
+import UpdateNotice from "./components/UpdateNotice";
 import { setupPending } from "./lib/speech";
 import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
@@ -236,6 +237,8 @@ export default function App() {
     source.addEventListener("prompt", invalidate);
     // A newer version of the Terms arrived from the website, or was accepted (D83).
     source.addEventListener("legal", invalidate);
+    // An update was found, is downloading, or is ready to install (D87).
+    source.addEventListener("updates", invalidate);
     return () => {
       source.close();
       delete document.documentElement.dataset.stream;
@@ -297,6 +300,7 @@ export default function App() {
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />
           {!welcoming && <TermsNotice />}
+          {!welcoming && <UpdateNotice />}
           <RecordingBar />
           {!welcoming && (
             <DetectionNudge prompt={active ? null : (status.data?.prompt ?? null)} />
