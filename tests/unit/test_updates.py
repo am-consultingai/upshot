@@ -304,6 +304,7 @@ def test_an_installer_that_does_not_match_the_manifest_is_refused_and_deleted(
     state = updates.check_now()
     assert state["phase"] == "failed" and state["ready"] is False
     assert "match" in (state["last_error"] or "") or "ended at" in (state["last_error"] or "")
+    assert state["progress"] is None, "a refused download is not shown as downloaded"
     assert not list((tmp_path / "updates").glob("Upshot-*"))
 
 

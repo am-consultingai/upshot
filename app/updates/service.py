@@ -213,6 +213,8 @@ class UpdateService:
             for path in (final, partial):
                 path.unlink(missing_ok=True)
             self.last_error = f"refused: {problem}"
+            # Nothing of it is kept, so nothing of it is "downloaded" (seen on machine B).
+            self.progress = None
             log.warning("update %s refused: %s", manifest.version, problem)
             self._set_phase("failed")
             return None
