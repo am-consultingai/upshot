@@ -60,6 +60,10 @@ if (Test-Path $releaseLocal) {
 }
 [System.IO.File]::WriteAllText((Join-Path $root "app\build_info.json"), ($info | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
 Write-Host "version $version, commit $commit"
+# One version everywhere (D87, A1): the front end's package.json must say the same, or
+# the release, its manifest and its crash reports would disagree about what this is.
+$frontendVersion = (Get-Content -Raw -Encoding UTF8 (Join-Path $root "frontend\package.json") | ConvertFrom-Json).version
+if ($frontendVersion -ne $version) { throw "frontend\package.json says $frontendVersion, pyproject.toml says $version" }
 
 Write-Host "== terms =="
 # The installer's licence page, the website and the app all render app\legal\terms.md
