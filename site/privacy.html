@@ -34,7 +34,7 @@
     <h2>In short</h2>
     <ul>
       <li>Upshot is a desktop application that runs on your own Windows computer. Your recordings, transcripts and summaries are stored there.</li>
-      <li>AM Consulting, which makes Upshot, does not run a server that receives your data. We never receive your recordings, transcripts, summaries or Google data.</li>
+      <li>AM Consulting, which makes Upshot, never receives your recordings, transcripts, summaries or Google data. Upshot sends us only update checks, crash reports if you agree to them, and feedback you choose to send (section 6).</li>
       <li>Audio is transcribed on your computer and is never uploaded.</li>
       <li>To write summaries and answer your questions, Upshot sends the text it keeps (transcripts, summaries, notes, action items and calendar details) to the AI provider you choose. If you choose a local model, nothing leaves your computer.</li>
       <li>If you connect Google Calendar, Upshot reads your events, on your computer, to notice and name your meetings, and sends a meeting's invitation to the AI provider you choose along with its transcript. It does not share calendar data with AM Consulting or anyone else.</li>
@@ -48,6 +48,7 @@
       <li><a href="#data">Information Upshot processes</a></li>
       <li><a href="#google">Google user data</a></li>
       <li><a href="#third-parties">Services you choose to connect</a></li>
+      <li><a href="#to-us">What Upshot sends to AM Consulting</a></li>
       <li><a href="#retention">Storage, retention and deletion</a></li>
       <li><a href="#security">Security</a></li>
       <li><a href="#rights">Your choices and rights</a></li>
@@ -66,8 +67,8 @@
 
   <section id="how">
     <h2>2. How Upshot works</h2>
-    <p>Upshot records your meetings on your own computer, transcribes them there, and writes a summary. It runs on your own computer and has no account system: you do not sign up with us, and we do not operate any server that receives information from the app. Where the transcript goes next is your choice, described in section 5.</p>
-    <p>The app does not send usage statistics, analytics or crash reports to us or anyone else.</p>
+    <p>Upshot records your meetings on your own computer, transcribes them there, and writes a summary. It runs on your own computer and has no account system: you do not sign up with us. Where the transcript goes next is your choice, described in section 5.</p>
+    <p>The app does not send usage statistics or analytics to us or anyone else. What it does send us, and only then, is described in section 6: checks for updates, crash reports if you agree to them, and feedback you choose to send.</p>
   </section>
 
   <section id="data">
@@ -136,43 +137,56 @@
     </ul>
   </section>
 
+  <section id="to-us">
+    <h2>6. What Upshot sends to AM Consulting</h2>
+    <p>Upshot has no account system and does not send us your recordings, transcripts, summaries, meeting titles, calendar data or Google data. It sends us only the following, through the service providers named here.</p>
+    <ul>
+      <li><strong>Update checks.</strong> Every few hours, Upshot asks this website, hosted by GitHub Pages, whether a newer version of the app is available. If one is, it downloads the installer from GitHub, checks that it is ours, and installs it when you are not recording and no meeting is about to start (you can turn automatic installation off in Settings). The request sends no meeting data, account details or identifier of yours; like any web request, it reveals your IP address and the app's version to GitHub. To release new versions gradually, Upshot picks a random number once and keeps it on your computer; it is never sent.</li>
+      <li><strong>Crash reports, only if you agree.</strong> Upshot asks once, during setup, whether to send crash reports, and you can change your answer in Settings, Privacy, where you can also see exactly what was last sent. Nothing is sent until you say yes. A report says what went wrong in Upshot's code (the type of error, and the names of the parts of the program involved, with line numbers), the app's version, the kind of computer (Windows version, an approximate amount of memory, the interface language), and a random number that lets us count how many installations a problem affects; that number is not linked to you or to anything else. A report never contains your recordings, transcripts, summaries, meeting titles, the names or email addresses of anyone, your calendar, file names or folder paths, or what an AI provider wrote. Upshot builds each report from a fixed list of these items and removes anything that looks like your content before it is sent.</li>
+      <li><strong>Feedback you choose to send.</strong> If you send feedback from Upshot, we receive what you write and, only if you add them: your email address (so we can reply), technical details (the app's version, the kind of computer, and the types of recent errors), and a screenshot of Upshot's window, which you see before it is sent and which may show meeting content. If you rate a summary, we receive your rating, your comment, which AI provider wrote the summary, and the summary itself only if you choose to include it. Feedback is anonymous unless you add your email address.</li>
+    </ul>
+    <p>Crash reports and feedback are received by our error-reporting service, Sentry (Functional Software, Inc.), which processes them for us. Like any web request, sending them reveals your IP address to it; we have set it not to store IP addresses and not to record the location they suggest.</p>
+    <p>Crash reports and feedback you choose to send may be stored and processed in any country where we or our service providers operate, including the United States. We choose where based on convenience and may change it without notice.</p>
+    <p>We keep crash reports only as long as we need them to find and fix problems, and feedback as long as we need it to act on it and to reply. To have feedback you sent deleted, write to us with its reference (it looks like FB-3F9A2C).</p>
+  </section>
+
   <section id="retention">
-    <h2>6. Storage, retention and deletion</h2>
+    <h2>7. Storage, retention and deletion</h2>
     <p>Everything Upshot creates is stored in your data folder on your computer. By default, raw audio recordings are deleted automatically after 30 days, while transcripts and summaries are kept until you delete them. You can change these periods in Upshot's configuration, delete any meeting in the app at any time, or delete the data folder entirely.</p>
   </section>
 
   <section id="security">
-    <h2>7. Security</h2>
+    <h2>8. Security</h2>
     <p>Upshot's interface runs only on your own computer (at 127.0.0.1) and requires a per-installation key before it shows anything. API keys, passwords and sign-in tokens are kept in Windows Credential Manager. Recordings and transcripts are regular files in your data folder, so they are protected by your computer's own security; we recommend turning on full-disk encryption such as BitLocker.</p>
   </section>
 
   <section id="rights">
-    <h2>8. Your choices and rights</h2>
-    <p>Because your data is on your computer, you control it directly: you can open, copy and delete it at any time, disconnect any connected service, and revoke Google access as described in section 4.5. We do not hold personal data about Upshot users, so there is normally nothing for us to access, correct or delete on your behalf. If you contact us, we use your message and email address only to reply, and you can ask us to delete them. Depending on where you live, you may have rights under data-protection laws such as the Israeli Privacy Protection Law or the GDPR; to exercise them, contact us.</p>
+    <h2>9. Your choices and rights</h2>
+    <p>Because your data is on your computer, you control it directly: you can open, copy and delete it at any time, disconnect any connected service, and revoke Google access as described in section 4.5. Apart from crash reports and feedback (section 6), we do not hold personal data about Upshot users, so there is normally nothing for us to access, correct or delete on your behalf. You can stop crash reports at any time in Settings, Privacy. If you contact us, we use your message and email address only to reply, and you can ask us to delete them. Depending on where you live, you may have rights under data-protection laws such as the Israeli Privacy Protection Law or the GDPR; to exercise them, contact us.</p>
   </section>
 
   <section id="recording">
-    <h2>9. Recording other people</h2>
+    <h2>10. Recording other people</h2>
     <p>Recordings include the voices of the other people in your meetings. The laws on recording conversations differ between countries and states, and some require everyone's consent. You are responsible for informing participants and obtaining any consent the law requires. See our <a href="terms.html">Terms of Service</a>.</p>
   </section>
 
   <section id="children">
-    <h2>10. Children</h2>
+    <h2>11. Children</h2>
     <p>Upshot is not directed at children under 16, and we do not knowingly collect personal data from them.</p>
   </section>
 
   <section id="website">
-    <h2>11. This website</h2>
+    <h2>12. This website</h2>
     <p>This website uses no cookies and no analytics. It remembers your language choice in your browser only. It is hosted by GitHub Pages and loads fonts from Google Fonts and style files from jsDelivr; like any website host, these services receive your IP address and browser details when you visit, under their own privacy policies.</p>
   </section>
 
   <section id="changes">
-    <h2>12. Changes to this policy</h2>
+    <h2>13. Changes to this policy</h2>
     <p>If we change this policy, we will publish the new version on this page. If a change materially affects how Upshot handles your data, and in particular Google user data, we will describe it in the app before it takes effect.</p>
   </section>
 
   <section id="contact">
-    <h2>13. Contact us</h2>
+    <h2>14. Contact us</h2>
     <p>AM Consulting<br>Email: <a href="mailto:office@amconsultingai.com">office@amconsultingai.com</a><br>Website: <a href="https://www.amconsultingai.com">www.amconsultingai.com</a></p>
   </section>
 </main>
