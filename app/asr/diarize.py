@@ -312,6 +312,10 @@ class OnnxDiarizer:
         pipeline = self.load()
         expected = int(pipeline.sample_rate)
         audio = np.asarray(samples, dtype=np.float32)
+        if np.issubdtype(np.asarray(samples).dtype, np.integer):
+            # The callers read int16 WAVs (read_wav); the models want -1..1. Unscaled, the
+            # embeddings of every voice came out alike: a two-voice dialogue was one voice.
+            audio = audio / 32768.0
         if rate != expected:
             import soxr
 
