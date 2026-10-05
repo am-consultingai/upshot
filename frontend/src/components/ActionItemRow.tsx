@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ActionItem, type MeetingDetail } from "../api";
@@ -99,6 +99,15 @@ export default function ActionItemRow({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const patch = useActionPatch();
+  /*
+   * The box moves the moment it is clicked. The shared cache is patched too, but only
+   * after two query cancellations are awaited, and until then the controlled checkbox
+   * sprang back: a click checked in that gap saw no change (CI, 2026-10-05). Cleared
+   * once the item itself says the same, or when the write fails.
+   */
+  const [ticking, setTicking] = useState<boolean | null>(null);
+  useEffect(() => setTicking(null), [item.done]);
+  const done = ticking ?? item.done;
   const [picking, setPicking] = useState<HTMLElement | null>(null);
   const dueRef = useRef<HTMLButtonElement | null>(null);
 
@@ -127,22 +136,22 @@ export default function ActionItemRow({
     today: t("actions.dueToday"),
     tomorrow: t("actions.dueTomorrow"),
   };
-  const late = item.due_at !== null && !item.done && daysUntil(item.due_at) < 0;
+  const late = item.due_at !== null && !done && daysUntil(item.due_at) < 0;
   const owner = item.mine ? t("meeting.you") : item.who;
 
   const items: MenuItem[] = [
     {
       id: "done",
-      label: item.done ? t("actions.markOpen") : t("actions.markDone"),
+      label: done ? t("actions.markOpen") : t("actions.markDone"),
       keys: "X",
-      run: () => patch.mutate({ item, patch: { done: !item.done } }),
+      run: () => patch.mutate({ item, patch: { done: !done } }),
     },
     {
       id: "due",
       label: item.due_at ? t("actions.changeDate") : t("actions.addDate"),
       run: () => setPicking(dueRef.current),
     },
-    ...(!item.done
+    ...(!done
       ? [
           { id: "snooze-tomorrow", label: t("actions.snoozeTomorrow"), keys: "H", run: () => snooze(tomorrow, t("actions.dueTomorrow")) },
           {
@@ -183,7 +192,7 @@ export default function ActionItemRow({
     <li
       data-testid="action-item"
       data-action-id={item.id}
-      data-done={item.done ? "true" : "false"}
+      data-done={done ? "true" : "false"}
       data-mine={item.mine ? "true" : "false"}
       data-due-at={item.due_at ?? undefined}
       aria-selected={showMeeting ? selected : undefined}
@@ -197,16 +206,20 @@ export default function ActionItemRow({
         <input
           type="checkbox"
           data-testid="action-toggle"
-          checked={item.done}
-          aria-label={item.done ? t("actions.markOpen") : t("actions.markDone")}
-          title={item.done ? t("actions.markOpen") : t("actions.markDone")}
-          onChange={(event) => patch.mutate({ item, patch: { done: event.target.checked } })}
+          checked={done}
+          aria-label={done ? t("actions.markOpen") : t("actions.markDone")}
+          title={done ? t("actions.markOpen") : t("actions.markDone")}
+          onChange={(event) => {
+            const next = event.target.checked;
+            setTicking(next);
+            patch.mutate({ item, patch: { done: next } }, { onError: () => setTicking(null) });
+          }}
           className="peer absolute inset-0 cursor-pointer opacity-0"
         />
         <span
           aria-hidden="true"
           className={`grid size-[18px] place-items-center rounded-full transition-all ${
-            item.done
+            done
               ? "bg-accent text-on-accent"
               : "text-transparent shadow-[inset_0_0_0_1.5px_var(--border-strong)] peer-hover:shadow-[inset_0_0_0_1.5px_var(--text-tertiary)]"
           } peer-focus-visible:shadow-[0_0_0_2px_var(--surface-0),0_0_0_4px_var(--accent)]`}
@@ -221,7 +234,7 @@ export default function ActionItemRow({
         <span
           data-testid="action-what"
           className={`block text-md leading-snug ${
-            item.done ? "text-tertiary line-through" : showMeeting ? "text-primary" : "font-medium text-primary"
+            done ? "text-tertiary line-through" : showMeeting ? "text-primary" : "font-medium text-primary"
           }`}
         >
           {item.what}
@@ -249,7 +262,7 @@ export default function ActionItemRow({
 
       {/* Revealed into space the row keeps for it; never pushes the text. */}
       <span className="ma-slot flex shrink-0 items-center gap-0.5 pt-px" data-pinned={picking ? "" : undefined}>
-        {!item.done && (
+        {!done && (
           <Tooltip label={t("actions.snoozeTomorrow")} keys="H" hint={t("help.snooze")}>
           <button
             type="button"
@@ -268,7 +281,7 @@ export default function ActionItemRow({
       </span>
 
       <span className="flex shrink-0 items-center gap-2 pt-px">
-        {!item.done ? (
+        {!done ? (
           <Tooltip label={item.due ?? t("actions.addDate")} hint={t("help.due")}>
           <button
             ref={dueRef}
