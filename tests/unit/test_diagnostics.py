@@ -301,7 +301,8 @@ def test_an_envelope_is_three_lines_and_leaves_the_outbox_once_accepted(tmp_path
     sentry = Sentry()
     assert sentry.client(tmp_path).send("event", {"event_id": "e" * 32, "level": "error"}) is True
     header, item, payload = sentry.bodies[0].decode().strip().split("\n")
-    assert json.loads(header)["event_id"] == "e" * 32 and json.loads(item) == {"type": "event"}
+    assert json.loads(header)["event_id"] == "e" * 32
+    assert json.loads(item) == {"type": "event", "length": len(payload.encode("utf-8"))}
     assert json.loads(payload)["level"] == "error"
     assert not list((tmp_path / "outbox").glob("*.json"))
 

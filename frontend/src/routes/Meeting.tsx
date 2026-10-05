@@ -18,6 +18,7 @@ import { Spinner } from "../components/BusyButton";
 import AudioPlayer, { type AudioPlayerHandle, type Band } from "../components/AudioPlayer";
 import ActionItemsBlock from "../components/ActionItemsBlock";
 import SummaryMinimap from "../components/SummaryMinimap";
+import SummaryRating from "../components/SummaryRating";
 import Transcript from "../components/Transcript";
 import { confirmDialog } from "../components/ConfirmDialog";
 import { toast } from "../components/Toaster";
@@ -712,6 +713,8 @@ export default function MeetingPage() {
                     {t("meeting.notRendered")}
                   </p>
                 ))}
+              {/* Was it good? Up or down, sent only when the user sends it (D87, D3). */}
+              {tab === "summary" && summary.data && <SummaryRating meetingId={meeting.data.id} />}
 
               {tab === "transcript" && (
                 <Transcript

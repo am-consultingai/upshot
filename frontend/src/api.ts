@@ -469,6 +469,21 @@ export interface LegalState {
   page: string;
 }
 
+/** Feedback from inside the app (D87): what the form sends. */
+export interface FeedbackBody {
+  kind: "idea" | "problem" | "praise" | "other";
+  message: string;
+  email: string;
+  details: boolean;
+  /** Send the screenshot taken with `takeScreenshot`, which the user has seen. */
+  screenshot: boolean;
+}
+
+export interface FeedbackPreview {
+  payload: Record<string, unknown>;
+  attachments: { filename: string; bytes: number }[];
+}
+
 /** Crash reports (app/diagnostics, D87): can this build send, and what did the user say. */
 export interface DiagnosticsState {
   /** False in a build from source: it carries no DSN and can send nothing. */
@@ -567,6 +582,31 @@ export const api = {
   declineTerms: () => request<{ quitting: boolean }>("/api/legal/decline", { method: "POST" }),
   updates: () => request<UpdateState>("/api/updates"),
   diagnostics: () => request<DiagnosticsState>("/api/diagnostics"),
+  feedback: () => request<{ available: boolean }>("/api/feedback"),
+  feedbackPreview: (body: FeedbackBody) =>
+    request<FeedbackPreview>("/api/feedback/preview", { method: "POST", body: JSON.stringify(body) }),
+  sendFeedback: (body: FeedbackBody) =>
+    request<{ reference: string; sent: boolean }>("/api/feedback", { method: "POST", body: JSON.stringify(body) }),
+  /** Upshot's window, now, as an object URL to show; the server keeps the same picture. */
+  takeScreenshot: async (): Promise<string> => {
+    const response = await fetch("/api/feedback/screenshot", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken() },
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    return URL.createObjectURL(await response.blob());
+  },
+  dropScreenshot: () => request<{ removed: boolean }>("/api/feedback/screenshot", { method: "DELETE" }),
+  summaryRating: (meetingId: string) =>
+    request<{ rating: { value: "up" | "down"; at: string } | null }>(
+      `/api/feedback/summary/${encodeURIComponent(meetingId)}`,
+    ),
+  rateSummary: (meetingId: string, body: { rating: "up" | "down"; comment: string; include_summary: boolean }) =>
+    request<{ reference: string | null; sent: boolean }>(`/api/feedback/summary/${encodeURIComponent(meetingId)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   /** An error the page caught; the server reports it only with consent (D87, C5). */
   reportClientError: (body: { kind: string; message: string; stack: string }) =>
     request<{ reported: boolean }>("/api/diagnostics/client-error", {

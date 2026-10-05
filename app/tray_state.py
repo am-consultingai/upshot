@@ -40,6 +40,7 @@ class Action(StrEnum):
     OPEN = "dashboard.open"
     QUIT = "app.quit"
     UPDATE = "app.update"
+    FEEDBACK = "app.feedback"
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,7 @@ def menu_for(state: AppState) -> tuple[MenuItem, ...]:
         MenuItem("Stop recording", Action.STOP, enabled=active),
         MenuItem("Resume" if paused else "Pause", Action.PAUSE, enabled=active),
         MenuItem("Open Upshot", Action.OPEN, enabled=True, default=True),
+        MenuItem("Send feedback…", Action.FEEDBACK, enabled=True),
         # Greyed out while recording: an update never cuts a meeting short (D87).
         *(
             (

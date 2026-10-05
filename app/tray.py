@@ -175,6 +175,10 @@ class TrayApp:
         elif action is Action.QUIT:
             self.quit_by_user = True
             self.stop()
+        elif action is Action.FEEDBACK:
+            # The window, with the feedback form open on it (D87).
+            how = window.open_window(self.open_link() + "&feedback=1")
+            log.info("feedback window: %s", how)
         elif action is Action.UPDATE and services.installer is not None:
             # "Restart to update": the installer starts, the app quits, and the installer
             # starts it again (D87). Refused only while recording; the item is greyed then.

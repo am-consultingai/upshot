@@ -148,6 +148,10 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
 
     # A run from source: no DSN, so nothing can be sent whatever the answer (D87).
     services.reporter = CrashReporter(config, dsn="", home=tmp_path, background=False)
+    from app.diagnostics.feedback import FeedbackSender
+
+    # No DSN either: feedback can be previewed but not sent (D87).
+    services.feedback = FeedbackSender(config, dsn="", version="0.2.0", commit=None, home=tmp_path)
     from app.updates.install import UpdateInstaller
 
     # Never starts a real installer: a run from source has none to run.

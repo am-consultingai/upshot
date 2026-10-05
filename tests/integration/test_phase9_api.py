@@ -435,6 +435,7 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
     from app.api.routes import router
     from app.assistant.api import router as assistant_router
     from app.diagnostics.api import router as diagnostics_router
+    from app.diagnostics.feedback_api import router as feedback_router
     from app.legal.api import router as legal_router
     from app.updates.api import router as updates_router
 
@@ -455,6 +456,7 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
             *legal_router.routes,
             *updates_router.routes,
             *diagnostics_router.routes,
+            *feedback_router.routes,
         ]
     ]
     missing = sorted(path for path in called if not any(p.match(path) for p in patterns))
