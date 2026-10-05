@@ -101,6 +101,8 @@ class FakeAsr:
         self.roles: list[str] = []
         #: As LocalAsr's: called between segments, raises to stop (a deletion).
         self.stop_check: Callable[[], None] | None = None
+        #: As LocalAsr's: called with each segment's end time (a file job's progress).
+        self.on_segment: Callable[[float], None] | None = None
 
     # -- helpers
 
@@ -161,6 +163,8 @@ class FakeAsr:
                 words = self._words(text, start, end)
                 if self.stop_check is not None:
                     self.stop_check()
+                if self.on_segment is not None:
+                    self.on_segment(end)
                 segments.append(
                     Segment(
                         id=len(segments),

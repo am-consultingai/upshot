@@ -16,11 +16,11 @@ from app import glossary as glossary_module
 from app import meta
 from app.asr.backend import AsrBackend, Segment
 from app.asr.classify import Classifier, LanguageDecision
-from app.asr.diarize import LONG_TRACK_MINUTES
 from app.asr.models import HEBREW
 from app.audio.echo import EchoModel
 from app.audio.vad import read_wav
 from app.audio.writer import track_files
+from app.config import Config
 from app.log import get
 from app.pipeline.artifacts import up_to_date
 from app.pipeline.context import StageContext
@@ -162,36 +162,38 @@ def _participants(ctx: StageContext) -> tuple[str, ...]:
     return tuple(str(name) for name in names or ())
 
 
-def classifier_for(ctx: StageContext) -> Classifier:
-    """The injected classifier; a scripted one beside the fake ASR; otherwise Whisper small."""
-    services = ctx.services
+def classifier_for(config: Config, services: Any) -> Classifier:
+    """The injected classifier; a scripted one beside the fake ASR; otherwise Whisper small.
+
+    Takes the config and services rather than a stage context: the file engine (D86) uses
+    it too, so a file is classified exactly as a meeting is.
+    """
     injected = getattr(services, "classifier", None) if services is not None else None
     if injected is not None:
         return injected  # type: ignore[no-any-return]
     asr = getattr(services, "asr", None) if services is not None else None
     fake = getattr(asr, "name", "") == "fake" if asr is not None else False
-    if fake or str(ctx.config.get("asr.backend", "local")) == "fake":
+    if fake or str(config.get("asr.backend", "local")) == "fake":
         from app.asr.fake import FakeClassifier
 
-        language = getattr(asr, "language", None) or ctx.config.get("asr.fake_language", "he")
+        language = getattr(asr, "language", None) or config.get("asr.fake_language", "he")
         return FakeClassifier(str(language))
     from app.asr.classify import IsolatedClassifier
 
-    return IsolatedClassifier(ctx.config)
+    return IsolatedClassifier(config)
 
 
-def _check_installation(ctx: StageContext) -> None:
+def check_installation(config: Config, services: Any) -> None:
     """All three models present, before anything is loaded: a model missing after
     install fails the job with a message naming it. It is never downloaded, and ivrit
     never stands in for stock Whisper (R12)."""
-    services = ctx.services
     if services is not None and getattr(services, "asr", None) is not None:
         return  # an injected backend (tests) brings its own models
-    if str(ctx.config.get("asr.backend", "local")) == "fake":
+    if str(config.get("asr.backend", "local")) == "fake":
         return
     from app.asr.models import check_installed
 
-    check_installed(ctx.config)
+    check_installed(config)
 
 
 def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
@@ -203,7 +205,7 @@ def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
 
         decision = override(str(chosen))
     else:
-        classifier = classifier_for(ctx)
+        classifier = classifier_for(ctx.config, ctx.services)
         if hasattr(classifier, "stop_check"):
             classifier.stop_check = ctx.stop_if_deleted  # a deletion stops it at once
         decision = classifier.classify(inputs)
@@ -212,9 +214,8 @@ def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
     return decision
 
 
-def backend_for(ctx: StageContext, role: str = HEBREW) -> AsrBackend:
-    """The one backend for this meeting, for the model role the classifier chose."""
-    services = ctx.services
+def backend_for(config: Config, services: Any, role: str = HEBREW) -> AsrBackend:
+    """The one backend for this meeting (or file), for the model role the classifier chose."""
     backend = getattr(services, "asr", None) if services is not None else None
     if backend is not None:
         select = getattr(backend, "select_role", None)
@@ -223,7 +224,7 @@ def backend_for(ctx: StageContext, role: str = HEBREW) -> AsrBackend:
         return backend  # type: ignore[no-any-return]
     from app.asr.factory import make_backend
 
-    return make_backend(ctx.config, role)
+    return make_backend(config, role)
 
 
 def run(ctx: StageContext) -> None:
@@ -236,7 +237,7 @@ def run(ctx: StageContext) -> None:
         log.info("transcript segments are current; skipping")
         return
 
-    _check_installation(ctx)
+    check_installation(ctx.config, ctx.services)
     echo_model = _measure_echo(ctx)
 
     # One pass per track over the whole file. Lost audio was written as silence, so the
@@ -248,7 +249,7 @@ def run(ctx: StageContext) -> None:
         asr_inputs = _asr_inputs(ctx, echo_model)
         ctx.checkpoint()
         decision = _classify(ctx, asr_inputs)
-        backend = backend_for(ctx, decision.route)
+        backend = backend_for(ctx.config, ctx.services, decision.route)
         if hasattr(backend, "stop_check"):
             # Between segments, a deletion stops the track; the recorder does not (a track
             # cannot be resumed part-way, so it waits for the next checkpoint).
@@ -278,14 +279,14 @@ def run(ctx: StageContext) -> None:
     # and the page's direction.
     confidence = round(decision.p_top, 3)
     ctx.dao.update_meeting(ctx.meeting.id, language=decision.language, language_conf=confidence)
-    asr = {**_describe(backend), "language_detection": decision.as_dict()}
+    asr = {**describe_backend(backend), "language_detection": decision.as_dict()}
 
     payload: dict[str, Any] = {
         "version": 1,
         "language": decision.language,
         "language_conf": confidence,
         "language_source": _source(decision),
-        "model": _describe(backend),
+        "model": describe_backend(backend),
         "asr": {"language_detection": decision.as_dict()},
         "segments": [segment.as_dict() for segment in segments],
     }
@@ -327,7 +328,7 @@ def _diarize(ctx: StageContext, segments: list[Segment], inputs: dict[str, Path]
     so each is clustered once. The microphone's quiet clusters are folded into its main
     voice first; then one voice keeps ``ME``/``THEM`` and several are numbered.
     """
-    from app.asr.diarize import ME, THEM, label_track, make_diarizer, merge_minor_speakers
+    from app.asr.diarize import ME, THEM, diarize_track, make_diarizer
 
     diarizer = make_diarizer(ctx.config)
     if diarizer is None:
@@ -342,25 +343,12 @@ def _diarize(ctx: StageContext, segments: list[Segment], inputs: dict[str, Path]
             audio, track_rate = read_wav(wav)
             if track_rate != rate or not len(audio):  # pragma: no cover - storage rate
                 continue
-            minutes = len(audio) / rate / 60
-            if minutes > LONG_TRACK_MINUTES:
-                log.warning("diarizing %.0f minutes in one pass; this is memory-hungry", minutes)
             ctx.checkpoint()
-            try:
-                turns = diarizer.diarize(audio, rate)
-            except Exception as exc:  # a meeting is never lost for want of speaker turns
-                log.warning("could not diarize the %s track; leaving it whole: %s", track, exc)
-                continue
-            if track == "me":
-                turns = merge_minor_speakers(
-                    turns,
-                    min_share=float(ctx.config.get("asr.diarization_mic_min_share", 0.05)),
-                    min_seconds=float(ctx.config.get("asr.diarization_mic_min_seconds", 20.0)),
-                )
-            voices = len({turn.speaker for turn in turns})
-            log.info("diarization: %d voice(s) on the %s track", voices, track)
-            found[track] = {"speakers": voices, "turns": len(turns)}
-            segments = label_track(segments, turns, track=track, base=base)
+            segments, counts = diarize_track(
+                diarizer, audio, rate, segments, track=track, base=base, config=ctx.config
+            )
+            if counts is not None:
+                found[track] = counts
     finally:
         diarizer.unload()
     if found:
@@ -368,7 +356,7 @@ def _diarize(ctx: StageContext, segments: list[Segment], inputs: dict[str, Path]
     return segments
 
 
-def _describe(backend: AsrBackend) -> dict[str, Any]:
+def describe_backend(backend: AsrBackend) -> dict[str, Any]:
     describe = getattr(backend, "describe", None)
     if callable(describe):
         return dict(describe())
