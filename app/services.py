@@ -48,6 +48,7 @@ class Services:
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
     calendar_invites: Any = None  # app.gcal.invite.InviteReader
     terms: Any = None  # app.legal.terms.TermsService
+    updates: Any = None  # app.updates.service.UpdateService
     extras: dict[str, Any] = field(default_factory=dict)
 
     def close(self) -> None:
@@ -61,6 +62,8 @@ class Services:
             self.calendar_sync.stop()
         if self.terms is not None:
             self.terms.stop()
+        if self.updates is not None:
+            self.updates.stop()
         # A connect in progress holds a listening socket open for up to five minutes.
         if self.calendar is not None:
             self.calendar.close()
@@ -125,6 +128,16 @@ def build(
         from app.audio.factory import make_capture
 
         services.recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=clock)
+    from app.updates.service import UpdateService
+
+    recorder = services.recorder
+    # A download pauses while a meeting is recorded (D87): the recording owns the machine.
+    services.updates = UpdateService(
+        cfg,
+        clock=clock,
+        busy=(lambda: recorder.is_active()) if recorder is not None else (lambda: False),
+        publish=lambda **payload: events.publish("updates", **payload),
+    )
     # Built whatever the mode is. `tick` does nothing while detection is off, and
     # building it unconditionally is what lets Settings turn detection on without a
     # restart — a switch that needs the application restarted is not a switch.

@@ -138,6 +138,12 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
 
     # Nothing accepted yet and no installer record: the state a fresh install starts in.
     services.terms = TermsService(config, home=tmp_path, clock=clock, installer=lambda: None)
+    from app.updates.service import UpdateService
+
+    # A run from source: says what is available, never downloads or installs (D87).
+    services.updates = UpdateService(
+        config, home=tmp_path, clock=clock, current_version="0.2.0", frozen=False
+    )
     services.recorder = Recorder(config, make, clock=clock)
     services.worker = Worker(
         dao=dao,

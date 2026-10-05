@@ -703,7 +703,7 @@
   },
   "info": {
     "title": "Upshot",
-    "version": "1.0.0"
+    "version": "<version>"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -3694,6 +3694,48 @@
           }
         },
         "summary": "List Tags"
+      }
+    },
+    "/api/updates": {
+      "get": {
+        "description": "What is installed, what is available, and how far its download has got.",
+        "operationId": "update_state_api_updates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update State Api Updates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Update State"
+      }
+    },
+    "/api/updates/check": {
+      "post": {
+        "description": "The \"Check now\" button. Answers at once; progress arrives as ``updates`` events.",
+        "operationId": "check_now_api_updates_check_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Check Now Api Updates Check Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check Now"
       }
     }
   }

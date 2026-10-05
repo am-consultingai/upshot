@@ -80,4 +80,6 @@ def _no_wall_clock_home(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytes
         monkeypatch.setenv("UP_HOME", str(tmp_path_factory.mktemp("ma-home")))
     # Nor ask the real website for a newer version of the Terms (app/legal/terms.py).
     monkeypatch.setenv("UP_LEGAL__CHECK", "false")
+    # Nor for a newer version of the app (app/updates/service.py).
+    monkeypatch.setenv("UP_UPDATES__CHECK", "false")
     yield
