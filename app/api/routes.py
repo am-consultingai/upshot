@@ -283,7 +283,8 @@ def status(request: Request) -> dict[str, Any]:
             "state": getattr(detector, "state", "idle") if detector else "off",
         },
         "queue": svc.queue.counts(),
-        "queue_depth": svc.queue.depth(),
+        # File transcriptions count as work too (D86); failed ones are not in "queue".
+        "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
         "disk_free_bytes": disk.free,
         "storage_bytes": storage_bytes(svc),
         "fts": capabilities(svc.conn).fts,
@@ -1296,6 +1297,7 @@ def retention_policy(request: Request) -> dict[str, Any]:
         config=svc.config,
         clock=svc.clock,
         recorder=svc.recorder,
+        transcriptions=svc.transcriptions,
     ).as_dict()
 
 

@@ -251,6 +251,18 @@ DEFAULTS: dict[str, Any] = {
         "transcript_days": None,
         "sweep_hours": 6,  # how often the worker looks; 0 disables the sweep entirely
     },
+    # File transcription for other programs on this computer (D86).
+    "transcription": {
+        # The Settings switch "Transcription for other apps". A courtesy, not an access
+        # control: when off, programs get 403 and the page still works.
+        "service_enabled": True,
+        "keep_days": 30,  # finished jobs and their files; null or 0 keeps them
+        "keep_input": False,  # keep the uploaded copy once the transcript exists
+        "max_upload_mb": 4096,
+        # null: 6 hours on a GPU, 2 on the CPU, where large-v3 runs at about 4× the
+        # audio's length and a longer file would hold the worker for most of a day.
+        "max_hours": None,
+    },
     "enrichment": {"source": "google", "timeout_s": 2.0},  # google|null|fake
     "assistant": {
         # A test hook: the command that stands for the CLI, e.g. ["{python}", "fake.py"].
