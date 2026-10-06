@@ -367,6 +367,17 @@ class TranscriptionStore:
         if self.events is not None:
             self.events.publish("transcription", id=transcription_id, state="deleted")
 
+    def busy(self) -> bool:
+        """A file job is running, or one is due now: ``JobQueue.busy`` for file jobs, so an
+        update never stops one half-way (D87). One held for later (a backoff) does not
+        count."""
+        row = self.conn.execute(
+            "SELECT count(*) AS n FROM transcriptions WHERE state='running' OR "
+            "(state='pending' AND (not_before IS NULL OR not_before <= ?))",
+            (iso(self.clock.now()),),
+        ).fetchone()
+        return int(row["n"]) > 0
+
     def finish_delete(self, transcription_id: str) -> bool:
         """The delete asked for while it ran, now that the engine has let go of its files."""
         if self._stopping.get(transcription_id) != "delete":
