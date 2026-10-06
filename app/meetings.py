@@ -60,14 +60,6 @@ def remove_tree(target: Path) -> int:
     )
 
 
-def slugify(text: str, limit: int = 40) -> str:
-    keep = [char if char.isalnum() or char in "-_" else "-" for char in text.strip().lower()]
-    slug = "".join(keep).strip("-")
-    while "--" in slug:
-        slug = slug.replace("--", "-")
-    return slug[:limit]
-
-
 #: In a meeting's folder: its deletion was asked for while a stage ran. The next start
 #: finishes it (``finish_interrupted_deletes``) if the app closed before the stage stopped.
 DELETING_MARKER = ".deleting"
@@ -174,11 +166,9 @@ class MeetingService:
         sensitive: bool = False,
     ) -> Meeting:
         started = started_at or self.clock.now()
+        # A date, a time and a random suffix: never the title (D89). Names live in the
+        # database, so renaming or reassigning a meeting touches no folder.
         meeting_id = self.dao.new_meeting_id(started)
-        if title:
-            slug = slugify(title)
-            if slug:
-                meeting_id = f"{meeting_id}_{slug}"
         meeting = self.dao.insert_meeting(
             meeting_id=meeting_id,
             folder=self.folder_for(meeting_id),

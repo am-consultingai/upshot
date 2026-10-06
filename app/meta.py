@@ -1,7 +1,10 @@
-"""``meta.json`` — the meeting record mirrored to disk.
+"""``meta.json`` — a meeting's processing record, on disk beside its audio.
 
-The disk layout is recoverable on its own (DESIGN.md §9): everything the database knows
-about a meeting is also in its folder.
+What the pipeline found and decided (state, timing, language detection, the echo model,
+prompt versions, the rating...) is kept here as well as in the database. Names are not
+(D89): the title, the calendar meeting, participants, speaker names and the description
+live only in the database, which is backed up, so a rename or a reassignment is one update
+there and no file says something the database no longer does.
 """
 
 from __future__ import annotations
@@ -47,10 +50,27 @@ def update(folder: Path, **fields: Any) -> dict[str, Any]:
     return payload
 
 
+#: What a person reads or edits about a meeting: the database's alone (D89). Also scrubbed
+#: from a meta.json written before.
+NAME_FIELDS = frozenset(
+    {
+        "title",
+        "title_source",
+        "description",
+        "speaker_names",
+        "calendar_json",
+        "calendar_account_id",
+        "evidence_json",
+        "planned_start",
+        "planned_end",
+    }
+)
+
+
 def mirror(meeting: Meeting, **extra: Any) -> dict[str, Any]:
-    payload = read(meeting.path)
-    payload.update(meeting.as_dict())
-    payload.update(extra)
+    payload = {k: v for k, v in read(meeting.path).items() if k not in NAME_FIELDS}
+    payload.update({k: v for k, v in meeting.as_dict().items() if k not in NAME_FIELDS})
+    payload.update({k: v for k, v in extra.items() if k not in NAME_FIELDS})
     write(meeting.path, payload)
     return payload
 
