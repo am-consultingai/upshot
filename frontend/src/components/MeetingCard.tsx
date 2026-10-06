@@ -98,6 +98,15 @@ export default function MeetingCard({
   const items: MenuItem[] = [
     { id: "open", label: t("sidebar.open"), run: () => navigate(`/m/${meeting.id}`) },
     { id: "rename", label: t("meeting.rename"), run: () => navigate(`/m/${meeting.id}?rename=1`) },
+    ...(!recording
+      ? [
+          {
+            id: "assign",
+            label: t("meeting.assignToMeeting"),
+            run: () => navigate(`/m/${meeting.id}?assign=1`),
+          },
+        ]
+      : []),
     ...(recording && onStop ? [{ id: "stop", label: t("timeline.stop"), run: onStop }] : []),
     ...(!recording && onResummarize
       ? [{ id: "resummarize", label: t("meeting.resummarize"), run: onResummarize }]
@@ -187,6 +196,15 @@ export default function MeetingCard({
                   <>
                     {dot}
                     <bdi data-testid="eta">~{formatDuration(eta, t)}</bdi>
+                  </>
+                )}
+                {/* Not linked to a calendar meeting yet: the user is asked (D89). */}
+                {meeting.needs_meeting && (
+                  <>
+                    {dot}
+                    <bdi data-testid="meeting-needs-meeting" className="text-warning">
+                      {t("calendar.needsMeeting")}
+                    </bdi>
                   </>
                 )}
                 {total > 0 && (

@@ -737,9 +737,7 @@ class Detector:
         payload = self.calendar_payload(found)
         # The same calendar meeting recorded moments ago (a rejoin, a restart): carry that
         # recording on rather than start another (D88). Only a meeting the clues settle.
-        earlier = self.meetings.to_continue(
-            payload if found.certain else ({} if found.candidates else None)
-        )
+        earlier = self.meetings.to_continue(payload)
         reopened = self.meetings.reopen(earlier.id) if earlier is not None else None
         if reopened is not None:
             meeting, after_ms = reopened

@@ -88,6 +88,12 @@ export default function MeetingPage() {
     queryFn: () => api.meeting(id),
     refetchInterval: pipelineBusy ? 2000 : 8000,
   });
+  // An id merged into an earlier recording of the same meeting answers with that one
+  // (D89): show it under its own address, so everything on the page asks about it.
+  const resolvedId = meeting.data?.id;
+  useEffect(() => {
+    if (resolvedId && resolvedId !== id) navigate(`/m/${resolvedId}`, { replace: true });
+  }, [resolvedId, id, navigate]);
   const summary = useQuery({
     queryKey: ["summary", id],
     queryFn: () => api.summaryHtml(id),
@@ -112,6 +118,8 @@ export default function MeetingPage() {
    * is not yanked back by a re-render.
    */
   const [params, setParams] = useSearchParams();
+  // "Assign to meeting…" from the library (D89): the calendar card, open at the choice.
+  const assigning = params.get("assign") === "1";
   const at = params.get("at");
   const seeked = useRef<string | null>(null);
   /*
@@ -525,8 +533,17 @@ export default function MeetingPage() {
                * A proposed match is a question only the user can answer, so it stays on
                * the page until they do. A settled one lives behind the people chip.
                */}
-              {matchState === "proposed" && (
-                <MeetingCalendarCard meetingId={id} calendar={meeting.data.calendar} />
+              {(matchState === "proposed" ||
+                meeting.data.needs_meeting ||
+                meeting.data.merge_with ||
+                assigning) && (
+                <MeetingCalendarCard
+                  meetingId={id}
+                  calendar={meeting.data.calendar}
+                  needsMeeting={Boolean(meeting.data.needs_meeting)}
+                  mergeWith={meeting.data.merge_with ?? null}
+                  startPicking={assigning}
+                />
               )}
 
               {/*

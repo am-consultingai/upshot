@@ -99,13 +99,29 @@ def event_key(payload: dict[str, Any]) -> tuple[str, str] | None:
     a recurring event, which share their iCal UID."""
     if (payload.get("match") or {}).get("state") != "matched":
         return None
-    ref = payload.get("event") or {}
+    return ref_key(payload.get("event") or {})
+
+
+def ref_key(ref: Any) -> tuple[str, str] | None:
+    """:func:`event_key` of one event reference, matched or not."""
     if not isinstance(ref, dict):
         return None
     ident = ref.get("ical_uid") or ref.get("event_id")
     if not ident:
         return None
     return str(ident), str(ref.get("original_start") or ref.get("start") or "")
+
+
+def candidate_keys(payload: dict[str, Any]) -> set[tuple[str, str]]:
+    """The calendar meetings a snapshot is, or may be: its own when matched, else those
+    it proposes."""
+    state = (payload.get("match") or {}).get("state")
+    if state == "matched":
+        key = event_key(payload)
+        return {key} if key else set()
+    if state == "proposed":
+        return {k for c in payload.get("candidates") or [] if (k := ref_key(c)) is not None}
+    return set()
 
 
 def transcribed(meeting: Meeting) -> bool:
@@ -346,8 +362,11 @@ class MeetingService:
                 timeout_s=float(self.config.get("enrichment.timeout_s", 2.0)),
             )
             payload = outcome.enrichment.as_raw() if outcome.enrichment else {}
-        key = event_key(payload)
-        if key is None:
+        # A proposal counts too: the clock alone may not settle a rejoin near a meeting's
+        # end (it assumes a recording runs 15 minutes), but a recording of one of the
+        # meetings it may be, just ended, does.
+        keys = candidate_keys(payload)
+        if not keys:
             return None
         now = self.clock.now()
         within = float(self.config.get("detection.continue_within_s", 900))
@@ -355,7 +374,7 @@ class MeetingService:
         for meeting in self.dao.list_meetings(
             state=str(MeetingState.RECORDED), include_hidden=True, limit=50
         ):
-            if not meeting.ended_at or event_key(calendar_payload(meeting)) != key:
+            if not meeting.ended_at or event_key(calendar_payload(meeting)) not in keys:
                 continue
             ended = parse_iso(meeting.ended_at)
             if now < ended or now > continuable_until(meeting, within):
@@ -551,8 +570,10 @@ class MeetingService:
         """A recording whose calendar meeting is not settled: the user is asked (D89).
 
         Settled is matched (by the user, the detector or the calendar) or "not on my
-        calendar" said by the user. With no calendar connected there is nothing to ask."""
-        if not calendar_connected:
+        calendar" said by the user. With no calendar connected there is nothing to ask,
+        and a recording made before one was (nothing stored on it) is matched for display
+        when its page opens rather than asked about."""
+        if not calendar_connected or not meeting.calendar_json:
             return False
         if MeetingState(meeting.state) in (
             MeetingState.RECORDING,

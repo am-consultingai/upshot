@@ -43,6 +43,8 @@ export interface SeedMeeting {
   audio_seconds?: number;
   /** Pretend the retention sweep already removed this meeting's audio. */
   audio_deleted_at?: string;
+  /** The seeded calendar events it may be, none settled: it needs a meeting (D89). */
+  proposed?: { account_id?: string; calendar_id?: string; event_id: string }[];
   /** Matched to this seeded calendar event; on the first seeded account unless named. */
   calendar?: {
     account_id?: string;
@@ -115,6 +117,8 @@ export interface SeedBody {
     peak_score?: number;
     outcome?: string;
     evidence?: { code: string; weight: number; detail: string }[];
+    /** Seeded events booked at the same time that nothing told apart (D89). */
+    candidates?: { account_id?: string; calendar_id?: string; event_id: string; title?: string }[];
   }[];
 }
 

@@ -32,6 +32,8 @@ export interface Meeting {
   title_source?: string | null;
   /** Every calendar account the meeting is on (its dots). Empty: on no calendar. */
   calendar_accounts?: string[];
+  /** Its calendar meeting is not settled: the user is asked which it was (D89). */
+  needs_meeting?: boolean;
 }
 
 /** A stretch of the conversation about one thing, as the summarizer divided it. */
@@ -144,6 +146,8 @@ export interface MeetingDetail extends Meeting {
   summary_direction?: "ltr" | "rtl";
   /** The classifier's top guesses, for the hidden "Transcribe again as…" only. */
   language_candidates?: string[];
+  /** Another recording of the same calendar meeting, not merged by itself (D89). */
+  merge_with?: { id: string; title: string | null; started_at: string } | null;
 }
 
 /** One connected Google account (D82). Removed accounts are never listed. */
@@ -258,7 +262,12 @@ export interface MeetingCalendar {
   participants_more?: number;
   conference_url?: string | null;
   private?: boolean;
-  match?: { state: "matched" | "proposed" | "none"; source: "auto" | "user"; reason?: string };
+  match?: {
+    state: "matched" | "proposed" | "none";
+    /** Who settled it: the calendar's matcher, the detector, or the user (D89). */
+    source: "auto" | "detected" | "user";
+    reason?: string;
+  };
   candidates?: {
     account_id?: string;
     calendar_id: string;
@@ -292,6 +301,8 @@ export interface Prompt {
   event_id: string | null;
   conference_url: string | null;
   process: string | null;
+  /** Calendar meetings booked at the same time that nothing told apart: pick one (D89). */
+  candidates?: { account_id?: string | null; calendar_id: string; event_id: string; title: string }[];
 }
 
 export interface Status {
@@ -836,6 +847,12 @@ export const api = {
     request<{ calendar: MeetingCalendar | null; candidates: CalendarEvent[] }>(
       `/api/meetings/${id}/calendar`,
     ),
+  /** Join two recordings of one calendar meeting; the earlier one is kept (D89). */
+  mergeMeetings: (id: string, other: string) =>
+    request<MeetingDetail>(`/api/meetings/${id}/merge`, {
+      method: "POST",
+      body: JSON.stringify({ other }),
+    }),
   chooseMeetingEvent: (
     id: string,
     body: EventRef | { none: true },
