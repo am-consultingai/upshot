@@ -8,6 +8,7 @@ both in place (D86).
 
 from __future__ import annotations
 
+import os
 import re
 
 _MNT = re.compile(r"^/mnt/([a-zA-Z])(?:/(.*))?$")
@@ -29,6 +30,25 @@ def to_windows(path: str, wsl_distro: str | None) -> str:
         drive, rest = mounted.groups()
         return f"{drive.upper()}:\\" + (rest or "").replace("/", "\\")
     return f"\\\\wsl.localhost\\{wsl_distro}" + text.replace("/", "\\")
+
+
+def check_local(path: str) -> None:
+    """The app's own rule (``check_path`` in ``app/transcription/api.py``), applied before
+    this process opens or writes anything: a drive path or a WSL share. Any other UNC path
+    would make the bridge itself sign in to that host over SMB, whatever the app refuses
+    (the PR #1 review)."""
+    text = path.strip()
+    if text.startswith(("\\\\?\\", "\\\\.\\", "//?/", "//./")):
+        raise PathError("device paths are not accepted")
+    if text.startswith(("\\\\", "//")):
+        host = re.split(r"[\\/]", text.lstrip("\\/"), maxsplit=1)[0].lower()
+        if host not in ("wsl.localhost", "wsl$"):
+            raise PathError("network paths are not accepted, only files on this computer")
+        return
+    if text.startswith("/") and os.name != "nt":
+        return  # the bridge on Linux or macOS: a local path
+    if not re.match(r"^[A-Za-z]:[\\/]", text):
+        raise PathError(f"give the full path of a file on this computer, not {path!r}")
 
 
 def is_absolute(path: str) -> bool:

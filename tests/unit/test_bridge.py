@@ -177,6 +177,8 @@ def test_tools_are_listed_with_schemas_and_annotations() -> None:
     assert listed["transcribe_file"]["inputSchema"]["required"] == ["path"]
     assert listed["transcribe_file"]["annotations"]["readOnlyHint"] is False
     assert listed["list_transcriptions"]["annotations"]["readOnlyHint"] is True
+    # save_to writes a file, so this is not read-only (the PR #1 review)
+    assert listed["get_transcription"]["annotations"]["readOnlyHint"] is False
 
 
 # ----------------------------------------------------------------------- paging
@@ -331,3 +333,82 @@ def test_a_busy_upshot_is_said_plainly(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ToolError, match="busy") as caught:
         bridge.upshot()
     assert "isn't running" not in str(caught.value)
+
+
+# ----------------------------------------------------------------------- the path rule
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "\\\\attacker\\share\\a.wav",
+        "//attacker/share/a.wav",
+        "\\\\?\\C:\\a.wav",
+        "\\\\.\\pipe\\x",
+        "clip.wav",
+        "C:clip.wav",
+    ],
+)
+def test_the_bridge_refuses_what_the_app_refuses(path: str) -> None:
+    with pytest.raises(paths.PathError):
+        paths.check_local(path)
+
+
+def test_the_wsl_shares_and_drives_pass() -> None:
+    for path in ("C:\\x.wav", "d:/x.wav", "\\\\wsl.localhost\\Ubuntu\\x", "\\\\wsl$\\U\\x"):
+        paths.check_local(path)
+
+
+def test_a_network_path_is_never_opened_by_the_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The PR #1 review: on the app's 400 the bridge checked is_file() and uploaded, so it
+    signed in to any host itself. Now nothing touches the disk or the app."""
+    touched: list[str] = []
+    monkeypatch.setattr(tools.Path, "is_file", lambda self: touched.append("is_file") or True)
+
+    class App:
+        def submit_path(self, path: str, options: dict) -> dict:  # type: ignore[type-arg]
+            touched.append("submit")
+            raise upshot.UpshotError(400, "path: network paths are not accepted")
+
+        def upload(self, path: Path, options: dict) -> dict:  # type: ignore[type-arg]
+            touched.append("upload")
+            return {}
+
+    with pytest.raises(ToolError, match="network paths"):
+        tools.Bridge()._submit(App(), "\\\\attacker\\share\\a.wav", {})  # type: ignore[arg-type]
+    assert touched == []
+
+
+# ----------------------------------------------------------------------- save_to
+
+
+class _Done:
+    def result(self, job_id: str, fmt: str, **params: object) -> str:
+        return f"the {fmt}"
+
+
+_JOB = {"id": "tr_1", "state": "done", "source_name": "talk.mp4", "language": "en"}
+
+
+def test_save_to_never_overwrites(tmp_path: Path) -> None:
+    kept = tmp_path / "talk.srt"
+    kept.write_text("mine", encoding="utf-8")
+    bridge = tools.Bridge()
+    said = bridge._save(_Done(), dict(_JOB), "srt", str(tmp_path))  # type: ignore[arg-type]
+    assert kept.read_text(encoding="utf-8") == "mine"
+    assert (tmp_path / "talk (2).srt").read_text(encoding="utf-8") == "the srt"
+    assert "talk (2).srt" in said
+    bridge._save(_Done(), dict(_JOB), "srt", str(kept))  # type: ignore[arg-type]
+    assert kept.read_text(encoding="utf-8") == "mine"
+    assert (tmp_path / "talk (3).srt").exists()
+
+
+def test_save_to_refuses_a_network_path_and_a_wrong_name(tmp_path: Path) -> None:
+    bridge = tools.Bridge()
+    with pytest.raises(ToolError, match="network paths"):
+        bridge._save(_Done(), dict(_JOB), "srt", "\\\\attacker\\share")  # type: ignore[arg-type]
+    with pytest.raises(ToolError, match=r"ending in \.srt"):
+        bridge._save(_Done(), dict(_JOB), "srt", str(tmp_path / "notes.docx"))  # type: ignore[arg-type]
+    assert not (tmp_path / "notes.docx").exists()
+    bridge._save(_Done(), dict(_JOB), "srt", str(tmp_path / "new folder"))  # type: ignore[arg-type]
+    assert (tmp_path / "new folder" / "talk.srt").exists()
