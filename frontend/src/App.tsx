@@ -14,6 +14,10 @@ import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
 import TermsPage from "./routes/Terms";
 import TermsNotice from "./components/TermsNotice";
+import UpdateNotice from "./components/UpdateNotice";
+import ReportsNotice from "./components/ReportsNotice";
+import ErrorBoundary from "./components/ErrorBoundary";
+import FeedbackDialog from "./components/FeedbackDialog";
 import { setupPending } from "./lib/speech";
 import Sidebar from "./components/Sidebar";
 import RecordingBar from "./components/RecordingBar";
@@ -245,6 +249,8 @@ export default function App() {
     source.addEventListener("transcription", (event) => {
       applyEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as TranscriptionEvent);
     });
+    // An update was found, is downloading, or is ready to install (D87).
+    source.addEventListener("updates", invalidate);
     return () => {
       source.close();
       delete document.documentElement.dataset.stream;
@@ -299,6 +305,7 @@ export default function App() {
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
         <CommandPalette />
         <Toaster />
+        <FeedbackDialog />
         {celebrate && <Confetti onDone={celebrated} />}
         <ConfirmHost />
         <MeetingInfoHost />
@@ -306,11 +313,14 @@ export default function App() {
         <div className="flex min-w-0 flex-1 flex-col">
           <ConnectionBanner />
           {!welcoming && <TermsNotice />}
+          {!welcoming && <UpdateNotice />}
+          {!welcoming && !sendToSetup && <ReportsNotice />}
           <RecordingBar />
           {!welcoming && (
             <DetectionNudge prompt={active ? null : (status.data?.prompt ?? null)} />
           )}
           {/* How meetings are recorded is asked in first-run setup (D64), not over the library. */}
+          <ErrorBoundary title={t("errors.title")} body={t("errors.body")} reload={t("errors.reload")}>
           <main className="flex min-h-0 flex-1">
             {sendToTerms ? (
               <Navigate to="/terms" replace />
@@ -359,6 +369,7 @@ export default function App() {
             </Routes>
             )}
           </main>
+          </ErrorBoundary>
         </div>
         {!welcoming && assistant.open && <AssistantPanel onClose={assistant.close} />}
         {!welcoming && <AssistantLauncher open={assistant.open} onToggle={assistant.toggle} />}

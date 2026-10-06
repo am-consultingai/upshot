@@ -246,6 +246,69 @@
         "title": "ChatPost",
         "type": "object"
       },
+      "ClientError": {
+        "description": "What the page posts when it catches an error: no more than this, and bounded.",
+        "properties": {
+          "kind": {
+            "maxLength": 40,
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Message",
+            "type": "string"
+          },
+          "stack": {
+            "default": "",
+            "maxLength": 20000,
+            "title": "Stack",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ClientError",
+        "type": "object"
+      },
+      "FeedbackPost": {
+        "properties": {
+          "details": {
+            "default": true,
+            "title": "Details",
+            "type": "boolean"
+          },
+          "email": {
+            "default": "",
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "kind": {
+            "maxLength": 20,
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Message",
+            "type": "string"
+          },
+          "screenshot": {
+            "default": false,
+            "title": "Screenshot",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "FeedbackPost",
+        "type": "object"
+      },
       "GlossaryPut": {
         "properties": {
           "terms": {
@@ -476,6 +539,37 @@
         "title": "ProviderPost",
         "type": "object"
       },
+      "RatingPost": {
+        "properties": {
+          "comment": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Comment",
+            "type": "string"
+          },
+          "email": {
+            "default": "",
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "include_summary": {
+            "default": false,
+            "title": "Include Summary",
+            "type": "boolean"
+          },
+          "rating": {
+            "maxLength": 4,
+            "title": "Rating",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "RatingPost",
+        "type": "object"
+      },
       "SecretsPut": {
         "properties": {
           "values": {
@@ -703,7 +797,7 @@
   },
   "info": {
     "title": "Upshot",
-    "version": "1.0.0"
+    "version": "<version>"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1538,6 +1632,67 @@
         "summary": "Detector Ignore"
       }
     },
+    "/api/diagnostics": {
+      "get": {
+        "operationId": "diagnostics_state_api_diagnostics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Diagnostics State Api Diagnostics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Diagnostics State"
+      }
+    },
+    "/api/diagnostics/client-error": {
+      "post": {
+        "description": "An error the interface caught (C5). Reported only with consent; always answers.",
+        "operationId": "client_error_api_diagnostics_client_error_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientError"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Client Error Api Diagnostics Client Error Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Client Error"
+      }
+    },
     "/api/events": {
       "get": {
         "operationId": "sse_api_events_get",
@@ -1552,6 +1707,283 @@
           }
         },
         "summary": "Sse"
+      }
+    },
+    "/api/feedback": {
+      "get": {
+        "operationId": "feedback_state_api_feedback_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Feedback State Api Feedback Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Feedback State"
+      },
+      "post": {
+        "operationId": "send_api_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Send Api Feedback Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send"
+      }
+    },
+    "/api/feedback/preview": {
+      "post": {
+        "description": "Exactly what Send would send.",
+        "operationId": "preview_api_feedback_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Preview Api Feedback Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview"
+      }
+    },
+    "/api/feedback/screenshot": {
+      "delete": {
+        "operationId": "drop_screenshot_api_feedback_screenshot_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "boolean"
+                  },
+                  "title": "Response Drop Screenshot Api Feedback Screenshot Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Drop Screenshot"
+      },
+      "post": {
+        "description": "Upshot's window, now; kept until sent or removed (D2).",
+        "operationId": "take_screenshot_api_feedback_screenshot_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Take Screenshot"
+      }
+    },
+    "/api/feedback/summary/{meeting_id}": {
+      "get": {
+        "operationId": "rating_state_api_feedback_summary__meeting_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rating State Api Feedback Summary  Meeting Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rating State"
+      },
+      "post": {
+        "operationId": "rate_summary_api_feedback_summary__meeting_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rate Summary Api Feedback Summary  Meeting Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rate Summary"
+      }
+    },
+    "/api/feedback/summary/{meeting_id}/preview": {
+      "post": {
+        "operationId": "rating_preview_api_feedback_summary__meeting_id__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Rating Preview Api Feedback Summary  Meeting Id  Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rating Preview"
       }
     },
     "/api/glossary": {
@@ -3757,6 +4189,69 @@
           }
         },
         "summary": "Show Claude Extension"
+      }
+    },
+    "/api/updates": {
+      "get": {
+        "description": "What is installed, what is available, how far its download has got, and what an\ninstall waits for.",
+        "operationId": "update_state_api_updates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Update State Api Updates Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Update State"
+      }
+    },
+    "/api/updates/check": {
+      "post": {
+        "description": "The \"Check now\" button. Answers at once; progress arrives as ``updates`` events.",
+        "operationId": "check_now_api_updates_check_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Check Now Api Updates Check Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check Now"
+      }
+    },
+    "/api/updates/install": {
+      "post": {
+        "description": "For \"Install now\" and \"Restart to update\". The app quits; the installer restarts it.",
+        "operationId": "install_now_api_updates_install_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Install Now Api Updates Install Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Install Now"
       }
     },
     "/api/v1/info": {

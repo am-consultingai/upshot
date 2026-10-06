@@ -64,9 +64,13 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     svc = services or build(config)
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
+    from app.diagnostics.api import router as diagnostics_router
+    from app.diagnostics.feedback_api import router as feedback_router
     from app.legal.api import router as legal_router
     from app.transcription.api import router as transcription_router
     from app.transcription.api import ui_router as transcription_ui_router
+    from app.updates.api import router as updates_router
+    from app.version import build_info
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
 
@@ -83,7 +87,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
 
     app = FastAPI(
         title="Upshot",
-        version="1.0.0",
+        version=build_info().version,
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -94,6 +98,9 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(legal_router)
     app.include_router(transcription_router)
     app.include_router(transcription_ui_router)
+    app.include_router(updates_router)
+    app.include_router(diagnostics_router)
+    app.include_router(feedback_router)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())
@@ -215,6 +222,14 @@ def start_background(services: Services) -> None:
     if services.terms is not None:
         services.terms.adopt_installer_acceptance()
         services.terms.start()
+    # New versions of the app (D87); only an installed copy checks by itself.
+    if services.installer is not None:
+        # First: did an update just install, or fail to? (the marker it left)
+        services.installer.after_start()
+    if services.updates is not None:
+        services.updates.start()
+    if services.installer is not None:
+        services.installer.start()
 
 
 def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process entry point
@@ -231,6 +246,9 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     config = Config.load()
     config.set("server.port", choose_port(config.server_host, config.server_port))
     services = build(config)
+    from app.diagnostics.reporter import set_active
+
+    set_active(services.reporter)  # crash reports, with consent (D87)
     app = create_app(services)
 
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)

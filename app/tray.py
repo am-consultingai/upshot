@@ -83,6 +83,9 @@ class TrayApp:
         self.state = AppState(detector_mode=str(services.config.get("detection.mode", "shadow")))
         self.icon: Any = None
         self._stop = threading.Event()
+        #: Quit from the tray menu, not by the installer or the uninstaller: only such a
+        #: quit may install a ready update (D87).
+        self.quit_by_user = False
 
     def open_link(self) -> str:
         return self.services.auth.link(self.services.config.server_port)
@@ -114,8 +117,16 @@ class TrayApp:
             detector_mode=str(self.services.config.get("detection.mode", "shadow")),
             ending=bool(recorder is not None and recorder.holding),
             worker_alive=worker is None or worker.is_alive(),
+            update_ready=self._update_ready(),
         )
         return self.state
+
+    def _update_ready(self) -> str | None:
+        installer = self.services.installer
+        if installer is None or not installer.can_install:
+            return None
+        ready = installer.updates.ready()
+        return str(ready["version"]) if ready else None
 
     def _title(self) -> str | None:
         recorder = self.services.recorder
@@ -165,7 +176,19 @@ class TrayApp:
             # here used to be refused with nowhere to get another.
             self.show_window()
         elif action is Action.QUIT:
+            self.quit_by_user = True
             self.stop()
+        elif action is Action.FEEDBACK:
+            # The window, with the feedback form open on it (D87).
+            how = window.open_window(self.open_link() + "&feedback=1")
+            log.info("feedback window: %s", how)
+        elif action is Action.UPDATE and services.installer is not None:
+            # "Restart to update": the installer starts, the app quits, and the installer
+            # starts it again (D87). Refused only while recording; the item is greyed then.
+            try:
+                services.installer.install_now()
+            except (LookupError, RuntimeError) as exc:
+                log.info("restart to update refused: %s", exc)
         self.refresh()
 
     def show_window(self) -> str:
@@ -358,6 +381,17 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     config = Config.load()
     config.set("server.port", choose_port(config.server_host, config.server_port))
     services = build(config)
+    from app import paths
+    from app.diagnostics import native
+    from app.diagnostics.reporter import set_active
+
+    # Crash reports (D87): first what a crash of the last run left, then this run's watch.
+    # Only the instance that owns the single-instance lock does this.
+    set_active(services.reporter)
+    crash = native.found(paths.app_home())
+    if crash is not None and services.reporter is not None:
+        services.reporter.report_native(crash["frames"], version=crash.get("version"))
+    native.arm(paths.app_home(), version=info.version)
     app = create_app(services)
     server = LocalServer(app, host=services.config.server_host, port=services.config.server_port)
     server.start()
@@ -365,7 +399,6 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     # nothing else before, so the tray build — the one the installer runs — had no
     # detector at all, whatever the mode said.
     start_background(services)
-    from app import paths
     from app.api.security import write_launcher_key
     from app.instance import record_port, watch_quit
 
@@ -373,13 +406,28 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     record_port(server.bound_port)
     tray = TrayApp(services)
     watch_quit(tray.stop)
-    # The sign-in shortcut passes --background (packaging/installer.iss).
-    tray.on_start(background="--background" in arguments)
+    installer = services.installer
+    if installer is not None:
+        # Once the update installer has started, the app quits so it can be replaced.
+        installer.quit = tray.stop
+    # The sign-in shortcut passes --background (packaging/installer.iss). After an
+    # automatic update the installer passes --background --after-update; the window
+    # comes back only if it was open when the update began (D87).
+    background = "--background" in arguments
+    if "--after-update" in arguments and installer is not None:
+        outcome = installer.outcome or {}
+        background = not outcome.get("window_open", False)
+    tray.on_start(background=background)
     try:
         tray.run()
     finally:
+        if tray.quit_by_user and installer is not None:
+            # The user quit from the tray: a ready update installs now, if it may.
+            installer.at_quit()
         server.stop()
         services.close()
+        # A clean quit: nothing to report at the next start.
+        native.disarm(paths.app_home())
         guard.release()
     return 0
 

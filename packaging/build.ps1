@@ -2,8 +2,8 @@
 #
 #   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 [-Sign] [-SkipInstaller]
 #
-# Chain: deps -> ffmpeg -> vite build -> PyInstaller -> selftest against the freeze -> Inno
-# -> (optionally) Authenticode signing -> sha256.
+# Chain: deps -> ffmpeg -> vite build -> PyInstaller -> selftest against the freeze ->
+# secret scan -> Inno -> (optionally) Authenticode signing -> sha256.
 #
 # Keep this file ASCII. Windows PowerShell 5.1 reads a script without a BOM as the ANSI
 # code page, so a UTF-8 em dash arrives as three characters, one of them a closing quote,
@@ -41,8 +41,29 @@ $commit = (git rev-parse --short=12 HEAD).Trim()
 Assert-Exit "git rev-parse"
 $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $info = [ordered]@{ version = $version; commit = $commit; built = $built }
+# The official build's Sentry DSNs (D87), from the gitignored packaging\release.local.json.
+# A DSN only lets the app send crash reports and feedback, so it ships; it stays out of
+# the repository so that a build from source has none and sends nothing. The secrets it
+# lists (the Sentry auth token, the update signing keys) are never read into the build:
+# only the publish step uses them, and the scan below refuses a build that carries one.
+$releaseLocal = Join-Path $PSScriptRoot "release.local.json"
+$secretFiles = @()
+if (Test-Path $releaseLocal) {
+    $release = Get-Content -Raw -Encoding UTF8 $releaseLocal | ConvertFrom-Json
+    $info.sentry = [ordered]@{ dsn = $release.sentry.desktop.dsn; frontend_dsn = $release.sentry.frontend.dsn }
+    $secretFiles = @($release.secret_files | Where-Object { $_ })
+    Write-Host "reports: on (DSNs from packaging\release.local.json)"
+} elseif ($Sign) {
+    Write-Warning "packaging\release.local.json is missing: this signed build will send no crash reports or feedback"
+} else {
+    Write-Host "reports: off (no packaging\release.local.json)"
+}
 [System.IO.File]::WriteAllText((Join-Path $root "app\build_info.json"), ($info | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
 Write-Host "version $version, commit $commit"
+# One version everywhere (D87, A1): the front end's package.json must say the same, or
+# the release, its manifest and its crash reports would disagree about what this is.
+$frontendVersion = (Get-Content -Raw -Encoding UTF8 (Join-Path $root "frontend\package.json") | ConvertFrom-Json).version
+if ($frontendVersion -ne $version) { throw "frontend\package.json says $frontendVersion, pyproject.toml says $version" }
 
 Write-Host "== terms =="
 # The installer's licence page, the website and the app all render app\legal\terms.md
@@ -89,6 +110,17 @@ Assert-Exit "npm ci"
 npm run build
 Assert-Exit "npm run build"
 Pop-Location
+# Source maps (D87): Vite writes them without the comment that points a browser at them.
+# They move out of the app into dist\sourcemaps, with the bundles they describe, so
+# publish_release.py can upload them to Sentry for this release; none ships to users.
+$maps = Join-Path $root "dist\sourcemaps"
+if (Test-Path $maps) { Remove-Item -Recurse -Force $maps }
+New-Item -ItemType Directory -Force -Path $maps | Out-Null
+$assets = Join-Path $root "frontend\dist\assets"
+Get-ChildItem $assets -Filter *.js | Copy-Item -Destination $maps
+Get-ChildItem $assets -Filter *.map | Move-Item -Destination $maps
+if (Get-ChildItem (Join-Path $root "frontend\dist") -Recurse -Filter *.map) { throw "a source map is still in frontend\dist" }
+Write-Host "source maps: $((Get-ChildItem $maps -Filter *.map).Count) moved to dist\sourcemaps"
 
 Write-Host "== third-party notices =="
 # Every component the app ships and its licence, from what is installed here (the
@@ -140,6 +172,15 @@ try {
 } finally {
     $env:UP_HOME = $savedHome
 }
+
+Write-Host "== no secrets in the build =="
+# Neither the Sentry auth token nor an update signing key may ever ship (D87). The scan
+# covers what went into the freeze as well as what came out: PyInstaller compresses
+# Python modules, so a secret in a .py file is only visible in app\.
+$scanArgs = @("app", "frontend\dist", "vendor", "dist\upshot")
+foreach ($f in $secretFiles) { $scanArgs += @("--secret-file", $f) }
+uv run python scripts/scan_secrets.py @scanArgs
+Assert-Exit "the secret scan (a secret is in the build)"
 
 $signer = Join-Path $PSScriptRoot "sign.ps1"
 function Sign-File([string]$path) {

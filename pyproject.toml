@@ -9,6 +9,10 @@ dependencies = [
     "python-multipart>=0.0.20",
     "anthropic>=0.69",
     "httpx>=0.28",
+    # Updates (D87): the manifest's Ed25519 signature, and comparing versions. Both were
+    # already installed through other packages; the app now uses them itself.
+    "cryptography>=44",
+    "packaging>=24",
     "jsonschema>=4.23",
     "rapidfuzz>=3.10",
     "numpy>=2.1",
@@ -87,7 +91,7 @@ module = [
     "apscheduler.*", "keyring.*", "psutil.*", "PIL.*", "rapidfuzz.*",
     "bs4.*", "aiosmtpd.*", "win32com.*", "pythoncom.*", "win32file.*",
     "ctranslate2.*", "huggingface_hub.*", "jsonschema.*", "openai.*",
-    "winerror.*", "win32event.*", "pystray.*", "sherpa_onnx.*",
+    "winerror.*", "win32event.*", "win32ui.*", "pystray.*", "sherpa_onnx.*",
 ]
 ignore_missing_imports = true
 

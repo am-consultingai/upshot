@@ -316,6 +316,17 @@ export interface Status {
   storage_bytes?: number;
   fts: boolean;
   now: string;
+  /** Which build answered (app/version.py). */
+  build?: BuildInfo;
+}
+
+export interface BuildInfo {
+  version: string;
+  commit: string | null;
+  built: string | null;
+  frozen: boolean;
+  /** This build can send crash reports and feedback (it carries a DSN, D87). */
+  reports: boolean;
 }
 
 export interface LlmProvider {
@@ -514,6 +525,66 @@ export interface LegalState {
   page: string;
 }
 
+/** Feedback from inside the app (D87): what the form sends. */
+export interface FeedbackBody {
+  kind: "idea" | "problem" | "praise" | "other";
+  message: string;
+  email: string;
+  details: boolean;
+  /** Send the screenshot taken with `takeScreenshot`, which the user has seen. */
+  screenshot: boolean;
+}
+
+export interface FeedbackPreview {
+  payload: Record<string, unknown>;
+  attachments: { filename: string; bytes: number }[];
+}
+
+/** Crash reports (app/diagnostics, D87): can this build send, and what did the user say. */
+export interface DiagnosticsState {
+  /** False in a build from source: it carries no DSN and can send nothing. */
+  available: boolean;
+  consent: "unset" | "on" | "off";
+  /** Exactly what was last sent, for anyone who wants to see it. */
+  last_report: Record<string, unknown> | null;
+}
+
+/** The next version of the app, and how far it has got (app/updates, D87). */
+export interface UpdateOffer {
+  channel: "stable" | "beta";
+  version: string;
+  size: number;
+  critical: boolean;
+  /** Installs at the first safe moment whatever the setting: critical, or this copy is too old. */
+  mandatory: boolean;
+  min_version: string | null;
+  published: string | null;
+  notes: Partial<Record<"en" | "he", string>>;
+  notes_url: string | null;
+}
+
+export interface UpdateState {
+  phase: "idle" | "checking" | "downloading" | "waiting" | "ready" | "failed";
+  current: string;
+  channel: "stable" | "beta";
+  auto_install: boolean;
+  /** False when run from source: it says what is available but never installs. */
+  enabled: boolean;
+  available: UpdateOffer | null;
+  held_back: string | null;
+  progress: { bytes: number; total: number } | null;
+  ready: boolean;
+  last_checked_at: string | null;
+  last_error: string | null;
+  install?: {
+    can_install: boolean;
+    /** What a ready update waits for; null when nothing does. */
+    waiting_for: "recording" | "call" | "jobs" | "meeting" | null;
+    /** What the start after an update found. */
+    last: { result: "updated" | "failed"; from: string; to: string } | null;
+  };
+}
+
 export interface TermsDocument extends LegalMeta {
   title: string;
   html: string;
@@ -567,6 +638,43 @@ export const api = {
     request<LegalState>("/api/legal/accept", { method: "POST", body: JSON.stringify({ version }) }),
   /** Not accepting quits the app; `quitting` is false where nothing can be asked to quit. */
   declineTerms: () => request<{ quitting: boolean }>("/api/legal/decline", { method: "POST" }),
+  updates: () => request<UpdateState>("/api/updates"),
+  diagnostics: () => request<DiagnosticsState>("/api/diagnostics"),
+  feedback: () => request<{ available: boolean }>("/api/feedback"),
+  feedbackPreview: (body: FeedbackBody) =>
+    request<FeedbackPreview>("/api/feedback/preview", { method: "POST", body: JSON.stringify(body) }),
+  sendFeedback: (body: FeedbackBody) =>
+    request<{ reference: string; sent: boolean }>("/api/feedback", { method: "POST", body: JSON.stringify(body) }),
+  /** Upshot's window, now, as an object URL to show; the server keeps the same picture. */
+  takeScreenshot: async (): Promise<string> => {
+    const response = await fetch("/api/feedback/screenshot", {
+      method: "POST",
+      headers: { "X-CSRF-Token": csrfToken() },
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    return URL.createObjectURL(await response.blob());
+  },
+  dropScreenshot: () => request<{ removed: boolean }>("/api/feedback/screenshot", { method: "DELETE" }),
+  summaryRating: (meetingId: string) =>
+    request<{ rating: { value: "up" | "down"; at: string } | null }>(
+      `/api/feedback/summary/${encodeURIComponent(meetingId)}`,
+    ),
+  rateSummary: (meetingId: string, body: { rating: "up" | "down"; comment: string; include_summary: boolean }) =>
+    request<{ reference: string | null; sent: boolean }>(`/api/feedback/summary/${encodeURIComponent(meetingId)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  /** An error the page caught; the server reports it only with consent (D87, C5). */
+  reportClientError: (body: { kind: string; message: string; stack: string }) =>
+    request<{ reported: boolean }>("/api/diagnostics/client-error", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  /** Answers at once; progress arrives as `updates` events. */
+  checkUpdates: () => request<UpdateState>("/api/updates/check", { method: "POST" }),
+  /** The app quits and the installer starts it again on the new version. */
+  installUpdate: () => request<{ installing: string }>("/api/updates/install", { method: "POST" }),
   audioDevices: () => request<AudioDevices>("/api/audio/devices"),
   model: () => request<ModelStatus>("/api/model"),
   /** Starts the download in the background; a second call while one runs joins it. */
