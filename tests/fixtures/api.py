@@ -138,6 +138,26 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
 
     # Nothing accepted yet and no installer record: the state a fresh install starts in.
     services.terms = TermsService(config, home=tmp_path, clock=clock, installer=lambda: None)
+    from app.updates.service import UpdateService
+
+    # A run from source: says what is available, never downloads or installs (D87).
+    services.updates = UpdateService(
+        config, home=tmp_path, clock=clock, current_version="0.2.0", frozen=False
+    )
+    from app.diagnostics.reporter import CrashReporter
+
+    # A run from source: no DSN, so nothing can be sent whatever the answer (D87).
+    services.reporter = CrashReporter(config, dsn="", home=tmp_path, background=False)
+    from app.diagnostics.feedback import FeedbackSender
+
+    # No DSN either: feedback can be previewed but not sent (D87).
+    services.feedback = FeedbackSender(config, dsn="", version="0.2.0", commit=None, home=tmp_path)
+    from app.updates.install import UpdateInstaller
+
+    # Never starts a real installer: a run from source has none to run.
+    services.installer = UpdateInstaller(
+        config, services.updates, clock=clock, spawn=lambda command: None, can_install=False
+    )
     services.recorder = Recorder(config, make, clock=clock)
     services.worker = Worker(
         dao=dao,

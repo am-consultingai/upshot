@@ -348,6 +348,20 @@ class JobQueue:
         ).fetchone()
         return int(row["n"])
 
+    def busy(self) -> bool:
+        """A job is running, or one is due now (``claim_next`` would take it).
+
+        An update must not stop a transcription half-way (D87). A job held for later (the
+        night window, a backoff) does not count: it would keep an update waiting all day.
+        """
+        now = iso(self.clock.now())
+        row = self.conn.execute(
+            "SELECT count(*) AS n FROM jobs WHERE state='running' OR (state='pending' "
+            "AND (not_before IS NULL OR not_before <= ?))",
+            (now,),
+        ).fetchone()
+        return int(row["n"]) > 0
+
     def next_runnable_at(self) -> str | None:
         row = self.conn.execute(
             "SELECT min(not_before) AS t FROM jobs WHERE state='pending' AND not_before IS NOT NULL"

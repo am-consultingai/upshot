@@ -29,6 +29,60 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
   );
 }
 
+/**
+ * Crash reports, asked once (D87). Two equal answers and nothing chosen for the user:
+ * either one saves at once and moves on. Shown only in a build that can send them.
+ */
+export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const { t } = useI18n();
+  const backend = useSetupBackend();
+  const { reports } = useSetupSnapshot();
+  const answer = (on: boolean) => {
+    backend.setCrashReports(on);
+    onNext();
+  };
+  return (
+    <StepFrame
+      id="reports"
+      title="firstRun.reports.title"
+      lead={<p>{t("firstRun.reports.lead")}</p>}
+      footer={
+        <>
+          <button type="button" data-testid="reports-yes" className={PRIMARY} onClick={() => answer(true)}>
+            {t("firstRun.reports.yes")}
+          </button>
+          <button type="button" data-testid="reports-no" className={PRIMARY} onClick={() => answer(false)}>
+            {t("firstRun.reports.no")}
+          </button>
+          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+            {t("firstRun.back")}
+          </button>
+        </>
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Panel title="firstRun.reports.sentTitle">
+          <p className="text-sm text-secondary">{t("firstRun.reports.sent")}</p>
+        </Panel>
+        <Panel title="firstRun.reports.neverTitle">
+          <p className="text-sm text-secondary">{t("firstRun.reports.never")}</p>
+        </Panel>
+      </div>
+      <p className="mt-3 text-center text-xs text-tertiary">
+        {t("firstRun.reports.later")}{" "}
+        <a href="https://upshot.amconsultingai.com/privacy.html" target="_blank" rel="noreferrer" className="underline">
+          {t("firstRun.reports.privacy")}
+        </a>
+      </p>
+      {reports.consent !== "unset" && (
+        <p data-testid="reports-answered" className="sr-only">
+          {reports.consent}
+        </p>
+      )}
+    </StepFrame>
+  );
+}
+
 function Panel({ title, children }: { title: MessageKey; children: ReactNode }) {
   const { t } = useI18n();
   return (

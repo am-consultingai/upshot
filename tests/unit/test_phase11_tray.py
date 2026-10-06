@@ -75,10 +75,23 @@ def test_menu_items_enabled() -> None:
     assert paused[Action.STOP].enabled is True
 
 
+def test_restart_to_update_appears_only_with_a_ready_update_and_waits_for_a_recording() -> None:
+    assert Action.UPDATE not in {item.action for item in menu_for(AppState())}
+    ready = [
+        item for item in menu_for(AppState(update_ready="0.3.0")) if item.action is Action.UPDATE
+    ]
+    assert len(ready) == 1 and ready[0].label == "Restart to update to 0.3.0" and ready[0].enabled
+    actions = [item.action for item in menu_for(AppState(update_ready="0.3.0"))]
+    assert actions.index(Action.UPDATE) == actions.index(Action.QUIT) - 1, "just above Quit"
+    recording = AppState(update_ready="0.3.0", recorder=RecorderState.RECORDING)
+    item = next(i for i in menu_for(recording) if i.action is Action.UPDATE)
+    assert item.enabled is False, "never over a recording"
+
+
 def test_every_state_produces_a_menu() -> None:
     for recorder in RecorderState:
         spec = icon_for(AppState(recorder=recorder))
-        assert len(spec.menu) == 5
+        assert len(spec.menu) == 6  # Send feedback… joined (D87)
         assert spec.tooltip
 
 

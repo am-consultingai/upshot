@@ -1,8 +1,8 @@
 ---
-version: 2026-10-05
-effective: 2026-10-05
+version: 2026-10-06
+effective: 2026-10-06
 material: true
-summary: The full terms for the Upshot beta. They set out the free beta, how plans or limits may be introduced later with notice, how the official app relates to the published source code, and how these Terms are updated and accepted in the app.
+summary: Upshot now updates itself, can send crash reports if you agree, and lets you send feedback from the app. These Terms describe the automatic updates and the feedback you send; the Privacy Policy describes exactly what each one sends.
 ---
 
 # Upshot Terms of Service
@@ -85,6 +85,8 @@ We will give you at least 30 days' notice in the app, or by email if you have gi
 
 We may provide updates to Upshot. Some updates may be needed for Upshot to keep working, to stay secure, or to keep working with third-party services.
 
+Upshot checks our website every few hours for a newer version, downloads it, checks that it comes from us, and installs it by itself at a moment when you are not recording, no call is in progress and no meeting is about to start, or when you quit Upshot. You can turn automatic installation off in Settings; an update we mark as important may still install at the first such moment. By using Upshot you agree to receive these updates. What the checks send is described in the Privacy Policy.
+
 Upshot checks our website about once a day for updated versions of these Terms. Each check is an ordinary web request to upshot.amconsultingai.com and the service that hosts it. It carries no recordings, transcripts, summaries, calendar data, account details or identifier of yours; like any web request, it reveals your computer's IP address and the app's version to the host. If an update to these Terms is published, Upshot downloads it and shows it to you.
 
 In the future, Upshot may also check whether your installation is covered by a plan (a "licence check"). We will describe any licence check, including exactly what it sends, in the Privacy Policy before it starts. A licence check will never send your content.
@@ -134,7 +136,7 @@ Upshot includes software components and uses speech-recognition models published
 
 ## 17. Feedback {#feedback}
 
-If you send us feedback, suggestions or ideas about Upshot, you grant us a perpetual, irrevocable, worldwide, royalty-free licence to use them for any purpose, without any obligation to you. Do not include your content or other people's personal information in feedback unless you are entitled to share it and want us to see it.
+Upshot lets you send feedback from inside the app, including, if you choose, a screenshot of Upshot's window and a rating of a summary. If you send us feedback, suggestions or ideas about Upshot, you grant us a perpetual, irrevocable, worldwide, royalty-free licence to use them for any purpose, without any obligation to you. Do not include your content or other people's personal information in feedback unless you are entitled to share it and want us to see it.
 
 ## 18. Our intellectual property {#ip}
 

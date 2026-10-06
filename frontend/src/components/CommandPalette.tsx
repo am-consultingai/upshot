@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { openFeedback } from "./FeedbackDialog";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
@@ -133,6 +134,8 @@ export default function CommandPalette() {
       },
       { id: "nav.search", group: "palette.navigate", label: t("nav.search"), keys: "/", run: go("/search") },
       { id: "nav.settings", group: "palette.navigate", label: t("nav.settings"), keys: "G ,", run: go("/settings") },
+      // Anonymous unless an email is added (D87).
+      { id: "feedback", group: "palette.do", label: t("feedback.open"), run: openFeedback },
     ];
 
     list.push(

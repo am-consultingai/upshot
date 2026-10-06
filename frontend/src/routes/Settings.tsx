@@ -8,6 +8,8 @@ import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
 import TranscriptionServiceSettings from "../components/TranscriptionServiceSettings";
+import UpdateSettings from "../components/UpdateSettings";
+import PrivacySettings from "../components/PrivacySettings";
 import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
 import Tooltip from "../components/Tooltip";
@@ -43,6 +45,10 @@ const SECTIONS: SettingsSection[] = [
   { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents" },
   { id: "prompt", label: "settings.prompt" },
   { id: "transcription", label: "settings.groupTranscription" },
+  // Crash reports: the answer given in setup, and what was last sent (D87).
+  { id: "privacy", label: "settings.groupPrivacy" },
+  // Last: what version this is, and the updates that arrive by themselves (D87).
+  { id: "about", label: "settings.groupAbout" },
 ];
 
 export default function Settings() {
@@ -245,6 +251,8 @@ export default function Settings() {
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}
       {section === "transcription" && <TranscriptionServiceSettings />}
+      {section === "privacy" && <PrivacySettings />}
+      {section === "about" && <UpdateSettings />}
       </div>
     </section>
     </PinnedContext.Provider>

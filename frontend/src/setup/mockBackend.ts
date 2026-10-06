@@ -107,6 +107,7 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
     key: { provider: "gemini", phase: "idle" },
     speakers: { phase: "idle", level: 0 },
     savedStep: null,
+    reports: { available: true, consent: "unset" },
   };
   switch (id) {
     case "fresh":
@@ -275,6 +276,10 @@ export class MockSetupBackend implements SetupBackend {
 
   /** Nothing to keep: the page's own language state is the whole of it in the mock. */
   setLanguage(): void {}
+
+  setCrashReports(on: boolean): void {
+    this.set({ ...this.state, reports: { ...this.state.reports, consent: on ? "on" : "off" } });
+  }
 
   saveStep(step: StepId): void {
     try {

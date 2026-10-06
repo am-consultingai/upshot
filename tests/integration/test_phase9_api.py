@@ -319,6 +319,8 @@ def test_sse_emits_state_change(api) -> None:  # type: ignore[no-untyped-def]
 
 def test_openapi_snapshot(api, golden) -> None:  # type: ignore[no-untyped-def]
     document = api.app.openapi()
+    # The build's own version (D87): it changes with every release, the API does not.
+    document["info"]["version"] = "<version>"
     golden("openapi.json", json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False))
 
 
@@ -432,9 +434,12 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
 
     from app.api.routes import router
     from app.assistant.api import router as assistant_router
+    from app.diagnostics.api import router as diagnostics_router
+    from app.diagnostics.feedback_api import router as feedback_router
     from app.legal.api import router as legal_router
     from app.transcription.api import router as transcription_router
     from app.transcription.api import ui_router as transcription_ui_router
+    from app.updates.api import router as updates_router
 
     frontend = Path(__file__).resolve().parents[2] / "frontend" / "src"
     if not frontend.is_dir():  # pragma: no cover - a source-only check
@@ -446,14 +451,17 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
             called.add(match.group(1).split("?")[0])
 
     patterns = [
-        re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", route.path) + "$")
+        re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", route.path) + "$")  # type: ignore[attr-defined]
         for route in [
             *router.routes,
             *assistant_router.routes,
             *legal_router.routes,
             *transcription_router.routes,
             *transcription_ui_router.routes,
-        ]  # type: ignore[attr-defined]
+            *updates_router.routes,
+            *diagnostics_router.routes,
+            *feedback_router.routes,
+        ]
     ]
     missing = sorted(path for path in called if not any(p.match(path) for p in patterns))
     assert not missing, f"the UI calls endpoints the server does not serve: {missing}"
