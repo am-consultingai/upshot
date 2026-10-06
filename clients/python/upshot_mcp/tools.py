@@ -123,15 +123,15 @@ class Bridge:
     def _submit(self, app: Upshot, path: str, options: dict[str, Any]) -> dict[str, Any]:
         try:
             target = paths.to_windows(path, self.wsl_distro)
+            paths.check_local(target)
         except paths.PathError as exc:
             raise ToolError(str(exc)) from None
-        if not paths.is_absolute(target):
-            raise ToolError(f"give the full path of the file, not {path!r}")
         try:
             return app.submit_path(target, options)
         except UpshotError as exc:
-            # The app could not read it where it is; this process may (another share, a
-            # permission). Then send the bytes instead.
+            # The app could not read it where it is; this process may (a permission, or an
+            # app on another machine than the file). Then send the bytes instead: only for
+            # a path that passed the same rule, so the fallback reaches no further.
             local = Path(target)
             if exc.status == 400 and local.is_file():
                 return _call(app.upload, local, options)
@@ -189,17 +189,28 @@ class Bridge:
         return body
 
     def _save(self, app: Upshot, job: dict[str, Any], fmt: str, save_to: str) -> str:
-        folder = paths.to_windows(save_to, self.wsl_distro)
+        """Write the result to a folder, or to a file named for its format. Never over an
+        existing file: a name that is taken gets `` (2)``, `` (3)``…"""
+        try:
+            folder = paths.to_windows(save_to, self.wsl_distro)
+            paths.check_local(folder)
+        except paths.PathError as exc:
+            raise ToolError(f"save_to: {exc}") from None
         target = Path(folder)
-        if target.suffix.lower() == f".{EXTENSIONS[fmt]}":
+        extension = f".{EXTENSIONS[fmt]}"
+        if target.suffix.lower() == extension and not target.is_dir():
             out = target
+        elif target.is_dir() or not target.suffix:
+            out = target / f"{paths.stem(job['source_name'])}{extension}"
         else:
-            out = target / f"{paths.stem(job['source_name'])}.{EXTENSIONS[fmt]}"
+            raise ToolError(f"save_to: give a folder, or a file name ending in {extension}")
+        out = _free_name(out)
         query = {"timestamps": "true"} if fmt == "text" else {}
         body = _call(app.result, job["id"], "txt" if fmt == "text" else fmt, **query)
         try:
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(body, encoding="utf-8")
+            with out.open("x", encoding="utf-8") as handle:  # "x": never over a file
+                handle.write(body)
         except OSError as exc:
             raise ToolError(f"could not write {save_to}: {exc}") from None
         shown = out if not self.wsl_distro else _back_to_wsl(str(out), save_to)
@@ -210,6 +221,17 @@ class Bridge:
 
 
 # --------------------------------------------------------------------------- helpers
+
+
+def _free_name(path: Path) -> Path:
+    """``path``, or the first ``name (n).ext`` beside it that no file has taken."""
+    if not path.exists():
+        return path
+    for number in range(2, 1000):
+        candidate = path.with_name(f"{path.stem} ({number}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise ToolError(f"save_to: too many files named {path.name} already")
 
 
 def _call(fn: Any, *args: Any, **kwargs: Any) -> Any:
@@ -329,7 +351,8 @@ def tools(bridge: Bridge) -> list[Tool]:
             "type": "string",
             "default": "",
             "description": "Optional folder (or file path) to write the result to instead of "
-            "returning it, e.g. the folder the video is in.",
+            "returning it, e.g. the folder the video is in. A file already there is kept; "
+            "the new one gets a number.",
         },
     }
     return [
@@ -377,6 +400,7 @@ def tools(bridge: Bridge) -> list[Tool]:
             description="A transcription by id: its progress, or the transcript once done. "
             "Text comes in parts of about 20 000 characters; the reply says where the next "
             "part starts (from_s).",
+            read_only=False,  # save_to writes a file
             run=bridge.get_transcription,
             input_schema={
                 "type": "object",
