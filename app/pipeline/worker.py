@@ -434,7 +434,15 @@ class Worker:
             if not self.may_run():
                 self.clock.sleep(busy_sleep)
                 continue
-            if not self.run_once():
+            try:
+                ran = self.run_once()
+            except Exception:
+                # Nothing a job does may end the thread: with it gone, nothing would be
+                # transcribed again until a restart (the PR #1 review).
+                log.exception("worker: a job failed outside its own error handling")
+                self.clock.sleep(busy_sleep)
+                continue
+            if not ran:
                 # Only with nothing else to do: housekeeping never competes with a job.
                 self.maybe_sweep()
                 self.clock.sleep(idle_sleep)
