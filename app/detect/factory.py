@@ -11,10 +11,14 @@ log = get(__name__)
 
 
 class RecorderVad:
-    """Sustained speech per track, read from the recorder's own pre-roll ring.
+    """Sustained speech per track, read from the recorder's latest audio.
 
     "Sustained" is the design's definition: at least 3 s of voiced frames inside a
     rolling 10 s window (DETECTION.md §5).
+
+    Not the pre-roll ring: that is emptied at commit and stays empty while a recording
+    runs, so "nobody is speaking" was all it could say about a call being recorded, and
+    every recording ended five minutes in as silent (machine B, 2026-10-06).
     """
 
     def __init__(
@@ -31,10 +35,7 @@ class RecorderVad:
         self.vad = vad or TwoStageVad()
 
     def sustained(self, track: str) -> bool:
-        runtime = getattr(self.recorder, "runtime", {}).get(track)
-        if runtime is None:
-            return False
-        samples = runtime.ring.peek()
+        samples = self.recorder.recent(track)  # type: ignore[attr-defined]
         rate = getattr(self.recorder, "rate", 16000)
         window = int(self.window_s * rate)
         if len(samples) == 0:
