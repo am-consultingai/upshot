@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import threading
 import wave
 from pathlib import Path
@@ -345,6 +346,7 @@ def test_hooks_are_reset_after_a_finished_job(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+@pytest.mark.skipif(sys.platform == "win32", reason="the fake ffmpeg is a shebang script")
 def test_cancel_kills_ffmpeg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A conversion that would take minutes stops within a poll of the cancel."""
     slow = tmp_path / "slow-ffmpeg"

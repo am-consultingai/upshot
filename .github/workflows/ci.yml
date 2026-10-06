@@ -45,6 +45,8 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
+      # The Transcriptions page's upload is probed and decoded by ffmpeg (D86).
+      - run: sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run e2e
         working-directory: frontend
       - uses: actions/upload-artifact@v4
