@@ -27,7 +27,7 @@ def version_resource(root: Path, *, name: str, description: str) -> str:
     info_file = root / "app" / "build_info.json"
     info = json.loads(info_file.read_text(encoding="utf-8")) if info_file.exists() else {}
     version = str(info.get("version", "0.0.0"))
-    numbers = tuple((list(map(int, version.split(".")[:3])) + [0, 0, 0, 0])[:4])
+    numbers = tuple([*map(int, version.split(".")[:3]), 0, 0, 0, 0][:4])
     commit = str(info.get("commit", "unknown"))
     resource = VSVersionInfo(
         ffi=FixedFileInfo(filevers=numbers, prodvers=numbers),
