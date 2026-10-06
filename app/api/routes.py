@@ -3082,8 +3082,7 @@ def test_router() -> APIRouter:
 
                 (meeting.path / "transcript.md").write_text(
                     render_markdown(
-                        coalesce(TranscriptFile.read(meeting.path / "transcript.json").segments),
-                        title=item.get("title"),
+                        coalesce(TranscriptFile.read(meeting.path / "transcript.json").segments)
                     ),
                     encoding="utf-8",
                 )
