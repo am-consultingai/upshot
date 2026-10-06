@@ -72,9 +72,10 @@ export class ApiSetupBackend implements SetupBackend {
    * needs it.
    */
   static async create(): Promise<ApiSetupBackend> {
-    const [settings, calendar] = await Promise.all([
+    const [settings, calendar, diagnostics] = await Promise.all([
       api.settings(),
       api.calendarStatus().catch(() => null),
+      api.diagnostics().catch(() => null),
     ]);
     const config = settings.config as { setup?: { step?: string } };
     const saved = config.setup?.step;
@@ -93,6 +94,7 @@ export class ApiSetupBackend implements SetupBackend {
       key: { provider: "gemini", phase: "idle" },
       speakers: { phase: "idle", level: 0 },
       savedStep: saved ? (saved as StepId) : null,
+      reports: { available: !!diagnostics?.available, consent: diagnostics?.consent ?? "unset" },
     });
     backend.opensExternally = !!calendar?.opens_externally;
     backend.learnClis();
@@ -352,6 +354,12 @@ export class ApiSetupBackend implements SetupBackend {
 
   setLanguage(language: "en" | "he"): void {
     void api.putSettings({ "ui.language": language }).catch(() => undefined);
+  }
+
+  setCrashReports(on: boolean): void {
+    const consent = on ? "on" : "off";
+    this.set({ ...this.state, reports: { ...this.state.reports, consent } });
+    void api.putSettings({ "diagnostics.crash_reports": consent }).catch(() => undefined);
   }
 
   saveStep(step: StepId): void {

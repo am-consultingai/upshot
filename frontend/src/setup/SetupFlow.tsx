@@ -4,7 +4,7 @@ import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
 import KeyStep from "./KeyStep";
 import ServicesStep from "./ServicesStep";
-import { AudioStep, WelcomeStep } from "./Steps";
+import { AudioStep, ReportsStep, WelcomeStep } from "./Steps";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import {
   DEFAULT_CAPTURE,
@@ -25,6 +25,7 @@ const LABEL: Record<CrumbId, MessageKey> = {
   welcome: "firstRun.step.welcome",
   calendar: "firstRun.step.calendar",
   aiSetup: "firstRun.step.aiSetup",
+  reports: "firstRun.step.reports",
   audio: "firstRun.step.audio",
 };
 
@@ -51,7 +52,9 @@ export default function SetupFlow({
   const backend = useSetupBackend();
   const snapshot = useSetupSnapshot();
 
-  const [allSteps] = useState(() => stepsFor({ calendarAvailable: snapshot.calendar.available }));
+  const [allSteps] = useState(() =>
+    stepsFor({ calendarAvailable: snapshot.calendar.available, reportsAvailable: snapshot.reports.available }),
+  );
   const [capture, setCapture] = useState<CaptureMode>(DEFAULT_CAPTURE);
   const [step, setStep] = useState<StepId>(() => resumeAt(allSteps, startAt ?? snapshot.savedStep));
   // Said once, on the step setup reopened on, and gone as soon as the user moves.
@@ -194,6 +197,7 @@ export default function SetupFlow({
       )}
       {step === "ai" && <AiStep ticked={ticked} onNext={next} onBack={back} />}
       {step === "key" && <KeyStep onNext={next} onBack={back} />}
+      {step === "reports" && <ReportsStep onNext={next} onBack={back} />}
       {step === "audio" && (
         <AudioStep
           mode={capture}

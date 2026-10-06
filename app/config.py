@@ -303,6 +303,35 @@ DEFAULTS: dict[str, Any] = {
         "check_hours": 24,
         "manifest_url": "https://upshot.amconsultingai.com/legal/terms.json",
     },
+    "updates": {
+        # New versions of the app, like Windows Update (app/updates, D87). An installed
+        # copy reads a signed manifest on the website every `check_hours` and keeps the
+        # next installer ready; the request carries nothing of the user's.
+        "check": True,
+        "check_hours": 6,
+        # Install by itself at a safe moment (no recording, no meeting soon), or only say
+        # "Restart to update". A critical update installs either way.
+        "auto_install": True,
+        "channel": "stable",  # stable|beta
+        "manifest_base": "https://upshot.amconsultingai.com/updates/",
+        # 0 is no limit. A download pauses while a meeting is recorded whatever this says.
+        "download_kbps": 0,
+        # This copy's place in a staged rollout, 0-99, drawn once. Never sent anywhere.
+        "bucket": None,
+        # How long the moment must stay safe before an automatic install.
+        "quiet_minutes": 10,
+        # Testing only: where an installer may come from instead of this repository's
+        # GitHub Releases. The manifest must still be signed with a built-in key.
+        "download_prefix": None,
+    },
+    "diagnostics": {
+        # Crash reports (app/diagnostics, D87): asked once in setup. "unset" until then,
+        # and nothing is sent unless this is "on" and the build carries a DSN.
+        "crash_reports": "unset",
+        # Random, made with the first report, linked to nothing: lets Sentry count how
+        # many installs a crash reaches. Never sent with feedback.
+        "install_id": None,
+    },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
     "server": {"host": "127.0.0.1", "port": 8000},
@@ -332,6 +361,8 @@ _ENUMS: dict[str, tuple[str, ...]] = {
     "profile": ("auto", "gpu-live", "cpu-deferred"),
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),
     "ui.language": ("en", "he"),
+    "updates.channel": ("stable", "beta"),
+    "diagnostics.crash_reports": ("unset", "on", "off"),
     "summary.language": ("en", "he", "auto"),
     "asr.backend": ("local", "fake"),
     "asr.device": ("auto", "cpu", "cuda"),

@@ -1,9 +1,9 @@
 {
-  "version": "2026-10-05",
-  "effective": "2026-10-05",
+  "version": "2026-10-06",
+  "effective": "2026-10-06",
   "material": true,
-  "summary": "The full terms for the Upshot beta. They set out the free beta, how plans or limits may be introduced later with notice, how the official app relates to the published source code, and how these Terms are updated and accepted in the app.",
+  "summary": "Upshot now updates itself, can send crash reports if you agree, and lets you send feedback from the app. These Terms describe the automatic updates and the feedback you send; the Privacy Policy describes exactly what each one sends.",
   "url": "terms.md",
-  "sha256": "bb5dec234e7ef79422c5fee577340a14013ac4c632fb7b1b8b53a7dfdf937766",
+  "sha256": "b2a018eae39bb0d36b0d40d2e54094311971887aaaf9c840c82dc63806e49df7",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }

@@ -52,6 +52,10 @@ class Services:
     transcriptions: Any = None
     #: app.transcription.scheduler.Scheduler: one FIFO across meeting and file jobs.
     scheduler: Any = None
+    updates: Any = None  # app.updates.service.UpdateService
+    installer: Any = None  # app.updates.install.UpdateInstaller
+    reporter: Any = None  # app.diagnostics.reporter.CrashReporter
+    feedback: Any = None  # app.diagnostics.feedback.FeedbackSender
     extras: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -80,6 +84,10 @@ class Services:
             self.calendar_sync.stop()
         if self.terms is not None:
             self.terms.stop()
+        if self.updates is not None:
+            self.updates.stop()
+        if self.installer is not None:
+            self.installer.stop()
         # A connect in progress holds a listening socket open for up to five minutes.
         if self.calendar is not None:
             self.calendar.close()
@@ -144,6 +152,33 @@ def build(
         from app.audio.factory import make_capture
 
         services.recorder = Recorder(cfg, lambda track: make_capture(cfg, track), clock=clock)
+    from app.diagnostics.reporter import CrashReporter
+
+    # Crash reports, only with consent and a DSN (D87).
+    services.reporter = CrashReporter(cfg)
+    from app import paths as _paths
+    from app.diagnostics.feedback import FeedbackSender
+    from app.version import build_info as _build_info
+
+    # Feedback from inside the app, anonymous unless the user adds an email (D87).
+    _info = _build_info()
+    services.feedback = FeedbackSender(
+        cfg,
+        dsn=_info.sentry_dsn,
+        version=_info.version,
+        commit=_info.commit,
+        home=_paths.app_home(),
+    )
+    from app.updates.service import UpdateService
+
+    recorder = services.recorder
+    # A download pauses while a meeting is recorded (D87): the recording owns the machine.
+    services.updates = UpdateService(
+        cfg,
+        clock=clock,
+        busy=(lambda: recorder.is_active()) if recorder is not None else (lambda: False),
+        publish=lambda **payload: events.publish("updates", **payload),
+    )
     # Built whatever the mode is. `tick` does nothing while detection is off, and
     # building it unconditionally is what lets Settings turn detection on without a
     # restart — a switch that needs the application restarted is not a switch.
@@ -163,6 +198,25 @@ def build(
             calendar=calendar_now,
             prompts=services.prompts,
         )
+    from app import window
+    from app.detect.detector import DetectorState
+    from app.updates.install import UpdateInstaller, meeting_soon
+
+    detector = services.detector
+    # When the ready update may install (D87): never over a recording, a call, a
+    # transcription, or a calendar meeting about to start.
+    services.installer = UpdateInstaller(
+        cfg,
+        services.updates,
+        recording=(lambda: recorder.is_active()) if recorder is not None else (lambda: False),
+        in_call=(lambda: detector.state is not DetectorState.IDLE)
+        if detector is not None
+        else (lambda: False),
+        jobs_busy=queue.busy,
+        meeting_soon=lambda: meeting_soon(calendar_now, clock),
+        window_open=lambda: window.count_open() > 0,
+        clock=clock,
+    )
     if with_worker:
         from app.pipeline.stages import registry
 
