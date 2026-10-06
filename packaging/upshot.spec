@@ -87,63 +87,18 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "torch", "tests"],
+    # pydantic's hook collects its mypy plugin, which pulls in mypy itself from a build
+    # venv that also holds the dev tools; nothing at run time uses either.
+    excludes=["tkinter", "matplotlib", "torch", "tests", "mypy", "pydantic.mypy", "pydantic.v1.mypy"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
 
 
-def version_resource() -> str:
-    """The exe's Properties > Details: publisher, product, version (D71).
+import sys
 
-    A PyInstaller exe without one looks like a throwaway build, which is one of the few
-    features Defender's machine-learning verdicts are known to weigh; two projects cleared
-    the same Bearfoos.A!ml false positive by adding one (docs/research).
-    """
-    import json
-
-    from PyInstaller.utils.win32.versioninfo import (
-        FixedFileInfo,
-        StringFileInfo,
-        StringStruct,
-        StringTable,
-        VarFileInfo,
-        VarStruct,
-        VSVersionInfo,
-    )
-
-    info_file = ROOT / "app" / "build_info.json"
-    info = json.loads(info_file.read_text(encoding="utf-8")) if info_file.exists() else {}
-    version = str(info.get("version", "0.0.0"))
-    numbers = tuple((list(map(int, version.split(".")[:3])) + [0, 0, 0, 0])[:4])
-    commit = str(info.get("commit", "unknown"))
-    resource = VSVersionInfo(
-        ffi=FixedFileInfo(filevers=numbers, prodvers=numbers),
-        kids=[
-            StringFileInfo(
-                [
-                    StringTable(
-                        "040904B0",
-                        [
-                            StringStruct("CompanyName", "AM Consulting"),
-                            StringStruct("FileDescription", "Upshot"),
-                            StringStruct("FileVersion", version),
-                            StringStruct("InternalName", "upshot"),
-                            StringStruct("LegalCopyright", "(c) AM Consulting"),
-                            StringStruct("OriginalFilename", "upshot.exe"),
-                            StringStruct("ProductName", "Upshot"),
-                            StringStruct("ProductVersion", f"{version} ({commit})"),
-                        ],
-                    )
-                ]
-            ),
-            VarFileInfo([VarStruct("Translation", [1033, 1200])]),
-        ],
-    )
-    target = ROOT / "build" / "file_version_info.txt"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(str(resource), encoding="utf-8")
-    return str(target)
+sys.path.insert(0, SPECPATH)
+from version_info import version_resource  # noqa: E402
 
 
 exe = EXE(
@@ -153,7 +108,7 @@ exe = EXE(
     exclude_binaries=True,
     name="upshot",
     console=False,
-    version=version_resource(),
+    version=version_resource(ROOT, name="upshot", description="Upshot"),
     icon=str(ROOT / "packaging" / "icon.ico") if (ROOT / "packaging" / "icon.ico").exists() else None,
 )
 

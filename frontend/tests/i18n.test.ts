@@ -27,6 +27,12 @@ describe("catalogue parity", () => {
    */
   const PROPER_NOUNS = new Set([
     "app.title",
+    "transcriptions.client.api",
+    "transcriptions.client.mcp",
+    "settings.transcriptionDesktop",
+    "settings.transcriptionCode",
+    "settings.transcriptionTabWindows",
+    "settings.transcriptionTabWsl",
     "meeting.exportMarkdown",
     "assistant.provider.anthropic",
     "assistant.provider.openai",

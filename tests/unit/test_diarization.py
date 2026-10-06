@@ -218,3 +218,32 @@ def test_several_voices_on_the_microphone_are_numbered() -> None:
     two = [SpeakerTurn(0.0, 2.0, 0), SpeakerTurn(2.0, 4.0, 1)]
     labelled = label_track(segments, two, track="me", base="ME")
     assert [s.speaker for s in labelled] == ["ME_1", "ME_2", "THEM"]
+
+
+def test_int16_samples_reach_the_onnx_models_scaled_to_one() -> None:
+    """The transcribe stage and the file engine pass ``read_wav``'s int16 samples. sherpa-onnx
+    wants -1..1; unscaled, every voice embedded alike and a two-voice dialogue came out as one."""
+    import numpy as np
+
+    from app.asr.diarize import OnnxDiarizer
+
+    seen: list[np.ndarray] = []
+
+    class Result:
+        def sort_by_start_time(self) -> list[object]:
+            return []
+
+    class Pipeline:
+        sample_rate = 16000
+
+        def process(self, audio: np.ndarray) -> Result:
+            seen.append(audio)
+            return Result()
+
+    diarizer = OnnxDiarizer("seg.onnx", "emb.onnx")
+    diarizer._pipeline = Pipeline()
+    diarizer.diarize(np.array([32767, -32768, 16384], dtype=np.int16), 16000)
+    diarizer.diarize(np.array([0.5, -0.25], dtype=np.float32), 16000)
+    assert seen[0].dtype == np.float32 and np.abs(seen[0]).max() <= 1.0
+    assert seen[0][2] == 0.5
+    assert seen[1].tolist() == [0.5, -0.25], "float input is already scaled"
