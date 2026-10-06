@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 import wave
 from dataclasses import dataclass
@@ -542,6 +543,12 @@ def _transcription(args: argparse.Namespace) -> list[Check]:
             probe.bind(("127.0.0.1", 0))
             return int(probe.getsockname()[1])
 
+    from app.audio.ingest import ffmpeg_path
+
+    if ffmpeg_path(Config.load()) is None and not getattr(sys, "frozen", False):
+        # A source checkout without ffmpeg (CI). The freeze bundles it, so there a missing
+        # ffmpeg is a failure, which is what this suite is for.
+        return [skipped("transcription", "ffmpeg not installed")]
     started = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
