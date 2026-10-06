@@ -58,6 +58,21 @@ def ffmpeg_path(config: Config | None = None) -> str | None:
 #: How often a cancellable conversion asks whether to stop.
 POLL_S = 1.0
 
+#: The containers ffmpeg may open: ordinary audio and video files. Any container that
+#: names further files to read (an HLS or DASH playlist, a concat list, an image pattern)
+#: is left out, because it would reach a file anywhere, a network share included, which
+#: the path rules refuse (D86; the PR #1 review). ``mov`` covers mp4, m4a and 3gp, and
+#: ``matroska`` covers webm.
+FORMATS: tuple[str, ...] = (
+    "wav", "w64", "mp3", "aac", "flac", "ogg", "matroska", "mov", "avi", "asf", "amr",
+    "aiff", "au", "caf", "mpeg", "mpegts", "flv", "wv", "ape", "tta", "ac3", "eac3",
+    "dts", "truehd", "mlp", "gsm", "voc", "xwma", "rm",
+)  # fmt: skip
+#: Before every ``-i``: local files only (R1), in one of :data:`FORMATS`.
+SAFE_INPUT_ARGS: tuple[str, ...] = (
+    "-protocol_whitelist", "file", "-format_whitelist", ",".join(FORMATS),
+)  # fmt: skip
+
 
 def to_wav(
     source: Path,
@@ -84,7 +99,7 @@ def to_wav(
         )
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        binary, "-y", *input_args, "-i", str(source), *extra_args,
+        binary, "-y", *SAFE_INPUT_ARGS, *input_args, "-i", str(source), *extra_args,
         "-ac", "1", "-ar", str(rate), str(target),
     ]  # fmt: skip
     if stop_check is not None:
@@ -234,7 +249,8 @@ class Probe:
 def probe(source: Path, *, config: Config | None = None) -> Probe:
     """Describe ``source`` with ``ffmpeg -i`` and no output: the build ships no ffprobe.
 
-    Local files only (``-protocol_whitelist file``), as the engine reads them. Raises
+    Local files in ordinary containers only (:data:`SAFE_INPUT_ARGS`), as every
+    conversion reads them. Raises
     :class:`UnsupportedAudio` for anything ffmpeg cannot open; a file it opens with no
     audio stream comes back with ``has_audio=False``.
     """
@@ -243,7 +259,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
         raise UnsupportedAudio("ffmpeg was not found, so this file cannot be read")
     try:
         result = subprocess.run(
-            [binary, "-hide_banner", "-protocol_whitelist", "file", "-i", str(source)],
+            [binary, "-hide_banner", *SAFE_INPUT_ARGS, "-i", str(source)],
             capture_output=True,
             check=False,
             timeout=PROBE_TIMEOUT_S,
