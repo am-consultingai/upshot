@@ -127,3 +127,14 @@ def test_diarization_is_idempotent(tmp_path: Path) -> None:
     first = transcribe.segments_path(meeting.path).read_bytes()
     transcribe.run(h.context(meeting, services=Services()))
     assert transcribe.segments_path(meeting.path).read_bytes() == first
+
+
+def test_the_meeting_segments_match_the_golden(tmp_path: Path, golden) -> None:  # type: ignore[no-untyped-def]
+    """The transcribe stage's whole output, pinned: the shared helpers the file engine
+    reuses (D86) were extracted from this stage with no change in behaviour."""
+    import json
+
+    h, meeting = prepared(tmp_path, asr__diarization="fake", asr__diarization_fake_speakers=2)
+    transcribe.run(h.context(meeting, services=Services()))
+    payload = json.loads(transcribe.segments_path(meeting.path).read_text(encoding="utf-8"))
+    golden("meeting_segments.json", json.dumps(payload, ensure_ascii=False, indent=1) + "\n")

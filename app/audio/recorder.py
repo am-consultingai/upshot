@@ -82,6 +82,10 @@ class Recorder:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
+        #: One pump at a time: each track's resampler keeps state between calls, and two
+        #: threads in it at once corrupt it (soxr's "negative dimensions"). The writer thread
+        #: is the only pump in the app; a test or selftest that pumps by hand beside it was not.
+        self._pump_lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -249,8 +253,9 @@ class Recorder:
     def pump_once(self, timeout: float = 0.05) -> int:
         """Drain both queues once. Returns the number of samples written."""
         written = 0
-        for track in list(self.runtime):
-            written += self._pump_track(track, timeout)
+        with self._pump_lock:
+            for track in list(self.runtime):
+                written += self._pump_track(track, timeout)
         return written
 
     def _pump_track(self, track: str, timeout: float) -> int:
@@ -312,7 +317,8 @@ class Recorder:
                 runtime = self.runtime[track]
                 if runtime.capture.frames.empty():
                     continue
-                written += self._pump_track(track, 0.0)
+                with self._pump_lock:
+                    written += self._pump_track(track, 0.0)
             if written == 0:
                 break
             total += written

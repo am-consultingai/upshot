@@ -48,11 +48,30 @@ class Services:
     calendar_sync: Any = None  # app.gcal.sync.CalendarSync
     calendar_invites: Any = None  # app.gcal.invite.InviteReader
     terms: Any = None  # app.legal.terms.TermsService
+    #: app.transcription.store.TranscriptionStore: file transcription jobs (D86).
+    transcriptions: Any = None
+    #: app.transcription.scheduler.Scheduler: one FIFO across meeting and file jobs.
+    scheduler: Any = None
     updates: Any = None  # app.updates.service.UpdateService
     installer: Any = None  # app.updates.install.UpdateInstaller
     reporter: Any = None  # app.diagnostics.reporter.CrashReporter
     feedback: Any = None  # app.diagnostics.feedback.FeedbackSender
     extras: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Here rather than in build(): tests and the selftest assemble Services by hand,
+        # and file transcription is part of every one of them.
+        if self.transcriptions is None:
+            from app.transcription.store import TranscriptionStore
+
+            config = self.config
+            self.transcriptions = TranscriptionStore(
+                self.conn, lambda: config.data_root, self.clock, events=self.events
+            )
+        if self.scheduler is None:
+            from app.transcription.scheduler import Scheduler
+
+            self.scheduler = Scheduler(self.queue, self.transcriptions)
 
     def close(self) -> None:
         if self.worker is not None:
@@ -193,7 +212,8 @@ def build(
         in_call=(lambda: detector.state is not DetectorState.IDLE)
         if detector is not None
         else (lambda: False),
-        jobs_busy=queue.busy,
+        # Meeting jobs and file jobs (D86): both are a transcription an update must wait for.
+        jobs_busy=services.scheduler.busy if services.scheduler is not None else queue.busy,
         meeting_soon=lambda: meeting_soon(calendar_now, clock),
         window_open=lambda: window.count_open() > 0,
         clock=clock,
@@ -209,6 +229,8 @@ def build(
             clock=clock,
             recorder=services.recorder,
             services=services,
+            transcriptions=services.transcriptions,
+            scheduler=services.scheduler,
         )
     return services
 
