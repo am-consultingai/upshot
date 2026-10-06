@@ -38,9 +38,6 @@ log = get(__name__)
 
 WAV_NAME = "audio.wav"
 
-#: ffmpeg is told to read local files only, so a playlist or concat file inside an upload
-#: cannot make it fetch a URL (R1) or open something elsewhere.
-INPUT_ARGS: tuple[str, ...] = ("-protocol_whitelist", "file")
 #: The audio only: a video track is never decoded.
 OUTPUT_ARGS: tuple[str, ...] = ("-vn",)
 
@@ -72,7 +69,6 @@ def transcribe_file(
             wav,
             config=config,
             rate=config.sample_rate,
-            input_args=INPUT_ARGS,
             extra_args=OUTPUT_ARGS,
             stop_check=stop_check,
         )

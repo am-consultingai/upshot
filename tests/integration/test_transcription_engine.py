@@ -180,7 +180,28 @@ def test_ffmpeg_reads_local_files_only_and_never_decodes_video(
     run(tmp_path / "clip.m4a", tmp_path)
     command = seen[0]
     assert command[command.index("-protocol_whitelist") + 1] == "file"
-    assert command.index("-protocol_whitelist") < command.index("-i") < command.index("-vn")
+    assert "hls" not in command[command.index("-format_whitelist") + 1].split(",")
+    assert command.index("-format_whitelist") < command.index("-i") < command.index("-vn")
+
+
+@needs_ffmpeg
+def test_a_playlist_given_as_a_path_is_refused(tmp_path: Path) -> None:
+    """The PR #1 review: an .m3u8 path made ffmpeg's HLS reader open the files it names,
+    anywhere, a network share included. Only ordinary containers are opened now."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    write_wav(elsewhere / "secret.wav", 2)
+    playlist = tmp_path / "podcast.m3u8"
+    playlist.write_text(
+        "#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\n"
+        f"{elsewhere / 'secret.wav'}\n#EXT-X-ENDLIST\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ingest.UnsupportedAudio):
+        ingest.probe(playlist)
+    with pytest.raises(ingest.UnsupportedAudio):
+        ingest.to_wav(playlist, tmp_path / "out.wav")
+    ingest.probe(elsewhere / "secret.wav")  # an ordinary file still opens
 
 
 # ----------------------------------------------------------------------- languages, prompt
