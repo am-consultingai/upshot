@@ -129,7 +129,8 @@ def run(ctx: StageContext) -> None:
         segments=numbered,
     )
     transcript.write(transcript_json)
-    transcript_md.write_text(render_markdown(turns, title=ctx.meeting.title), encoding="utf-8")
+    # No title: the file is the conversation, and the name is the database's (D89).
+    transcript_md.write_text(render_markdown(turns), encoding="utf-8")
 
     ctx.dao.index_turns(
         ctx.meeting.id,

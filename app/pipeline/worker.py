@@ -432,12 +432,29 @@ class Worker:
         if self._last_sweep is not None and now - self._last_sweep < hours * 3600:
             return None
         self._last_sweep = now
+        self.maybe_backup()
         try:
             from app.retention import sweep_services
 
             return sweep_services(self.services)
         except Exception as exc:  # a housekeeping task must never take the worker down
             log.warning("retention sweep failed: %s", exc)
+            return None
+
+    def maybe_backup(self) -> Any:
+        """Copy the database once a day (D89): it alone holds the meetings' names."""
+        if self.services is None:
+            return None
+        try:
+            from app.db.backup import database_of, maybe_backup
+
+            database = database_of(self.services.conn)
+            if database is None:
+                return None
+            hours = float(self.config.get("backup.every_hours", 24))
+            return maybe_backup(database, every_s=hours * 3600)
+        except Exception as exc:  # a housekeeping task must never take the worker down
+            log.warning("database backup failed: %s", exc)
             return None
 
     def run_forever(self, *, idle_sleep: float = 2.0, busy_sleep: float = 5.0) -> None:

@@ -221,6 +221,13 @@ class UpdateInstaller:
         ]
         log.info("installing update %s (%s)", version, why)
         try:
+            # The database first (D89): an update that goes wrong must not cost the names.
+            from app.db.backup import backup
+
+            backup(home.parent / "index.db", why=f"before-{version}")  # home is <app>/updates
+        except Exception as exc:  # never a reason not to update
+            log.warning("database backup before the update failed: %s", exc)
+        try:
             self.spawn(command)
         except OSError as exc:
             log.warning("the update installer did not start: %s", exc)
