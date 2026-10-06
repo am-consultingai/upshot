@@ -23,20 +23,27 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const start = useMutation({
-    mutationFn: () =>
+    mutationFn: (picked?: { account_id?: string | null; calendar_id: string; event_id: string }) =>
       api.startRecording(
-        prompt?.calendar_id && prompt.event_id
+        picked
           ? {
-              account_id: prompt.account_id ?? undefined,
-              calendar_id: prompt.calendar_id,
-              event_id: prompt.event_id,
+              account_id: picked.account_id ?? undefined,
+              calendar_id: picked.calendar_id,
+              event_id: picked.event_id,
             }
-          : undefined,
+          : prompt?.calendar_id && prompt.event_id
+            ? {
+                account_id: prompt.account_id ?? undefined,
+                calendar_id: prompt.calendar_id,
+                event_id: prompt.event_id,
+              }
+            : undefined,
       ),
     onSuccess: (started) => {
       void queryClient.invalidateQueries();
       // A calendar event brings its own details; otherwise ask, alongside the recording.
-      if (!(prompt?.calendar_id && prompt.event_id)) openMeetingInfo(started.meeting_id);
+      if (!(prompt?.calendar_id && prompt.event_id) && !prompt?.candidates?.length)
+        openMeetingInfo(started.meeting_id);
     },
   });
   const dismiss = useMutation({
@@ -46,7 +53,11 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
 
   if (!prompt) return null;
   const who = appName(prompt.process);
-  const text = prompt.title
+  // Meetings booked at the same time that nothing told apart (D89): pick which.
+  const choices = prompt.candidates ?? [];
+  const text = choices.length
+    ? t("detector.nudgeWhich")
+    : prompt.title
     ? (prompt.kind === "calendar" ? t("detector.nudgeStarting") : t("detector.nudgeNamed")).replace(
         "{title}",
         prompt.title,
@@ -59,14 +70,28 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
         <span className="font-medium text-warning" data-testid="detection-nudge-text">
           {text}
         </span>
-        <BusyButton
-          data-testid="detection-nudge-start"
-          busy={start.isPending}
-          onClick={() => start.mutate()}
-          className="rounded bg-danger px-3 py-1 text-on-solid"
-        >
-          {t("timeline.start")}
-        </BusyButton>
+        {choices.length ? (
+          choices.map((choice) => (
+            <BusyButton
+              key={`${choice.calendar_id}:${choice.event_id}`}
+              data-testid="detection-nudge-choice"
+              busy={start.isPending}
+              onClick={() => start.mutate(choice)}
+              className="rounded bg-danger px-3 py-1 text-on-solid"
+            >
+              {t("detector.nudgeRecord").replace("{title}", choice.title || t("calendar.untitled"))}
+            </BusyButton>
+          ))
+        ) : (
+          <BusyButton
+            data-testid="detection-nudge-start"
+            busy={start.isPending}
+            onClick={() => start.mutate(undefined)}
+            className="rounded bg-danger px-3 py-1 text-on-solid"
+          >
+            {t("timeline.start")}
+          </BusyButton>
+        )}
         {prompt.conference_url && (
           <a
             data-testid="detection-nudge-join"
