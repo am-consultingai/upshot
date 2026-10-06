@@ -212,7 +212,8 @@ def build(
         in_call=(lambda: detector.state is not DetectorState.IDLE)
         if detector is not None
         else (lambda: False),
-        jobs_busy=queue.busy,
+        # Meeting jobs and file jobs (D86): both are a transcription an update must wait for.
+        jobs_busy=services.scheduler.busy if services.scheduler is not None else queue.busy,
         meeting_soon=lambda: meeting_soon(calendar_now, clock),
         window_open=lambda: window.count_open() > 0,
         clock=clock,

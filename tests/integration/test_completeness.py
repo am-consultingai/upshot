@@ -215,9 +215,15 @@ def test_a_saved_auto_profile_follows_the_device(
     assert build().policy == "asap"
 
 
-def test_a_job_that_blows_up_does_not_end_the_worker(tmp_path: Path) -> None:
+def test_a_job_that_blows_up_does_not_end_the_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The PR #1 review: an exception out of a job (a deleted row, a data root gone)
-    ended run_forever, and nothing ran again until a restart."""
+    ended run_forever, and nothing ran again until a restart. It is reported (D87)."""
+    import app.diagnostics.reporter as reporter
+
+    reported: list[str] = []
+    monkeypatch.setattr(reporter, "report", lambda exc, *, where: reported.append(where))
     h = harness(tmp_path, job_policy="asap")
     worker = Worker(dao=h.dao, queue=h.queue, config=h.config, stages={}, clock=h.clock)
     calls: list[str] = []
@@ -232,3 +238,4 @@ def test_a_job_that_blows_up_does_not_end_the_worker(tmp_path: Path) -> None:
     worker.run_once = run_once  # type: ignore[method-assign]
     worker.run_forever(idle_sleep=0, busy_sleep=0)
     assert calls == ["run", "run"]
+    assert reported == ["worker"]
