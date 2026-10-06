@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type EventRef, type MeetingCalendar } from "../api";
+import { api, type EventRef, type MeetingCalendar, type MeetingDetail } from "../api";
 import { useI18n } from "../i18n";
 import { formatClock } from "../lib/format";
 import AccountDots from "./AccountDots";
@@ -25,26 +26,50 @@ import { eventKey } from "../lib/calendar";
  * Matching has three answers and this shows all three honestly: *matched*, *proposed* (a
  * best guess the user confirms) and *none* (nothing fitted; nothing was invented).
  * Whatever the user picks here is final — automatic matching never changes it again.
+ *
+ * A recording whose meeting is not settled asks "Which meeting was this?" (D89): every
+ * meeting it may be side by side (two booked at the same time are both offered), and
+ * "No calendar event". Picking the meeting of another recording merges the two, and the
+ * page follows to the one that is left.
  */
 export default function MeetingCalendarCard({
   meetingId,
   calendar,
   bare = false,
+  needsMeeting = false,
+  mergeWith = null,
+  startPicking = false,
 }: {
   meetingId: string;
   calendar: MeetingCalendar | null | undefined;
   /** Inside the details dialog: no frame of its own, the title shown. */
   bare?: boolean;
+  /** The meeting is not settled: ask, prominently (D89). */
+  needsMeeting?: boolean;
+  /** Another recording of the same meeting that was not merged by itself. */
+  mergeWith?: MeetingDetail["merge_with"];
+  /** Open at the list of meetings to pick from ("Assign to meeting…"). */
+  startPicking?: boolean;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const [picking, setPicking] = useState(false);
+  const navigate = useNavigate();
+  const settled = (result: MeetingDetail) => {
+    setPicking(false);
+    void queryClient.invalidateQueries({ queryKey: ["meeting", meetingId] });
+    void queryClient.invalidateQueries({ queryKey: ["meeting-invite", meetingId] });
+    void queryClient.invalidateQueries({ queryKey: ["meetings"] });
+    void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    // Merged into an earlier recording of the same meeting: that is the one left.
+    if (result.id && result.id !== meetingId) navigate(`/m/${result.id}`, { replace: true });
+  };
+  const [picking, setPicking] = useState(startPicking);
   const options = useQuery({
     queryKey: ["meeting-calendar", meetingId],
     queryFn: () => api.meetingCalendar(meetingId),
     enabled: picking,
   });
-  const state = calendar?.match?.state ?? "matched";
+  const state = calendar ? (calendar.match?.state ?? "matched") : "none";
   const isMatched = Boolean(calendar) && state === "matched";
   // Only asked for once there is an event to ask about; an unmatched recording has no
   // invitation to read, and a request that always answers "unmatched" is a request
@@ -60,17 +85,18 @@ export default function MeetingCalendarCard({
   const choose = useMutation({
     mutationFn: (body: EventRef | { none: true }) =>
       api.chooseMeetingEvent(meetingId, body),
-    onSuccess: () => {
-      setPicking(false);
-      void queryClient.invalidateQueries({ queryKey: ["meeting", meetingId] });
-      void queryClient.invalidateQueries({ queryKey: ["meeting-invite", meetingId] });
-      void queryClient.invalidateQueries({ queryKey: ["meetings"] });
-      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
-    },
+    onSuccess: settled,
+  });
+  const merge = useMutation({
+    mutationFn: (other: string) => api.mergeMeetings(meetingId, other),
+    onSuccess: settled,
   });
 
-  if (!calendar) return null; // no account connected when this was recorded
-  const proposed = state === "proposed" ? calendar.candidates?.[0] : undefined;
+  // No account connected when this was recorded: nothing to say, unless it is asking.
+  if (!calendar && !needsMeeting && !startPicking) return null;
+  const known: MeetingCalendar = calendar ?? { match: { state: "none", source: "auto" } };
+  const proposals = state === "proposed" ? (known.candidates ?? []) : [];
+  const proposed = proposals.length === 1 ? proposals[0] : undefined;
 
   const invite = invited.data?.available ? (invited.data.invite ?? null) : null;
   /*
@@ -88,16 +114,30 @@ export default function MeetingCalendarCard({
         : invited.data.reason
       : null;
 
-  const title = invite?.title ?? calendar.title ?? null;
+  const title = invite?.title ?? known.title ?? null;
   const people = invite?.people ?? [];
-  const names = calendar.participants ?? [];
+  const names = known.participants ?? [];
 
   return (
     <div
       data-testid="meeting-calendar"
       data-state={state}
-      className={bare ? "text-sm" : "mb-5 rounded-lg px-3 py-2 text-sm shadow-[var(--shadow-ring-subtle)]"}
+      data-needs-meeting={needsMeeting ? "true" : undefined}
+      className={
+        bare
+          ? "text-sm"
+          : `mb-5 rounded-lg px-3 py-2 text-sm ${
+              needsMeeting
+                ? "border border-warning bg-warning-quiet"
+                : "shadow-[var(--shadow-ring-subtle)]"
+            }`
+      }
     >
+      {needsMeeting && (
+        <p className="mb-1 font-medium text-warning" data-testid="meeting-calendar-which">
+          {t("calendar.whichMeeting")}
+        </p>
+      )}
       {state === "matched" && (
         <>
           {/* The title is the page title; repeating it here is what made this a
@@ -105,7 +145,7 @@ export default function MeetingCalendarCard({
           <p className={bare ? "text-secondary" : "sr-only"} data-testid="meeting-calendar-title">
             {title ?? t("calendar.untitled")}
           </p>
-          {calendar.match?.source === "user" && (
+          {known.match?.source === "user" && (
             <p className="text-xs text-tertiary">{t("calendar.chosenByYou")}</p>
           )}
 
@@ -179,8 +219,8 @@ export default function MeetingCalendarCard({
             names.length > 0 && (
               <p className="mt-0.5 text-secondary" data-testid="meeting-calendar-people">
                 {names.join(", ")}
-                {calendar.participants_more
-                  ? ` ${t("calendar.andMore").replace("{n}", String(calendar.participants_more))}`
+                {known.participants_more
+                  ? ` ${t("calendar.andMore").replace("{n}", String(known.participants_more))}`
                   : ""}
               </p>
             )
@@ -254,6 +294,30 @@ export default function MeetingCalendarCard({
         </>
       )}
 
+      {proposals.length > 1 && (
+        <div className="flex flex-wrap gap-2" data-testid="meeting-calendar-proposals">
+          {proposals.map((option) => (
+            <button
+              key={eventKey(option)}
+              type="button"
+              data-testid="meeting-calendar-proposal-option"
+              onClick={() =>
+                choose.mutate({
+                  account_id: option.account_id,
+                  calendar_id: option.calendar_id,
+                  event_id: option.event_id,
+                })
+              }
+              className="rounded bg-accent px-2 py-0.5 text-xs text-on-accent"
+            >
+              {t("calendar.itWas").replace("{title}", option.title ?? t("calendar.untitled"))}
+            </button>
+          ))}
+          {known.match?.reason && (
+            <span className="block w-full text-xs text-tertiary">{known.match.reason}</span>
+          )}
+        </div>
+      )}
       {state === "proposed" && proposed && (
         <p>
           {t("calendar.wasThis")}{" "}
@@ -261,14 +325,14 @@ export default function MeetingCalendarCard({
             {proposed.title ?? t("calendar.untitled")}
           </span>{" "}
           <bdi className="text-tertiary">({formatClock(proposed.start)})</bdi>
-          {calendar.match?.reason && (
-            <span className="block text-xs text-tertiary">{calendar.match.reason}</span>
+          {known.match?.reason && (
+            <span className="block text-xs text-tertiary">{known.match.reason}</span>
           )}
         </p>
       )}
-      {state === "none" && (
+      {state === "none" && !needsMeeting && (
         <p className="text-secondary" data-testid="meeting-calendar-none">
-          {calendar.match?.source === "user" ? t("calendar.markedNone") : t("calendar.noMatch")}
+          {known.match?.source === "user" ? t("calendar.markedNone") : t("calendar.noMatch")}
         </p>
       )}
 
@@ -289,6 +353,16 @@ export default function MeetingCalendarCard({
             {t("calendar.yes")}
           </button>
         )}
+        {needsMeeting && (
+          <button
+            type="button"
+            data-testid="meeting-calendar-not-on-calendar"
+            onClick={() => choose.mutate({ none: true })}
+            className="rounded border border-line px-2 py-0.5 text-xs"
+          >
+            {t("calendar.noEvent")}
+          </button>
+        )}
         <button
           type="button"
           data-testid="meeting-calendar-pick"
@@ -298,6 +372,26 @@ export default function MeetingCalendarCard({
           {state === "matched" ? t("calendar.notThisOne") : t("calendar.chooseEvent")}
         </button>
       </div>
+
+      {mergeWith && (
+        <div
+          className="mt-2 flex flex-wrap items-center gap-2 text-xs"
+          data-testid="meeting-calendar-merge"
+        >
+          <span className="text-secondary">
+            {t("calendar.mergeWith").replace("{time}", formatClock(mergeWith.started_at))}
+          </span>
+          <button
+            type="button"
+            data-testid="meeting-calendar-merge-button"
+            disabled={merge.isPending}
+            onClick={() => merge.mutate(mergeWith.id)}
+            className="rounded border border-line px-2 py-0.5"
+          >
+            {t("calendar.merge")}
+          </button>
+        </div>
+      )}
 
       {picking && (
         <ul className="mt-2 space-y-1" data-testid="meeting-calendar-options">

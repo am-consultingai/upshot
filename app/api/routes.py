@@ -387,8 +387,7 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
     # The same calendar meeting recorded again moments after its recording ended (a
     # restart, a rejoin, an end that came too soon) carries on that recording (D88).
     after_ms: int | None = None
-    matched = payload is not None and (payload.get("match") or {}).get("state") == "matched"
-    earlier = svc.meetings.to_continue(payload if matched else ({} if payload else None))
+    earlier = svc.meetings.to_continue(payload)
     reopened = svc.meetings.reopen(earlier.id) if earlier is not None else None
     if reopened is not None:
         meeting, after_ms = reopened
@@ -811,9 +810,10 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     payload["evidence"] = meeting.evidence
     # Parsed for the page; the stored string stays as it was for anything that reads it.
     payload["calendar"] = _calendar_of(svc, meeting) or None
-    payload["needs_meeting"] = svc.meetings.needs_meeting(
-        meeting, calendar_connected=bool(_active(svc))
-    )
+    shown = payload["calendar"] or {}
+    payload["needs_meeting"] = (shown.get("match") or {}).get(
+        "state"
+    ) != "matched" and svc.meetings.needs_meeting(meeting, calendar_connected=bool(_active(svc)))
     # Another recording of the same calendar meeting that could not be merged by itself
     # (one was busy): the page offers to merge them (D89).
     other = svc.meetings.merge_target(meeting)
@@ -3082,13 +3082,25 @@ def test_router() -> APIRouter:
                 # The offer the detector makes on a verdict, which the banner shows (D76).
                 from app.prompts import Prompt
 
+                # Meetings booked at the same time that nothing told apart (D89): the
+                # offer names none and lists them.
+                candidates = tuple(
+                    (
+                        c.get("account_id") or (seeded_accounts[0] if seeded_accounts else None),
+                        str(c.get("calendar_id", "primary")),
+                        str(c["event_id"]),
+                        str(c.get("title") or ""),
+                    )
+                    for c in event.get("candidates") or []
+                )
                 svc.prompts.offer(
                     Prompt(
                         kind="detected",
-                        title="",
+                        title=" / ".join(c[3] for c in candidates),
                         at=svc.clock.now(),
                         process=event.get("process"),
                         watch_process=False,
+                        candidates=candidates,
                     ),
                     recording=svc.recorder is not None and svc.recorder.committed,
                 )
@@ -3185,6 +3197,28 @@ def test_router() -> APIRouter:
                     outcome=item.get("outcome", "committed"),
                     process=item.get("process"),
                     meeting_id=meeting.id,
+                )
+            if item.get("proposed"):
+                # The calendar meetings it may be, none settled (D89): it needs a meeting.
+                from app.gcal.source import proposal
+
+                found = [
+                    _event_store(svc).get(
+                        str(ref.get("account_id") or seeded_accounts[0]),
+                        str(ref.get("calendar_id", "primary")),
+                        str(ref["event_id"]),
+                    )
+                    for ref in item["proposed"]
+                ]
+                svc.dao.update_meeting(
+                    meeting.id,
+                    calendar_json=json.dumps(
+                        proposal(
+                            [e for e in found if e is not None],
+                            source="detected",
+                            reason="booked at the same time",
+                        )
+                    ),
                 )
             if item.get("calendar"):
                 # A meeting already matched to a seeded event, as the matcher leaves it —
