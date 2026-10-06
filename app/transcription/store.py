@@ -20,6 +20,7 @@ import random
 import secrets
 import shutil
 import sqlite3
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -148,6 +149,10 @@ class TranscriptionStore:
         #: ``JobQueue._deleting``: a request outlives nothing but the run it was made in.
         self._stopping: dict[str, str] = {}
         self._last_event: dict[str, float] = {}
+        #: Claim, cancel and delete read a state and act on it: under one lock, so an API
+        #: thread can't cancel or delete a job the worker claims in between (a cancelled
+        #: job then finished as done, a deleted one took the worker down; the PR #1 review).
+        self._lock = threading.RLock()
 
     # -- folders -----------------------------------------------------------
 
@@ -224,11 +229,12 @@ class TranscriptionStore:
         """Take this job if it is still pending. ``None`` when an API thread cancelled or
         deleted it between the scheduler's peek and here."""
         now = iso(self.clock.now())
-        row = self.conn.execute(
-            "UPDATE transcriptions SET state='running', started_at=?, updated_at=?, "
-            "phase=NULL, progress=0 WHERE id=? AND state='pending' RETURNING *",
-            (now, now, transcription_id),
-        ).fetchone()
+        with self._lock:
+            row = self.conn.execute(
+                "UPDATE transcriptions SET state='running', started_at=?, updated_at=?, "
+                "phase=NULL, progress=0 WHERE id=? AND state='pending' RETURNING *",
+                (now, now, transcription_id),
+            ).fetchone()
         if row is None:
             return None
         claimed = _row(row)
@@ -304,12 +310,13 @@ class TranscriptionStore:
     def cancel(self, transcription_id: str) -> Transcription:
         """A waiting job is cancelled now; a running one when the worker next checks.
         The row stays, ``cancelled``. A finished job is left as it is."""
-        job = self.require(transcription_id)
-        if job.state == PENDING:
-            return self.mark_cancelled(transcription_id)
-        if job.state == RUNNING:
-            self._stopping.setdefault(transcription_id, "cancel")
-        return job
+        with self._lock:
+            job = self.require(transcription_id)
+            if job.state == PENDING:
+                return self.mark_cancelled(transcription_id)
+            if job.state == RUNNING:
+                self._stopping.setdefault(transcription_id, "cancel")
+            return job
 
     def mark_cancelled(self, transcription_id: str) -> Transcription:
         now = iso(self.clock.now())
@@ -342,12 +349,13 @@ class TranscriptionStore:
     def delete(self, transcription_id: str) -> bool:
         """Remove the row and the folder. A running job is a hand-off: it stops at its next
         check and the worker removes it (``finish_delete``). True when it is gone now."""
-        job = self.require(transcription_id)
-        if job.state == RUNNING:
-            self._stopping[transcription_id] = "delete"
-            return False
-        self.purge(transcription_id)
-        return True
+        with self._lock:
+            job = self.require(transcription_id)
+            if job.state == RUNNING:
+                self._stopping[transcription_id] = "delete"
+                return False
+            self.purge(transcription_id)
+            return True
 
     def purge(self, transcription_id: str) -> None:
         """Folder first, then the row: a row deleted against a folder that survived would
