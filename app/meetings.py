@@ -100,6 +100,21 @@ def event_account(meeting: Meeting) -> str | None:
     return str(account) if account else meeting.calendar_account_id
 
 
+def event_key(payload: dict[str, Any]) -> tuple[str, str] | None:
+    """Which calendar occurrence a snapshot is matched to, the same on every account that
+    has a copy of it; None unless it is matched. The start tells apart the occurrences of
+    a recurring event, which share their iCal UID."""
+    if (payload.get("match") or {}).get("state") != "matched":
+        return None
+    ref = payload.get("event") or {}
+    if not isinstance(ref, dict):
+        return None
+    ident = ref.get("ical_uid") or ref.get("event_id")
+    if not ident:
+        return None
+    return str(ident), str(ref.get("original_start") or ref.get("start") or "")
+
+
 def _members(payload: dict[str, Any]) -> tuple[str | None, list[str]]:
     """The matched account and every account of a snapshot; nothing unless it is matched."""
     if (payload.get("match") or {}).get("state") != "matched":
@@ -300,6 +315,58 @@ class MeetingService:
         """The recorder has started writing. Mirror the record to disk."""
         meta.mirror(meeting, committed_at=iso(self.clock.now()), folder=str(folder))
         return meeting
+
+    def to_continue(self, payload: dict[str, Any] | None = None) -> Meeting | None:
+        """The meeting a recording starting now carries on, if there is one (D88).
+
+        A recording of the same calendar event that ended at most
+        ``detection.continue_within_s`` ago, and whose transcription has not begun. The
+        event is ``payload`` (a snapshot, when the start named one), else the one the
+        calendar matches now. On machine B one call became seven meetings: each restart
+        of the recording, whatever caused it, made a new one.
+        """
+        if payload is None:
+            outcome = fetch(
+                self.enrichment_source,
+                self.clock.now(),
+                None,
+                timeout_s=float(self.config.get("enrichment.timeout_s", 2.0)),
+            )
+            payload = outcome.enrichment.as_raw() if outcome.enrichment else {}
+        key = event_key(payload)
+        if key is None:
+            return None
+        now = self.clock.now()
+        within = float(self.config.get("detection.continue_within_s", 900))
+        found: Meeting | None = None
+        for meeting in self.dao.list_meetings(
+            state=str(MeetingState.RECORDED), include_hidden=True, limit=50
+        ):
+            if not meeting.ended_at or event_key(calendar_payload(meeting)) != key:
+                continue
+            ended = parse_iso(meeting.ended_at)
+            if not timedelta(0) <= now - ended <= timedelta(seconds=within):
+                continue
+            if found is None or ended > parse_iso(found.ended_at or ""):
+                found = meeting
+        return found
+
+    def reopen(self, meeting_id: str) -> tuple[Meeting, int] | None:
+        """Record more of a meeting that just ended (D88): it is recording again, and its
+        waiting jobs leave the queue until this part ends. With how long ago it ended, in
+        milliseconds, for the recorder to keep as silence. None when a stage of it has
+        started meanwhile: it is being transcribed as it was, and stays as it was."""
+        meeting = self.dao.require_meeting(meeting_id)
+        if meeting.state != MeetingState.RECORDED or not meeting.ended_at:
+            return None
+        if not self.queue.withdraw(meeting_id):
+            return None
+        after = self.clock.now() - parse_iso(meeting.ended_at)
+        self.dao.set_state(meeting_id, MeetingState.RECORDING)
+        updated = self.dao.update_meeting(meeting_id, ended_at=None, duration_s=None)
+        meta.mirror(updated)
+        log.info("meeting %s continues, %d s after it ended", meeting_id, after.total_seconds())
+        return updated, max(0, round(after.total_seconds() * 1000))
 
     def finish(
         self,
