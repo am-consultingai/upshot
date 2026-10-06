@@ -70,6 +70,11 @@ class Scheduler:
         """Pending and running work of both kinds: what makes the tray say "busy"."""
         return self.queue.depth() + self.store.depth()
 
+    def busy(self) -> bool:
+        """Work of either kind running or due now: what keeps an update from installing
+        (D87). The meeting queue alone let an update quit Upshot under a file job."""
+        return self.queue.busy() or self.store.busy()
+
     def position(self, job: Transcription) -> int | None:
         """1 for the next to run; ``None`` once it is not waiting. Counts what is ahead of
         it in either queue, by key, including work held back by a backoff."""

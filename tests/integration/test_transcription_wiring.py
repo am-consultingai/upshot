@@ -71,3 +71,24 @@ def test_keep_days_off_keeps_them(tmp_path: Path, app_home: Path) -> None:
         "UPDATE transcriptions SET finished_at=? WHERE id=?", (long_ago, job.id)
     )
     assert retention.sweep_services(h.services).transcriptions_removed == 0
+
+
+def test_an_update_waits_for_a_file_job(app_home: Path) -> None:
+    """The PR #1 review: the installer counted meeting jobs only, so after ten quiet
+    minutes an update quit Upshot under a running file job (and the bridge Claude was
+    waiting on). The real service graph, as the app builds it."""
+    from app.services import build
+
+    services = build(with_worker=False, with_recorder=False)
+    try:
+        installer = services.installer
+        assert installer.jobs_busy() is False
+        job = add(services)
+        assert installer.jobs_busy() is True, "a file job due now holds the update"
+        services.transcriptions.claim(job.id)
+        assert installer.jobs_busy() is True, "and so does one running"
+        assert installer.why_not_now() == "jobs"  # what Settings says is in the way
+        services.transcriptions.mark_cancelled(job.id)
+        assert installer.jobs_busy() is False
+    finally:
+        services.conn.close()

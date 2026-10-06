@@ -279,6 +279,12 @@ class Worker:
             updated = store.fail(job, exc)
             self.stats.failed += 1
             log.warning("transcription %s failed (attempt %s): %s", job.id, updated.attempts, exc)
+            if updated.state == "failed":
+                # Failed for good from something unexpected, as a meeting stage reports
+                # (D87). A file that can't be decoded or a missing model is not a bug.
+                from app.diagnostics.reporter import report
+
+                report(exc, where="transcription")
             return
         finally:
             # However it ended: a job deleted meanwhile goes now its files are let go.
@@ -441,10 +447,13 @@ class Worker:
                 continue
             try:
                 ran = self.run_once()
-            except Exception:
+            except Exception as exc:
                 # Nothing a job does may end the thread: with it gone, nothing would be
                 # transcribed again until a restart (the PR #1 review).
                 log.exception("worker: a job failed outside its own error handling")
+                from app.diagnostics.reporter import report
+
+                report(exc, where="worker")
                 self.clock.sleep(busy_sleep)
                 continue
             if not ran:
