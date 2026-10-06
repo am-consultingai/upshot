@@ -213,3 +213,22 @@ def test_a_saved_auto_profile_follows_the_device(
     assert devices == ["asked"]  # once, not on every turn of the loop
     plan = "cuda"
     assert build().policy == "asap"
+
+
+def test_a_job_that_blows_up_does_not_end_the_worker(tmp_path: Path) -> None:
+    """The PR #1 review: an exception out of a job (a deleted row, a data root gone)
+    ended run_forever, and nothing ran again until a restart."""
+    h = harness(tmp_path, job_policy="asap")
+    worker = Worker(dao=h.dao, queue=h.queue, config=h.config, stages={}, clock=h.clock)
+    calls: list[str] = []
+
+    def run_once() -> bool:
+        calls.append("run")
+        if len(calls) == 1:
+            raise KeyError("tr_gone")
+        worker.stop_event.set()
+        return True
+
+    worker.run_once = run_once  # type: ignore[method-assign]
+    worker.run_forever(idle_sleep=0, busy_sleep=0)
+    assert calls == ["run", "run"]
