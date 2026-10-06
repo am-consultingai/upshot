@@ -22,6 +22,7 @@ from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
 from app.detect import evidence as ev
+from app.detect.assign import Assignment, assign
 from app.detect.evidence import Evidence
 from app.detect.sources import MicHolder, Sources
 from app.log import get
@@ -218,6 +219,50 @@ class Detector:
             log.exception("calendar lookup failed")
             return None
 
+    def assignment(self, process: str | None) -> Assignment:
+        """Which calendar meeting a call by ``process`` is (D89): the meetings on now,
+        told apart by the window titles and their links. Never certain by a guess."""
+        if self.calendar is None:
+            return Assignment(None, False, (), "no calendar")
+        now = self.clock.now()
+        try:
+            live = getattr(self.calendar, "live", None)
+            if live is not None:
+                events = list(live(now))
+            else:
+                current = self.calendar.current(now)
+                events = [current] if current is not None else []
+            windows = list(self.sources.titles.titles())
+        except Exception:  # the calendar is advisory; detection never fails on it
+            log.exception("calendar lookup failed")
+            return Assignment(None, False, (), "the calendar could not be read")
+        return assign(events, process=process, windows=windows)
+
+    def assignment_now(self) -> Assignment:
+        """The calendar meeting of the call on now, from the call app holding the
+        microphone: for a Start that names no meeting."""
+        known = list(self.config.get("detection.known_apps", []))
+        try:
+            holders = [h.process for h in self.sources.mic.current_holders()]
+        except Exception:
+            holders = []
+        apps = [p for p in holders if ev.matches_process(p, known)]
+        return self.assignment(apps[0] if apps else None)
+
+    def calendar_payload(self, found: Assignment) -> dict[str, Any] | None:
+        """What a recording keeps of ``found``: the meeting, matched by the detector, or the
+        meetings it may be, proposed. None with no calendar meeting on."""
+        from app.gcal.source import proposal, snapshot
+
+        if found.event is not None and found.certain:
+            make = getattr(self.calendar, "snapshot", None)
+            if make is not None:
+                return dict(make(found.event, source="detected"))
+            return snapshot(found.event, state="matched", source="detected", confidence=1.0)
+        if found.candidates:
+            return proposal(found.candidates, source="detected", reason=found.reason)
+        return None
+
     def remind(self) -> None:
         """Calendar meetings, by the clock alone (D76): a reminder five minutes before, and
         at the start time an offer to record, with a toast.
@@ -235,6 +280,7 @@ class Detector:
             log.exception("calendar lookup failed")
             return
         recording = self.recorder.committed
+        started: list[Any] = []
         for event in events:
             to_start = (event.start - now).total_seconds()
             title = event.title or ""
@@ -254,35 +300,54 @@ class Detector:
                 self.reminded.add(event.key)
                 if recording:
                     continue  # already recording: most likely this very meeting
-                log.info("calendar: %s has started and nothing is recording", title or "a meeting")
-                offered = True
-                if self.prompts is not None:
-                    from app.prompts import Prompt
+                started.append(event)
+        if not started:
+            return
+        offered = True
+        if self.prompts is not None:
+            from app.prompts import Prompt
 
-                    offered = self.prompts.offer(
-                        Prompt(
-                            kind="calendar",
-                            title=title,
-                            at=now,
-                            calendar_id=calendar_id,
-                            event_id=event_id,
-                            conference_url=event.conference_url,
-                            until=event.end,
-                            account_id=account_id,
-                        ),
-                        recording=recording,
-                    )
-                self._publish("upcoming", event=title, starts_at=event.start.isoformat())
-                if offered and self.notifier is not None:
-                    self.notifier.meeting_starting(
-                        ":".join(event.key),
-                        title,
-                        calendar_id=calendar_id,
-                        event_id=event_id,
-                        minutes_ago=max(0, int(-to_start // 60)),
-                        conference_url=event.conference_url,
-                        account_id=account_id,
-                    )
+            if len(started) == 1:
+                only = started[0]
+                prompt = Prompt(
+                    kind="calendar",
+                    title=only.title or "",
+                    at=now,
+                    calendar_id=only.calendar_id,
+                    event_id=only.event_id,
+                    conference_url=only.conference_url,
+                    until=only.end,
+                    account_id=only.account_id,
+                )
+            else:
+                # Booked at the same time (D89): one offer, the user picks which.
+                prompt = Prompt(
+                    kind="calendar",
+                    title=" / ".join(e.title or "" for e in started[:3]),
+                    at=now,
+                    until=max(e.end for e in started),
+                    candidates=tuple(
+                        (e.account_id, e.calendar_id, e.event_id, e.title or "")
+                        for e in started[:3]
+                    ),
+                )
+            offered = self.prompts.offer(prompt, recording=recording)
+        for event in started:
+            title = event.title or ""
+            account_id, calendar_id, event_id = event.key
+            log.info("calendar: %s has started and nothing is recording", title or "a meeting")
+            self._publish("upcoming", event=title, starts_at=event.start.isoformat())
+            if offered and self.notifier is not None:
+                # One notification each: its Start names its own meeting.
+                self.notifier.meeting_starting(
+                    ":".join(event.key),
+                    title,
+                    calendar_id=calendar_id,
+                    event_id=event_id,
+                    minutes_ago=max(0, int(-(event.start - now).total_seconds() // 60)),
+                    conference_url=event.conference_url,
+                    account_id=account_id,
+                )
 
     def score(self, evidence: list[Evidence]) -> int:
         return ev.score(evidence, self.config.detection_weights)
@@ -438,9 +503,9 @@ class Detector:
                     return
             except (ValueError, TypeError, AttributeError):
                 pass  # an unreadable snapshot: fall back to the calendar
-        event = self.calendar_event()
-        if event is not None:
-            self.event_end, self.event_title = event.end, event.title or ""
+        found = self.assignment(self.recording_process)
+        if found.event is not None:
+            self.event_end, self.event_title = found.event.end, found.event.title or ""
 
     def keep(self, meeting_id: str | None) -> bool:
         """ "Keep recording": the meeting goes on though the call's app let go (D77).
@@ -599,12 +664,26 @@ class Detector:
             self.state = DetectorState.IDLE
             self.wake = None
             self.fresh.discard(wake.process)
-            event = self.calendar_event()
+            found = self.assignment(wake.process)
+            event = found.event
+            choices = () if event is not None else found.candidates[:3]
+            log.info(
+                "the call is %s (%s)",
+                repr(event.title) if event is not None else "no one calendar meeting",
+                found.reason,
+            )
+            title = (
+                event.title
+                if event is not None
+                else " / ".join(e.title or "" for e in choices)
+                if choices
+                else wake.title
+            )
             self._publish(
                 "shadow",
                 process=wake.process,
                 score=wake.peak_score,
-                event=event.title if event else None,
+                event=title if (event is not None or choices) else None,
             )
             # Detect and notify (D64): the offer reaches an open window as the banner, and
             # everyone else as the toast. Both come from one offer (D76), so neither shows
@@ -616,7 +695,7 @@ class Detector:
                 offered = self.prompts.offer(
                     Prompt(
                         kind="detected",
-                        title=(event.title if event else wake.title) or "",
+                        title=title or "",
                         at=self.clock.now(),
                         calendar_id=event.calendar_id if event else None,
                         event_id=event.event_id if event else None,
@@ -624,27 +703,48 @@ class Detector:
                         until=event.end if event else None,
                         process=wake.process,
                         account_id=event.account_id if event else None,
+                        candidates=tuple(
+                            (e.account_id, e.calendar_id, e.event_id, e.title or "")
+                            for e in choices
+                        ),
                     ),
                     recording=self.recorder.committed,
                 )
-            if event is not None:
-                self.announced.add(event.key)  # the call is the announcement
+            for announced in (event,) if event is not None else choices:
+                self.announced.add(announced.key)  # the call is the announcement
             if offered and self.notifier is not None:
                 self.notifier.call_detected(
                     wake.process,
-                    event.title if event else wake.title,
+                    title,
                     calendar_id=event.calendar_id if event else None,
                     event_id=event.event_id if event else None,
                     account_id=event.account_id if event else None,
+                    candidates=tuple(
+                        (e.account_id, e.calendar_id, e.event_id, e.title or "") for e in choices
+                    ),
                 )
             return
-        meeting = self.meetings.create(
-            source="detected",
-            title=wake.title or None,
-            title_source="window" if wake.title else None,
-            evidence=[item.as_dict() for item in wake.evidence],
+        found = self.assignment(wake.process)
+        payload = self.calendar_payload(found)
+        # The same calendar meeting recorded moments ago (a rejoin, a restart): carry that
+        # recording on rather than start another (D88). Only a meeting the clues settle.
+        earlier = self.meetings.to_continue(
+            payload if found.certain else ({} if found.candidates else None)
         )
-        self.recorder.commit(meeting.path, meeting.id)
+        reopened = self.meetings.reopen(earlier.id) if earlier is not None else None
+        if reopened is not None:
+            meeting, after_ms = reopened
+            self.recorder.commit(meeting.path, meeting.id, after_ms=after_ms)
+        else:
+            meeting = self.meetings.create(
+                source="detected",
+                title=wake.title or None,
+                title_source="window" if wake.title else None,
+                evidence=[item.as_dict() for item in wake.evidence],
+            )
+            if payload is not None:
+                meeting = self.meetings.choose_event(meeting.id, payload)
+            self.recorder.commit(meeting.path, meeting.id)
         self.meetings.committed(meeting, meeting.path)
         self.meeting_id = meeting.id
         self._note_event()

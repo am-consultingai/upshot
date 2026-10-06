@@ -273,19 +273,37 @@ class BaseNotifier:
         calendar_id: str | None = None,
         event_id: str | None = None,
         account_id: str | None = None,
+        candidates: tuple[tuple[str | None, str, str, str], ...] = (),
     ) -> None:
         """A call started and, in the default mode, nothing records it: say so (D64).
 
         "Detect and notify" is the default capture mode. Before this, a call noticed in
         that mode surfaced only inside Upshot's own window, which is exactly the window
         nobody has open when a call starts. Start recording works from the toast (D70).
+
+        Calendar meetings booked at the same time that nothing told apart (D89) get a
+        button each: the press says which meeting it is. A toast button opens a link, which
+        carries no input, so there is no drop-down.
         """
         app = process.removesuffix(".exe") or "an app"
+        buttons = self._start_buttons(calendar_id, event_id, account_id)
+        body = "Upshot isn't recording it."
+        if candidates and not event_id:
+            buttons = (
+                *(
+                    Button(
+                        f"Record: {name or 'untitled'}", "recording.start", None, cal, ev, None, acc
+                    )
+                    for acc, cal, ev, name in candidates[:3]
+                ),
+                Button("Dismiss", DISMISS),
+            )
+            body = "Which meeting is it? Upshot isn't recording it."
         self.show(
             Toast(
                 title=f"Meeting started: {title or app}",
-                body="Upshot isn't recording it.",
-                buttons=self._start_buttons(calendar_id, event_id, account_id),
+                body=body,
+                buttons=buttons,
                 key=f"call:{process}",
                 quiet_in_front=True,
             )

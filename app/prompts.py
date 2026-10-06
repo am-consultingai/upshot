@@ -42,12 +42,22 @@ class Prompt:
     #: "Zoom" never held one.
     watch_process: bool = True
     account_id: str | None = None
+    #: Calendar meetings booked at the same time that nothing told apart (D89): offered
+    #: side by side for the user to pick, with no ``calendar_id`` of its own. Each is
+    #: (account_id, calendar_id, event_id, title).
+    candidates: tuple[tuple[str | None, str, str, str], ...] = ()
 
     @property
     def key(self) -> str:
         if self.calendar_id and self.event_id:
             return f"{self.account_id or ''}:{self.calendar_id}:{self.event_id}"
+        if self.candidates:
+            return "candidates:" + "|".join(f"{a or ''}:{c}:{e}" for a, c, e, _ in self.candidates)
         return f"process:{self.process or ''}"
+
+    def names(self, calendar_id: str | None, event_id: str | None) -> bool:
+        """Whether this offer is for that calendar meeting, by itself."""
+        return bool(calendar_id) and (self.calendar_id, self.event_id) == (calendar_id, event_id)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -60,6 +70,10 @@ class Prompt:
             "conference_url": self.conference_url,
             "until": iso(self.until) if self.until else None,
             "process": self.process,
+            "candidates": [
+                {"account_id": a, "calendar_id": c, "event_id": e, "title": t}
+                for a, c, e, t in self.candidates
+            ],
         }
 
 

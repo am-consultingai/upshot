@@ -6,6 +6,7 @@ import — so enrichment, folder layout and the state machine have exactly one o
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 from collections.abc import Sequence
@@ -113,6 +114,17 @@ def event_key(payload: dict[str, Any]) -> tuple[str, str] | None:
     if not ident:
         return None
     return str(ident), str(ref.get("original_start") or ref.get("start") or "")
+
+
+def continuable_until(meeting: Meeting, within_s: float) -> datetime:
+    """Until when a recording of the same calendar event carries this meeting on (D89): while
+    the event is on, and ``within_s`` after the later of its end and the recording's."""
+    last = parse_iso(meeting.ended_at) if meeting.ended_at else parse_iso(meeting.started_at)
+    ref = calendar_payload(meeting).get("event") or {}
+    if isinstance(ref, dict) and ref.get("end"):
+        with contextlib.suppress(ValueError):
+            last = max(last, parse_iso(str(ref["end"])))
+    return last + timedelta(seconds=within_s)
 
 
 def _members(payload: dict[str, Any]) -> tuple[str | None, list[str]]:
@@ -319,11 +331,11 @@ class MeetingService:
     def to_continue(self, payload: dict[str, Any] | None = None) -> Meeting | None:
         """The meeting a recording starting now carries on, if there is one (D88).
 
-        A recording of the same calendar event that ended at most
-        ``detection.continue_within_s`` ago, and whose transcription has not begun. The
-        event is ``payload`` (a snapshot, when the start named one), else the one the
-        calendar matches now. On machine B one call became seven meetings: each restart
-        of the recording, whatever caused it, made a new one.
+        A recording of the same calendar event whose transcription has not begun, while
+        the event is on and until ``detection.continue_within_s`` after the later of its
+        end and the recording's. The event is ``payload`` (a snapshot, when the start
+        named one), else the one the calendar matches now. On machine B one call became
+        seven meetings: each restart of the recording, whatever caused it, made a new one.
         """
         if payload is None:
             outcome = fetch(
@@ -345,7 +357,7 @@ class MeetingService:
             if not meeting.ended_at or event_key(calendar_payload(meeting)) != key:
                 continue
             ended = parse_iso(meeting.ended_at)
-            if not timedelta(0) <= now - ended <= timedelta(seconds=within):
+            if now < ended or now > continuable_until(meeting, within):
                 continue
             if found is None or ended > parse_iso(found.ended_at or ""):
                 found = meeting
