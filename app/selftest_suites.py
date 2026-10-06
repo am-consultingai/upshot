@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 import wave
 from dataclasses import dataclass
@@ -513,6 +514,92 @@ def _pipeline(args: argparse.Namespace) -> list[Check]:
             f"{elapsed:.1f}s (budget {budget_s:.0f}s)",
             {"seconds": round(elapsed, 2), "budget_s": budget_s},
         ),
+    ]
+
+
+@suite("transcription")
+def _transcription(args: argparse.Namespace) -> list[Check]:
+    """D86 — a file through /api/v1 on a real socket, to an SRT, with the fake ASR.
+
+    Run against the freeze by the build: it proves the new routes, the streamed-upload
+    parser, the bundled ffmpeg's probe and decode, and the worker's file jobs all made it
+    into the exe.
+    """
+    import tempfile
+    import time
+    from pathlib import Path
+
+    import httpx
+
+    from app.config import Config
+    from app.main import create_app
+    from app.server import LocalServer
+    from app.services import build
+
+    def free_port() -> int:
+        import socket
+
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            return int(probe.getsockname()[1])
+
+    from app.audio.ingest import ffmpeg_path
+
+    if ffmpeg_path(Config.load()) is None and not getattr(sys, "frozen", False):
+        # A source checkout without ffmpeg (CI). The freeze bundles it, so there a missing
+        # ffmpeg is a failure, which is what this suite is for.
+        return [skipped("transcription", "ffmpeg not installed")]
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cfg = Config.load()
+        cfg.set("data_root", str(root / "meetings"))
+        cfg.set("server.port", free_port())
+        cfg.set("asr.backend", "fake")
+        cfg.set("asr.diarization", "fake")
+        cfg.set("delivery.notifier", "fake")
+        cfg.set("job_policy", "asap")
+        services = build(cfg, with_worker=True, with_recorder=False)
+        app = create_app(services)
+        server = LocalServer(app, host=cfg.server_host, port=cfg.server_port).start()
+        source = _tone_fixture(root / "clip.wav", seconds=5.0)
+        info: dict[str, Any] = {}
+        job: dict[str, Any] = {}
+        srt = ""
+        try:
+            base = f"http://127.0.0.1:{cfg.server_port}/api/v1"
+            with httpx.Client(base_url=base, timeout=30.0) as client:
+                info = client.get("/info").json()
+                with source.open("rb") as handle:
+                    created = client.post(
+                        "/transcriptions", files={"file": ("clip.wav", handle, "audio/wav")}
+                    )
+                job = created.json() if created.status_code == 202 else {"error": created.text}
+                if "id" in job:
+                    assert services.worker is not None
+                    services.worker.drain()
+                    job = client.get(f"/transcriptions/{job['id']}").json()
+                    if job.get("state") == "done":
+                        srt = client.get(
+                            f"/transcriptions/{job['id']}/result", params={"format": "srt"}
+                        ).text
+        finally:
+            server.stop()
+            services.close()
+    elapsed = time.monotonic() - started
+
+    return [
+        Check(
+            "transcription_info", info.get("app") == "upshot", f"/api/v1/info → {info.get('app')!r}"
+        ),
+        Check(
+            "transcription_job",
+            job.get("state") == "done",
+            f"a 5-second WAV → {job.get('state') or job.get('error')}",
+            {"duration_s": job.get("duration_s")},
+        ),
+        Check("transcription_srt", "-->" in srt, f"SRT of {srt.count('-->')} cue(s)"),
+        Check("transcription_seconds", True, f"{elapsed:.1f}s", {"seconds": round(elapsed, 2)}),
     ]
 
 

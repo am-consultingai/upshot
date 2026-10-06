@@ -283,7 +283,8 @@ def status(request: Request) -> dict[str, Any]:
             "state": getattr(detector, "state", "idle") if detector else "off",
         },
         "queue": svc.queue.counts(),
-        "queue_depth": svc.queue.depth(),
+        # File transcriptions count as work too (D86); failed ones are not in "queue".
+        "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
         "disk_free_bytes": disk.free,
         "storage_bytes": storage_bytes(svc),
         "fts": capabilities(svc.conn).fts,
@@ -764,6 +765,12 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
         }
         for job in svc.queue.for_meeting(meeting_id)
     ]
+    # "N files ahead in the queue": file transcriptions that run before this meeting's
+    # waiting job (D86, R5), so a meeting held behind them says why.
+    waiting = next((j for j in svc.queue.for_meeting(meeting_id) if j.state == "pending"), None)
+    payload["files_ahead"] = (
+        svc.scheduler.files_ahead(waiting) if waiting is not None and svc.scheduler else 0
+    )
     payload["evidence"] = meeting.evidence
     # Parsed for the page; the stored string stays as it was for anything that reads it.
     payload["calendar"] = _calendar_of(svc, meeting) or None
@@ -1296,6 +1303,7 @@ def retention_policy(request: Request) -> dict[str, Any]:
         config=svc.config,
         clock=svc.clock,
         recorder=svc.recorder,
+        transcriptions=svc.transcriptions,
     ).as_dict()
 
 
@@ -2637,6 +2645,78 @@ def _seed_audio(svc: Services, folder: Path, seconds: float) -> None:
 # --------------------------------------------------------------------------- test seed
 
 
+def _seed_transcription(svc: Services, item: dict[str, Any]) -> str:
+    """A file transcription in any state, as the worker would have left it (D86)."""
+    from app.asr.backend import Segment, Word
+    from app.transcription.store import RESULT_NAME
+    from app.transcription.types import FileTranscript, Options
+
+    store = svc.transcriptions
+    options = Options.from_dict(item.get("options") or {})
+    job = store.create(
+        source_name=str(item.get("source_name", "clip.mp4")),
+        source_kind=str(item.get("source_kind", "upload")),
+        source_path=str(item.get("source_path", "")),
+        options=options,
+        client=str(item.get("client", "ui")),
+        size_bytes=item.get("size_bytes", 1_000_000),
+        duration_s=item.get("duration_s", 30.0),
+    )
+    state = str(item.get("state", "pending"))
+    columns = {
+        "state": state,
+        "phase": item.get("phase"),
+        "progress": float(item.get("progress", 1.0 if state == "done" else 0.0)),
+        "last_error": item.get("last_error"),
+        "language": item.get("language"),
+        "language_conf": 0.95 if item.get("language") else None,
+        "finished_at": iso(svc.clock.now()) if state in ("done", "failed", "cancelled") else None,
+        "started_at": iso(svc.clock.now()) if state != "pending" else None,
+        # Queued a moment before anything else this seed creates, so a meeting seeded in
+        # the same request reliably waits behind it rather than tying with it.
+        "queued_at": iso(svc.clock.now() - timedelta(seconds=float(item.get("queued_s_ago", 1)))),
+    }
+    sets = ", ".join(f"{key}=?" for key in columns)
+    svc.conn.execute(
+        f"UPDATE transcriptions SET {sets} WHERE id=?",
+        (*columns.values(), job.id),
+    )
+    if state == "done":
+        segments = tuple(
+            Segment(
+                id=index,
+                track="them",
+                speaker=str(seg.get("speaker", "S1")),
+                start=float(seg.get("start", index * 4.0)),
+                end=float(seg.get("end", index * 4.0 + 3.5)),
+                text=str(seg["text"]),
+                words=tuple(
+                    Word(word, float(seg.get("start", index * 4.0)) + n * 0.4,
+                         float(seg.get("start", index * 4.0)) + n * 0.4 + 0.35)
+                    for n, word in enumerate(str(seg["text"]).split())
+                ),
+            )
+            for index, seg in enumerate(item.get("segments") or [])
+        )  # fmt: skip
+        transcript = FileTranscript(
+            duration_s=float(item.get("duration_s", 30.0)),
+            segments=segments,
+            language=item.get("language"),
+            language_conf=0.95 if item.get("language") else None,
+            language_source="classifier" if segments else "none",
+            model={"name": "seed"},
+            diarized=len({s.speaker for s in segments}) > 1,
+        )
+        folder = store.folder(job.id)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / RESULT_NAME).write_text(
+            json.dumps(transcript.as_result(id=job.id, source_name=job.source_name),
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )  # fmt: skip
+    return str(job.id)
+
+
 def seed_update_ready(svc: Services, version: str) -> None:
     """A verified update waiting to install, for the browser specs (D87).
 
@@ -2705,6 +2785,9 @@ def test_router() -> APIRouter:
             if capabilities(svc.conn).fts:
                 svc.conn.execute("DELETE FROM search_fts")
             svc.conn.execute("DELETE FROM assistant_sessions")
+            if svc.transcriptions is not None:
+                for job in svc.transcriptions.recent(limit=500):
+                    svc.transcriptions.purge(job.id)
             svc.extras.pop("storage_bytes", None)
             svc.conn.execute("DELETE FROM detector_events")
             if svc.prompts is not None:
@@ -2864,6 +2947,8 @@ def test_router() -> APIRouter:
                     ),
                     recording=svc.recorder is not None and svc.recorder.committed,
                 )
+        for item in body.get("transcriptions", []):
+            created.append(_seed_transcription(svc, item))
         for item in body.get("meetings", []):
             meeting = svc.dao.insert_meeting(
                 meeting_id=item.get("id"),

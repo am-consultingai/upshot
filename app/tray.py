@@ -103,7 +103,10 @@ class TrayApp:
             recorder_state = RecorderState.PAUSED
         else:
             recorder_state = RecorderState.RECORDING
-        depth = self.services.queue.depth()
+        # Busy with file transcriptions too (D86); a failed one is no meeting error, so
+        # "failed" below stays the meetings' own count.
+        scheduler = getattr(self.services, "scheduler", None)
+        depth = scheduler.depth() if scheduler is not None else self.services.queue.depth()
         failed = self.services.queue.counts().get("failed", 0)
         self.state = AppState(
             recorder=recorder_state,

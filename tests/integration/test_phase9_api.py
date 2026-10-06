@@ -437,6 +437,8 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
     from app.diagnostics.api import router as diagnostics_router
     from app.diagnostics.feedback_api import router as feedback_router
     from app.legal.api import router as legal_router
+    from app.transcription.api import router as transcription_router
+    from app.transcription.api import ui_router as transcription_ui_router
     from app.updates.api import router as updates_router
 
     frontend = Path(__file__).resolve().parents[2] / "frontend" / "src"
@@ -454,6 +456,8 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
             *router.routes,
             *assistant_router.routes,
             *legal_router.routes,
+            *transcription_router.routes,
+            *transcription_ui_router.routes,
             *updates_router.routes,
             *diagnostics_router.routes,
             *feedback_router.routes,

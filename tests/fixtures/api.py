@@ -167,6 +167,8 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
         clock=clock,
         recorder=services.recorder,
         services=services,
+        transcriptions=services.transcriptions,
+        scheduler=services.scheduler,
     )
     return ApiHarness(services=services, app=create_app(services), clock=clock, captures=captures)
 

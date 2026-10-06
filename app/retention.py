@@ -62,6 +62,24 @@ class Candidate:
 
 
 @dataclass(frozen=True)
+class FileCandidate:
+    """A finished file transcription past ``transcription.keep_days`` (D86)."""
+
+    transcription_id: str
+    source_name: str
+    age_days: float
+    bytes: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.transcription_id,
+            "source_name": self.source_name,
+            "age_days": round(self.age_days, 1),
+            "bytes": self.bytes,
+        }
+
+
+@dataclass(frozen=True)
 class Plan:
     """What a sweep would do right now, and what it would decline to do."""
 
@@ -70,13 +88,18 @@ class Plan:
     audio: tuple[Candidate, ...] = ()
     meetings: tuple[Candidate, ...] = ()
     spared: tuple[tuple[str, str], ...] = ()
+    #: File transcriptions: their own clock, swept whatever the meeting policy says.
+    transcription_days: int | None = None
+    transcriptions: tuple[FileCandidate, ...] = ()
 
     @property
     def bytes(self) -> int:
-        return sum(item.bytes for item in (*self.audio, *self.meetings))
+        return sum(item.bytes for item in (*self.audio, *self.meetings)) + sum(
+            item.bytes for item in self.transcriptions
+        )
 
     def __bool__(self) -> bool:
-        return bool(self.audio or self.meetings)
+        return bool(self.audio or self.meetings or self.transcriptions)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +108,10 @@ class Plan:
             "audio": [item.as_dict() for item in self.audio],
             "meetings": [item.as_dict() for item in self.meetings],
             "spared": [{"meeting_id": mid, "reason": why} for mid, why in self.spared],
+            "transcriptions": {
+                "keep_days": self.transcription_days,
+                "doomed": [item.as_dict() for item in self.transcriptions],
+            },
             "bytes": self.bytes,
         }
 
@@ -94,6 +121,7 @@ class SweepResult:
     plan: Plan
     audio_removed: int = 0
     meetings_removed: int = 0
+    transcriptions_removed: int = 0
     bytes_freed: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -101,6 +129,7 @@ class SweepResult:
         return {
             "audio_removed": self.audio_removed,
             "meetings_removed": self.meetings_removed,
+            "transcriptions_removed": self.transcriptions_removed,
             "bytes_freed": self.bytes_freed,
             "errors": self.errors,
             "plan": self.plan.as_dict(),
@@ -158,11 +187,15 @@ def plan(
     config: Config,
     clock: Clock,
     recorder: Any = None,
+    transcriptions: Any = None,
 ) -> Plan:
     """What the policy would remove, without removing anything."""
     audio_days = days_of(config.get("retention.audio_days"))
     transcript_days = days_of(config.get("retention.transcript_days"))
-    empty = Plan(audio_days, transcript_days)
+    # A separate pass, before the meetings' early return: turning meeting retention off
+    # must not keep every file transcription for ever.
+    file_days, files = _plan_transcriptions(transcriptions, config, clock)
+    empty = Plan(audio_days, transcript_days, transcription_days=file_days, transcriptions=files)
     if audio_days is None and transcript_days is None:
         return empty
 
@@ -201,7 +234,26 @@ def plan(
         audio=tuple(doomed_audio),
         meetings=tuple(doomed_meetings),
         spared=tuple(spared),
+        transcription_days=file_days,
+        transcriptions=files,
     )
+
+
+def _plan_transcriptions(
+    store: Any, config: Config, clock: Clock
+) -> tuple[int | None, tuple[FileCandidate, ...]]:
+    days = days_of(config.get("transcription.keep_days"))
+    if store is None or days is None:
+        return days, ()
+    now = clock.now()
+    doomed = []
+    for job in store.expired(days, now):
+        stamp = parse_iso(job.finished_at or job.updated_at)
+        folder = store.folder(job.id)
+        size = tree_bytes(folder) if folder.exists() else 0
+        age = (now - stamp).total_seconds() / 86400.0
+        doomed.append(FileCandidate(job.id, job.source_name, age, size))
+    return days, tuple(doomed)
 
 
 def sweep(
@@ -213,10 +265,17 @@ def sweep(
     clock: Clock,
     recorder: Any = None,
     events: Any = None,
+    transcriptions: Any = None,
 ) -> SweepResult:
     """Apply the policy. Every failure is per-meeting: one bad folder is not a stoppage."""
     decided = plan(
-        dao=dao, queue=queue, meetings=meetings, config=config, clock=clock, recorder=recorder
+        dao=dao,
+        queue=queue,
+        meetings=meetings,
+        config=config,
+        clock=clock,
+        recorder=recorder,
+        transcriptions=transcriptions,
     )
     result = SweepResult(plan=decided)
     now = clock.now()
@@ -246,11 +305,23 @@ def sweep(
         if events is not None:
             events.publish("meeting", meeting_id=candidate.meeting_id, action="deleted")
 
-    if result.audio_removed or result.meetings_removed:
+    for item in decided.transcriptions:
+        try:
+            transcriptions.purge(item.transcription_id)
+        except Exception as exc:
+            log.warning("retention could not delete %s: %s", item.transcription_id, exc)
+            result.errors.append(f"{item.transcription_id}: {exc}")
+            continue
+        result.transcriptions_removed += 1
+        result.bytes_freed += item.bytes
+
+    if result.audio_removed or result.meetings_removed or result.transcriptions_removed:
         log.info(
-            "retention swept %d audio folder(s) and %d meeting(s), freeing %.1f MB",
+            "retention swept %d audio folder(s), %d meeting(s) and %d file transcription(s), "
+            "freeing %.1f MB",
             result.audio_removed,
             result.meetings_removed,
+            result.transcriptions_removed,
             result.bytes_freed / 1e6,
         )
     return result
@@ -266,4 +337,5 @@ def sweep_services(services: Any) -> SweepResult:
         clock=services.clock,
         recorder=services.recorder,
         events=services.events,
+        transcriptions=getattr(services, "transcriptions", None),
     )

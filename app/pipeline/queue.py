@@ -41,6 +41,7 @@ JOB_COLUMNS = (
     "finished_at",
     "created_at",
     "updated_at",
+    "queued_at",
 )
 
 
@@ -58,6 +59,13 @@ class Job:
     finished_at: str | None
     created_at: str
     updated_at: str
+    #: When the meeting entered the queue: the FIFO key it shares with file jobs (D86).
+    queued_at: str | None = None
+
+    @property
+    def fifo_key(self) -> str:
+        """``queued_at``, or ``created_at`` for a row written before migration 0010."""
+        return self.queued_at or self.created_at
 
     @property
     def job_state(self) -> JobState:
@@ -105,17 +113,24 @@ class JobQueue:
         *,
         priority: int = 100,
         not_before: str | None = None,
+        queued_at: str | None = None,
     ) -> Job:
-        """Idempotent: re-enqueuing an existing stage makes it runnable again."""
+        """Idempotent: re-enqueuing an existing stage makes it runnable again.
+
+        ``queued_at`` is the meeting's place in the queue it shares with file jobs (D86):
+        now, for a meeting entering the queue, or the previous stage's, passed on by
+        :meth:`enqueue_next_stage`.
+        """
         now = iso(self.clock.now())
         self.conn.execute(
             "INSERT INTO jobs(meeting_id, stage, state, attempts, not_before, priority, "
-            "created_at, updated_at) VALUES (?,?,?,0,?,?,?,?) "
+            "created_at, updated_at, queued_at) VALUES (?,?,?,0,?,?,?,?,?) "
             "ON CONFLICT(meeting_id, stage) DO UPDATE SET state='pending', "
             "not_before=excluded.not_before, priority=excluded.priority, "
-            "updated_at=excluded.updated_at",
-            (meeting_id, str(stage), JobState.PENDING, not_before, priority, now, now),
-        )
+            "updated_at=excluded.updated_at, queued_at=excluded.queued_at",
+            (meeting_id, str(stage), JobState.PENDING, not_before, priority, now, now,
+             queued_at or now),
+        )  # fmt: skip
         job = self.get_by_stage(meeting_id, str(stage))
         assert job is not None
         return job
@@ -131,6 +146,34 @@ class JobQueue:
             (now, now, now),
         ).fetchone()
         return _row_to_job(row) if row else None
+
+    def peek(self) -> Job | None:
+        """The job :meth:`claim_next` would take, without taking it."""
+        now = iso(self.clock.now())
+        row = self.conn.execute(
+            "SELECT * FROM jobs WHERE state='pending' "
+            "AND (not_before IS NULL OR not_before <= ?) ORDER BY priority, id LIMIT 1",
+            (now,),
+        ).fetchone()
+        return _row_to_job(row) if row else None
+
+    def claim(self, job_id: int) -> Job | None:
+        """Take this job, if it is still pending: ``None`` when another thread changed it
+        (a deletion) between :meth:`peek` and here."""
+        now = iso(self.clock.now())
+        row = self.conn.execute(
+            "UPDATE jobs SET state='running', started_at=?, updated_at=? "
+            "WHERE id = ? AND state='pending' RETURNING *",
+            (now, now, job_id),
+        ).fetchone()
+        return _row_to_job(row) if row else None
+
+    def pending_keys(self) -> list[str]:
+        """The FIFO key of every meeting job waiting, runnable or not: for queue positions."""
+        rows = self.conn.execute(
+            "SELECT coalesce(queued_at, created_at) AS k FROM jobs WHERE state='pending'"
+        ).fetchall()
+        return [row["k"] for row in rows]
 
     def complete(self, job: Job) -> Job:
         now = iso(self.clock.now())
@@ -208,7 +251,8 @@ class JobQueue:
         following = next_stage(stage)
         if following is None:
             return None
-        return self.enqueue(job.meeting_id, following)
+        # The same unit of work: the meeting keeps the place it took when it was queued.
+        return self.enqueue(job.meeting_id, following, queued_at=job.fifo_key)
 
     def reset_running(self) -> int:
         """Crash recovery: anything left ``running`` by a dead process is runnable again."""
@@ -257,12 +301,13 @@ class JobQueue:
         return False
 
     def retry(self, meeting_id: str, stage: JobStage | str) -> Job:
-        """Re-run one stage: pending again, attempts reset."""
+        """Re-run one stage: pending again, attempts reset, at the back of the queue."""
         now = iso(self.clock.now())
         self.conn.execute(
             "UPDATE jobs SET state='pending', attempts=0, not_before=NULL, last_error=NULL, "
-            "started_at=NULL, finished_at=NULL, updated_at=? WHERE meeting_id=? AND stage=?",
-            (now, meeting_id, str(stage)),
+            "started_at=NULL, finished_at=NULL, updated_at=?, queued_at=? "
+            "WHERE meeting_id=? AND stage=?",
+            (now, now, meeting_id, str(stage)),
         )
         job = self.get_by_stage(meeting_id, str(stage))
         if job is None:

@@ -45,6 +45,13 @@ const NAV: { to: string; key: MessageKey; hint: MessageKey; testid: string; path
   },
   { to: "/actions", key: "nav.actions", hint: "help.actions", testid: "nav-actions", path: "M3 8.5 6.2 11.6 13 4.8" },
   {
+    to: "/transcriptions",
+    key: "nav.transcriptions",
+    hint: "help.transcriptions",
+    testid: "nav-transcriptions",
+    path: "M5.5 2.5h5l3 3v8h-8zM10.5 2.5v3h3M7.5 8.5v3M9.5 7.5v4M11.5 9v1.5",
+  },
+  {
     to: "/search",
     key: "nav.search",
     hint: "help.search",

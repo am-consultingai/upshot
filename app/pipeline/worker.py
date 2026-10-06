@@ -58,6 +58,8 @@ class Worker:
         recorder: RecorderState | None = None,
         activity: SystemActivity | None = None,
         services: Any = None,
+        transcriptions: Any = None,
+        scheduler: Any = None,
     ) -> None:
         self.dao = dao
         self.queue = queue
@@ -67,12 +69,20 @@ class Worker:
         self.recorder: RecorderState = recorder or FakeRecorderState(False)
         self.activity = activity
         self.services = services
+        #: File transcription (D86): the store of file jobs, and the scheduler that picks
+        #: between them and meeting jobs, first in, first out. Without them the worker
+        #: runs meeting jobs only, as it always has.
+        self.transcriptions = transcriptions
+        self.scheduler = scheduler
         self.stats = WorkerStats()
         self.last_metrics: dict[str, dict[str, Any]] = {}
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_sweep: float | None = None
+        self._auto_profile: tuple[tuple[Any, Any], str] | None = None
         self.queue.reset_running()
+        if self.transcriptions is not None:
+            self.transcriptions.reset_running()
 
     # -- policy ------------------------------------------------------------
 
@@ -81,8 +91,24 @@ class Worker:
         policy = self.config.job_policy
         if policy != "auto":
             return policy
-        profile = self.config.profile
-        return "after_meeting" if profile == "cpu-deferred" else "asap"
+        return "after_meeting" if self.profile() == "cpu-deferred" else "asap"
+
+    def profile(self) -> str:
+        """``profile = "auto"`` resolved as at start-up (``bootstrap.choose_profile``): a GPU
+        that will run the model transcribes during a meeting, a CPU after it (D60). Taken
+        as is, a saved ``auto`` read as live, so a CPU-only machine transcribed under a
+        recording (machine B, 2026-10-05). Cached per device setting: the plan searches
+        the disk for CUDA and asks the GPU for its memory."""
+        configured = self.config.profile
+        if configured != "auto":
+            return configured
+        key = (self.config.get("asr.device", "auto"), self.config.get("asr.cuda_dir"))
+        if self._auto_profile is None or self._auto_profile[0] != key:
+            from app.asr.local import planned_device
+
+            device = planned_device(self.config)
+            self._auto_profile = (key, "gpu-live" if device == "cuda" else "cpu-deferred")
+        return self._auto_profile[1]
 
     def should_yield(self) -> bool:
         """A starting recording always wins, unless the policy is explicitly ``asap``."""
@@ -102,6 +128,18 @@ class Worker:
         hour = self.clock.now().hour
         return any(hour == (start + offset) % 24 for offset in range(max(1, length)))
 
+    def waiting_reason(self) -> str:
+        """Why waiting work is not running now: ``recording`` (a meeting is being recorded
+        and the policy yields to it, which is also what holds ``after_meeting``),
+        ``policy:when_idle``, ``policy:scheduled``, or just ``queue``."""
+        if self.should_yield():
+            return "recording"
+        if self.policy == "when_idle" and self.activity is not None and self.activity.is_busy():
+            return "policy:when_idle"
+        if self.policy == "scheduled" and not self.in_schedule():
+            return "policy:scheduled"
+        return "queue"
+
     # -- one job -----------------------------------------------------------
 
     def run_once(self) -> bool:
@@ -109,11 +147,14 @@ class Worker:
         if not self.may_run():
             self.stats.skipped_by_policy += 1
             return False
-        job = self.queue.claim_next()
-        if job is None:
+        claimed = self.scheduler.claim_next_any() if self.scheduler else self.queue.claim_next()
+        if claimed is None:
             return False
         self.stats.claimed += 1
-        self._execute(job)
+        if isinstance(claimed, Job):
+            self._execute(claimed)
+        else:
+            self._execute_file(claimed)
         return True
 
     def execute(self, job: Job) -> None:
@@ -175,6 +216,95 @@ class Worker:
                 # However the stage ended: a meeting deleted meanwhile goes now.
                 self.finish_delete(job.meeting_id)
             self._on_success(job, context)
+
+    def _execute_file(self, job: Any) -> None:
+        """One file transcription (D86): the engine, not the stage registry. A recording
+        stops it only between phases; a cancel or a delete at the next segment."""
+        import json
+
+        from app.asr.models import ModelNotInstalled
+        from app.audio.ingest import UnsupportedAudio
+        from app.transcription.engine import transcribe_file
+        from app.transcription.store import INPUT_DIR, RESULT_NAME
+        from app.transcription.types import overall_progress
+
+        store = self.transcriptions
+        folder = store.folder(job.id)
+        folder.mkdir(parents=True, exist_ok=True)
+
+        def stop_check() -> None:
+            store.stop_check(job.id)
+
+        def checkpoint() -> None:
+            store.stop_check(job.id)
+            if self.should_yield():
+                raise Preempted(f"transcription {job.id} yielded to the recorder")
+
+        def on_progress(phase: str, fraction: float) -> None:
+            store.progress(job.id, phase, overall_progress(phase, fraction))
+
+        try:
+            result = transcribe_file(
+                Path(job.source_path),
+                folder,
+                config=self.config,
+                options=job.parsed_options,
+                services=self.services,
+                stop_check=stop_check,
+                on_progress=on_progress,
+                checkpoint=checkpoint,
+            )
+            payload = result.as_result(id=job.id, source_name=job.source_name)
+            (folder / RESULT_NAME).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
+            )
+        except Cancelled as exc:
+            log.info("%s", exc)
+            if store.stopping(job.id) != "delete":
+                store.mark_cancelled(job.id)
+            return
+        except Preempted:
+            store.release(job)
+            self.stats.preempted += 1
+            log.info("transcription %s preempted by the recorder", job.id)
+            return
+        except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
+            # Trying again changes nothing: an undecodable file, a missing model, a path
+            # that is not there. UnsupportedAudio is a ValueError, so it is named here.
+            store.fail(job, exc, permanent=True)
+            self.stats.failed += 1
+            log.warning("transcription %s failed: %s", job.id, exc)
+            return
+        except Exception as exc:
+            updated = store.fail(job, exc)
+            self.stats.failed += 1
+            log.warning("transcription %s failed (attempt %s): %s", job.id, updated.attempts, exc)
+            if updated.state == "failed":
+                # Failed for good from something unexpected, as a meeting stage reports
+                # (D87). A file that can't be decoded or a missing model is not a bug.
+                from app.diagnostics.reporter import report
+
+                report(exc, where="transcription")
+            return
+        finally:
+            # However it ended: a job deleted meanwhile goes now its files are let go.
+            store.finish_delete(job.id)
+        if store.get(job.id) is None:
+            return  # deleted as it finished
+        store.complete(
+            job.id,
+            duration_s=result.duration_s,
+            language=result.language,
+            language_conf=result.language_conf,
+            model=result.model,
+        )
+        if job.source_kind == "upload" and not bool(
+            self.config.get("transcription.keep_input", False)
+        ):
+            import shutil
+
+            shutil.rmtree(folder / INPUT_DIR, ignore_errors=True)
+        self.stats.completed += 1
 
     def finish_delete(self, meeting_id: str) -> None:
         """The deletion asked for while a stage ran (``queue.request_delete``), now that
@@ -315,7 +445,18 @@ class Worker:
             if not self.may_run():
                 self.clock.sleep(busy_sleep)
                 continue
-            if not self.run_once():
+            try:
+                ran = self.run_once()
+            except Exception as exc:
+                # Nothing a job does may end the thread: with it gone, nothing would be
+                # transcribed again until a restart (the PR #1 review).
+                log.exception("worker: a job failed outside its own error handling")
+                from app.diagnostics.reporter import report
+
+                report(exc, where="worker")
+                self.clock.sleep(busy_sleep)
+                continue
+            if not ran:
                 # Only with nothing else to do: housekeeping never competes with a job.
                 self.maybe_sweep()
                 self.clock.sleep(idle_sleep)
