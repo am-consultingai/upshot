@@ -108,6 +108,13 @@ def event_key(payload: dict[str, Any]) -> tuple[str, str] | None:
     return str(ident), str(ref.get("original_start") or ref.get("start") or "")
 
 
+def transcribed(meeting: Meeting) -> bool:
+    """Whether the meeting's audio has been transcribed (its segments are on disk)."""
+    from app.pipeline.stages.transcribe import segments_path
+
+    return segments_path(meeting.path).exists()
+
+
 def continuable_until(meeting: Meeting, within_s: float) -> datetime:
     """Until when a recording of the same calendar event carries this meeting on (D89): while
     the event is on, and ``within_s`` after the later of its end and the recording's."""
@@ -239,6 +246,10 @@ class MeetingService:
             return meeting  # the user chose the event; nothing automatic overrides that
         if previous_match.get("state") == "matched" and state != "matched":
             # A later, vaguer look never undoes a confident match.
+            return meeting
+        if previous_match.get("state") == "proposed" and state == "none":
+            # Nor does "nothing overlaps" undo the meetings it may be (D89): the detector
+            # proposed them from the call itself, which the clock alone cannot see.
             return meeting
         fields: dict[str, Any] = {"calendar_json": json.dumps(raw, ensure_ascii=False)}
         if enrichment.title and title_is_open(meeting):
@@ -398,7 +409,161 @@ class MeetingService:
         meta.mirror(self.dao.require_meeting(meeting_id))
         if enqueue:
             self.queue.enqueue(meeting_id, JobStage.TRANSCRIBE)
+            # Another recording of the same calendar meeting, made before this one and too
+            # far along to be continued (D88): one meeting, so one recording (D89).
+            merged = self.merge_into_existing(meeting_id)
+            if merged is not None:
+                return merged
         return updated
+
+    # -- one meeting, one recording (D89) ----------------------------------
+
+    def merge_target(self, meeting: Meeting) -> Meeting | None:
+        """The other recording of ``meeting``'s calendar meeting, if there is one: both
+        matched to the same occurrence, which only happens when it is the same meeting."""
+        from app.merge import NOT_MERGEABLE
+
+        key = event_key(calendar_payload(meeting))
+        if key is None:
+            return None
+        since = iso(parse_iso(meeting.started_at) - timedelta(days=1))
+        found: Meeting | None = None
+        for other in self.dao.list_meetings(frm=since, include_hidden=True, limit=200):
+            if other.id == meeting.id or MeetingState(other.state) in NOT_MERGEABLE:
+                continue
+            if event_key(calendar_payload(other)) != key:
+                continue
+            if found is None or other.started_at < found.started_at:
+                found = other
+        return found
+
+    def merge_into_existing(self, meeting_id: str) -> Meeting | None:
+        """Merge ``meeting_id`` with the other recording of its calendar meeting, when there
+        is one and both can be merged now. The surviving meeting, or None."""
+        from app.merge import MergeRefused
+
+        meeting = self.dao.require_meeting(meeting_id)
+        other = self.merge_target(meeting)
+        if other is None:
+            return None
+        if parse_iso(other.started_at) > parse_iso(meeting.started_at):
+            meeting, other = other, meeting  # the later one waits, the earlier stays
+        if transcribed(other) and not transcribed(meeting):
+            # The earlier part has its transcript: transcribe only the later part, then
+            # join the two, rather than the whole meeting again.
+            meta.update(meeting.path, merge_into=other.id)
+            log.info("%s joins %s once it is transcribed", meeting.id, other.id)
+            return None
+        try:
+            return self.merge(other.id, meeting.id)
+        except MergeRefused as exc:
+            meta.update(meeting.path, merge_into=other.id)
+            log.info("%s and %s not merged yet: %s", other.id, meeting.id, exc)
+            return None
+
+    def merge_pending(self, meeting_id: str) -> Meeting | None:
+        """Join ``meeting_id`` to the earlier recording it waits for, if it can be now."""
+        from app.merge import MergeRefused
+
+        meeting = self.dao.get_meeting(meeting_id)
+        if meeting is None:
+            return None
+        waiting = meta.read(meeting.path).get("merge_into")
+        if not waiting:
+            return None
+        target = self.dao.get_meeting(self.dao.resolve(str(waiting)))
+        if target is None or target.id == meeting.id:
+            meta.update(meeting.path, merge_into=None)
+            return None
+        if transcribed(target) and not transcribed(meeting):
+            return None
+        try:
+            merged = self.merge(target.id, meeting.id)
+        except MergeRefused as exc:
+            log.info("%s still waits to join %s: %s", meeting.id, target.id, exc)
+            return None
+        meta.update(merged.path, merge_into=None)
+        return merged
+
+    def merge(self, first_id: str, second_id: str) -> Meeting:
+        """Join two recordings of one meeting; the earlier one survives (D89)."""
+        from app.merge import merge
+
+        return merge(self, first_id, second_id)
+
+    def resume_jobs(self, meeting_id: str) -> None:
+        """Put back the jobs a refused merge took out of the queue."""
+        self.queue.restore(meeting_id)
+
+    def redo_after_merge(self, meeting: Meeting, *, transcribed: bool) -> None:
+        """A merged meeting is processed again: from the joined transcript when both parts
+        had one, else transcribed whole. Every later stage is redone too."""
+        from app.pipeline.states import STAGE_ORDER
+
+        stage = JobStage.ASSEMBLE if transcribed else JobStage.TRANSCRIBE
+        entry = MeetingState.TRANSCRIBING if transcribed else MeetingState.RECORDED
+        if meeting.state != entry:
+            self.dao.set_state(meeting.id, entry)
+        for later in STAGE_ORDER[STAGE_ORDER.index(stage) :]:
+            self.queue.request_rerun(meeting.id, later)
+        self.queue.retry(meeting.id, stage)
+        meta.mirror(self.dao.require_meeting(meeting.id))
+
+    def resummarize(self, meeting_id: str) -> bool:
+        """The calendar meeting changed: summarize again, when an AI is configured and a
+        summary was already written (D89). The previous one is kept beside it, as
+        ``*.prev.*``, in case the new one is worse. Whether it was asked for."""
+        from app.pipeline.states import STAGE_ORDER
+
+        if str(self.config.get("llm.provider", "none")) == "none":
+            return False
+        meeting = self.dao.require_meeting(meeting_id)
+        if MeetingState(meeting.state) not in (
+            MeetingState.SUMMARIZED,
+            MeetingState.RENDERED,
+            MeetingState.DELIVERED,
+        ):
+            return False  # not summarized yet: when it is, it reads the new meeting
+        for name in ("notes.json", "summary.html"):
+            current = meeting.path / name
+            if current.exists():
+                stem, _, suffix = name.partition(".")
+                shutil.copyfile(current, meeting.path / f"{stem}.prev.{suffix}")
+        for later in STAGE_ORDER[STAGE_ORDER.index(JobStage.SUMMARIZE) :]:
+            self.queue.request_rerun(meeting_id, later)
+        self.queue.retry(meeting_id, JobStage.SUMMARIZE)
+        log.info("meeting %s is summarized again for its new calendar meeting", meeting_id)
+        return True
+
+    def ask_if_unsettled(self, meeting_id: str, notifier: Any, *, calendar_connected: bool) -> bool:
+        """After a recording ends: "Which meeting was this?" when its calendar meeting is
+        not settled (D89). Whether it asked."""
+        meeting = self.dao.get_meeting(self.dao.resolve(meeting_id))
+        if meeting is None or notifier is None:
+            return False
+        if not self.needs_meeting(meeting, calendar_connected=calendar_connected):
+            return False
+        candidates = calendar_payload(meeting).get("candidates") or []
+        notifier.which_meeting(meeting.id, meeting.title or "", list(candidates))
+        return True
+
+    def needs_meeting(self, meeting: Meeting, *, calendar_connected: bool) -> bool:
+        """A recording whose calendar meeting is not settled: the user is asked (D89).
+
+        Settled is matched (by the user, the detector or the calendar) or "not on my
+        calendar" said by the user. With no calendar connected there is nothing to ask."""
+        if not calendar_connected:
+            return False
+        if MeetingState(meeting.state) in (
+            MeetingState.RECORDING,
+            MeetingState.ARMED,
+            MeetingState.DISCARDED,
+        ):
+            return False
+        match = calendar_payload(meeting).get("match") or {}
+        if match.get("state") == "matched":
+            return False
+        return match.get("source") != "user"
 
     def discard(self, meeting_id: str) -> Meeting:
         meeting = self.dao.set_state(meeting_id, MeetingState.DISCARDED)

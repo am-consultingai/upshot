@@ -265,6 +265,14 @@ class JobQueue:
             )
         return True
 
+    def restore(self, meeting_id: str) -> None:
+        """Undo :meth:`withdraw`: a meeting's cancelled jobs wait again."""
+        self.conn.execute(
+            "UPDATE jobs SET state='pending', updated_at=? "
+            "WHERE meeting_id = ? AND state = 'cancelled'",
+            (iso(self.clock.now()), meeting_id),
+        )
+
     def enqueue_next_stage(self, job: Job) -> Job | None:
         """Completing a stage enqueues its successor — and nothing else."""
         try:

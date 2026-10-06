@@ -86,9 +86,17 @@ def api(tmp_path: Path, app_home: Path):  # type: ignore[no-untyped-def]
         recorder.stop()
 
 
-def an_event_on_now(api: Any, event_id: str = "ev-1", title: str = "Data science sync") -> str:
-    """A connected calendar with an hour-long meeting that started a minute ago, and the
-    meeting service matching recordings against it, as the app is wired."""
+def an_event_on_now(
+    api: Any,
+    event_id: str = "ev-1",
+    title: str = "Data science sync",
+    *,
+    also: tuple[tuple[str, str], ...] = (),
+) -> str:
+    """A connected calendar with an hour-long meeting that started a minute ago (and the
+    ``also`` meetings booked at the same time), and the meeting service matching
+    recordings against it, as the app is wired. Each call replaces what the calendar
+    holds."""
     from app.gcal.events import Attendee, CalendarEvent, EventStore
     from app.gcal.source import GoogleCalendarSource
     from tests.fixtures.api import seed_calendar_account
@@ -105,13 +113,14 @@ def an_event_on_now(api: Any, event_id: str = "ev-1", title: str = "Data science
             CalendarEvent(
                 account_id=account,
                 calendar_id="primary",
-                event_id=event_id,
-                title=title,
+                event_id=each_id,
+                title=each_title,
                 start=start,
                 end=start + timedelta(hours=1),
                 attendees=(Attendee(name="Dana Levi"), Attendee(name="Noa Cohen")),
                 attendee_count=2,
             )
+            for each_id, each_title in ((event_id, title), *also)
         ],
         synced_at=datetime.now().astimezone(),
     )

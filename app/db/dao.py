@@ -523,6 +523,28 @@ class Dao:
         row = self.conn.execute("SELECT * FROM meetings WHERE id = ?", (meeting_id,)).fetchone()
         return _row_to_meeting(row) if row else None
 
+    def add_alias(self, alias: str, meeting_id: str) -> None:
+        """``alias`` (a recording merged away) now means ``meeting_id`` (D89). Aliases of the
+        alias move with it, so a chain of merges resolves in one step."""
+        now = iso(self.clock.now())
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE meeting_aliases SET meeting_id = ? WHERE meeting_id = ?",
+                (meeting_id, alias),
+            )
+            self.conn.execute(
+                "INSERT OR REPLACE INTO meeting_aliases(alias, meeting_id, created_at) "
+                "VALUES (?,?,?)",
+                (alias, meeting_id, now),
+            )
+
+    def resolve(self, meeting_id: str) -> str:
+        """The meeting an id names now: itself, or the one it was merged into."""
+        row = self.conn.execute(
+            "SELECT meeting_id FROM meeting_aliases WHERE alias = ?", (meeting_id,)
+        ).fetchone()
+        return str(row["meeting_id"]) if row else meeting_id
+
     def visible_meeting(self, meeting_id: str) -> Meeting | None:
         """The meeting, unless it belongs only to hidden calendar accounts: what every
         screen, the assistant and the API ask, so a hidden meeting is simply not there."""
