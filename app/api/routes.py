@@ -509,10 +509,13 @@ def recording_stop(request: Request) -> dict[str, Any]:
     meeting = svc.meetings.finish(meeting_id, duration_s=duration_s)
     log.info("recording %s stopped after %d s (%s)", meeting_id, duration_s, meeting.state)
     svc.events.publish("recorder", state="idle", meeting_id=meeting_id)
+    if meeting.id != meeting_id:
+        log.info("recording %s joined the earlier recording %s", meeting_id, meeting.id)
     if svc.notifier is not None and meeting.state == MeetingState.RECORDED:
-        svc.notifier.recording_ended(meeting_id, duration_s // 60)
+        svc.notifier.recording_ended(meeting.id, duration_s // 60)
+    svc.meetings.ask_if_unsettled(meeting.id, svc.notifier, calendar_connected=bool(_active(svc)))
     return {
-        "meeting_id": meeting_id,
+        "meeting_id": meeting.id,
         "state": meeting.state,
         "duration_s": duration_s,
         "chunks": len(result.records),
@@ -657,6 +660,18 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
             raise HTTPException(409, "that recording is not being followed")
         svc.events.publish("recorder", state="recording", meeting_id=current)
         return {"meeting_id": current, "kept": True}
+    if body.action in ("meeting.assign", "meeting.none"):
+        if not body.meeting_id:
+            raise HTTPException(400, "name the meeting")
+        survivor = _assign(
+            svc,
+            body.meeting_id,
+            account_id=body.account_id,
+            calendar_id=body.calendar_id,
+            event_id=body.event_id,
+            none=body.action == "meeting.none",
+        )
+        return {"meeting_id": survivor}
     if body.action == "meeting.discard":
         if not body.meeting_id:
             raise HTTPException(400, "name the meeting")
@@ -753,14 +768,16 @@ def _action_counts(pair: tuple[int, int] | None) -> dict[str, int]:
 
 
 def _visible(svc: Services, meeting_id: str) -> Meeting:
-    """The meeting, or 404 — also when it belongs only to hidden calendar accounts."""
-    meeting = svc.dao.visible_meeting(meeting_id)
+    """The meeting, or 404 — also when it belongs only to hidden calendar accounts. An id
+    merged into another meeting finds that one (D89)."""
+    meeting = svc.dao.visible_meeting(svc.dao.resolve(meeting_id))
     if meeting is None:
         raise HTTPException(404, "no such meeting")
     return meeting
 
 
 def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
+    meeting_id = svc.dao.resolve(meeting_id)
     meeting = svc.dao.visible_meeting(meeting_id)
     if meeting is None or svc.queue.deleting(meeting_id):
         raise HTTPException(404, "no such meeting")
@@ -794,6 +811,15 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
     payload["evidence"] = meeting.evidence
     # Parsed for the page; the stored string stays as it was for anything that reads it.
     payload["calendar"] = _calendar_of(svc, meeting) or None
+    payload["needs_meeting"] = svc.meetings.needs_meeting(
+        meeting, calendar_connected=bool(_active(svc))
+    )
+    # Another recording of the same calendar meeting that could not be merged by itself
+    # (one was busy): the page offers to merge them (D89).
+    other = svc.meetings.merge_target(meeting)
+    payload["merge_with"] = (
+        {"id": other.id, "title": other.title, "started_at": other.started_at} if other else None
+    )
     mirrored = meta.read(meeting.path)
     # A meeting whose audio the retention policy removed is not a meeting that failed to
     # record, and the page must not say so.
@@ -865,10 +891,13 @@ def list_meetings(
     tags = svc.dao.tags_by_meeting()
     failed = svc.dao.failed_stages()
     members = svc.dao.calendar_accounts_by_meeting()
+    connected = bool(_active(svc))
     return {
         "meetings": [
             {
                 **meeting.as_dict(),
+                # The calendar meeting is not settled: the library marks it (D89).
+                "needs_meeting": svc.meetings.needs_meeting(meeting, calendar_connected=connected),
                 **_action_counts(counts.get(meeting.id)),
                 "tags": tags.get(meeting.id, []),
                 # Every calendar account the meeting is on: the dots in the list.
@@ -2120,19 +2149,80 @@ def meeting_invite(request: Request, meeting_id: str) -> dict[str, Any]:
 def choose_meeting_event(request: Request, meeting_id: str, body: CalendarChoice) -> dict[str, Any]:
     """The user says which event this recording was, or that it was none."""
     svc = services_of(request)
-    if svc.dao.visible_meeting(meeting_id) is None:
+    survivor = _assign(
+        svc,
+        meeting_id,
+        account_id=body.account_id,
+        calendar_id=body.calendar_id,
+        event_id=body.event_id,
+        none=body.none,
+    )
+    return _meeting_payload(svc, survivor)
+
+
+def _assign(
+    svc: Services,
+    meeting_id: str,
+    *,
+    account_id: str | None,
+    calendar_id: str | None,
+    event_id: str | None,
+    none: bool,
+) -> str:
+    """The user's answer to "which meeting was this?" (D89). The recording it leaves: this
+    one, or the earlier recording of the same meeting it was merged into.
+
+    A different calendar meeting means a different title and participants, so a summary
+    already written is written again (when an AI is configured). Another recording of
+    the meeting picked is merged with this one: one meeting, one recording.
+    """
+    meeting_id = svc.dao.resolve(meeting_id)
+    meeting = svc.dao.visible_meeting(meeting_id)
+    if meeting is None:
         raise HTTPException(404, "no such meeting")
-    if body.none:
+    from app.meetings import calendar_payload, event_key
+
+    before = event_key(calendar_payload(meeting))
+    if none:
         svc.meetings.choose_event(meeting_id, None)
     else:
-        if not body.calendar_id or not body.event_id:
+        if not calendar_id or not event_id:
             raise HTTPException(400, "name the event, or say none")
-        event = _event_lookup(svc, body.account_id, body.calendar_id, body.event_id)
+        event = _event_lookup(svc, account_id, calendar_id, event_id)
         if event is None:
             raise HTTPException(404, "that event is not in the calendar cache")
         svc.meetings.choose_event(meeting_id, _user_snapshot(svc, event))
-    svc.events.publish("meeting", meeting_id=meeting_id, action="calendar")
-    return _meeting_payload(svc, meeting_id)
+    survivor = meeting_id
+    merged = svc.meetings.merge_into_existing(meeting_id) if not none else None
+    if merged is not None:
+        survivor = merged.id
+    elif event_key(calendar_payload(svc.dao.require_meeting(meeting_id))) != before:
+        svc.meetings.resummarize(meeting_id)
+    svc.events.publish("meeting", meeting_id=survivor, action="calendar")
+    return survivor
+
+
+class MergePost(BaseModel):
+    #: The other recording of the same meeting.
+    other: str
+
+
+@router.post("/meetings/{meeting_id}/merge")
+def merge_meetings(request: Request, meeting_id: str, body: MergePost) -> dict[str, Any]:
+    """Join two recordings of one meeting (D89). The earlier one is kept; the later one's
+    id goes on finding it."""
+    from app.merge import MergeRefused
+
+    svc = services_of(request)
+    first, second = svc.dao.resolve(meeting_id), svc.dao.resolve(body.other)
+    for each in (first, second):
+        _visible(svc, each)
+    try:
+        merged = svc.meetings.merge(first, second)
+    except MergeRefused as exc:
+        raise HTTPException(409, str(exc)) from exc
+    svc.events.publish("meeting", meeting_id=merged.id, action="merged")
+    return _meeting_payload(svc, merged.id)
 
 
 def _start_connect(request: Request, *, reconnect: str | None = None) -> dict[str, Any]:

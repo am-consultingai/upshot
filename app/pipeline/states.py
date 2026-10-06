@@ -110,6 +110,11 @@ def _build() -> frozenset[tuple[MeetingState, MeetingState]]:
     pairs.add((M.SUMMARIZED, M.SUMMARIZING))
     pairs.add((M.ARMED, M.RECORDING))
     pairs.add((M.RECORDED, M.RECORDING))  # the same call, recorded again (D88)
+    # Two recordings of one meeting merged (D89): processed again, from the joined
+    # transcript or from the audio.
+    for state in (*RETRYABLE_ENTRY, M.DELIVERED, M.FAILED):
+        pairs.add((state, M.TRANSCRIBING))
+        pairs.add((state, M.RECORDED))
     pairs.add((M.INTERRUPTED, M.RECORDED))
     pairs.add((M.DISCARDED, M.RECORDED))  # "it was a meeting after all"
     return frozenset(pairs)

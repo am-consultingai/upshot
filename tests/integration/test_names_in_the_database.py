@@ -108,8 +108,7 @@ def test_renaming_touches_no_file(api) -> None:  # type: ignore[no-untyped-def]
 def test_reassigning_the_calendar_meeting_writes_no_name_to_disk(api) -> None:  # type: ignore[no-untyped-def]
     from tests.integration.test_meeting_continuity import an_event_on_now
 
-    an_event_on_now(api, "ev-a", "Alpha review")
-    an_event_on_now(api, "ev-b", "Beta review")
+    an_event_on_now(api, "ev-a", "Alpha review", also=(("ev-b", "Beta review"),))
     meeting_id = recorded(api, {"calendar_id": "primary", "event_id": "ev-a"})
     response = api.client().put(
         f"/api/meetings/{meeting_id}/calendar", json={"calendar_id": "primary", "event_id": "ev-b"}

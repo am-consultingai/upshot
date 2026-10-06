@@ -249,6 +249,15 @@ class Detector:
         apps = [p for p in holders if ev.matches_process(p, known)]
         return self.assignment(apps[0] if apps else None)
 
+    def _calendar_connected(self) -> bool:
+        if self.calendar is None:
+            return False
+        active = getattr(self.calendar, "active", None)
+        try:
+            return bool(active()) if active is not None else True
+        except Exception:
+            return False
+
     def calendar_payload(self, found: Assignment) -> dict[str, Any] | None:
         """What a recording keeps of ``found``: the meeting, matched by the detector, or the
         meetings it may be, proposed. None with no calendar meeting on."""
@@ -846,8 +855,13 @@ class Detector:
         if meeting_id:
             meeting = self.meetings.finish(meeting_id, duration_s=duration_s)
             log.info("meeting %s ended (%s), state %s", meeting_id, why, meeting.state)
+            if meeting.id != meeting_id:
+                log.info("recording %s joined the earlier recording %s", meeting_id, meeting.id)
             if self.notifier is not None and meeting.state == MeetingState.RECORDED:
-                self.notifier.recording_ended(meeting_id, duration_s // 60, reason=why)
+                self.notifier.recording_ended(meeting.id, duration_s // 60, reason=why)
+            self.meetings.ask_if_unsettled(
+                meeting.id, self.notifier, calendar_connected=self._calendar_connected()
+            )
         if self.recording_process:
             # The meeting ended but the app still holds the microphone — the duration cap
             # fired, or both sides went quiet. If it looks like a meeting again it is a

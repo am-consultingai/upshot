@@ -309,6 +309,36 @@ class BaseNotifier:
             )
         )
 
+    def which_meeting(self, meeting_id: str, title: str, candidates: list[dict[str, Any]]) -> None:
+        """A recording ended and its calendar meeting is not settled: ask (D89). A button
+        for each meeting it may be, and "Not on my calendar"; the recording's page asks
+        the same, and the library marks it until answered."""
+        buttons = (
+            *(
+                Button(
+                    f"It was: {c.get('title') or 'untitled'}",
+                    "meeting.assign",
+                    meeting_id,
+                    str(c.get("calendar_id") or ""),
+                    str(c.get("event_id") or ""),
+                    None,
+                    c.get("account_id"),
+                )
+                for c in candidates[:3]
+                if c.get("calendar_id") and c.get("event_id")
+            ),
+            Button("Not on my calendar", "meeting.none", meeting_id),
+        )
+        self.show(
+            Toast(
+                title="Which meeting was this?",
+                body=f"{title or 'This recording'} isn't linked to a calendar meeting yet.",
+                buttons=buttons,
+                key=f"which:{meeting_id}",
+                meeting_id=meeting_id,
+            )
+        )
+
     def could_not_start(self, reason: str) -> None:
         """A Start pressed on a notification failed: the only place to say so is another."""
         self.show(

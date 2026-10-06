@@ -504,6 +504,19 @@
         "title": "MeetingPatch",
         "type": "object"
       },
+      "MergePost": {
+        "properties": {
+          "other": {
+            "title": "Other",
+            "type": "string"
+          }
+        },
+        "required": [
+          "other"
+        ],
+        "title": "MergePost",
+        "type": "object"
+      },
       "OpenPost": {
         "properties": {
           "url": {
@@ -3415,6 +3428,58 @@
           }
         },
         "summary": "Keep Meeting"
+      }
+    },
+    "/api/meetings/{meeting_id}/merge": {
+      "post": {
+        "description": "Join two recordings of one meeting (D89). The earlier one is kept; the later one's\nid goes on finding it.",
+        "operationId": "merge_meetings_api_meetings__meeting_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergePost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Merge Meetings Api Meetings  Meeting Id  Merge Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Merge Meetings"
       }
     },
     "/api/meetings/{meeting_id}/notes": {

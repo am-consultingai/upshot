@@ -362,8 +362,20 @@ class Worker:
                 self.dao.set_state(job.meeting_id, target)
         if self._transcripts_only(job):
             log.info("meeting %s: transcribed; no AI provider, so no summary", job.meeting_id)
+        else:
+            self.queue.enqueue_next_stage(job)
+        self._merge_pending(job.meeting_id)
+
+    def _merge_pending(self, meeting_id: str) -> None:
+        """A later recording of a meeting, waiting for its own transcript to be joined to
+        the earlier one's (D89): it may have it now."""
+        meetings = getattr(self.services, "meetings", None)
+        if meetings is None:
             return
-        self.queue.enqueue_next_stage(job)
+        try:
+            meetings.merge_pending(meeting_id)
+        except Exception as exc:  # the merge is retried at the next stage; never fatal
+            log.warning("meeting %s: merge failed: %s", meeting_id, exc)
 
     def _transcripts_only(self, job: Job) -> bool:
         """With no AI provider a meeting ends at its transcript (D63), not at a failure.
