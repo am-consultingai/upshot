@@ -186,6 +186,7 @@ class ChunkWriter:
         hard_cut_s: float = 70.0,
         gate: EnergyGate | None = None,
         min_silence_ms: int = 300,
+        resume: bool = False,
     ) -> None:
         self.folder = Path(folder)
         self.tracks = tracks
@@ -201,6 +202,10 @@ class ChunkWriter:
         self._manifest: Any = None
         self._files: dict[str, Any] = {}
         self._opened = False
+        #: Carry on a meeting's existing files: the same call, recorded again (D88).
+        self.resume = resume
+        if resume:
+            self._continue_from_disk()
 
     # -- paths -------------------------------------------------------------
 
@@ -212,6 +217,26 @@ class ChunkWriter:
     def manifest_path(self) -> Path:
         return self.audio_dir / MANIFEST_NAME
 
+    def _continue_from_disk(self) -> None:
+        """Pick up where the manifest ends: the next chunk number, the timeline so far, and
+        the file length its records account for. Bytes past that are a write the manifest
+        never recorded (a crash between the two), and are cut off when the file opens."""
+        records, _ = read_manifest(self.folder)
+        for track in self.tracks:
+            mine = [r for r in records if r.track == track]
+            if not mine:
+                continue
+            state = self.state[track]
+            state.seq = max(r.seq for r in mine)
+            state.samples_written = max(r.offset + r.samples for r in mine)
+            state.t0_ms = max(r.t0_ms + r.dur_ms for r in mine)
+        # A track the earlier part never wrote begins with that part's length of silence,
+        # so both tracks keep one timeline.
+        so_far = max((self.state[t].t0_ms for t in self.tracks), default=0)
+        for track in self.tracks:
+            if not self.state[track].samples_written:
+                self.state[track].pending_gap_ms = so_far
+
     def _ensure_open(self) -> None:
         """Nothing touches the disk until there is something real to write."""
         if self._opened:
@@ -219,6 +244,12 @@ class ChunkWriter:
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         for track in self.tracks:
             path = track_path(self.folder, track)
+            if self.resume and path.exists() and self.state[track].samples_written:
+                carried = path.open("r+b")
+                carried.truncate(HEADER_BYTES + self.state[track].samples_written * 2)
+                carried.seek(0, os.SEEK_END)
+                self._files[track] = carried
+                continue
             handle = path.open("wb")
             handle.write(wav_header(data_bytes=0, rate=self.rate))
             handle.flush()

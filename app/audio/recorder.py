@@ -24,6 +24,9 @@ log = get(__name__)
 
 CaptureFactory = Callable[[str], AudioCapture]
 
+#: How much of the latest audio the recorder keeps for the detector to listen to.
+RECENT_S = 10.0
+
 
 @dataclass
 class TrackRuntime:
@@ -31,6 +34,10 @@ class TrackRuntime:
     capture: AudioCapture
     resampler: Resampler
     ring: PreRollRing
+    #: The latest audio, filled whether or not anything is being written. The pre-roll
+    #: ring cannot serve: it is emptied at commit and stays empty while a recording runs,
+    #: so a silence check reading it ended every call five minutes in (machine B).
+    recent: PreRollRing = field(default_factory=lambda: PreRollRing(RECENT_S))
     level: float = 0.0
     reopened: int = 0
     gap_ms: int = 0
@@ -106,12 +113,20 @@ class Recorder:
                     channels=capture.format.channels,
                 ),
                 ring=PreRollRing(preroll_s, self.rate),
+                recent=PreRollRing(RECENT_S, self.rate),
             )
         self.armed = True
         log.info("recorder armed (pre-roll %.0fs, tracks %s)", preroll_s, ",".join(self.tracks))
 
-    def commit(self, folder: Path, meeting_id: str | None = None) -> None:
-        """Tier 3: create the folder, flush the pre-roll as chunk 0001, keep going."""
+    def commit(
+        self, folder: Path, meeting_id: str | None = None, *, after_ms: int | None = None
+    ) -> None:
+        """Tier 3: create the folder, flush the pre-roll as chunk 0001, keep going.
+
+        ``after_ms``: the folder already holds this meeting's earlier part, which ended
+        that long ago. The files carry on from it, and the time between is silence, less
+        what the pre-roll still holds of it (D88).
+        """
         if not self.armed:
             self.arm()
         if self.committed:
@@ -125,14 +140,20 @@ class Recorder:
             chunk_s=float(self.config.chunk_s),
             silence_search_s=float(self.config.get("audio.silence_search_s", 10)),
             hard_cut_s=float(self.config.get("audio.hard_cut_s", 70)),
+            resume=after_ms is not None,
         )
         for track in self.tracks:
             runtime = self.runtime[track]
+            if after_ms is not None:
+                self.writer.note_gap(track, after_ms - runtime.ring.duration_ms)
             if len(runtime.ring):
                 runtime.ring.flush_to(self.writer, track)
                 self.writer.flush_track(track)  # the pre-roll is exactly chunk 0001
         self.committed = True
-        log.info("recorder committed to %s", self.folder)
+        if after_ms is not None:
+            log.info("recorder continues %s after %d s", self.folder, round(after_ms / 1000))
+        else:
+            log.info("recorder committed to %s", self.folder)
 
     def discard(self) -> None:
         """Evidence decayed: drop the rings, close the streams, leave nothing behind.
@@ -153,10 +174,12 @@ class Recorder:
         self.committed = False
         self.folder = None
 
-    def start(self, folder: Path, meeting_id: str | None = None) -> None:
+    def start(
+        self, folder: Path, meeting_id: str | None = None, *, after_ms: int | None = None
+    ) -> None:
         """Manual Start: arm and commit in one step."""
         self.arm()
-        self.commit(folder, meeting_id)
+        self.commit(folder, meeting_id, after_ms=after_ms)
 
     def stop(self) -> RecordingResult:
         self._stop.set()
@@ -274,6 +297,7 @@ class Recorder:
             return 0
         runtime.level = float(np.sqrt(np.mean(np.square(samples.astype(np.float32) / 32768.0))))
         with self._lock:
+            runtime.recent.push(samples)
             if self.committed and self.writer is not None and not self.holding:
                 if self.paused:
                     return 0
@@ -307,6 +331,15 @@ class Recorder:
         with self._lock:
             if self.writer is not None:
                 self.writer.note_gap(track, gap_ms)
+
+    def recent(self, track: str) -> np.ndarray:
+        """The track's latest audio (up to ``RECENT_S``), recording or not. Empty when the
+        track is not open."""
+        with self._lock:
+            runtime = self.runtime.get(track)
+            if runtime is None:
+                return np.zeros(0, dtype=np.int16)
+            return runtime.recent.peek()
 
     def drain(self, max_iterations: int = 100_000) -> int:
         """Pump until both queues are empty — used at stop and by the tests."""

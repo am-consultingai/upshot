@@ -383,7 +383,15 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
         if event is None:
             raise HTTPException(404, "that event is not in the calendar cache")
     meter.release()  # every track: the recorder needs both endpoints
-    if event is not None:
+    # The same event recorded again moments after its recording ended (a restart, a
+    # rejoin, an end that came too soon) carries on that meeting, not a new one (D88).
+    after_ms: int | None = None
+    snapshot = _user_snapshot(svc, event) if event is not None else None
+    earlier = svc.meetings.to_continue(snapshot)
+    reopened = svc.meetings.reopen(earlier.id) if earlier is not None else None
+    if reopened is not None:
+        meeting, after_ms = reopened
+    elif event is not None:
         # Created under the event's name, then matched as the user would match it by
         # hand — source "user", so neither the end-of-recording rematch nor a later sync
         # second-guesses a choice that was made by pressing "Record this one".
@@ -392,24 +400,33 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
             title=(body.title if body and body.title else event.title) or None,
             title_source="user" if body and body.title else "calendar",
         )
-        meeting = svc.meetings.choose_event(meeting.id, _user_snapshot(svc, event))
+        meeting = svc.meetings.choose_event(meeting.id, snapshot)
     else:
         meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
     from app.audio.devices import NoDeviceError
 
     try:
-        svc.recorder.start(meeting.path, meeting.id)
+        svc.recorder.start(meeting.path, meeting.id, after_ms=after_ms)
     except NoDeviceError as exc:
         # No microphone (unplugged, or a Remote Desktop session that passes none
-        # through): say so, and leave no meeting behind that never recorded.
-        svc.meetings.discard(meeting.id)
+        # through): say so, and leave no meeting behind that never recorded. A meeting
+        # being continued keeps what it had: it ends again where it ended.
+        if after_ms is not None:
+            svc.meetings.finish(
+                meeting.id, ended_at=svc.clock.now() - timedelta(milliseconds=after_ms)
+            )
+        else:
+            svc.meetings.discard(meeting.id)
         log.warning("recording %s could not start: %s", meeting.id, exc)
         raise HTTPException(
             409, "No microphone or speakers were found to record from. Connect one, then try again."
         ) from exc
     svc.recorder.start_thread()
     svc.meetings.committed(meeting, meeting.path)
-    log.info("recording %s started from the interface", meeting.id)
+    if after_ms is not None:
+        log.info("recording %s continued from the interface", meeting.id)
+    else:
+        log.info("recording %s started from the interface", meeting.id)
     if svc.prompts is not None:
         svc.prompts.withdraw("a recording started")
     svc.events.publish("recorder", state="recording", meeting_id=meeting.id)
