@@ -383,26 +383,29 @@ def recording_start(request: Request, body: StartPost | None = None) -> dict[str
         if event is None:
             raise HTTPException(404, "that event is not in the calendar cache")
     meter.release()  # every track: the recorder needs both endpoints
-    # The same event recorded again moments after its recording ended (a restart, a
-    # rejoin, an end that came too soon) carries on that meeting, not a new one (D88).
+    payload = _start_payload(svc, event)
+    # The same calendar meeting recorded again moments after its recording ended (a
+    # restart, a rejoin, an end that came too soon) carries on that recording (D88).
     after_ms: int | None = None
-    snapshot = _user_snapshot(svc, event) if event is not None else None
-    earlier = svc.meetings.to_continue(snapshot)
+    matched = payload is not None and (payload.get("match") or {}).get("state") == "matched"
+    earlier = svc.meetings.to_continue(payload if matched else ({} if payload else None))
     reopened = svc.meetings.reopen(earlier.id) if earlier is not None else None
     if reopened is not None:
         meeting, after_ms = reopened
     elif event is not None:
-        # Created under the event's name, then matched as the user would match it by
-        # hand — source "user", so neither the end-of-recording rematch nor a later sync
-        # second-guesses a choice that was made by pressing "Record this one".
+        # Created under the event's name, then matched: as the user would match it by hand
+        # when they picked it, so neither the end-of-recording rematch nor a later sync
+        # second-guesses it.
         meeting = svc.meetings.create(
             source="manual",
             title=(body.title if body and body.title else event.title) or None,
             title_source="user" if body and body.title else "calendar",
         )
-        meeting = svc.meetings.choose_event(meeting.id, snapshot)
+        meeting = svc.meetings.choose_event(meeting.id, payload)
     else:
         meeting = svc.meetings.create(source="manual", title=(body.title if body else None))
+        if payload is not None:
+            meeting = svc.meetings.choose_event(meeting.id, payload)
     from app.audio.devices import NoDeviceError
 
     try:
@@ -625,7 +628,7 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
             StartPost(account_id=account_id, calendar_id=calendar_id, event_id=event_id)
             if calendar_id and event_id
             else StartPost(title=offer.title)
-            if offer is not None and offer.title
+            if offer is not None and offer.title and not offer.candidates
             else None
         )
         if (
@@ -1858,12 +1861,47 @@ def _event_lookup(svc: Services, account_id: str | None, calendar_id: str, event
     return found[0] if found else None
 
 
-def _user_snapshot(svc: Services, event: Any) -> dict[str, Any]:
+def _user_snapshot(svc: Services, event: Any, source: str = "user") -> dict[str, Any]:
     """An event as the user matched it: final, and on every account that has a copy."""
     from app.gcal.source import snapshot
 
     copies = _event_store(svc).copies(event, accounts=_active(svc))
-    return snapshot(event, state="matched", source="user", confidence=1.0, accounts=copies)
+    return snapshot(event, state="matched", source=source, confidence=1.0, accounts=copies)
+
+
+def _start_payload(svc: Services, event: Any) -> dict[str, Any] | None:
+    """The calendar meeting a recording starting now belongs to (D89).
+
+    - Named by the start: the user's pick, unless it is just the detector's offer started
+      as offered. Then it is the detector's call: matched, but a later confident match
+      may correct it, and the user can.
+    - Not named, while meetings booked at the same time are on offer: those, proposed.
+    - Not named: the detector's reading of the call on now (window titles, the call's
+      app), or nothing, and the calendar match at creation decides.
+    """
+    offer = svc.prompts.current if svc.prompts is not None else None
+    if event is not None:
+        offered = (
+            offer is not None
+            and offer.kind == "detected"
+            and offer.names(event.calendar_id, event.event_id)
+        )
+        return _user_snapshot(svc, event, "detected" if offered else "user")
+    if offer is not None and offer.candidates:
+        from app.gcal.source import proposal
+
+        events = [
+            found
+            for account, calendar, event_id, _ in offer.candidates
+            if (found := _event_or_none(svc, account, calendar, event_id)) is not None
+        ]
+        if events:
+            return proposal(events, source="detected", reason="booked at the same time")
+    detector = svc.detector
+    if detector is not None and hasattr(detector, "assignment_now"):
+        payload: dict[str, Any] | None = detector.calendar_payload(detector.assignment_now())
+        return payload
+    return None
 
 
 @router.get("/calendar/status")

@@ -191,13 +191,31 @@ def test_a_different_event_is_a_different_meeting(api) -> None:  # type: ignore[
     assert len(api.services.dao.list_meetings(include_hidden=True)) == 2
 
 
-def test_the_same_event_long_after_its_recording_ended_is_a_new_meeting(api) -> None:  # type: ignore[no-untyped-def]
+def test_a_rejoin_while_the_event_is_on_continues_however_long_the_break(api) -> None:  # type: ignore[no-untyped-def]
+    """D89: the calendar meeting is still on, so it is still that meeting (scenario 8)."""
     an_event_on_now(api)
     event = {"calendar_id": "primary", "event_id": "ev-1"}
     first = record_for(api, 2, event)
-    api.clock.advance(float(api.services.config.get("detection.continue_within_s", 900)) + 60)
-    second = record_for(api, 2, event)
-    assert second != first
+    api.clock.advance(25 * 60)
+    assert record_for(api, 2, event) == first
+
+
+def test_a_rejoin_soon_after_the_event_ends_continues(api) -> None:  # type: ignore[no-untyped-def]
+    """An overrun: the meeting ran past its slot and the call dropped after it."""
+    an_event_on_now(api)  # began a minute ago, an hour long
+    event = {"calendar_id": "primary", "event_id": "ev-1"}
+    first = record_for(api, 2, event)
+    api.clock.advance(59 * 60 + 10 * 60)  # ten minutes after its end
+    assert record_for(api, 2, event) == first
+
+
+def test_the_same_event_long_after_it_ended_is_a_new_meeting(api) -> None:  # type: ignore[no-untyped-def]
+    an_event_on_now(api)
+    event = {"calendar_id": "primary", "event_id": "ev-1"}
+    first = record_for(api, 2, event)
+    within = float(api.services.config.get("detection.continue_within_s", 900))
+    api.clock.advance(59 * 60 + within + 60)  # past its end, and past the margin after
+    assert record_for(api, 2, event) != first
 
 
 def test_a_meeting_already_being_transcribed_is_not_reopened(api) -> None:  # type: ignore[no-untyped-def]
