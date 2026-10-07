@@ -18,6 +18,7 @@ is still playable rather than lost.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import struct
@@ -402,6 +403,17 @@ class ChunkWriter:
             self._manifest.close()
             self._manifest = None
         return list(self.records)
+
+    def abandon(self) -> None:
+        """Let go of every file without writing what is pending: what was being written
+        is about to be undone (a failed merge), and an open handle would stop that on
+        Windows."""
+        for handle in [*self._files.values(), self._manifest]:
+            if handle is not None:
+                with contextlib.suppress(OSError):
+                    handle.close()
+        self._files.clear()
+        self._manifest = None
 
     # -- reporting ---------------------------------------------------------
 

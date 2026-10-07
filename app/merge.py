@@ -139,20 +139,31 @@ class Snapshot:
             self.texts[path] = path.read_bytes() if path.exists() else None
 
     def restore(self) -> None:
-        for path, was in self.files.items():
-            if was is None:
-                path.unlink(missing_ok=True)
-                continue
-            size, header = was
-            with path.open("r+b") as handle:
-                handle.truncate(size)
-                handle.seek(0)
-                handle.write(header)
+        """Put each back, the manifest first: it is what the next writer believes. One
+        that cannot be put back does not stop the rest; the first failure is raised."""
+        failed: OSError | None = None
         for path, text in self.texts.items():
-            if text is None:
-                path.unlink(missing_ok=True)
-            else:
-                path.write_bytes(text)
+            try:
+                if text is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.write_bytes(text)
+            except OSError as exc:
+                failed = failed or exc
+        for path, was in self.files.items():
+            try:
+                if was is None:
+                    path.unlink(missing_ok=True)
+                    continue
+                size, header = was
+                with path.open("r+b") as handle:
+                    handle.truncate(size)
+                    handle.seek(0)
+                    handle.write(header)
+            except OSError as exc:
+                failed = failed or exc
+        if failed is not None:
+            raise failed
 
 
 def append_audio(into: Path, other: Path, gap_ms: int) -> int:
@@ -161,25 +172,29 @@ def append_audio(into: Path, other: Path, gap_ms: int) -> int:
     tracks = sorted(set(tracks_of(into)) | set(tracks_of(other)))
     writer = ChunkWriter(into, tracks=tuple(tracks), resume=True)
     offset_ms = max((writer.state[t].t0_ms for t in tracks), default=0) + gap_ms
-    for track in tracks:
-        # Each track ends where the longest one does, then the gap: one timeline for both.
-        behind = offset_ms - writer.state[track].t0_ms - writer.state[track].pending_gap_ms
-        writer.note_gap(track, behind)
-        path = track_path(other, track)
-        total = _samples(other, track)
-        if total == 0:
-            continue
-        with path.open("rb") as handle:
-            handle.seek(HEADER_BYTES)
-            remaining = total
-            while remaining > 0:
-                count = min(BLOCK_SAMPLES, remaining)
-                data = np.frombuffer(handle.read(count * 2), dtype=np.int16)
-                if len(data) == 0:
-                    break
-                writer.write_pcm(track, data)
-                remaining -= len(data)
-    writer.close()
+    try:
+        for track in tracks:
+            # Each track ends where the longest one does, then the gap: one timeline.
+            behind = offset_ms - writer.state[track].t0_ms - writer.state[track].pending_gap_ms
+            writer.note_gap(track, behind)
+            path = track_path(other, track)
+            total = _samples(other, track)
+            if total == 0:
+                continue
+            with path.open("rb") as handle:
+                handle.seek(HEADER_BYTES)
+                remaining = total
+                while remaining > 0:
+                    count = min(BLOCK_SAMPLES, remaining)
+                    data = np.frombuffer(handle.read(count * 2), dtype=np.int16)
+                    if len(data) == 0:
+                        break
+                    writer.write_pcm(track, data)
+                    remaining -= len(data)
+        writer.close()
+    except BaseException:
+        writer.abandon()  # the merge undoes what it wrote; open files would stop that
+        raise
     return offset_ms
 
 

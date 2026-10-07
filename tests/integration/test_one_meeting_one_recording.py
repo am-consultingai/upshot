@@ -357,6 +357,62 @@ def test_a_merge_that_fails_partway_is_undone_and_can_be_done_again(  # type: ig
     assert me == list(range(1, len(me) + 1))
 
 
+def test_a_merge_that_fails_writing_a_track_the_earlier_part_lacks_is_undone(  # type: ignore[no-untyped-def]
+    api, monkeypatch
+) -> None:
+    """As on Windows: a file still open cannot be deleted. The merge lets go of what it
+    was writing before undoing it, and the undo puts the manifest back whatever else
+    fails, so the retry appends the later audio once."""
+    from app.audio.writer import ChunkWriter
+
+    an_event_on_now(api)
+    first = record_for(api, 2, EVENT)
+    processed(api, first, "ME")
+    api.clock.advance(10)
+    second = record_for(api, 2, EVENT)
+    processed(api, second, "ME", upto=MeetingState.TRANSCRIBED)
+    folder = api.services.dao.require_meeting(first).path
+    manifest = folder / "audio" / "manifest.jsonl"
+    mine = [line for line in manifest.read_text().splitlines() if '"track": "me"' in line]
+    assert mine, "the earlier part has only its own side"
+    manifest.write_text("\n".join(mine) + "\n")
+    track_path(folder, "them").unlink()
+    before = manifest.read_bytes()
+
+    writers: list[ChunkWriter] = []
+    real_init, real_close = ChunkWriter.__init__, ChunkWriter._close_chunk
+
+    def tracked(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        real_init(self, *args, **kwargs)
+        writers.append(self)
+
+    def full(self, track, count):  # type: ignore[no-untyped-def]
+        if track == "them":
+            raise OSError("no space left on the disk")
+        return real_close(self, track, count)
+
+    real_unlink = Path.unlink
+
+    def as_windows(self, missing_ok=False):  # type: ignore[no-untyped-def]
+        held = {Path(h.name) for w in writers for h in w._files.values()}
+        if self in held:
+            raise PermissionError(32, "being used by another process")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(ChunkWriter, "__init__", tracked)
+    monkeypatch.setattr(ChunkWriter, "_close_chunk", full)
+    monkeypatch.setattr(Path, "unlink", as_windows)
+    response = api.client().post(f"/api/meetings/{second}/merge", json={"other": first})
+    assert response.status_code == 409
+    assert manifest.read_bytes() == before
+    assert not track_path(folder, "them").exists()
+
+    monkeypatch.setattr(ChunkWriter, "_close_chunk", real_close)
+    again = api.client().post(f"/api/meetings/{second}/merge", json={"other": first})
+    assert again.status_code == 200, again.text
+    assert seconds_of_audio(folder) == pytest.approx(2 + 10 + 2, abs=0.6)
+
+
 def test_deleting_by_a_merged_id_waits_for_the_running_stage(api) -> None:  # type: ignore[no-untyped-def]
     an_event_on_now(api)
     first = record_for(api, 3, EVENT)
