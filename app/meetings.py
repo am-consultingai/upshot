@@ -371,9 +371,12 @@ class MeetingService:
         now = self.clock.now()
         within = float(self.config.get("detection.continue_within_s", 900))
         found: Meeting | None = None
+        merged = self.dao.aliases()  # merged away, its folder not yet gone: never continued
         for meeting in self.dao.list_meetings(
             state=str(MeetingState.RECORDED), include_hidden=True, limit=50
         ):
+            if meeting.id in merged:
+                continue
             if not meeting.ended_at or event_key(calendar_payload(meeting)) not in keys:
                 continue
             ended = parse_iso(meeting.ended_at)
@@ -447,8 +450,11 @@ class MeetingService:
             return None
         since = iso(parse_iso(meeting.started_at) - timedelta(days=1))
         found: Meeting | None = None
+        merged = self.dao.aliases()
         for other in self.dao.list_meetings(frm=since, include_hidden=True, limit=200):
             if other.id == meeting.id or MeetingState(other.state) in NOT_MERGEABLE:
+                continue
+            if other.id in merged:
                 continue
             if event_key(calendar_payload(other)) != key:
                 continue
@@ -475,7 +481,8 @@ class MeetingService:
             return None
         try:
             return self.merge(other.id, meeting.id)
-        except MergeRefused as exc:
+        except (MergeRefused, OSError) as exc:
+            # Tried again once a stage of the later part is done (the worker's merge_pending).
             meta.update(meeting.path, merge_into=other.id)
             log.info("%s and %s not merged yet: %s", other.id, meeting.id, exc)
             return None

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
+from app import meta
 from app.audio.capture import TRACKS, AudioCapture, StreamError
 from app.audio.ring import PreRollRing
 from app.audio.writer import ChunkRecord, ChunkWriter, Resampler
@@ -142,6 +143,11 @@ class Recorder:
             hard_cut_s=float(self.config.get("audio.hard_cut_s", 70)),
             resume=after_ms is not None,
         )
+        if after_ms is None:
+            # The audio starts this long before the meeting's start: what a merge needs to
+            # place it on another recording's timeline (D89).
+            preroll = max((r.ring.duration_ms for r in self.runtime.values()), default=0)
+            meta.update(self.folder, preroll_ms=preroll)
         for track in self.tracks:
             runtime = self.runtime[track]
             if after_ms is not None:

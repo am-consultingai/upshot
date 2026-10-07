@@ -12,7 +12,9 @@ the same meeting, and this joins them.
   its own, so THEM_1 in one is not THEM_1 in the other); then the transcript is assembled
   and summarized again. Otherwise the whole is transcribed.
 - The later recording's id becomes an alias of the earlier, and its folder and rows go,
-  only once everything above is written.
+  only once everything above is written and the joined meeting is queued again. If its
+  folder cannot go yet (Windows will not unlink a file something holds open), it is
+  marked and gone from the library, and the next start finishes deleting it.
 """
 
 from __future__ import annotations
@@ -64,6 +66,13 @@ def _samples(folder: Path, track: str) -> int:
     if not path.exists():
         return 0
     return max(0, (path.stat().st_size - HEADER_BYTES) // 2)
+
+
+def preroll_ms(meeting: Meeting) -> int:
+    """How much of the recording's audio comes before its ``started_at``: the pre-roll a
+    detected call starts with, as the recorder wrote it down. None known (a recording made
+    before it was), none subtracted."""
+    return max(0, int(meta.read(meeting.path).get("preroll_ms") or 0))
 
 
 def renumbered(speaker: str, after: dict[str, int]) -> str:
@@ -147,31 +156,40 @@ def merge(service: MeetingService, first_id: str, second_id: str) -> Meeting:
         raise MergeRefused(f"{b.id} is being processed")
 
     a_end = parse_iso(a.ended_at) if a.ended_at else parse_iso(a.started_at)
-    gap_ms = max(0, round((parse_iso(b.started_at) - a_end).total_seconds() * 1000))
+    apart_ms = round((parse_iso(b.started_at) - a_end).total_seconds() * 1000)
+    # The later audio starts before its start, by its pre-roll: placed that much earlier.
+    gap_ms = max(0, apart_ms - preroll_ms(b))
     from app.pipeline.stages.transcribe import segments_path
 
     both_transcribed = segments_path(a.path).exists() and segments_path(b.path).exists()
-    offset_ms = append_audio(a.path, b.path, gap_ms)
-    if both_transcribed:
-        joined = join_segments(a.path, b.path, offset_ms / 1000)
-        segments_path(a.path).write_text(
-            json.dumps(joined, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    total_ms = _audio_ms(a.path)
-    ends = [parse_iso(x) for x in (a.ended_at, b.ended_at) if x]
-    fields: dict[str, Any] = {
-        "ended_at": iso(max(ends)) if ends else a.ended_at,
-        "duration_s": round(total_ms / 1000),
-    }
-    if not _matched(a) and _matched(b):
-        fields["calendar_json"] = b.calendar_json
-        fields["calendar_account_id"] = b.calendar_account_id
-    dao.update_meeting(a.id, **fields)
+    try:
+        offset_ms = append_audio(a.path, b.path, gap_ms)
+        if both_transcribed:
+            joined = join_segments(a.path, b.path, offset_ms / 1000)
+            segments_path(a.path).write_text(
+                json.dumps(joined, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        total_ms = _audio_ms(a.path)
+        ends = [parse_iso(x) for x in (a.ended_at, b.ended_at) if x]
+        fields: dict[str, Any] = {
+            "ended_at": iso(max(ends)) if ends else a.ended_at,
+            "duration_s": round(total_ms / 1000),
+        }
+        if not _matched(a) and _matched(b):
+            fields["calendar_json"] = b.calendar_json
+            fields["calendar_account_id"] = b.calendar_account_id
+        dao.update_meeting(a.id, **fields)
+    except Exception:
+        # Nothing is joined yet as far as anyone can tell: both carry on as they were. The
+        # earlier's audio files may run past its manifest, which the next writer trims.
+        service.resume_jobs(a.id)
+        service.resume_jobs(b.id)
+        raise
     dao.add_alias(b.id, a.id)
-    service.purge(dao.require_meeting(b.id))
     merged = dao.require_meeting(a.id)
     meta.mirror(merged)
     service.redo_after_merge(merged, transcribed=both_transcribed)
+    _remove(service, dao.require_meeting(b.id))
     log.info(
         "merged %s into %s: %d s apart, %d s in all",
         b.id,
@@ -180,6 +198,21 @@ def merge(service: MeetingService, first_id: str, second_id: str) -> Meeting:
         total_ms // 1000,
     )
     return merged
+
+
+def _remove(service: MeetingService, meeting: Meeting) -> None:
+    """The merged-away recording goes. When its folder cannot yet, it is marked, the
+    library leaves it out (it is an alias now), and the next start finishes the job."""
+    from app.meetings import DELETING_MARKER
+
+    try:
+        service.purge(meeting)
+    except OSError as exc:
+        log.warning("merged %s, but its folder stays until the next start: %s", meeting.id, exc)
+        try:
+            (meeting.path / DELETING_MARKER).write_text("", encoding="utf-8")
+        except OSError:
+            log.warning("could not mark %s for deletion", meeting.path)
 
 
 def _matched(meeting: Meeting) -> bool:
