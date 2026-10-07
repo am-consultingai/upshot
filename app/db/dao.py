@@ -538,10 +538,6 @@ class Dao:
                 (alias, meeting_id, now),
             )
 
-    def aliases(self) -> set[str]:
-        """Every id merged into another meeting (D89)."""
-        return {str(r["alias"]) for r in self.conn.execute("SELECT alias FROM meeting_aliases")}
-
     def resolve(self, meeting_id: str) -> str:
         """The meeting an id names now: itself, or the one it was merged into."""
         row = self.conn.execute(

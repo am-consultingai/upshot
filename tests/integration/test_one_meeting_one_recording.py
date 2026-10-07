@@ -255,8 +255,8 @@ def test_a_merge_whose_later_folder_is_held_open_still_processes_the_meeting(  #
     api, monkeypatch
 ) -> None:
     """Windows will not delete a file something holds open. The joined meeting is
-    processed all the same; the later recording leaves the library at once and its folder
-    goes at the next start."""
+    processed all the same; the later recording's rows go at once, so nothing finds it,
+    and its folder goes at the next start."""
     from app.meetings import DELETING_MARKER
 
     an_event_on_now(api)
@@ -279,15 +279,16 @@ def test_a_merge_whose_later_folder_is_held_open_still_processes_the_meeting(  #
     listed = [m["id"] for m in api.client().get("/api/meetings").json()["meetings"]]
     assert listed == [first]
     assert api.client().get(f"/api/meetings/{second}").json()["id"] == first
-    left = api.services.dao.require_meeting(second)
-    assert (left.path / DELETING_MARKER).exists()
-    # Never continued or merged again while it waits.
-    assert service.merge_target(api.services.dao.require_meeting(first)) is None
+    assert api.services.dao.get_meeting(second) is None
+    left = service.folder_for(second)
+    assert (left / DELETING_MARKER).exists()
+    renamed = api.client().patch(f"/api/meetings/{second}", json={"title": "Renamed"})
+    assert renamed.status_code == 404, "nothing left to act on but the meeting it joined"
 
     monkeypatch.setattr(service, "purge", real)
     assert service.finish_interrupted_deletes() == 1
-    assert api.services.dao.get_meeting(second) is None
-    assert not left.path.exists()
+    assert not left.exists()
+    assert api.services.dao.require_meeting(first).path.exists()
 
 
 def test_a_merge_that_fails_before_joining_leaves_both_as_they_were(  # type: ignore[no-untyped-def]
@@ -313,6 +314,47 @@ def test_a_merge_that_fails_before_joining_leaves_both_as_they_were(  # type: ig
     assert api.services.dao.resolve(second) == second
     pending = {j.stage for j in api.services.queue.for_meeting(second) if j.state == "pending"}
     assert pending == {"summarize"}, "its waiting job is back"
+
+
+def test_a_merge_that_fails_partway_is_undone_and_can_be_done_again(  # type: ignore[no-untyped-def]
+    api, monkeypatch
+) -> None:
+    """The writer saves each chunk as it closes: a merge that fails after the audio was
+    appended cuts it back off, so the retry does not append it twice."""
+    import app.merge
+
+    an_event_on_now(api)
+    first = record_for(api, 2, EVENT)
+    processed(api, first, "ME")
+    api.clock.advance(10)
+    second = record_for(api, 2, EVENT)
+    processed(api, second, "ME", upto=MeetingState.TRANSCRIBED)
+    folder = api.services.dao.require_meeting(first).path
+    from app.pipeline.stages.transcribe import segments_path
+
+    audio = {t: track_path(folder, t).read_bytes() for t in ("me", "them")}
+    manifest = (folder / "audio" / "manifest.jsonl").read_bytes()
+    transcript = segments_path(folder).read_bytes()
+    real = app.merge.join_segments
+
+    def broken(*_args):  # type: ignore[no-untyped-def]
+        raise OSError("no space left on the disk")
+
+    monkeypatch.setattr(app.merge, "join_segments", broken)
+    response = api.client().post(f"/api/meetings/{second}/merge", json={"other": first})
+    assert response.status_code == 409
+    assert {t: track_path(folder, t).read_bytes() for t in ("me", "them")} == audio
+    assert (folder / "audio" / "manifest.jsonl").read_bytes() == manifest
+    assert segments_path(folder).read_bytes() == transcript
+
+    monkeypatch.setattr(app.merge, "join_segments", real)
+    again = api.client().post(f"/api/meetings/{second}/merge", json={"other": first})
+    assert again.status_code == 200, again.text
+    assert seconds_of_audio(folder) == pytest.approx(2 + 10 + 2, abs=0.6)
+    records, torn = read_manifest(folder)
+    assert torn == 0
+    me = [r.seq for r in records if r.track == "me"]
+    assert me == list(range(1, len(me) + 1))
 
 
 def test_deleting_by_a_merged_id_waits_for_the_running_stage(api) -> None:  # type: ignore[no-untyped-def]
