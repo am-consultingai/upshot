@@ -8,6 +8,9 @@ With several (overbooking, or meetings that overlap), the clues decide:
 - the meeting's link against the app holding the microphone: a Zoom link and Zoom.exe, a
   Meet link and a browser.
 
+Zoom's meeting number is not available to Upshot, so two Zoom meetings at the same time
+are never told apart here: they are offered.
+
 Exactly one meeting fitting best is an assignment; so is, among meetings the clues do
 not tell apart, the one that began last (back to back, the next meeting). Meetings booked
 at the same time that nothing tells apart are not: the user is offered them and picks.
