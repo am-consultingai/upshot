@@ -149,6 +149,9 @@ class Detector:
         #: The process whose recording is running, so that "the microphone was released"
         #: means released by *that* app rather than by whoever happened to hold it.
         self.recording_process: str | None = None
+        #: Who held the microphone when the call's app let go: only an app that takes it
+        #: after that can be the next call (D90).
+        self.held_at_release: set[str] = set()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -552,6 +555,7 @@ class Detector:
             return self.end(why)
 
     def _forget_recording(self) -> None:
+        self.held_at_release = set()
         self.ending_at = None
         self.keep_going = False
         self.meeting_id = None
@@ -798,6 +802,7 @@ class Detector:
                 # stop writing, so the file ends here; wait out the grace before saving,
                 # in case the call comes back (D77).
                 self.released_at = now
+                self.held_at_release = set(self.holding or ())
                 self.state = DetectorState.GRACE
                 self.recorder.hold()
                 self.ending_at = self.clock.now() + timedelta(seconds=self.grace_s)
@@ -866,6 +871,7 @@ class Detector:
                 holder.process
                 for holder in holders
                 if holder.process in self.fresh
+                and holder.process not in self.held_at_release
                 and ev.matches_process(holder.process, known)
                 and not ev.matches_process(holder.process, ignore)
             ]
@@ -873,7 +879,11 @@ class Detector:
                 return False
             process, same_app = newcomers[0], False
         verdict, payload, follow = self._which_meeting(process)
-        if verdict == "same" or (verdict == "unknown" and same_app):
+        if verdict == "unknown" and not same_app:
+            # Nothing says which meeting it is: the grace runs out, and the new app is
+            # judged like any call, by its evidence (D77).
+            return False
+        if verdict in ("same", "unknown"):
             if same_app:
                 return False  # the rejoin, as ever
             log.info("recording %s: %s took over the same meeting", self.meeting_id, process)

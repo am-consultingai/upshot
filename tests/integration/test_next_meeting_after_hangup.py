@@ -184,6 +184,52 @@ def test_detect_only_ends_the_last_recording_and_offers_the_next(tmp_path: Path)
     assert ids(h) == [first]
 
 
+def test_an_app_that_tells_nothing_after_a_hang_up_is_judged_like_any_call(
+    tmp_path: Path,
+) -> None:
+    """No calendar, and a browser takes the microphone in silence: no recording starts on
+    that alone. The grace runs out as before, and the browser is judged by its evidence."""
+    h = build(tmp_path, detection__mode="on")
+    first = recording(h, "Zoom.exe")
+    hang_up(h, 3)
+    h.vad.set(me=False, them=False)
+    h.mic.hold("chrome.exe")
+    h.seconds(3)
+    assert h.detector.state is DetectorState.GRACE
+    assert h.detector.meeting_id == first
+    assert ids(h) == [first]
+
+
+def test_an_app_holding_the_microphone_all_along_is_not_the_next_call(tmp_path: Path) -> None:
+    from app.detect.sources import MicHolder
+
+    h = detector_with(tmp_path, PRICING, ROADMAP, mode="on")
+    first = recording(h, "Zoom.exe")
+    h.mic.holders = [MicHolder(process="Zoom.exe"), MicHolder(process="chrome.exe")]
+    h.seconds(2)
+    at(h, T0 + timedelta(minutes=30, seconds=10))
+    h.mic.holders = [MicHolder(process="chrome.exe")]
+    h.titles.window_titles = ["Meet - Roadmap - Google Chrome"]
+    h.seconds(3)
+    assert h.detector.state is DetectorState.GRACE, "the browser held it before the hang-up"
+    assert ids(h) == [first]
+
+
+def test_another_app_the_calendar_cannot_place_does_not_end_the_meeting(tmp_path: Path) -> None:
+    """Two Meet meetings on, the recording matched to one, then Zoom: nothing places it,
+    so the meeting is neither ended nor started again."""
+    h = detector_with(tmp_path, DESIGN, event("other", "Other review", url=MEET + "x"), mode="on")
+    first = recording(h, "chrome.exe", "Meet - Design review - Google Chrome")
+    assert recorded_calendar(h, first)["event"]["event_id"] == "design"
+    hang_up(h)
+    started = len([t for t in h.notifier.shown if t.title.startswith("Recording")])
+    a_call(h, "Zoom.exe")
+    h.seconds(3)
+    assert h.detector.state is DetectorState.GRACE
+    assert h.dao.require_meeting(first).state == MeetingState.RECORDING
+    assert len([t for t in h.notifier.shown if t.title.startswith("Recording")]) == started
+
+
 def test_without_a_calendar_the_same_app_back_is_a_rejoin(tmp_path: Path) -> None:
     h = build(tmp_path, detection__mode="on")
     first = recording(h, "Zoom.exe")
