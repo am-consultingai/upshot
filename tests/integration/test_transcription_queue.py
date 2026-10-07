@@ -90,7 +90,7 @@ def test_migration_0010_keys_existing_meeting_jobs_by_when_they_were_created(
 
     migrations.migrate(conn)
 
-    assert migrations.current_version(conn) == 10
+    assert migrations.current_version(conn) == migrations.discover()[-1].version
     row = conn.execute("SELECT queued_at FROM jobs").fetchone()
     assert row["queued_at"] == "2026-10-01T09:00:00.000+03:00"
     conn.execute("SELECT * FROM transcriptions").fetchall()

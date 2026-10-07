@@ -108,6 +108,6 @@ def _notify(ctx: StageContext, notes: dict[str, Any]) -> None:
     if notifier is None:
         return
     try:
-        notifier.summary_ready(ctx.meeting.id, str(notes.get("title") or ""))
+        notifier.summary_ready(ctx.meeting.id, str(ctx.refresh().title or ""))
     except Exception as exc:
         log.warning("notification failed: %s", exc)

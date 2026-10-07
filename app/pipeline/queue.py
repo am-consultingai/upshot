@@ -242,6 +242,37 @@ class JobQueue:
         )
         return self.require(job.id)
 
+    def withdraw(self, meeting_id: str) -> bool:
+        """Take a meeting's waiting jobs back out of the queue, unless one of its stages
+        is already running. Whether they were withdrawn.
+
+        One step, so the worker cannot claim a job between the look and the cancel: a
+        recording that continues the meeting (D88) must not be transcribed half-written.
+        """
+        from app.db.dao import transaction
+
+        now = iso(self.clock.now())
+        with transaction(self.conn):
+            running = self.conn.execute(
+                "SELECT 1 FROM jobs WHERE meeting_id = ? AND state = 'running'", (meeting_id,)
+            ).fetchone()
+            if running:
+                return False
+            self.conn.execute(
+                "UPDATE jobs SET state='cancelled', updated_at=? "
+                "WHERE meeting_id = ? AND state = 'pending'",
+                (now, meeting_id),
+            )
+        return True
+
+    def restore(self, meeting_id: str) -> None:
+        """Undo :meth:`withdraw`: a meeting's cancelled jobs wait again."""
+        self.conn.execute(
+            "UPDATE jobs SET state='pending', updated_at=? "
+            "WHERE meeting_id = ? AND state = 'cancelled'",
+            (iso(self.clock.now()), meeting_id),
+        )
+
     def enqueue_next_stage(self, job: Job) -> Job | None:
         """Completing a stage enqueues its successor — and nothing else."""
         try:

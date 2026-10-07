@@ -69,6 +69,17 @@ def snapshot(
     }
 
 
+def proposal(events: Iterable[CalendarEvent], *, source: str, reason: str) -> dict[str, Any]:
+    """Calendar meetings a recording may be, for the user to pick from (D89)."""
+    return {
+        "match": {"state": PROPOSED, "source": source, "confidence": None, "reason": reason},
+        "candidates": [
+            {**event_ref(event), "title": event.title, "overlap": None}
+            for event in list(events)[:5]
+        ],
+    }
+
+
 def verdict_payload(verdict: Verdict, copies: Iterable[str] = ()) -> dict[str, Any]:
     if verdict.state == MATCHED and verdict.best:
         return snapshot(
@@ -151,13 +162,22 @@ class CalendarNow:
         events.sort(key=lambda e: (e.start, e.account_id, e.event_id))
         return [e for e in events if meeting_like(e) is None]
 
-    def current(self, now: datetime, *, lead_s: float = 120.0) -> CalendarEvent | None:
+    def live(self, now: datetime, *, lead_s: float = 120.0) -> list[CalendarEvent]:
+        """Every real meeting on now or starting within ``lead_s``, the latest start first:
+        more than one when meetings overlap or are booked at the same time (D89)."""
         accounts = self.active()
         if not accounts:
-            return None
+            return []
         events = self.store.between(now, now + timedelta(seconds=lead_s), accounts=accounts)
         live = [e for e in dedupe(events) if meeting_like(e) is None]
-        if not live:
-            return None
+        return sorted(live, key=lambda e: (e.start, e.account_id, e.event_id), reverse=True)
+
+    def snapshot(self, event: CalendarEvent, *, source: str) -> dict[str, Any]:
+        """``event`` as a recording is matched to it, on every account with a copy (D82)."""
+        copies = self.store.copies(event, accounts=self.active())
+        return snapshot(event, state=MATCHED, source=source, confidence=1.0, accounts=copies)
+
+    def current(self, now: datetime, *, lead_s: float = 120.0) -> CalendarEvent | None:
+        live = self.live(now, lead_s=lead_s)
         # The one that started most recently: in back-to-back meetings, the new one.
-        return max(live, key=lambda e: e.start)
+        return live[0] if live else None
