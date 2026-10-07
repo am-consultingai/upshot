@@ -13,8 +13,10 @@ the same meeting, and this joins them.
   and summarized again. Otherwise the whole is transcribed.
 - The later recording's id becomes an alias of the earlier, and its folder and rows go,
   only once everything above is written and the joined meeting is queued again. If its
-  folder cannot go yet (Windows will not unlink a file something holds open), it is
-  marked and gone from the library, and the next start finishes deleting it.
+  folder cannot go yet (Windows will not unlink a file something holds open), its rows
+  go all the same and the folder is marked; the next start deletes it.
+- A failure before the join is done puts the earlier recording back as it was: its audio
+  files, manifest and transcript cut back or restored, and both recordings' jobs back.
 """
 
 from __future__ import annotations
@@ -29,7 +31,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from app import meta
-from app.audio.writer import HEADER_BYTES, ChunkWriter, read_manifest, track_path
+from app.audio.writer import (
+    HEADER_BYTES,
+    MANIFEST_NAME,
+    ChunkWriter,
+    read_manifest,
+    track_path,
+)
 from app.clock import iso, parse_iso
 from app.log import get
 from app.pipeline.states import MeetingState
@@ -108,6 +116,45 @@ def join_segments(first: Path, second: Path, offset_s: float) -> dict[str, Any]:
     return {**payload, "segments": [s.as_dict() for s in joined]}
 
 
+class Snapshot:
+    """What a merge changes in the earlier recording's folder, as it was before: each
+    track's length and header, the manifest and the transcript. The writer saves every
+    chunk as it closes, so a merge that fails partway is undone by cutting back to this,
+    never retried on top of what it had appended."""
+
+    def __init__(self, folder: Path, tracks: list[str]) -> None:
+        from app.pipeline.stages.transcribe import segments_path
+
+        self.folder = folder
+        self.files: dict[Path, tuple[int, bytes] | None] = {}
+        for track in tracks:
+            path = track_path(folder, track)
+            if path.exists():
+                with path.open("rb") as handle:
+                    self.files[path] = (path.stat().st_size, handle.read(HEADER_BYTES))
+            else:
+                self.files[path] = None
+        self.texts: dict[Path, bytes | None] = {}
+        for path in (folder / "audio" / MANIFEST_NAME, segments_path(folder)):
+            self.texts[path] = path.read_bytes() if path.exists() else None
+
+    def restore(self) -> None:
+        for path, was in self.files.items():
+            if was is None:
+                path.unlink(missing_ok=True)
+                continue
+            size, header = was
+            with path.open("r+b") as handle:
+                handle.truncate(size)
+                handle.seek(0)
+                handle.write(header)
+        for path, text in self.texts.items():
+            if text is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(text)
+
+
 def append_audio(into: Path, other: Path, gap_ms: int) -> int:
     """Append ``other``'s audio to ``into``'s files, after ``gap_ms`` of silence. Where the
     later recording starts on the joined timeline, in milliseconds."""
@@ -162,6 +209,7 @@ def merge(service: MeetingService, first_id: str, second_id: str) -> Meeting:
     from app.pipeline.stages.transcribe import segments_path
 
     both_transcribed = segments_path(a.path).exists() and segments_path(b.path).exists()
+    before = Snapshot(a.path, sorted(set(tracks_of(a.path)) | set(tracks_of(b.path))))
     try:
         offset_ms = append_audio(a.path, b.path, gap_ms)
         if both_transcribed:
@@ -180,8 +228,11 @@ def merge(service: MeetingService, first_id: str, second_id: str) -> Meeting:
             fields["calendar_account_id"] = b.calendar_account_id
         dao.update_meeting(a.id, **fields)
     except Exception:
-        # Nothing is joined yet as far as anyone can tell: both carry on as they were. The
-        # earlier's audio files may run past its manifest, which the next writer trims.
+        # Both carry on as they were, and a later merge starts from there.
+        try:
+            before.restore()
+        except OSError:
+            log.exception("could not undo the failed merge of %s into %s", b.id, a.id)
         service.resume_jobs(a.id)
         service.resume_jobs(b.id)
         raise
@@ -201,8 +252,8 @@ def merge(service: MeetingService, first_id: str, second_id: str) -> Meeting:
 
 
 def _remove(service: MeetingService, meeting: Meeting) -> None:
-    """The merged-away recording goes. When its folder cannot yet, it is marked, the
-    library leaves it out (it is an alias now), and the next start finishes the job."""
+    """The merged-away recording goes. When its folder cannot yet, its rows go anyway, so
+    nothing finds it, and the folder is marked for the next start to delete."""
     from app.meetings import DELETING_MARKER
 
     try:
@@ -213,6 +264,7 @@ def _remove(service: MeetingService, meeting: Meeting) -> None:
             (meeting.path / DELETING_MARKER).write_text("", encoding="utf-8")
         except OSError:
             log.warning("could not mark %s for deletion", meeting.path)
+        service.dao.delete_meeting(meeting.id)
 
 
 def _matched(meeting: Meeting) -> bool:

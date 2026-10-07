@@ -883,14 +883,8 @@ def list_meetings(
     meetings = svc.dao.list_meetings(
         frm=from_, to=to, q=q, state=state, limit=limit, accounts=account
     )
-    # A meeting being deleted is gone as far as anyone can see, while its stage stops; so is
-    # one merged into another whose folder waits for the next start to go (D89).
-    merged = svc.dao.aliases()
-    meetings = [
-        meeting
-        for meeting in meetings
-        if not svc.queue.deleting(meeting.id) and meeting.id not in merged
-    ]
+    # A meeting being deleted is gone as far as anyone can see, while its stage stops.
+    meetings = [meeting for meeting in meetings if not svc.queue.deleting(meeting.id)]
     # What each meeting still owes, so the list can say it without opening anything: one
     # grouped query for the whole page rather than one per row.
     counts = svc.dao.action_item_counts()
