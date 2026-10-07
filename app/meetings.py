@@ -371,12 +371,9 @@ class MeetingService:
         now = self.clock.now()
         within = float(self.config.get("detection.continue_within_s", 900))
         found: Meeting | None = None
-        merged = self.dao.aliases()  # merged away, its folder not yet gone: never continued
         for meeting in self.dao.list_meetings(
             state=str(MeetingState.RECORDED), include_hidden=True, limit=50
         ):
-            if meeting.id in merged:
-                continue
             if not meeting.ended_at or event_key(calendar_payload(meeting)) not in keys:
                 continue
             ended = parse_iso(meeting.ended_at)
@@ -450,11 +447,8 @@ class MeetingService:
             return None
         since = iso(parse_iso(meeting.started_at) - timedelta(days=1))
         found: Meeting | None = None
-        merged = self.dao.aliases()
         for other in self.dao.list_meetings(frm=since, include_hidden=True, limit=200):
             if other.id == meeting.id or MeetingState(other.state) in NOT_MERGEABLE:
-                continue
-            if other.id in merged:
                 continue
             if event_key(calendar_payload(other)) != key:
                 continue
@@ -664,7 +658,8 @@ class MeetingService:
         return folder
 
     def finish_interrupted_deletes(self) -> int:
-        """At start: meetings whose deletion was asked for as the app closed. How many."""
+        """At start: meetings whose deletion was asked for as the app closed, and folders
+        of recordings merged away that could not go then (D89). How many."""
         done = 0
         for meeting in self.dao.list_meetings(limit=100_000, include_hidden=True):
             if (Path(meeting.folder) / DELETING_MARKER).exists():
@@ -673,6 +668,17 @@ class MeetingService:
                     done += 1
                 except (OSError, ValueError) as exc:
                     log.warning("could not finish deleting %s: %s", meeting.id, exc)
+        root = self.config.data_root
+        for marker in root.glob(f"*/{DELETING_MARKER}") if root.exists() else ():
+            folder = marker.parent
+            if self.dao.get_meeting(folder.name) is not None or not self.inside_root(folder):
+                continue
+            try:
+                remove_tree(folder)
+                done += 1
+                log.info("deleted %s, left over from a merge", folder)
+            except OSError as exc:
+                log.warning("could not delete %s: %s", folder, exc)
         return done
 
     def drop_audio(self, meeting: Meeting, *, when: datetime | None = None) -> int:
