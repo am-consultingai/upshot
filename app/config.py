@@ -150,6 +150,9 @@ DEFAULTS: dict[str, Any] = {
         "fresh_hold_s": 120,
         "release_grace_s": 60,
         "dual_silence_s": 300,
+        # A recording of the same calendar event started within this long of the last
+        # one ending continues that meeting instead of making another (D88).
+        "continue_within_s": 900,
         "weights": {
             "mic.known_app": 3,
             "mic.unknown_app": 1,

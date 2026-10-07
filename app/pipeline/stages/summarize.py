@@ -376,7 +376,10 @@ def summarize(
     if model_title and (not meeting.title or meeting.title_source in ("window", "default")):
         ctx.dao.update_meeting(meeting.id, title=model_title[:200], title_source="llm")
         meeting = ctx.refresh()
-    notes["title"] = str(meeting.title or model_title or "")
+    # The model's own suggestion, as it wrote it: content, like the rest of the notes. The
+    # meeting's name is the database's (D89), and is not copied here.
+    if model_title:
+        notes["title"] = model_title[:200]
     # A model that said "by Thursday" and left `due_at` out gets it resolved here, against
     # the day the meeting happened, so the stored row carries a date either way.
     anchor = anchor_date(meeting.started_at)
