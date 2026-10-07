@@ -152,6 +152,8 @@ class Detector:
         #: Who held the microphone when the call's app let go: only an app that takes it
         #: after that can be the next call (D90).
         self.held_at_release: set[str] = set()
+        #: Who held it at the look before this one.
+        self.held_before: set[str] = set()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -391,6 +393,7 @@ class Detector:
         ]
         names = {holder.process for holder in holders}
         before = self.holding
+        self.held_before = set(before or ())
         self._note_acquisitions(holders)
         if before is not None and self.state in (DetectorState.RECORDING, DetectorState.GRACE):
             # Said in the log while recording, when nothing else would say it: the
@@ -802,7 +805,9 @@ class Detector:
                 # stop writing, so the file ends here; wait out the grace before saving,
                 # in case the call comes back (D77).
                 self.released_at = now
-                self.held_at_release = set(self.holding or ())
+                # At the look before the hang-up: an app taking the microphone in the same
+                # second as the call's app lets go is the next call, not furniture.
+                self.held_at_release = self.held_before - {self.recording_process or ""}
                 self.state = DetectorState.GRACE
                 self.recorder.hold()
                 self.ending_at = self.clock.now() + timedelta(seconds=self.grace_s)

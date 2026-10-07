@@ -144,6 +144,20 @@ def test_another_app_for_the_next_meeting_is_the_next_recording(tmp_path: Path) 
     assert snap["match"]["state"] == "matched" and snap["event"]["event_id"] == "roadmap"
 
 
+def test_another_app_taking_the_microphone_in_the_same_second_is_the_next_call(
+    tmp_path: Path,
+) -> None:
+    h = detector_with(tmp_path, PRICING, ROADMAP, mode="on")
+    first = recording(h, "Zoom.exe")
+    at(h, T0 + timedelta(minutes=30, seconds=5))
+    h.seconds(2)
+    a_call(h, "chrome.exe", "Meet - Roadmap - Google Chrome")  # Zoom gone, Chrome in
+    h.seconds(3)
+    second = h.detector.meeting_id or ""
+    assert second != first
+    assert recorded_calendar(h, second)["event"]["event_id"] == "roadmap"
+
+
 def test_another_app_back_in_the_same_meeting_is_the_same_recording(tmp_path: Path) -> None:
     """Zoom crashed and the user rejoined from the browser: still the one meeting, and
     the browser letting go is what ends it now."""
