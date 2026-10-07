@@ -26,7 +26,17 @@ log = get(__name__)
 
 SCHEME = "upshot"
 #: Actions the running instance performs (``POST /api/launcher/action``).
-REMOTE = frozenset({"recording.start", "recording.stop", "recording.keep", "meeting.discard"})
+REMOTE = frozenset(
+    {
+        "recording.start",
+        "recording.stop",
+        "recording.keep",
+        "meeting.discard",
+        # "Which meeting was this?" (D89): one of the meetings, or none.
+        "meeting.assign",
+        "meeting.none",
+    }
+)
 #: Actions that show a page of the app; the launched process does these itself, since
 #: Windows lets it, and not the tray process, bring a window to the front.
 PAGES = {"open": "/", "meeting.open": "/m/{meeting}", "meeting.email": "/m/{meeting}"}

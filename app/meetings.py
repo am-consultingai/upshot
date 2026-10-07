@@ -6,6 +6,7 @@ import — so enrichment, folder layout and the state machine have exactly one o
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 from collections.abc import Sequence
@@ -59,14 +60,6 @@ def remove_tree(target: Path) -> int:
     )
 
 
-def slugify(text: str, limit: int = 40) -> str:
-    keep = [char if char.isalnum() or char in "-_" else "-" for char in text.strip().lower()]
-    slug = "".join(keep).strip("-")
-    while "--" in slug:
-        slug = slug.replace("--", "-")
-    return slug[:limit]
-
-
 #: In a meeting's folder: its deletion was asked for while a stage ran. The next start
 #: finishes it (``finish_interrupted_deletes``) if the app closed before the stage stopped.
 DELETING_MARKER = ".deleting"
@@ -98,6 +91,55 @@ def event_account(meeting: Meeting) -> str | None:
     ref = calendar_payload(meeting).get("event") or {}
     account = ref.get("account_id") if isinstance(ref, dict) else None
     return str(account) if account else meeting.calendar_account_id
+
+
+def event_key(payload: dict[str, Any]) -> tuple[str, str] | None:
+    """Which calendar occurrence a snapshot is matched to, the same on every account that
+    has a copy of it; None unless it is matched. The start tells apart the occurrences of
+    a recurring event, which share their iCal UID."""
+    if (payload.get("match") or {}).get("state") != "matched":
+        return None
+    return ref_key(payload.get("event") or {})
+
+
+def ref_key(ref: Any) -> tuple[str, str] | None:
+    """:func:`event_key` of one event reference, matched or not."""
+    if not isinstance(ref, dict):
+        return None
+    ident = ref.get("ical_uid") or ref.get("event_id")
+    if not ident:
+        return None
+    return str(ident), str(ref.get("original_start") or ref.get("start") or "")
+
+
+def candidate_keys(payload: dict[str, Any]) -> set[tuple[str, str]]:
+    """The calendar meetings a snapshot is, or may be: its own when matched, else those
+    it proposes."""
+    state = (payload.get("match") or {}).get("state")
+    if state == "matched":
+        key = event_key(payload)
+        return {key} if key else set()
+    if state == "proposed":
+        return {k for c in payload.get("candidates") or [] if (k := ref_key(c)) is not None}
+    return set()
+
+
+def transcribed(meeting: Meeting) -> bool:
+    """Whether the meeting's audio has been transcribed (its segments are on disk)."""
+    from app.pipeline.stages.transcribe import segments_path
+
+    return segments_path(meeting.path).exists()
+
+
+def continuable_until(meeting: Meeting, within_s: float) -> datetime:
+    """Until when a recording of the same calendar event carries this meeting on (D89): while
+    the event is on, and ``within_s`` after the later of its end and the recording's."""
+    last = parse_iso(meeting.ended_at) if meeting.ended_at else parse_iso(meeting.started_at)
+    ref = calendar_payload(meeting).get("event") or {}
+    if isinstance(ref, dict) and ref.get("end"):
+        with contextlib.suppress(ValueError):
+            last = max(last, parse_iso(str(ref["end"])))
+    return last + timedelta(seconds=within_s)
 
 
 def _members(payload: dict[str, Any]) -> tuple[str | None, list[str]]:
@@ -147,11 +189,9 @@ class MeetingService:
         sensitive: bool = False,
     ) -> Meeting:
         started = started_at or self.clock.now()
+        # A date, a time and a random suffix: never the title (D89). Names live in the
+        # database, so renaming or reassigning a meeting touches no folder.
         meeting_id = self.dao.new_meeting_id(started)
-        if title:
-            slug = slugify(title)
-            if slug:
-                meeting_id = f"{meeting_id}_{slug}"
         meeting = self.dao.insert_meeting(
             meeting_id=meeting_id,
             folder=self.folder_for(meeting_id),
@@ -222,6 +262,10 @@ class MeetingService:
             return meeting  # the user chose the event; nothing automatic overrides that
         if previous_match.get("state") == "matched" and state != "matched":
             # A later, vaguer look never undoes a confident match.
+            return meeting
+        if previous_match.get("state") == "proposed" and state == "none":
+            # Nor does "nothing overlaps" undo the meetings it may be (D89): the detector
+            # proposed them from the call itself, which the clock alone cannot see.
             return meeting
         fields: dict[str, Any] = {"calendar_json": json.dumps(raw, ensure_ascii=False)}
         if enrichment.title and title_is_open(meeting):
@@ -301,6 +345,61 @@ class MeetingService:
         meta.mirror(meeting, committed_at=iso(self.clock.now()), folder=str(folder))
         return meeting
 
+    def to_continue(self, payload: dict[str, Any] | None = None) -> Meeting | None:
+        """The meeting a recording starting now carries on, if there is one (D88).
+
+        A recording of the same calendar event whose transcription has not begun, while
+        the event is on and until ``detection.continue_within_s`` after the later of its
+        end and the recording's. The event is ``payload`` (a snapshot, when the start
+        named one), else the one the calendar matches now. On machine B one call became
+        seven meetings: each restart of the recording, whatever caused it, made a new one.
+        """
+        if payload is None:
+            outcome = fetch(
+                self.enrichment_source,
+                self.clock.now(),
+                None,
+                timeout_s=float(self.config.get("enrichment.timeout_s", 2.0)),
+            )
+            payload = outcome.enrichment.as_raw() if outcome.enrichment else {}
+        # A proposal counts too: the clock alone may not settle a rejoin near a meeting's
+        # end (it assumes a recording runs 15 minutes), but a recording of one of the
+        # meetings it may be, just ended, does.
+        keys = candidate_keys(payload)
+        if not keys:
+            return None
+        now = self.clock.now()
+        within = float(self.config.get("detection.continue_within_s", 900))
+        found: Meeting | None = None
+        for meeting in self.dao.list_meetings(
+            state=str(MeetingState.RECORDED), include_hidden=True, limit=50
+        ):
+            if not meeting.ended_at or event_key(calendar_payload(meeting)) not in keys:
+                continue
+            ended = parse_iso(meeting.ended_at)
+            if now < ended or now > continuable_until(meeting, within):
+                continue
+            if found is None or ended > parse_iso(found.ended_at or ""):
+                found = meeting
+        return found
+
+    def reopen(self, meeting_id: str) -> tuple[Meeting, int] | None:
+        """Record more of a meeting that just ended (D88): it is recording again, and its
+        waiting jobs leave the queue until this part ends. With how long ago it ended, in
+        milliseconds, for the recorder to keep as silence. None when a stage of it has
+        started meanwhile: it is being transcribed as it was, and stays as it was."""
+        meeting = self.dao.require_meeting(meeting_id)
+        if meeting.state != MeetingState.RECORDED or not meeting.ended_at:
+            return None
+        if not self.queue.withdraw(meeting_id):
+            return None
+        after = self.clock.now() - parse_iso(meeting.ended_at)
+        self.dao.set_state(meeting_id, MeetingState.RECORDING)
+        updated = self.dao.update_meeting(meeting_id, ended_at=None, duration_s=None)
+        meta.mirror(updated)
+        log.info("meeting %s continues, %d s after it ended", meeting_id, after.total_seconds())
+        return updated, max(0, round(after.total_seconds() * 1000))
+
     def finish(
         self,
         meeting_id: str,
@@ -329,7 +428,164 @@ class MeetingService:
         meta.mirror(self.dao.require_meeting(meeting_id))
         if enqueue:
             self.queue.enqueue(meeting_id, JobStage.TRANSCRIBE)
+            # Another recording of the same calendar meeting, made before this one and too
+            # far along to be continued (D88): one meeting, so one recording (D89).
+            merged = self.merge_into_existing(meeting_id)
+            if merged is not None:
+                return merged
         return updated
+
+    # -- one meeting, one recording (D89) ----------------------------------
+
+    def merge_target(self, meeting: Meeting) -> Meeting | None:
+        """The other recording of ``meeting``'s calendar meeting, if there is one: both
+        matched to the same occurrence, which only happens when it is the same meeting."""
+        from app.merge import NOT_MERGEABLE
+
+        key = event_key(calendar_payload(meeting))
+        if key is None:
+            return None
+        since = iso(parse_iso(meeting.started_at) - timedelta(days=1))
+        found: Meeting | None = None
+        for other in self.dao.list_meetings(frm=since, include_hidden=True, limit=200):
+            if other.id == meeting.id or MeetingState(other.state) in NOT_MERGEABLE:
+                continue
+            if event_key(calendar_payload(other)) != key:
+                continue
+            if found is None or other.started_at < found.started_at:
+                found = other
+        return found
+
+    def merge_into_existing(self, meeting_id: str) -> Meeting | None:
+        """Merge ``meeting_id`` with the other recording of its calendar meeting, when there
+        is one and both can be merged now. The surviving meeting, or None."""
+        from app.merge import MergeRefused
+
+        meeting = self.dao.require_meeting(meeting_id)
+        other = self.merge_target(meeting)
+        if other is None:
+            return None
+        if parse_iso(other.started_at) > parse_iso(meeting.started_at):
+            meeting, other = other, meeting  # the later one waits, the earlier stays
+        if transcribed(other) and not transcribed(meeting):
+            # The earlier part has its transcript: transcribe only the later part, then
+            # join the two, rather than the whole meeting again.
+            meta.update(meeting.path, merge_into=other.id)
+            log.info("%s joins %s once it is transcribed", meeting.id, other.id)
+            return None
+        try:
+            return self.merge(other.id, meeting.id)
+        except (MergeRefused, OSError) as exc:
+            # Tried again once a stage of the later part is done (the worker's merge_pending).
+            meta.update(meeting.path, merge_into=other.id)
+            log.info("%s and %s not merged yet: %s", other.id, meeting.id, exc)
+            return None
+
+    def merge_pending(self, meeting_id: str) -> Meeting | None:
+        """Join ``meeting_id`` to the earlier recording it waits for, if it can be now."""
+        from app.merge import MergeRefused
+
+        meeting = self.dao.get_meeting(meeting_id)
+        if meeting is None:
+            return None
+        waiting = meta.read(meeting.path).get("merge_into")
+        if not waiting:
+            return None
+        target = self.dao.get_meeting(self.dao.resolve(str(waiting)))
+        if target is None or target.id == meeting.id:
+            meta.update(meeting.path, merge_into=None)
+            return None
+        if transcribed(target) and not transcribed(meeting):
+            return None
+        try:
+            merged = self.merge(target.id, meeting.id)
+        except MergeRefused as exc:
+            log.info("%s still waits to join %s: %s", meeting.id, target.id, exc)
+            return None
+        meta.update(merged.path, merge_into=None)
+        return merged
+
+    def merge(self, first_id: str, second_id: str) -> Meeting:
+        """Join two recordings of one meeting; the earlier one survives (D89)."""
+        from app.merge import merge
+
+        return merge(self, first_id, second_id)
+
+    def resume_jobs(self, meeting_id: str) -> None:
+        """Put back the jobs a refused merge took out of the queue."""
+        self.queue.restore(meeting_id)
+
+    def redo_after_merge(self, meeting: Meeting, *, transcribed: bool) -> None:
+        """A merged meeting is processed again: from the joined transcript when both parts
+        had one, else transcribed whole. Every later stage is redone too."""
+        from app.pipeline.states import STAGE_ORDER
+
+        stage = JobStage.ASSEMBLE if transcribed else JobStage.TRANSCRIBE
+        entry = MeetingState.TRANSCRIBING if transcribed else MeetingState.RECORDED
+        if meeting.state != entry:
+            self.dao.set_state(meeting.id, entry)
+        for later in STAGE_ORDER[STAGE_ORDER.index(stage) :]:
+            self.queue.request_rerun(meeting.id, later)
+        self.queue.retry(meeting.id, stage)
+        meta.mirror(self.dao.require_meeting(meeting.id))
+
+    def resummarize(self, meeting_id: str) -> bool:
+        """The calendar meeting changed: summarize again, when an AI is configured and a
+        summary was already written (D89). The previous one is kept beside it, as
+        ``*.prev.*``, in case the new one is worse. Whether it was asked for."""
+        from app.pipeline.states import STAGE_ORDER
+
+        if str(self.config.get("llm.provider", "none")) == "none":
+            return False
+        meeting = self.dao.require_meeting(meeting_id)
+        if MeetingState(meeting.state) not in (
+            MeetingState.SUMMARIZED,
+            MeetingState.RENDERED,
+            MeetingState.DELIVERED,
+        ):
+            return False  # not summarized yet: when it is, it reads the new meeting
+        for name in ("notes.json", "summary.html"):
+            current = meeting.path / name
+            if current.exists():
+                stem, _, suffix = name.partition(".")
+                shutil.copyfile(current, meeting.path / f"{stem}.prev.{suffix}")
+        for later in STAGE_ORDER[STAGE_ORDER.index(JobStage.SUMMARIZE) :]:
+            self.queue.request_rerun(meeting_id, later)
+        self.queue.retry(meeting_id, JobStage.SUMMARIZE)
+        log.info("meeting %s is summarized again for its new calendar meeting", meeting_id)
+        return True
+
+    def ask_if_unsettled(self, meeting_id: str, notifier: Any, *, calendar_connected: bool) -> bool:
+        """After a recording ends: "Which meeting was this?" when its calendar meeting is
+        not settled (D89). Whether it asked."""
+        meeting = self.dao.get_meeting(self.dao.resolve(meeting_id))
+        if meeting is None or notifier is None:
+            return False
+        if not self.needs_meeting(meeting, calendar_connected=calendar_connected):
+            return False
+        candidates = calendar_payload(meeting).get("candidates") or []
+        notifier.which_meeting(meeting.id, meeting.title or "", list(candidates))
+        return True
+
+    def needs_meeting(self, meeting: Meeting, *, calendar_connected: bool) -> bool:
+        """A recording whose calendar meeting is not settled: the user is asked (D89).
+
+        Settled is matched (by the user, the detector or the calendar) or "not on my
+        calendar" said by the user. With no calendar connected there is nothing to ask,
+        and a recording made before one was (nothing stored on it) is matched for display
+        when its page opens rather than asked about."""
+        if not calendar_connected or not meeting.calendar_json:
+            return False
+        if MeetingState(meeting.state) in (
+            MeetingState.RECORDING,
+            MeetingState.ARMED,
+            MeetingState.DISCARDED,
+        ):
+            return False
+        match = calendar_payload(meeting).get("match") or {}
+        if match.get("state") == "matched":
+            return False
+        return match.get("source") != "user"
 
     def discard(self, meeting_id: str) -> Meeting:
         meeting = self.dao.set_state(meeting_id, MeetingState.DISCARDED)
@@ -402,7 +658,8 @@ class MeetingService:
         return folder
 
     def finish_interrupted_deletes(self) -> int:
-        """At start: meetings whose deletion was asked for as the app closed. How many."""
+        """At start: meetings whose deletion was asked for as the app closed, and folders
+        of recordings merged away that could not go then (D89). How many."""
         done = 0
         for meeting in self.dao.list_meetings(limit=100_000, include_hidden=True):
             if (Path(meeting.folder) / DELETING_MARKER).exists():
@@ -411,6 +668,17 @@ class MeetingService:
                     done += 1
                 except (OSError, ValueError) as exc:
                     log.warning("could not finish deleting %s: %s", meeting.id, exc)
+        root = self.config.data_root
+        for marker in root.glob(f"*/{DELETING_MARKER}") if root.exists() else ():
+            folder = marker.parent
+            if self.dao.get_meeting(folder.name) is not None or not self.inside_root(folder):
+                continue
+            try:
+                remove_tree(folder)
+                done += 1
+                log.info("deleted %s, left over from a merge", folder)
+            except OSError as exc:
+                log.warning("could not delete %s: %s", folder, exc)
         return done
 
     def drop_audio(self, meeting: Meeting, *, when: datetime | None = None) -> int:
