@@ -127,10 +127,24 @@ test("tooltips_can_be_turned_off_and_stay_off", async ({ page, request }) => {
   }
 });
 
+/**
+ * The seeded meeting is three days back: this week or the one before, depending on the
+ * day. Wait for the grid to show it before deciding, or a calendar still loading reads as
+ * "not this week" and the test goes back a week from the right one.
+ */
+async function showWeekOf(page: Page, chip: Locator): Promise<void> {
+  try {
+    await expect(chip).toBeVisible({ timeout: 3_000 });
+  } catch {
+    await page.getByTestId("calendar-prev").click();
+    await expect(chip).toBeVisible();
+  }
+}
+
 test("the_balloon_counts_open_items_and_follows_the_ticks", async ({ page }) => {
   await gotoApp(page, "/");
   const chip = page.locator("[data-testid=calendar-gevent][data-event=ev-onboarding]");
-  if ((await chip.count()) === 0) await page.getByTestId("calendar-prev").click();
+  await showWeekOf(page, chip);
   const balloon = chip.getByTestId("chip-open");
   await expect(balloon).toHaveText("2");
   await balloon.hover();
@@ -141,12 +155,11 @@ test("the_balloon_counts_open_items_and_follows_the_ticks", async ({ page }) => 
   const open = page.locator("[data-testid=meeting-actions] [data-testid=action-item][data-done=false]");
   await open.first().getByTestId("action-toggle").click();
   await page.getByTestId("nav-timeline").click();
-  if ((await chip.count()) === 0) await page.getByTestId("calendar-prev").click();
+  await showWeekOf(page, chip);
   await expect(balloon).toHaveText("1");
   await gotoApp(page, "/m/m-onboarding");
   await open.first().getByTestId("action-toggle").click();
   await page.getByTestId("nav-timeline").click();
-  if ((await chip.count()) === 0) await page.getByTestId("calendar-prev").click();
-  await expect(chip).toBeVisible();
+  await showWeekOf(page, chip);
   await expect(balloon).toHaveCount(0);
 });
