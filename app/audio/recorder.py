@@ -213,6 +213,33 @@ class Recorder:
         self.writer = None
         return result
 
+    def split(self) -> RecordingResult | None:
+        """End the recording where its call ended, and keep listening (D90).
+
+        Only while holding: the call's app let go, and the microphone was taken again for
+        the next calendar meeting. The file ends at the hang-up, as a stop would end it;
+        the streams stay open, and what the ring heard since becomes the next recording's
+        pre-roll when it is committed. None when there is nothing to split.
+        """
+        with self._lock:
+            if not self.committed or not self.holding or self.writer is None:
+                return None
+            result = RecordingResult(folder=self.folder)
+            result.records = self.writer.close()
+            result.duration_ms = {t: self.writer.duration_ms(t) for t in self.tracks}
+            for track, runtime in self.runtime.items():
+                result.dropped[track] = runtime.capture.stats.dropped
+                result.xruns[track] = runtime.capture.stats.xruns
+                result.gaps_ms[track] = runtime.gap_ms
+            self.writer = None
+            self.committed = False
+            self.holding = False
+            self._hold_started = None
+            self.folder = None
+            self.meeting_id = None
+        log.info("recorder split: the next recording starts from what was heard since")
+        return result
+
     def _flush_resamplers(self) -> None:
         """End of stream: the resampler's delay line is real audio, not rounding."""
         for track, runtime in self.runtime.items():
