@@ -883,8 +883,14 @@ def list_meetings(
     meetings = svc.dao.list_meetings(
         frm=from_, to=to, q=q, state=state, limit=limit, accounts=account
     )
-    # A meeting being deleted is gone as far as anyone can see, while its stage stops.
-    meetings = [meeting for meeting in meetings if not svc.queue.deleting(meeting.id)]
+    # A meeting being deleted is gone as far as anyone can see, while its stage stops; so is
+    # one merged into another whose folder waits for the next start to go (D89).
+    merged = svc.dao.aliases()
+    meetings = [
+        meeting
+        for meeting in meetings
+        if not svc.queue.deleting(meeting.id) and meeting.id not in merged
+    ]
     # What each meeting still owes, so the list can say it without opening anything: one
     # grouped query for the whole page rather than one per row.
     counts = svc.dao.action_item_counts()
@@ -1301,6 +1307,8 @@ def delete_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
 
     svc = services_of(request)
     meeting = _visible(svc, meeting_id)
+    # An id merged away names the meeting it joined (D89): every check below is about that.
+    meeting_id = meeting.id
     recorder = svc.recorder
     if recorder is not None and recorder.committed and recorder.meeting_id == meeting_id:
         raise HTTPException(409, "this meeting is still recording")
@@ -1382,6 +1390,7 @@ def retry_stage(
     if stage not in {str(item) for item in STAGE_ORDER}:
         raise HTTPException(404, f"no such stage {stage!r}")
     meeting = _visible(svc, meeting_id)
+    meeting_id = meeting.id  # an id merged away names the meeting it joined (D89)
     if language is not None:
         from app.asr.languages import is_supported
 
@@ -1418,6 +1427,7 @@ def keep_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
     """
     svc = services_of(request)
     meeting = _visible(svc, meeting_id)
+    meeting_id = meeting.id  # an id merged away names the meeting it joined (D89)
     if meeting.state != MeetingState.DISCARDED:
         raise HTTPException(409, f"{meeting_id} is {meeting.state}, not discarded")
 
@@ -2221,6 +2231,10 @@ def merge_meetings(request: Request, meeting_id: str, body: MergePost) -> dict[s
         merged = svc.meetings.merge(first, second)
     except MergeRefused as exc:
         raise HTTPException(409, str(exc)) from exc
+    except OSError as exc:
+        # The disk refused (full, or a file held open): both stay as they were.
+        log.warning("merging %s and %s failed: %s", meeting_id, body.other, exc)
+        raise HTTPException(409, f"could not merge: {exc}") from exc
     svc.events.publish("meeting", meeting_id=merged.id, action="merged")
     return _meeting_payload(svc, merged.id)
 
