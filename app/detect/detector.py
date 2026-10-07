@@ -15,6 +15,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from types import SimpleNamespace
 from typing import Any
 
 from app.audio.recorder import Recorder
@@ -22,11 +23,12 @@ from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
 from app.detect import evidence as ev
-from app.detect.assign import Assignment, assign
+from app.detect.assign import Assignment, assign, clues
 from app.detect.evidence import Evidence
 from app.detect.sources import MicHolder, Sources
 from app.log import get
-from app.meetings import MeetingService
+from app.meetings import MeetingService, event_key
+from app.meetings import calendar_payload as stored_calendar
 from app.pipeline.states import MeetingState
 
 log = get(__name__)
@@ -147,6 +149,11 @@ class Detector:
         #: The process whose recording is running, so that "the microphone was released"
         #: means released by *that* app rather than by whoever happened to hold it.
         self.recording_process: str | None = None
+        #: Who held the microphone when the call's app let go: only an app that takes it
+        #: after that can be the next call (D90).
+        self.held_at_release: set[str] = set()
+        #: Who held it at the look before this one.
+        self.held_before: set[str] = set()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -386,6 +393,7 @@ class Detector:
         ]
         names = {holder.process for holder in holders}
         before = self.holding
+        self.held_before = set(before or ())
         self._note_acquisitions(holders)
         if before is not None and self.state in (DetectorState.RECORDING, DetectorState.GRACE):
             # Said in the log while recording, when nothing else would say it: the
@@ -427,6 +435,8 @@ class Detector:
         elif self.state in (DetectorState.RECORDING, DetectorState.GRACE):
             if self.recording_process is None and not self.keep_going:
                 self._join_late(holders)
+            if self.state is DetectorState.GRACE and self._taken_again(holders):
+                return self.state
             owner = self.recording_process
             self._tick_recording(owner if owner and owner in names else "")
         return self.state
@@ -548,6 +558,7 @@ class Detector:
             return self.end(why)
 
     def _forget_recording(self) -> None:
+        self.held_at_release = set()
         self.ending_at = None
         self.keep_going = False
         self.meeting_id = None
@@ -737,22 +748,12 @@ class Detector:
         payload = self.calendar_payload(found)
         # The same calendar meeting recorded moments ago (a rejoin, a restart): carry that
         # recording on rather than start another (D88). Only a meeting the clues settle.
-        earlier = self.meetings.to_continue(payload)
-        reopened = self.meetings.reopen(earlier.id) if earlier is not None else None
-        if reopened is not None:
-            meeting, after_ms = reopened
-            self.recorder.commit(meeting.path, meeting.id, after_ms=after_ms)
-        else:
-            meeting = self.meetings.create(
-                source="detected",
-                title=wake.title or None,
-                title_source="window" if wake.title else None,
-                evidence=[item.as_dict() for item in wake.evidence],
-            )
-            if payload is not None:
-                meeting = self.meetings.choose_event(meeting.id, payload)
-            self.recorder.commit(meeting.path, meeting.id)
-        self.meetings.committed(meeting, meeting.path)
+        meeting = self._begin(
+            payload,
+            payload,
+            title=wake.title or None,
+            evidence=[item.as_dict() for item in wake.evidence],
+        )
         self.meeting_id = meeting.id
         self._note_event()
         self.recording_process = wake.process
@@ -797,20 +798,16 @@ class Detector:
             pass  # no call app to watch (adopted with none, or kept going): other signals
         elif process:
             if self.state is DetectorState.GRACE:
-                # Back in the call (a rejoin, a dropped connection): the same meeting goes
-                # on. The dead air between is not written; the timeline keeps its length.
-                log.info("microphone re-acquired inside the grace window; same meeting")
-                self.recorder.release_hold(keep=False)
-                self.state = DetectorState.RECORDING
-                self.released_at = None
-                self.ending_at = None
-                self._publish("recording", meeting_id=self.meeting_id)
+                self._rejoin()
         else:
             if self.released_at is None:
                 # The call's app let go: most likely the user hung up. Say so at once and
                 # stop writing, so the file ends here; wait out the grace before saving,
                 # in case the call comes back (D77).
                 self.released_at = now
+                # At the look before the hang-up: an app taking the microphone in the same
+                # second as the call's app lets go is the next call, not furniture.
+                self.held_at_release = self.held_before - {self.recording_process or ""}
                 self.state = DetectorState.GRACE
                 self.recorder.hold()
                 self.ending_at = self.clock.now() + timedelta(seconds=self.grace_s)
@@ -846,9 +843,200 @@ class Detector:
             if self.notifier is not None and self.meeting_id:
                 self.notifier.still_recording(self.meeting_id, self.event_title)
 
+    def _rejoin(self) -> None:
+        """Back in the call (a rejoin, a dropped connection): the same meeting goes on.
+        The dead air between is not written; the timeline keeps its length."""
+        log.info("microphone re-acquired inside the grace window; same meeting")
+        self.recorder.release_hold(keep=False)
+        self.state = DetectorState.RECORDING
+        self.released_at = None
+        self.ending_at = None
+        self._publish("recording", meeting_id=self.meeting_id)
+
+    # -- the next meeting (D90)
+
+    def _taken_again(self, holders: list[MicHolder]) -> bool:
+        """The microphone, let go by the call's app, taken again within the grace: the
+        same meeting coming back, or the next one. Whether this handled it.
+
+        The call's app taking it again is a rejoin, unless the calendar says the next
+        meeting is on. Another call app taking it is the next call, unless the calendar
+        says it is the same meeting. Back-to-back meetings always let go of the microphone
+        between them, if only for a moment; before this, the grace read the next meeting
+        as the last one coming back and recorded both as one.
+        """
+        owner = self.recording_process
+        names = {holder.process for holder in holders}
+        if owner and owner in names:
+            process, same_app = owner, True
+        else:
+            known = list(self.config.get("detection.known_apps", []))
+            ignore = list(self.config.get("detection.ignore", []))
+            newcomers = [
+                holder.process
+                for holder in holders
+                if holder.process in self.fresh
+                and holder.process not in self.held_at_release
+                and ev.matches_process(holder.process, known)
+                and not ev.matches_process(holder.process, ignore)
+            ]
+            if not newcomers:
+                return False
+            process, same_app = newcomers[0], False
+        verdict, payload, follow = self._which_meeting(process)
+        if verdict == "unknown" and not same_app:
+            # Nothing says which meeting it is: the grace runs out, and the new app is
+            # judged like any call, by its evidence (D77).
+            return False
+        if verdict in ("same", "unknown"):
+            if same_app:
+                return False  # the rejoin, as ever
+            log.info("recording %s: %s took over the same meeting", self.meeting_id, process)
+            self.recording_process = process
+            self.fresh.discard(process)
+            self._rejoin()
+            return True
+        self._hand_over(process, payload, follow)
+        return True
+
+    def _which_meeting(
+        self, process: str
+    ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+        """Whether a call by ``process`` now is the recording's own calendar meeting
+        ("same"), another ("next"), or cannot be told ("unknown"). With what the next
+        recording keeps of the calendar, and the meeting it may continue.
+
+        Another meeting named by a clue the last one lacks (the window, the app) is that
+        meeting. Told by the clock alone (the last one's time is over, or the next began
+        later), it may be the last one running over: then it is proposed, both meetings
+        offered, and the user asked at its end.
+        """
+        meeting = self.dao.get_meeting(self.meeting_id) if self.meeting_id else None
+        current = stored_calendar(meeting) if meeting is not None else {}
+        key = event_key(current)
+        found = self.assignment(process)
+        payload = self.calendar_payload(found)
+        if key is None or found.event is None or not found.certain or payload is None:
+            return "unknown", payload, payload
+        if event_key(payload) == key:
+            return "same", None, None
+        try:
+            windows = list(self.sources.titles.titles())
+        except Exception:
+            windows = []
+        last = SimpleNamespace(
+            title=current.get("title"), conference_url=current.get("conference_url")
+        )
+        if clues(found.event, process, windows) > clues(last, process, windows):
+            return "next", payload, payload
+        from app.gcal.match import PROPOSED
+
+        guess = {
+            "match": {
+                "state": PROPOSED,
+                "source": "detected",
+                "confidence": None,
+                "reason": "the next calendar meeting began, or the last one came back",
+            },
+            "candidates": [
+                {**(payload.get("event") or {}), "title": payload.get("title"), "overlap": None},
+                {**(current.get("event") or {}), "title": current.get("title"), "overlap": None},
+            ],
+        }
+        return "next", guess, payload
+
+    def _hand_over(
+        self, process: str, payload: dict[str, Any] | None, follow: dict[str, Any] | None
+    ) -> None:
+        """The last recording ends where its call did, and the next one starts with what
+        was heard since, as its pre-roll. Detect-only mode starts nothing by itself: the
+        last one ends, and the next call is offered like any other."""
+        why = "the next meeting took the microphone"
+        if self.mode != "on":
+            self.fresh.add(process)
+            self.end(why)
+            return
+        result = self.recorder.split()
+        if result is None:
+            self.fresh.add(process)
+            self.end(why)
+            return
+        last = self.meeting_id
+        self._finished(last, result, why)
+        titles = self._titles()
+        meeting = self._begin(
+            payload,
+            follow,
+            title=titles[0] if titles else None,
+            evidence=[],
+        )
+        self.meeting_id = meeting.id
+        self._note_event()
+        self.recording_process = process
+        self.fresh.discard(process)
+        self.state = DetectorState.RECORDING
+        self.started_mono = self.clock.monotonic()
+        self.released_at = None
+        self.ending_at = None
+        self.silent_since = None
+        self.keep_going = False
+        self.commits += 1
+        log.info("recording %s ended; the next meeting is recording %s", last, meeting.id)
+        if self.notifier is not None:
+            self.notifier.recording_started(meeting.id, meeting.title or "")
+        self._publish("recording", meeting_id=meeting.id)
+
+    def _titles(self) -> list[str]:
+        try:
+            return list(self.sources.titles.titles())
+        except Exception:
+            return []
+
+    def _begin(
+        self,
+        payload: dict[str, Any] | None,
+        follow: dict[str, Any] | None,
+        *,
+        title: str | None,
+        evidence: list[dict[str, Any]],
+    ) -> Any:
+        """A recording for a call the detector settled on: the same calendar meeting
+        recorded moments ago carried on (D88), else a new one. ``follow``: the meeting
+        it may carry on."""
+        earlier = self.meetings.to_continue(follow)
+        reopened = self.meetings.reopen(earlier.id) if earlier is not None else None
+        if reopened is not None:
+            meeting, after_ms = reopened
+            self.recorder.commit(meeting.path, meeting.id, after_ms=after_ms)
+        else:
+            meeting = self.meetings.create(
+                source="detected",
+                title=title or None,
+                title_source="window" if title else None,
+                evidence=evidence,
+            )
+            if payload is not None:
+                meeting = self.meetings.choose_event(meeting.id, payload)
+            self.recorder.commit(meeting.path, meeting.id)
+        self.meetings.committed(meeting, meeting.path)
+        return meeting
+
     def end(self, why: str = "") -> str | None:
         meeting_id = self.meeting_id
         result = self.recorder.stop()
+        self._finished(meeting_id, result, why)
+        if self.recording_process:
+            # The meeting ended but the app still holds the microphone — the duration cap
+            # fired, or both sides went quiet. If it looks like a meeting again it is a
+            # new one (DETECTION.md §7.4), so this counts as a fresh acquisition. A
+            # process that has genuinely let go is pruned on the next look anyway.
+            self.fresh.add(self.recording_process)
+        self._forget_recording()
+        self._publish("idle", reason=why)
+        return meeting_id
+
+    def _finished(self, meeting_id: str | None, result: Any, why: str) -> None:
+        """A recording's file is closed: the meeting is saved, said, and asked about."""
         duration_s = round(result.total_duration_ms / 1000)
         if meeting_id:
             meeting = self.meetings.finish(meeting_id, duration_s=duration_s)
@@ -860,15 +1048,6 @@ class Detector:
             self.meetings.ask_if_unsettled(
                 meeting.id, self.notifier, calendar_connected=self._calendar_connected()
             )
-        if self.recording_process:
-            # The meeting ended but the app still holds the microphone — the duration cap
-            # fired, or both sides went quiet. If it looks like a meeting again it is a
-            # new one (DETECTION.md §7.4), so this counts as a fresh acquisition. A
-            # process that has genuinely let go is pruned on the next look anyway.
-            self.fresh.add(self.recording_process)
-        self._forget_recording()
-        self._publish("idle", reason=why)
-        return meeting_id
 
     # -- plumbing ----------------------------------------------------------
 
