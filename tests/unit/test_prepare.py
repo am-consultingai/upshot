@@ -430,7 +430,10 @@ def test_the_speaker_models_come_after_the_speech_models(
     code = run(default_config(), progress, model=model_manager(app_home),
                gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
     assert code == prepare.EXIT_OK
-    assert [path.name for path in speaker_models] == ["segmentation.onnx", "embedding.onnx"]
+    assert [path.name for path in speaker_models] == [
+        "segmentation.onnx",
+        "embedding-3dspeaker-campplus-zh-en.onnx",
+    ]
     speech = max(i for i, text in enumerate(texts) if text.startswith("Speech models"))
     assert texts.index("Speaker models: downloading") > speech
 

@@ -1,6 +1,6 @@
 """The real ONNX diarizer.
 
-Skipped unless the models are present, because they are a ~37 MB opt-in download:
+Skipped unless the models are present (~34 MB, fetched by the installer):
 
     uv sync --extra diarization
     uv run python -c "from app.asr.models import download_diarization; \\
@@ -41,7 +41,9 @@ def diarizer() -> OnnxDiarizer:
     directory = models_dir()
     if directory is None:
         pytest.skip("no diarization models — see this module's docstring")
-    return OnnxDiarizer(str(directory / "segmentation.onnx"), str(directory / "embedding.onnx"))
+    from app.asr.models import EMBEDDING_FILE
+
+    return OnnxDiarizer(str(directory / "segmentation.onnx"), str(directory / EMBEDDING_FILE))
 
 
 def read_wav(path: Path) -> tuple[np.ndarray, int]:
@@ -87,3 +89,55 @@ def test_onnx_separates_real_speakers(diarizer: OnnxDiarizer) -> None:
     )
     assert found == expected, f"expected {expected} speakers, found {found}"
     assert turns[0].start >= 0
+
+
+# ------------------------------------------------------------------ a real 1:1 meeting
+
+
+def meeting_audio() -> Path:
+    """A real two-person meeting's ``audio/`` folder (``me.wav``, ``them.wav``).
+
+    Meeting audio is private and never committed: point ``UP_DIARIZATION_MEETING`` at a
+    recording on this machine. The case is ClickUp z8tj1hfdwp: a 27-minute Hebrew 1:1
+    call, which the English VoxCeleb embedding heard as 4 microphone voices and 16
+    far-side voices.
+    """
+    folder = os.environ.get("UP_DIARIZATION_MEETING")
+    if not folder or not (Path(folder) / "me.wav").exists():
+        pytest.skip("set UP_DIARIZATION_MEETING to a 1:1 meeting's audio folder")
+    return Path(folder)
+
+
+def diarized_voices(diarizer: OnnxDiarizer, audio: np.ndarray, rate: int, track: str) -> int:
+    from app.asr.diarize import diarize_track
+    from app.config import default_config
+
+    _, found = diarize_track(
+        diarizer, audio, rate, [], track=track, base=track.upper(), config=default_config()
+    )
+    assert found is not None
+    return found["speakers"]
+
+
+@pytest.mark.parametrize("track", ["me", "them"])
+def test_a_one_to_one_meeting_has_one_voice_per_track(diarizer: OnnxDiarizer, track: str) -> None:
+    audio, rate = read_wav(meeting_audio() / f"{track}.wav")
+    assert diarized_voices(diarizer, audio, rate, track) == 1
+
+
+def test_the_two_people_of_that_meeting_on_one_track_are_two_voices(
+    diarizer: OnnxDiarizer,
+) -> None:
+    """The other half: one voice per track must not come from merging everyone.
+
+    The microphone's speaker and the far side's, from the same recorder and the same
+    language, interleaved in 30-second blocks over the first 12 minutes.
+    """
+    folder = meeting_audio()
+    me, rate = read_wav(folder / "me.wav")
+    them, _ = read_wav(folder / "them.wav")
+    block, total = 30 * rate, 12 * 60 * rate
+    mixed = np.concatenate(
+        [(me if (i // block) % 2 == 0 else them)[i : i + block] for i in range(0, total, block)]
+    )
+    assert diarized_voices(diarizer, mixed, rate, "them") == 2
