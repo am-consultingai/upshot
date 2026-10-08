@@ -339,13 +339,12 @@ def test_the_registry_holds_exactly_three_roles_each_pinned_to_a_revision() -> N
     assert ROLES == (CLASSIFIER, HEBREW, OTHER), "installation order: small one first"
     assert {m.repo for m in MODELS.values()} == {
         "Systran/faster-whisper-small",
-        "ivrit-ai/whisper-large-v3-ct2",
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
         "Systran/faster-whisper-large-v3",
     }
     for model in MODELS.values():
         assert len(model.revision) == 40 and int(model.revision, 16) >= 0, model
-        assert "turbo" not in model.repo, "large-v3, never turbo (R6)"
-    assert 6_500_000_000 < TOTAL_BYTES < 6_800_000_000
+    assert 5_100_000_000 < TOTAL_BYTES < 5_300_000_000
 
 
 def test_files_are_fetched_at_the_pinned_revision_never_main(app_home: Path) -> None:
