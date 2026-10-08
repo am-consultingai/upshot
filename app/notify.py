@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.config import Config
+from app.i18n import MESSAGES, tr
 from app.log import get
 
 log = get(__name__)
@@ -24,6 +25,13 @@ TOAST_TIMEOUT_S = 30.0
 DISMISS = "system.dismiss"
 #: A button that opens the meeting's link in the browser, and nothing else.
 JOIN = "join"
+
+#: Why a recording ended (app/detect/detector.py), as the toast explains it.
+ENDED_BECAUSE = {
+    "the microphone was released": "toast.ended.left",
+    "both tracks were silent": "toast.ended.silent",
+    "the maximum meeting duration was reached": "toast.ended.limit",
+}
 
 
 @dataclass(frozen=True)
@@ -94,6 +102,7 @@ class BaseNotifier:
         debounce_s: float = DEBOUNCE_S,
         clock: Any = None,
         app_in_front: Callable[[], bool] | None = None,
+        language: Callable[[], str] | None = None,
     ) -> None:
         self.debounce_s = debounce_s
         self._last: dict[str, float] = {}
@@ -102,6 +111,12 @@ class BaseNotifier:
         self.clock = clock or SystemClock()
         #: Whether Upshot's window is the one the user is looking at (app/window.py).
         self.app_in_front = app_in_front or (lambda: False)
+        #: The interface language, asked at each toast so a change in Settings applies
+        #: to the next one.
+        self.language = language or (lambda: "en")
+
+    def _t(self, key: str, /, **fields: object) -> str:
+        return tr(key, self.language(), **fields)
 
     def _should_emit(self, toast: Toast) -> bool:
         if toast.quiet_in_front and self.app_in_front():
@@ -129,11 +144,11 @@ class BaseNotifier:
     def recording_started(self, meeting_id: str, title: str) -> None:
         self.show(
             Toast(
-                title=f"Recording started: {title or 'meeting'}",
-                body="Upshot is recording both sides of the call.",
+                title=self._t("toast.started.title", title=title or self._t("toast.meeting")),
+                body=self._t("toast.started.body"),
                 buttons=(
-                    Button("Stop", "recording.stop", meeting_id),
-                    Button("Not a meeting", "meeting.discard", meeting_id),
+                    Button(self._t("button.stop"), "recording.stop", meeting_id),
+                    Button(self._t("button.notMeeting"), "meeting.discard", meeting_id),
                 ),
                 key=f"started:{meeting_id}",
                 meeting_id=meeting_id,
@@ -142,17 +157,18 @@ class BaseNotifier:
         )
 
     def recording_ended(self, meeting_id: str, minutes: int, reason: str = "") -> None:
-        why = {
-            "the microphone was released": "You left the call, so Upshot stopped recording.",
-            "both tracks were silent": "Nobody spoke for 5 minutes, so Upshot stopped recording.",
-            "the maximum meeting duration was reached": "The recording reached its length limit.",
-        }.get(reason, "")
-        length = f"{minutes} min" if minutes >= 1 else "under a minute"
+        because = ENDED_BECAUSE.get(reason)
+        why = self._t(because) if because else ""
+        length = (
+            self._t("toast.ended.minutes", minutes=minutes)
+            if minutes >= 1
+            else self._t("toast.ended.underMinute")
+        )
         self.show(
             Toast(
-                title=f"Meeting ended — {length}. Transcribing…",
+                title=self._t("toast.ended.title", length=length),
                 body=why,
-                buttons=(Button("Open", "meeting.open", meeting_id),),
+                buttons=(Button(self._t("button.open"), "meeting.open", meeting_id),),
                 key=f"ended:{meeting_id}",
                 meeting_id=meeting_id,
             )
@@ -161,10 +177,10 @@ class BaseNotifier:
     def summary_ready(self, meeting_id: str, title: str) -> None:
         self.show(
             Toast(
-                title=f"Summary ready — {title or 'meeting'}",
+                title=self._t("toast.summary.title", title=title or self._t("toast.meeting")),
                 buttons=(
-                    Button("Open", "meeting.open", meeting_id),
-                    Button("Email", "meeting.email", meeting_id),
+                    Button(self._t("button.open"), "meeting.open", meeting_id),
+                    Button(self._t("button.email"), "meeting.email", meeting_id),
                 ),
                 key=f"summary:{meeting_id}",
                 meeting_id=meeting_id,
@@ -172,10 +188,12 @@ class BaseNotifier:
         )
 
     def failed(self, meeting_id: str, stage: str) -> None:
+        # A stage the catalogue does not name keeps its own name, as English always did.
+        name = self._t(f"stage.{stage}") if f"stage.{stage}" in MESSAGES else stage.title()
         self.show(
             Toast(
-                title=f"{stage.title()} failed — audio is safe",
-                buttons=(Button("Open", "meeting.open", meeting_id),),
+                title=self._t("toast.failed.title", stage=name),
+                buttons=(Button(self._t("button.open"), "meeting.open", meeting_id),),
                 key=f"failed:{meeting_id}:{stage}",
                 meeting_id=meeting_id,
             )
@@ -185,12 +203,14 @@ class BaseNotifier:
         self, key: str, title: str, *, minutes: int, conference_url: str | None = None
     ) -> None:
         """A calendar meeting starts in a few minutes (D76). Said once per meeting."""
-        unit = "minute" if minutes == 1 else "minutes"
+        heading = "toast.soon.titleOne" if minutes == 1 else "toast.soon.titleMany"
         self.show(
             Toast(
-                title=f"{title or 'A meeting'} starts in {minutes} {unit}",
-                body="Upshot will ask to record it when it starts.",
-                buttons=(Button("Join", JOIN, join=conference_url),) if conference_url else (),
+                title=self._t(heading, title=title or self._t("toast.aMeeting"), minutes=minutes),
+                body=self._t("toast.soon.body"),
+                buttons=(Button(self._t("button.join"), JOIN, join=conference_url),)
+                if conference_url
+                else (),
                 key=f"soon:{key}",
             )
         )
@@ -207,12 +227,12 @@ class BaseNotifier:
         account_id: str | None = None,
     ) -> None:
         """A calendar meeting's start time has come and nothing records it. Said once."""
-        name = title or "A meeting"
+        name = title or self._t("toast.aMeeting")
         buttons: tuple[Button, ...] = self._start_buttons(calendar_id, event_id, account_id)
         if conference_url:
             buttons = (
                 Button(
-                    "Join and record",
+                    self._t("button.joinAndRecord"),
                     "recording.start",
                     None,
                     calendar_id,
@@ -224,10 +244,10 @@ class BaseNotifier:
             )
         self.show(
             Toast(
-                title=f"{name} started {minutes_ago} min ago"
+                title=self._t("toast.starting.ago", title=name, minutes=minutes_ago)
                 if minutes_ago >= 2
-                else f"{name} has started",
-                body="Upshot isn't recording it.",
+                else self._t("toast.starting.now", title=name),
+                body=self._t("toast.notRecording"),
                 buttons=buttons,
                 key=f"starting:{key}",
                 quiet_in_front=True,
@@ -238,11 +258,13 @@ class BaseNotifier:
         """The call's app let go: say so at once, with the countdown's two ways out (D77)."""
         self.show(
             Toast(
-                title=f"{title} ended" if title else "The call ended",
-                body=f"Upshot saves the recording in {seconds} seconds, unless you rejoin.",
+                title=self._t("toast.callEnded.title", title=title)
+                if title
+                else self._t("toast.callEnded.untitled"),
+                body=self._t("toast.callEnded.body", seconds=seconds),
                 buttons=(
-                    Button("Stop now", "recording.stop", meeting_id),
-                    Button("Keep recording", "recording.keep", meeting_id),
+                    Button(self._t("button.stopNow"), "recording.stop", meeting_id),
+                    Button(self._t("button.keepRecording"), "recording.keep", meeting_id),
                 ),
                 key=f"call-ended:{meeting_id}",
                 meeting_id=meeting_id,
@@ -254,11 +276,11 @@ class BaseNotifier:
         """A recording runs past its meeting's scheduled end (D76): ask, never cut."""
         self.show(
             Toast(
-                title=f"{title or 'The meeting'} was scheduled to end",
-                body="Upshot is still recording. Stop now, or it stops when you leave the call.",
+                title=self._t("toast.overrun.title", title=title or self._t("toast.theMeeting")),
+                body=self._t("toast.overrun.body"),
                 buttons=(
-                    Button("Stop recording", "recording.stop", meeting_id),
-                    Button("Keep recording", DISMISS),
+                    Button(self._t("tray.stop"), "recording.stop", meeting_id),
+                    Button(self._t("button.keepRecording"), DISMISS),
                 ),
                 key=f"overrun:{meeting_id}",
                 meeting_id=meeting_id,
@@ -285,23 +307,30 @@ class BaseNotifier:
         button each: the press says which meeting it is. A toast button opens a link, which
         carries no input, so there is no drop-down.
         """
-        app = process.removesuffix(".exe") or "an app"
+        app = process.removesuffix(".exe") or self._t("toast.anApp")
         buttons = self._start_buttons(calendar_id, event_id, account_id)
-        body = "Upshot isn't recording it."
+        body = self._t("toast.notRecording")
         if candidates and not event_id:
+            untitled = self._t("toast.untitled")
             buttons = (
                 *(
                     Button(
-                        f"Record: {name or 'untitled'}", "recording.start", None, cal, ev, None, acc
+                        self._t("button.record", title=name or untitled),
+                        "recording.start",
+                        None,
+                        cal,
+                        ev,
+                        None,
+                        acc,
                     )
                     for acc, cal, ev, name in candidates[:3]
                 ),
-                Button("Dismiss", DISMISS),
+                Button(self._t("button.dismiss"), DISMISS),
             )
-            body = "Which meeting is it? Upshot isn't recording it."
+            body = self._t("toast.detected.which")
         self.show(
             Toast(
-                title=f"Meeting started: {title or app}",
+                title=self._t("toast.detected.title", title=title or app),
                 body=body,
                 buttons=buttons,
                 key=f"call:{process}",
@@ -313,10 +342,11 @@ class BaseNotifier:
         """A recording ended and its calendar meeting is not settled: ask (D89). A button
         for each meeting it may be, and "Not on my calendar"; the recording's page asks
         the same, and the library marks it until answered."""
+        untitled = self._t("toast.untitled")
         buttons = (
             *(
                 Button(
-                    f"It was: {c.get('title') or 'untitled'}",
+                    self._t("button.itWas", title=c.get("title") or untitled),
                     "meeting.assign",
                     meeting_id,
                     str(c.get("calendar_id") or ""),
@@ -327,12 +357,12 @@ class BaseNotifier:
                 for c in candidates[:3]
                 if c.get("calendar_id") and c.get("event_id")
             ),
-            Button("Not on my calendar", "meeting.none", meeting_id),
+            Button(self._t("button.notOnCalendar"), "meeting.none", meeting_id),
         )
         self.show(
             Toast(
-                title="Which meeting was this?",
-                body=f"{title or 'This recording'} isn't linked to a calendar meeting yet.",
+                title=self._t("toast.which.title"),
+                body=self._t("toast.which.body", title=title or self._t("toast.thisRecording")),
                 buttons=buttons,
                 key=f"which:{meeting_id}",
                 meeting_id=meeting_id,
@@ -343,33 +373,32 @@ class BaseNotifier:
         """A Start pressed on a notification failed: the only place to say so is another."""
         self.show(
             Toast(
-                title="Upshot couldn't start recording",
+                title=self._t("toast.couldNotStart.title"),
                 body=reason,
                 key=f"could_not_start:{reason}",
             )
         )
 
-    @staticmethod
     def _start_buttons(
-        calendar_id: str | None, event_id: str | None, account_id: str | None = None
+        self, calendar_id: str | None, event_id: str | None, account_id: str | None = None
     ) -> tuple[Button, ...]:
         return (
             Button(
-                "Start recording",
+                self._t("tray.start"),
                 "recording.start",
                 None,
                 calendar_id,
                 event_id,
                 account_id=account_id,
             ),
-            Button("Dismiss", DISMISS),
+            Button(self._t("button.dismiss"), DISMISS),
         )
 
     def near_miss(self, process: str, when: str) -> None:
         self.show(
             Toast(
-                title=f"Didn't record {process} at {when}",
-                buttons=(Button("It was a meeting", "detector.promote"),),
+                title=self._t("toast.nearMiss.title", process=process, when=when),
+                buttons=(Button(self._t("button.itWasMeeting"), "detector.promote"),),
                 key=f"near_miss:{process}:{when}",
             )
         )
@@ -391,8 +420,11 @@ class FakeNotifier(BaseNotifier):
         clock: Any = None,
         on_action: Callable[[Button], None] | None = None,
         app_in_front: Callable[[], bool] | None = None,
+        language: Callable[[], str] | None = None,
     ) -> None:
-        super().__init__(debounce_s=debounce_s, clock=clock, app_in_front=app_in_front)
+        super().__init__(
+            debounce_s=debounce_s, clock=clock, app_in_front=app_in_front, language=language
+        )
         self.shown = []
         self.activations = []
         self.withdrawn: list[str] = []
@@ -441,12 +473,15 @@ class WindowsToastNotifier(BaseNotifier):
         clock: Any = None,
         spawn: Callable[[list[str]], Any] | None = None,
         app_in_front: Callable[[], bool] | None = None,
+        language: Callable[[], str] | None = None,
     ) -> None:
         if app_in_front is None:
             from app.window import in_front
 
             app_in_front = in_front
-        super().__init__(debounce_s=debounce_s, clock=clock, app_in_front=app_in_front)
+        super().__init__(
+            debounce_s=debounce_s, clock=clock, app_in_front=app_in_front, language=language
+        )
         self.app_id = app_id
         self.spawn = spawn or self._popen
 
@@ -580,6 +615,10 @@ def toast_group(meeting_id: str | None) -> str | None:
 
 def make_notifier(config: Config, *, events: Any = None, clock: Any = None) -> BaseNotifier:
     kind = str(config.get("delivery.notifier", "windows"))
+
+    def language() -> str:
+        return config.ui_language
+
     if kind == "fake":
-        return FakeNotifier(clock=clock)
-    return WindowsToastNotifier(clock=clock)
+        return FakeNotifier(clock=clock, language=language)
+    return WindowsToastNotifier(clock=clock, language=language)

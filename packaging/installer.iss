@@ -65,6 +65,19 @@ CloseApplications=yes
 ; A silent install (/SILENT, /VERYSILENT) accepts on behalf of the user it installs for,
 ; as section 1 of the Terms says.
 LicenseFile=terms.txt
+ShowLanguageDialog=yes
+LanguageDetectionMethod=uilanguage
+
+; Five languages, each Inno's own translation of the wizard plus Upshot's messages
+; (packaging\lang\<code>.isl, UTF-8, so this file stays ASCII). Setup asks which, with
+; Windows' language preselected; the choice becomes the app's interface language on a
+; first install (--language below, app/bootstrap.py first_language).
+[Languages]
+Name: "en"; MessagesFile: "compiler:Default.isl,lang\en.isl"
+Name: "he"; MessagesFile: "compiler:Languages\Hebrew.isl,lang\he.isl"
+Name: "de"; MessagesFile: "compiler:Languages\German.isl,lang\de.isl"
+Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl,lang\es.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
 
 [Messages]
 BeveledLabel=Powered by AM Consulting
@@ -106,9 +119,9 @@ Root: HKCU; Subkey: "Software\Classes\upshot\shell\open\command"; ValueType: str
 [Run]
 ; --setup-again: first-run setup opens after every install, on the saved choices (D69).
 ; Not after an automatic update (D87): setup appearing out of nowhere reads as a reset.
-Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap --setup-again"; StatusMsg: "Preparing first run..."; Flags: runhidden waituntilterminated; Check: not IsUpdate
-Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap"; StatusMsg: "Preparing..."; Flags: runhidden waituntilterminated; Check: IsUpdate
-Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap --setup-again --language={language}"; StatusMsg: "{cm:StatusFirstRun}"; Flags: runhidden waituntilterminated; Check: not IsUpdate
+Filename: "{app}\{#AppExe}"; Parameters: "--bootstrap"; StatusMsg: "{cm:StatusPreparing}"; Flags: runhidden waituntilterminated; Check: IsUpdate
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; An automatic update is silent, so the entry above never runs: start Upshot again, in
 ; the tray. --after-update tells it why it started (D87).
 Filename: "{app}\{#AppExe}"; Parameters: "--background --after-update"; Flags: nowait runasoriginaluser; Check: IsUpdate
@@ -213,8 +226,7 @@ begin
   end;
   if (Ram > 0) and (Ram < MinRamMB) then begin
     Gb := Format('%.1f', [Ram / 1024.0]);
-    SuppressibleMsgBox('{#AppName} needs a computer with at least 12 GB of memory to transcribe meetings on it.' + #13#10#13#10 +
-      'This computer has ' + Gb + ' GB, so {#AppName} will not be installed.', mbCriticalError, MB_OK, IDOK);
+    SuppressibleMsgBox(FmtMessage(CustomMessage('RamTooLow'), [Gb]), mbCriticalError, MB_OK, IDOK);
     Result := False;
   end;
 end;
@@ -276,8 +288,10 @@ end;
 
 procedure InitializeWizard;
 begin
-  PreparePage := CreateOutputProgressPage('Getting {#AppName} ready to transcribe',
-    '{#AppName} transcribes on this computer, so it needs its speech models (about 6.7 GB). This is a one-time download.');
+  PreparePage := CreateOutputProgressPage(CustomMessage('PrepareTitle'), CustomMessage('PrepareLead'));
+  { The Terms are English only (a legal text); every other language says so above them. }
+  if CustomMessage('TermsInEnglish') <> '' then
+    WizardForm.LicenseLabel1.Caption := CustomMessage('TermsInEnglish') + #13#10 + WizardForm.LicenseLabel1.Caption;
 end;
 
 function ReadValue(const Lines: TArrayOfString; const Key: String): String;
@@ -295,9 +309,9 @@ end;
 function StageHint(const Stage: String): String;
 begin
   if Stage = 'gpu' then
-    Result := 'NVIDIA cuBLAS and cuDNN, so transcription runs on your graphics card.'
+    Result := CustomMessage('HintGpu')
   else
-    Result := 'Speech recognition for Hebrew (ivrit-ai) and every other language (Whisper), from Hugging Face.';
+    Result := CustomMessage('HintModel');
 end;
 
 procedure RunPrepare;
@@ -307,15 +321,16 @@ var
   ResultCode, Percent, Quiet: Integer;
 begin
   ProgressFile := ExpandConstant('{tmp}\prepare-progress.txt');
-  Params := '--prepare --progress-file "' + ProgressFile + '"';
+  { --language: the progress lines app/prepare.py writes come in Setup's language. }
+  Params := '--prepare --language=' + ActiveLanguage + ' --progress-file "' + ProgressFile + '"';
   Log('Running upshot.exe ' + Params);
   { As the signed-in user, not an elevated one: the model belongs in their profile. }
   if not ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), Params, '', SW_HIDE, ewNoWait, ResultCode) then begin
     Log('Could not start the download: ' + SysErrorMessage(ResultCode));
-    PrepareNote := 'The speech models were not downloaded, so {#AppName} cannot transcribe yet. Run the installer again to finish.';
+    PrepareNote := CustomMessage('NoteNotStarted');
     Exit;
   end;
-  PreparePage.SetText('Starting the download...', StageHint('model'));
+  PreparePage.SetText(CustomMessage('PrepareStarting'), StageHint('model'));
   PreparePage.SetProgress(0, 100);
   PreparePage.Show;
   State := '';
@@ -356,14 +371,14 @@ begin
   end;
   Log('Prepare ended: stage=' + Stage + ' state=' + State + ' code=' + Code + ' error=' + Error);
   if State = 'cancelled' then
-    PrepareNote := 'The speech model download was paused, so {#AppName} cannot transcribe yet. Run the installer again to continue it.'
+    PrepareNote := CustomMessage('NotePaused')
   else if Code = 'no_space' then
-    PrepareNote := 'There was not enough free disk space for the speech models (about 7.7 GB with room to spare). Free some space, then run the installer again to finish.'
+    PrepareNote := CustomMessage('NoteNoSpace')
   else if State = 'failed' then begin
     if Stage = 'gpu' then
-      PrepareNote := 'The speech models are ready. The GPU libraries could not be downloaded, so {#AppName} transcribes on the processor for now.'
+      PrepareNote := CustomMessage('NoteGpuFailed')
     else
-      PrepareNote := 'The speech models could not be downloaded, so the installation is incomplete and {#AppName} cannot transcribe yet. Run the installer again to finish; it continues where it stopped.';
+      PrepareNote := CustomMessage('NoteFailed');
   end;
 end;
 
@@ -394,11 +409,10 @@ begin
   Home := ExpandConstant('{localappdata}\upshot');
   if not DirExists(Home + '\models') and not DirExists(Home + '\cuda') then
     Exit;
-  What := 'the speech models (about 6.7 GB)';
+  What := CustomMessage('RemoveModels');
   if DirExists(Home + '\cuda') then
-    What := 'the speech models and the GPU libraries (about 9 GB)';
-  if MsgBox('Also remove ' + What + '?' + #13#10#13#10 +
-      'Your recordings, transcripts and settings are kept either way. Keep the model if you may reinstall {#AppName}.',
+    What := CustomMessage('RemoveModelsAndGpu');
+  if MsgBox(FmtMessage(CustomMessage('RemoveAsk'), [What]),
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then begin
     DelTree(Home + '\models', True, True, True);
     DelTree(Home + '\cuda', True, True, True);
