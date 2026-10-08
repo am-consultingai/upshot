@@ -14,6 +14,7 @@ import {
   parseTime,
   quartersOfDay,
 } from "../lib/timeFormat";
+import Button from "./Button";
 
 /**
  * The meeting's details: its title, a description, and when it starts and ends.
@@ -180,7 +181,7 @@ function Form({
   const field =
     "w-full rounded-md bg-transparent px-2 py-1.5 text-sm text-primary shadow-[var(--shadow-ring)] outline-none";
   return createPortal(
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-[4px]">
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-xs">
       <form
         role="dialog"
         aria-modal="true"
@@ -190,7 +191,7 @@ function Form({
           event.preventDefault();
           void save();
         }}
-        className="ma-dialog w-full max-w-[440px] space-y-3 rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
+        className="ma-dialog w-full max-w-110 space-y-3 rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
       >
         <h2 id="meeting-info-title" className="text-md font-semibold tracking-snug">
           {t("meetingInfo.heading")}
@@ -256,22 +257,21 @@ function Form({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
+          <Button
             data-testid="meeting-info-cancel"
             onClick={onClose}
-            className="h-7 rounded-md px-2.5 text-sm font-medium text-primary hover:bg-a-200 active:bg-a-300"
+            variant="ghost"
           >
             {t("common.cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
             data-testid="meeting-info-done"
             disabled={saving}
-            className="h-7 rounded-md bg-accent px-3 text-sm font-medium text-on-accent disabled:opacity-60"
+            variant="primary"
           >
             {t("meetingInfo.done")}
-          </button>
+          </Button>
         </div>
       </form>
     </div>,

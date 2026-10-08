@@ -5,7 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { api, csrfToken } from "../../api";
 import { useI18n, type MessageKey } from "../../i18n";
-import { Spinner } from "../BusyButton";
+import Button, { Spinner } from "../Button";
 import { confirmDialog } from "../ConfirmDialog";
 import type { Citation } from "./Answer";
 
@@ -107,23 +107,22 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
     >
       <header className="flex items-center gap-1 border-b border-line-subtle px-3 py-2">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{t("assistant.title")}</h2>
-        <button
-          type="button"
+        <Button
           data-testid="assistant-history"
           aria-pressed={view === "history"}
           onClick={() => setView(view === "history" ? "chat" : "history")}
-          className="rounded-sm px-2 py-1 text-xs text-secondary hover:bg-a-200 aria-pressed:bg-a-200"
+          variant="ghost"
+          className="aria-pressed:bg-a-200"
         >
           {t("assistant.history")}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           data-testid="assistant-new"
           onClick={() => open(newId())}
-          className="rounded-sm px-2 py-1 text-xs text-secondary hover:bg-a-200"
+          variant="ghost"
         >
           {t("assistant.new")}
-        </button>
+        </Button>
         <button
           type="button"
           data-testid="assistant-close"
@@ -359,30 +358,28 @@ function Chat({
             {provider ? t("assistant.sentTo").replace("{provider}", providerName(t, provider)) : ""}
           </p>
           {busy ? (
-            <button
-              type="button"
+            <Button
               data-testid="assistant-stop"
               onClick={() => {
                 setStopped(true);
                 void stop();
               }}
-              className="rounded-md px-3 py-1.5 text-sm text-secondary hover:bg-a-200"
+              variant="ghost"
             >
               {t("assistant.stop")}
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
               data-testid="assistant-send"
               onClick={() => send(draft)}
               disabled={!draft.trim()}
-              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-sm text-on-accent disabled:opacity-50"
+              variant="primary"
             >
               {t("assistant.send")}
               <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100" aria-hidden="true">
                 <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" />
               </svg>
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -696,19 +693,18 @@ function Problem({
       )}
       <div className="mt-2 flex gap-2">
         {toSettings && (
-          <button
-            type="button"
+          <Button
             data-testid="assistant-to-settings"
             onClick={() => navigate("/settings")}
-            className="rounded-md bg-raised px-2.5 py-1 text-xs shadow-[var(--shadow-ring)] hover:bg-a-200"
+            variant="secondary"
           >
             {code === "signed-out" ? t("assistant.signIn") : t("assistant.openSettings")}
-          </button>
+          </Button>
         )}
         {onRetry && !toSettings && (
-          <button type="button" onClick={onRetry} className="rounded-md bg-raised px-2.5 py-1 text-xs shadow-[var(--shadow-ring)] hover:bg-a-200">
+          <Button onClick={onRetry} variant="secondary">
             {t("assistant.retry")}
-          </button>
+          </Button>
         )}
       </div>
     </div>

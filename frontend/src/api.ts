@@ -303,6 +303,9 @@ export interface Prompt {
   process: string | null;
   /** Calendar meetings booked at the same time that nothing told apart: pick one (D89). */
   candidates?: { account_id?: string | null; calendar_id: string; event_id: string; title: string }[];
+  /** A detected call's score and the evidence behind it (app/detect/evidence.py codes). */
+  score?: number | null;
+  evidence?: { code: string; detail: string }[];
 }
 
 export interface Status {
@@ -737,6 +740,8 @@ export const api = {
     request<{ meeting_id: string; kept: boolean }>("/api/recording/keep", { method: "POST" }),
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
+  /** Pause, or resume a paused recording: the one endpoint toggles (the tray's Pause). */
+  togglePause: () => request<{ paused: boolean }>("/api/recording/pause", { method: "POST" }),
   settings: () => request<Settings>("/api/settings"),
   putSettings: (values: Record<string, unknown>) =>
     request<Settings>("/api/settings", {

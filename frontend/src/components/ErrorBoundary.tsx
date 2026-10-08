@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportClientError } from "../lib/errors";
+import Button from "./Button";
 
 /**
  * A screen that throws while rendering shows this instead of a blank window, and the
@@ -26,14 +27,14 @@ export default class ErrorBoundary extends Component<
       <div data-testid="error-boundary" role="alert" className="m-auto max-w-md p-8 text-center">
         <h1 className="display mb-2 text-2xl">{this.props.title}</h1>
         <p className="mb-4 text-sm text-secondary">{this.props.body}</p>
-        <button
-          type="button"
+        <Button
           data-testid="error-reload"
-          className="rounded bg-accent px-3 py-1.5 text-sm text-on-accent"
+          variant="primary"
+          size="md"
           onClick={() => window.location.reload()}
         >
           {this.props.reload}
-        </button>
+        </Button>
       </div>
     );
   }

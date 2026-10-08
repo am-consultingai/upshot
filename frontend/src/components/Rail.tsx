@@ -59,7 +59,7 @@ export default function Rail() {
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
-  const recording = status.data?.recorder.active ?? false;
+  const recording = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
 
   return (
     <nav

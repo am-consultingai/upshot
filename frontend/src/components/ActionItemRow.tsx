@@ -202,7 +202,7 @@ export default function ActionItemRow({
         showMeeting ? "py-2.5" : "py-2"
       } ${selected ? "bg-a-100" : "hover:bg-a-200"}`}
     >
-      <span className="relative mt-0.5 grid size-[18px] shrink-0 place-items-center">
+      <span className="relative mt-0.5 grid size-4.5 shrink-0 place-items-center">
         <input
           type="checkbox"
           data-testid="action-toggle"
@@ -218,7 +218,7 @@ export default function ActionItemRow({
         />
         <span
           aria-hidden="true"
-          className={`grid size-[18px] place-items-center rounded-full transition-all ${
+          className={`grid size-4.5 place-items-center rounded-full transition-all ${
             done
               ? "bg-accent text-on-accent"
               : "text-transparent shadow-[inset_0_0_0_1.5px_var(--border-strong)] peer-hover:shadow-[inset_0_0_0_1.5px_var(--text-tertiary)]"
@@ -311,7 +311,7 @@ export default function ActionItemRow({
         <span data-testid="action-owner" className="flex items-center gap-1.5 text-xs text-secondary" title={owner}>
           <span
             aria-hidden="true"
-            className="grid size-5 place-items-center rounded-full text-[9px] font-semibold text-on-speaker"
+            className="grid size-5 place-items-center rounded-full text-4xs font-semibold text-on-speaker"
             style={{ background: personColour(item.who, item.mine) }}
           >
             {initials(owner)}

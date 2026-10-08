@@ -46,6 +46,11 @@ class Prompt:
     #: side by side for the user to pick, with no ``calendar_id`` of its own. Each is
     #: (account_id, calendar_id, event_id, title).
     candidates: tuple[tuple[str | None, str, str, str], ...] = ()
+    #: Why a detected call looks like one: the detector's score and the evidence behind
+    #: it, each (code, detail), so the banner can say what it saw rather than only that
+    #: it saw something. None and empty for a calendar offer, which is the clock's.
+    score: int | None = None
+    evidence: tuple[tuple[str, str], ...] = ()
 
     @property
     def key(self) -> str:
@@ -74,6 +79,8 @@ class Prompt:
                 {"account_id": a, "calendar_id": c, "event_id": e, "title": t}
                 for a, c, e, t in self.candidates
             ],
+            "score": self.score,
+            "evidence": [{"code": code, "detail": detail} for code, detail in self.evidence],
         }
 
 
