@@ -36,6 +36,17 @@ def test_tray_reflects_the_recorder(tmp_path: Path, app_home: Path) -> None:
     assert meetings and meetings[0].state in (MeetingState.RECORDED, MeetingState.DISCARDED)
 
 
+def test_the_tray_switches_language_with_the_setting(tmp_path: Path, app_home: Path) -> None:
+    """The menu is rebuilt on every refresh, so Settings' language reaches it at once."""
+    harness = build_harness(tmp_path)
+    tray = TrayApp(harness.services)
+    assert tray.refresh().menu[0].label == "Start recording"
+    harness.services.config.set("ui.language", "he")
+    spec = tray.refresh()
+    assert spec.menu[0].label == "התחלת הקלטה"
+    assert spec.tooltip == "Upshot — ממתין"
+
+
 def test_open_dashboard_hands_every_click_a_fresh_link(
     tmp_path: Path, app_home: Path, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]

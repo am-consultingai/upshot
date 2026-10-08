@@ -128,6 +128,29 @@ describe("locale labels", () => {
   });
 });
 
+import { isoWeek, setWeekStart } from "../src/lib/calendar";
+
+describe("the week starts on Monday in German, Spanish and French", () => {
+  it("starts the grid and the labels on Monday, and keeps ISO week numbers", () => {
+    const sunday = at("2026-09-06T12:00:00");
+    const sundayWeek = isoWeek(sunday);
+    try {
+      for (const locale of ["de", "es", "fr"]) {
+        setWeekStart(locale);
+        expect(startOfWeek(at("2026-09-02T00:00:00")).getDay()).toBe(1);
+        expect(startOfWeek(sunday).getDate()).toBe(31); // Monday 31 August
+        expect(weekdayLabels("en-US")[0]).toMatch(/^Mon/);
+        expect(isoWeek(sunday)).toBe(36);
+      }
+      setWeekStart("he");
+      expect(startOfWeek(sunday).getDate()).toBe(6);
+      expect(sundayWeek).toBe(37); // the Sunday-first row is numbered by its Monday
+    } finally {
+      setWeekStart("en");
+    }
+  });
+});
+
 import { allDayKeys, isHappening, recordedIds, timedEvents, workingHours } from "../src/lib/calendar";
 
 describe("calendar events on the grid", () => {

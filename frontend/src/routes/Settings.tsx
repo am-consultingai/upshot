@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { useI18n, type Locale } from "../i18n";
+import { LANGUAGES, useI18n, type Locale } from "../i18n";
 import { THEMES, type Theme } from "../theme";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
@@ -203,9 +203,9 @@ export default function Settings() {
             }}
             className={SELECT_CLASS}
           >
-            {["en", "he"].map((code) => (
-              <option key={code} value={code}>
-                {LANGUAGE_NAMES[code]}
+            {LANGUAGES.map(({ code, name }) => (
+              <option key={code} value={code} lang={code}>
+                {name}
               </option>
             ))}
           </select>

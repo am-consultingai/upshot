@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from app.i18n import tr
+
 
 class RecorderState(StrEnum):
     IDLE = "idle"
@@ -58,6 +60,8 @@ class AppState:
     worker_alive: bool = True
     #: A verified update this copy can install now: "Restart to update" (D87).
     update_ready: str | None = None
+    #: The interface language (``ui.language``): the menu and the tooltip follow it.
+    language: str = "en"
 
 
 @dataclass(frozen=True)
@@ -96,50 +100,60 @@ def _color(state: AppState) -> IconColor:
 
 
 def _tooltip(state: AppState) -> str:
+    language = state.language
     if state.ending:
-        return "The call ended — saving the recording"
+        return tr("tooltip.ending", language)
     if state.recorder is RecorderState.RECORDING:
-        return f"Recording — {state.meeting_title}" if state.meeting_title else "Recording"
+        if state.meeting_title:
+            return tr("tooltip.recordingTitle", language, title=state.meeting_title)
+        return tr("tooltip.recording", language)
     if state.recorder is RecorderState.PAUSED:
-        return "Paused — nothing is being written to disk"
+        return tr("tooltip.paused", language)
     if state.recorder is RecorderState.ARMED:
-        return "Evaluating — nothing on disk yet"
+        return tr("tooltip.armed", language)
     if state.processing:
         depth = state.queue_depth
         if state.transcribing is not None:
             percent = round(state.transcribing * 100)
             waiting = depth - 1
-            more = f", {waiting} more waiting" if waiting > 0 else ""
-            return f"Transcribing {percent} %{more}"
-        return f"Processing {depth} job{'s' if depth != 1 else ''}"
+            if waiting > 0:
+                return tr("tooltip.transcribingMore", language, percent=percent, count=waiting)
+            return tr("tooltip.transcribing", language, percent=percent)
+        key = "tooltip.processingOne" if depth == 1 else "tooltip.processingMany"
+        return tr(key, language, count=depth)
     if not state.worker_alive:
-        return "The worker stopped — recording still works"
+        return tr("tooltip.workerStopped", language)
     if state.error:
-        return "Something needs attention"
-    return "Idle"
+        return tr("tooltip.attention", language)
+    return tr("tooltip.idle", language)
 
 
 def menu_for(state: AppState) -> tuple[MenuItem, ...]:
     recording = state.recorder is RecorderState.RECORDING
     paused = state.recorder is RecorderState.PAUSED
     active = recording or paused
+    language = state.language
     return (
-        MenuItem("Start recording", Action.START, enabled=not active),
-        MenuItem("Stop recording", Action.STOP, enabled=active),
-        MenuItem("Resume" if paused else "Pause", Action.PAUSE, enabled=active),
-        MenuItem("Open Upshot", Action.OPEN, enabled=True, default=True),
-        MenuItem("Send feedback…", Action.FEEDBACK, enabled=True),
+        MenuItem(tr("tray.start", language), Action.START, enabled=not active),
+        MenuItem(tr("tray.stop", language), Action.STOP, enabled=active),
+        MenuItem(
+            tr("tray.resume" if paused else "tray.pause", language), Action.PAUSE, enabled=active
+        ),
+        MenuItem(tr("tray.open", language), Action.OPEN, enabled=True, default=True),
+        MenuItem(tr("tray.feedback", language), Action.FEEDBACK, enabled=True),
         # Greyed out while recording: an update never cuts a meeting short (D87).
         *(
             (
                 MenuItem(
-                    f"Restart to update to {state.update_ready}", Action.UPDATE, enabled=not active
+                    tr("tray.update", language, version=state.update_ready),
+                    Action.UPDATE,
+                    enabled=not active,
                 ),
             )
             if state.update_ready
             else ()
         ),
-        MenuItem("Quit", Action.QUIT, enabled=True),
+        MenuItem(tr("tray.quit", language), Action.QUIT, enabled=True),
     )
 
 

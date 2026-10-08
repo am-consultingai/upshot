@@ -21,7 +21,8 @@ Pascal script reads it: ``stage`` (model|gpu|done), ``state`` (working|ready|ski
 failed|cancelled), ``done_mb``, ``total_mb``, ``percent`` (all three models together),
 ``model`` (the role being fetched), ``text``, ``error``, ``code``, and ``tick``, which grows
 on every write so the reader can tell a live process from a dead one. Creating ``C``
-cancels; partial files stay and resume next time.
+cancels; partial files stay and resume next time. Only ``text`` is in the installer's
+language (``--language``); every other value is for the script to read.
 
 Models come from here and nowhere else (R12): transcription never downloads one. If any
 of the three fails, the exit code says so and the installer reports an incomplete install;
@@ -32,12 +33,14 @@ the CPU.
 from __future__ import annotations
 
 import os
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
 from app.config import Config
+from app.i18n import number, tr
 from app.log import get
 
 log = get(__name__)
@@ -47,12 +50,17 @@ EXIT_FAILED = 1
 EXIT_CANCELLED = 2
 EXIT_NO_SPACE = 3
 
-#: How the progress text names each model while it downloads.
+#: How the progress text names each model while it downloads (app/i18n.py).
 MODEL_LABELS = {
-    "classifier": "language detection, 1 of 3",
-    "hebrew": "Hebrew, 2 of 3",
-    "other": "other languages, 3 of 3",
+    "classifier": "prepare.model.classifier",
+    "hebrew": "prepare.model.hebrew",
+    "other": "prepare.model.other",
 }
+
+#: The progress file's first line. Inno's LoadStringsFromFile reads UTF-8 only after a
+#: byte-order mark, and the mark sits on the first line, where it would hide a real key
+#: from ``Pos(Key + '=', Line) = 1``. So the first line is one nobody looks up.
+FIRST_LINE = "encoding=utf-8"
 
 
 class Download(Protocol):
@@ -77,10 +85,11 @@ class ProgressFile:
         self.last = {key: str(value).replace("\n", " ") for key, value in fields.items()}
         if self.path is None:
             return
-        lines = [f"{key}={value}" for key, value in self.last.items()]
+        lines = [FIRST_LINE, *(f"{key}={value}" for key, value in self.last.items())]
         lines.append(f"tick={self.tick}")
         temporary = self.path.with_name(self.path.name + ".tmp")
-        temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # With a byte-order mark: the text is in the installer's language, Hebrew included.
+        temporary.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
         # On Windows the replace is refused while the installer has the file open to read
         # it. Try again briefly; a missed report is followed by the next one anyway.
         for attempt in range(10):
@@ -105,8 +114,12 @@ def follow(
     *,
     poll: float = 0.5,
     busy: tuple[str, ...] = ("downloading", "unpacking"),
+    language: str = "en",
 ) -> int:
-    """Start ``download`` and report it until it ends. Returns an exit code."""
+    """Start ``download`` and report it until it ends. Returns an exit code.
+
+    ``label`` is already in ``language``; it heads every line of text.
+    """
     download.start()
     asked_to_cancel = False
     while True:
@@ -118,13 +131,17 @@ def follow(
         done, total = int(status.done_bytes), int(status.total_bytes)
         percent = min(100, done * 100 // total) if total else 0
         current = str(getattr(status, "current", "") or "")
-        name = f"{label} ({MODEL_LABELS.get(current, current)})" if current else label
+        role = tr(MODEL_LABELS[current], language) if current in MODEL_LABELS else current
+        name = f"{label} ({role})" if current else label
         if status.state == "unpacking":
-            text = f"{label}: unpacking"
+            text = tr("prepare.unpacking", language, label=label)
         elif total:
-            text = f"{name}: {_mb(done):,} MB of {_mb(total):,} MB"
+            text = tr(
+                "prepare.progress", language, name=name,
+                done=number(_mb(done), language), total=number(_mb(total), language),
+            )  # fmt: skip
         else:
-            text = f"{label}: starting"
+            text = tr("prepare.starting", language, label=label)
         if status.state not in busy:
             break
         progress.write(
@@ -136,15 +153,18 @@ def follow(
     if status.state == "ready":
         progress.write(
             stage=stage, state="ready", done_mb=_mb(total), total_mb=_mb(total), percent=100,
-            text=f"{label}: ready",
+            text=tr("prepare.ready", language, label=label),
         )  # fmt: skip
         return EXIT_OK
     if status.state == "cancelled":
-        progress.write(stage=stage, state="cancelled", text=f"{label}: stopped; it continues later")
+        progress.write(
+            stage=stage, state="cancelled", text=tr("prepare.cancelled", language, label=label)
+        )
         return EXIT_CANCELLED
     code = str(getattr(status, "code", "") or "")
     progress.write(
-        stage=stage, state="failed", text=f"{label}: not downloaded", error=status.error, code=code,
+        stage=stage, state="failed", text=tr("prepare.failed", language, label=label),
+        error=status.error, code=code,
     )  # fmt: skip
     return EXIT_NO_SPACE if code == "no_space" else EXIT_FAILED
 
@@ -155,6 +175,7 @@ def fetch_speaker_models(
     cancelled: Callable[[], bool],
     *,
     download: Callable[[Config], object] | None = None,
+    language: str = "en",
 ) -> int:
     """The diarization models (D85), after the speech models and as part of their stage.
 
@@ -167,18 +188,23 @@ def fetch_speaker_models(
 
     if resolve_diarization(config).present:
         return EXIT_OK
+    label = tr("prepare.speaker", language)
     if cancelled():
         progress.write(
-            stage="model", state="cancelled", text="Speaker models: stopped; it continues later"
+            stage="model", state="cancelled", text=tr("prepare.cancelled", language, label=label)
         )
         return EXIT_CANCELLED
-    progress.write(stage="model", state="working", percent=100, text="Speaker models: downloading")
+    progress.write(
+        stage="model", state="working", percent=100,
+        text=tr("prepare.downloading", language, label=label),
+    )  # fmt: skip
     try:
         (download or download_diarization)(config)
     except Exception as exc:
         log.warning("prepare: the speaker models were not downloaded: %s", exc)
         progress.write(
-            stage="model", state="failed", text="Speaker models: not downloaded", error=str(exc),
+            stage="model", state="failed", text=tr("prepare.failed", language, label=label),
+            error=str(exc),
         )  # fmt: skip
         return EXIT_FAILED
     log.info("prepare: speaker models ready")
@@ -195,6 +221,7 @@ def run(
     cuda: Download | None = None,
     gpu_wanted: tuple[bool, str] | None = None,
     poll: float = 0.5,
+    language: str = "en",
 ) -> int:
     """Both stages, in order. Stops at the first that does not finish."""
     # A model an earlier build used goes first (D93): nothing loads it any more, and its
@@ -203,22 +230,26 @@ def run(
 
     configured = config.get("asr.model_path")
     remove_retired(keep=Path(str(configured)) if configured else None)
+
+    speech = tr("prepare.speech", language)
+    libraries = tr("prepare.gpu", language)
+    present = tr("prepare.present", language, label=libraries)
     if model is None:
         from app.asr.model_manager import model_set
 
         models = model_set(config)
         if models.ready():
             progress.write(stage="model", state="skipped", percent=100,
-                           text="Speech models: already on this computer")  # fmt: skip
+                           text=tr("prepare.present", language, label=speech))  # fmt: skip
             log.info("prepare: all three speech models are already here")
             model = None
         else:
             model = models
     if model is not None:
-        code = follow("model", "Speech models", model, progress, cancelled, poll=poll)
+        code = follow("model", speech, model, progress, cancelled, poll=poll, language=language)
         if code != EXIT_OK:
             return code
-    code = fetch_speaker_models(config, progress, cancelled)
+    code = fetch_speaker_models(config, progress, cancelled, language=language)
     if code != EXIT_OK:
         return code
 
@@ -228,25 +259,46 @@ def run(
         want, why = gpu_wanted if gpu_wanted is not None else cuda_libs.wanted(config)
         elsewhere = cuda_libs.usable_elsewhere(config) if cuda is None and want else None
         if elsewhere is not None:
-            progress.write(stage="gpu", state="skipped", percent=100,
-                           text="GPU libraries: already on this computer")  # fmt: skip
+            progress.write(stage="gpu", state="skipped", percent=100, text=present)
             log.info("prepare: CUDA libraries already usable in %s; nothing to download", elsewhere)
         elif cuda is None and want and cuda_libs.ready():
-            progress.write(stage="gpu", state="skipped", percent=100,
-                           text="GPU libraries: already on this computer")  # fmt: skip
+            progress.write(stage="gpu", state="skipped", percent=100, text=present)
         elif not want:
-            progress.write(stage="gpu", state="skipped", percent=100,
-                           text=f"GPU libraries: not needed ({why})")  # fmt: skip
+            progress.write(
+                stage="gpu", state="skipped", percent=100,
+                text=tr("prepare.notNeeded", language, label=libraries,
+                        why=reason(why, language)),
+            )  # fmt: skip
             log.info("prepare: no GPU libraries: %s", why)
         else:
             log.info("prepare: fetching the GPU libraries (%s)", why)
             cuda = cuda or cuda_libs.CudaInstaller()
-            code = follow("gpu", "GPU libraries", cuda, progress, cancelled, poll=poll)
+            code = follow("gpu", libraries, cuda, progress, cancelled, poll=poll, language=language)
             if code != EXIT_OK:
                 return code
 
-    progress.write(stage="done", state="ready", percent=100, text="Ready to transcribe")
+    progress.write(stage="done", state="ready", percent=100, text=tr("prepare.done", language))
     return EXIT_OK
+
+
+#: The reasons ``cuda_libs.wanted`` gives for no GPU libraries, as the catalogue words them.
+_REASONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"transcription is set to run on the CPU"), "prepare.why.cpu"),
+    (re.compile(r"no NVIDIA GPU found"), "prepare.why.noGpu"),
+    (
+        re.compile(r"the GPU has (?P<memory>\d+) MB, under the (?P<needed>\d+) MB the model needs"),
+        "prepare.why.smallGpu",
+    ),
+)
+
+
+def reason(why: str, language: str) -> str:
+    """``why`` (English, from ``cuda_libs.wanted``) in ``language``; as it is if unknown."""
+    for pattern, key in _REASONS:
+        found = pattern.fullmatch(why)
+        if found:
+            return tr(key, language, **found.groupdict())
+    return why
 
 
 def _report(exc: Exception) -> None:
@@ -268,18 +320,23 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--progress-file", type=Path)
     parser.add_argument("--cancel-file", type=Path)
     parser.add_argument("--no-gpu", action="store_true")
+    # The installer's language (packaging/installer.iss), for the progress text.
+    parser.add_argument("--language", default="en")
     args = parser.parse_args(argv)
     cancel_file: Path | None = args.cancel_file
 
     def cancelled() -> bool:
         return cancel_file is not None and cancel_file.exists()
 
+    language: str = args.language
     progress = ProgressFile(args.progress_file)
     try:
-        code = run(Config.load(), progress, cancelled, gpu=not args.no_gpu)
+        code = run(Config.load(), progress, cancelled, gpu=not args.no_gpu, language=language)
     except Exception as exc:  # the installer must always get a last word
         log.exception("prepare failed")
-        progress.write(stage="done", state="failed", text="Could not prepare", error=str(exc))
+        progress.write(
+            stage="done", state="failed", text=tr("prepare.error", language), error=str(exc)
+        )
         _report(exc)
         return EXIT_FAILED
     log.info("prepare finished: exit %d (%s)", code, progress.last.get("text", ""))
