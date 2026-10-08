@@ -6,6 +6,7 @@ stage registry is injected, which is what lets the queue be proven with no real 
 
 from __future__ import annotations
 
+import functools
 import logging
 import threading
 from collections.abc import Callable, Mapping
@@ -181,6 +182,14 @@ class Worker:
             services=self.services,
             force=self.queue.take_rerun(job.meeting_id, job.stage),
         )
+        # The transcribe stage says how far it has got (app/pipeline/progress.py); the
+        # others have no honest percentage, and the page labels them instead.
+        tracker = getattr(self.services, "progress", None) if self.services else None
+        if tracker is not None and job.stage == JobStage.TRANSCRIBE:
+            tracker.start(job.meeting_id, job.stage)
+            context.report = functools.partial(tracker.report, job.meeting_id)
+        else:
+            tracker = None
         handler = None
         folder = Path(meeting.folder)
         if folder.exists():
@@ -188,6 +197,7 @@ class Worker:
             logging.getLogger().addHandler(handler)
         with meeting_context(meeting.id):
             self._mark_running(job)
+            self._announce(job)
             try:
                 stage_fn(context)
                 if self.queue.deleting(job.meeting_id):
@@ -210,12 +220,29 @@ class Worker:
                 self._on_failure(job, exc, permanent=False)
                 return
             finally:
+                if tracker is not None:
+                    tracker.finish(job.meeting_id)
                 if handler is not None:
                     logging.getLogger().removeHandler(handler)
                     handler.close()
                 # However the stage ended: a meeting deleted meanwhile goes now.
                 self.finish_delete(job.meeting_id)
+                # Failed, deferred, preempted, deleted; a success is said below, once done.
+                self._announce(job, ended_only=True)
             self._on_success(job, context)
+            self._announce(job)
+
+    def _announce(self, job: Job, *, ended_only: bool = False) -> None:
+        """A ``job`` event as a stage starts and ends: the lists of what is running
+        (the meeting's card, Settings) change at once rather than at their next poll."""
+        events = getattr(self.services, "events", None) if self.services is not None else None
+        if events is None:
+            return
+        current = self.queue.get(job.id)
+        state = current.state if current is not None else "deleted"
+        if ended_only and state == "running":
+            return
+        events.publish("job", meeting_id=job.meeting_id, stage=job.stage, state=state)
 
     def _execute_file(self, job: Any) -> None:
         """One file transcription (D86): the engine, not the stage registry. A recording

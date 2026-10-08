@@ -7,6 +7,7 @@ import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
+import ActiveJobs from "../components/ActiveJobs";
 import TranscriptionServiceSettings from "../components/TranscriptionServiceSettings";
 import UpdateSettings from "../components/UpdateSettings";
 import PrivacySettings from "../components/PrivacySettings";
@@ -250,7 +251,13 @@ export default function Settings() {
       {section === "calendar" && <CalendarSettings />}
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}
-      {section === "transcription" && <TranscriptionServiceSettings />}
+      {/* What is running and waiting comes first, above how other apps connect. */}
+      {section === "transcription" && (
+        <>
+          <ActiveJobs />
+          <TranscriptionServiceSettings />
+        </>
+      )}
       {section === "privacy" && <PrivacySettings />}
       {section === "about" && <UpdateSettings />}
       </div>

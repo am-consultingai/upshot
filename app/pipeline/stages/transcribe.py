@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -238,6 +239,7 @@ def run(ctx: StageContext) -> None:
         return
 
     check_installation(ctx.config, ctx.services)
+    ctx.report("prepare", 0.0)
     echo_model = _measure_echo(ctx)
 
     # One pass per track over the whole file. Lost audio was written as silence, so the
@@ -247,31 +249,19 @@ def run(ctx: StageContext) -> None:
     prompt = build_initial_prompt(ctx, None)
     try:
         asr_inputs = _asr_inputs(ctx, echo_model)
+        ctx.report("prepare", 1.0)
         ctx.checkpoint()
+        ctx.report("language", 0.0)
         decision = _classify(ctx, asr_inputs)
+        ctx.report("language", 1.0)
         backend = backend_for(ctx.config, ctx.services, decision.route)
-        if hasattr(backend, "stop_check"):
-            # Between segments, a deletion stops the track; the recorder does not (a track
-            # cannot be resumed part-way, so it waits for the next checkpoint).
-            backend.stop_check = ctx.stop_if_deleted
-        for _track, wav in sorted(asr_inputs.items()):
-            ctx.checkpoint()
-            track_segments = backend.transcribe(
-                wav,
-                # "he" on ivrit; the language on stock large-v3, or None with
-                # multilingual when the classifier was unsure: forcing one language on
-                # an unclear meeting translates the rest into it.
-                language=decision.transcribe_language,
-                initial_prompt=prompt,
-                word_timestamps=True,
-                multilingual=decision.multilingual,
-            )
-            segments.extend(track_segments)
+        segments = _transcribe_tracks(ctx, backend, decision, sorted(asr_inputs.items()), prompt)
         segments.sort(key=lambda segment: (segment.start, segment.track))
         segments = [segment.shifted(0.0, new_id=index) for index, segment in enumerate(segments)]
         # Before the cleaned copy goes: the microphone is diarized without the far side's
         # echo, which would otherwise be heard as another person in the room.
         segments = _diarize(ctx, segments, asr_inputs)
+        ctx.report("diarize", 1.0)
     finally:
         _discard_clean(folder)
 
@@ -335,10 +325,16 @@ def _diarize(ctx: StageContext, segments: list[Segment], inputs: dict[str, Path]
         return segments
     rate = ctx.config.sample_rate
     found: dict[str, dict[str, int]] = {}
+    tracks = [(t, base, inputs[t]) for t, base in (("me", ME), ("them", THEM)) if t in inputs]
+    bar = _TrackBar(ctx, "diarize", [(track, wav) for track, _base, wav in tracks])
+    # sherpa-onnx counts its chunks (``OnnxDiarizer.on_progress``); not on the protocol.
+    hooked = hasattr(diarizer, "on_progress")
+    if hooked:
+        setattr(diarizer, "on_progress", bar.within)  # noqa: B010
     try:
-        for track, base in (("me", ME), ("them", THEM)):
-            wav = inputs.get(track)
-            if wav is None or not wav.exists():
+        for track, base, wav in tracks:
+            bar.begin(track)
+            if not wav.exists():
                 continue
             audio, track_rate = read_wav(wav)
             if track_rate != rate or not len(audio):  # pragma: no cover - storage rate
@@ -350,10 +346,91 @@ def _diarize(ctx: StageContext, segments: list[Segment], inputs: dict[str, Path]
             if counts is not None:
                 found[track] = counts
     finally:
+        if hooked:
+            setattr(diarizer, "on_progress", None)  # noqa: B010
         diarizer.unload()
     if found:
         ctx.metrics["diarization"] = {"backend": diarizer.name, **found}
     return segments
+
+
+def _transcribe_tracks(
+    ctx: StageContext,
+    backend: AsrBackend,
+    decision: LanguageDecision,
+    tracks: list[tuple[str, Path]],
+    prompt: str | None,
+) -> list[Segment]:
+    """Each track in one pass, reporting how far through the two it has got."""
+    bar = _TrackBar(ctx, "transcribe", tracks)
+    # Between segments, a deletion stops the track; the recorder does not (a track cannot
+    # be resumed part-way, so it waits for the next checkpoint).
+    hooks = {"stop_check": ctx.stop_if_deleted, "on_segment": bar.at_second}
+    hooked = [name for name in hooks if hasattr(backend, name)]
+    for name in hooked:
+        setattr(backend, name, hooks[name])
+    segments: list[Segment] = []
+    try:
+        for track, wav in tracks:
+            ctx.checkpoint()
+            bar.begin(track)
+            segments.extend(
+                backend.transcribe(
+                    wav,
+                    # "he" on ivrit; the language on stock large-v3, or None with
+                    # multilingual when the classifier was unsure: forcing one language on
+                    # an unclear meeting translates the rest into it.
+                    language=decision.transcribe_language,
+                    initial_prompt=prompt,
+                    word_timestamps=True,
+                    multilingual=decision.multilingual,
+                )
+            )
+        bar.begin(None)
+    finally:
+        # An injected backend is shared with file jobs: a stale hook would report this
+        # meeting's progress during the next file (the engine clears its hooks too).
+        for name in hooked:
+            setattr(backend, name, None)
+    return segments
+
+
+class _TrackBar:
+    """One phase over both tracks, each its share by length: the near track is often
+    short (the user listened), and an even split would stall the bar halfway."""
+
+    def __init__(self, ctx: StageContext, phase: str, tracks: list[tuple[str, Path]]) -> None:
+        from app.audio.ingest import wav_duration_s
+
+        self.ctx = ctx
+        self.phase = phase
+        self.lengths: dict[str, float] = {}
+        for track, wav in tracks:
+            try:
+                self.lengths[track] = max(wav_duration_s(wav), 1.0)
+            except (OSError, EOFError, ValueError, wave.Error):
+                self.lengths[track] = 1.0  # unreadable: it still has its share
+        self.total = sum(self.lengths.values()) or 1.0
+        self.done = 0.0
+        self.current: str | None = None
+        ctx.report(phase, 0.0)
+
+    def begin(self, track: str | None) -> None:
+        """``track`` starts, and the one before it is finished; ``None``: all are."""
+        if self.current is not None:
+            self.done += self.lengths.get(self.current, 0.0)
+        self.current = track
+        self.ctx.report(self.phase, self.done / self.total)
+
+    def within(self, fraction: float) -> None:
+        length = self.lengths.get(self.current or "", 0.0)
+        share = length * max(0.0, min(1.0, fraction))
+        self.ctx.report(self.phase, (self.done + share) / self.total)
+
+    def at_second(self, end_s: float) -> None:
+        """``on_segment``: the end of the segment just transcribed, in seconds."""
+        length = self.lengths.get(self.current or "", 0.0)
+        self.within(end_s / length if length else 1.0)
 
 
 def describe_backend(backend: AsrBackend) -> dict[str, Any]:

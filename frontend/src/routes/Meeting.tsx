@@ -26,15 +26,8 @@ import { speakers } from "../lib/speakers";
 import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
 import { leadFirst } from "../lib/summary";
 import { meetingDirections } from "../lib/direction";
-
-/** What each stage is doing, in words. "summarize: running" told nobody anything. */
-const STAGE_LABEL: Record<string, MessageKey> = {
-  transcribe: "meeting.stageTranscribe",
-  assemble: "meeting.stageAssemble",
-  summarize: "meeting.stageSummarize",
-  render: "meeting.stageRender",
-  deliver: "meeting.stageDeliver",
-};
+// What each stage is doing, in words. "summarize: running" told nobody anything.
+import { STAGE_LABEL, formatPercent, phaseLabel, timeLeft, useMeetingJob } from "../lib/activeJobs";
 
 /**
  * What a failed stage says in the user's terms.
@@ -198,6 +191,14 @@ export default function MeetingPage() {
     (item) => item.meeting_id === id && item.state === "waiting",
   );
   const working = summarize.isPending || awaitingFirstPoll || running.length > 0;
+  // How far the running stage has got, where it can say (the transcription); a summary
+  // has no honest percentage and keeps its spinner and elapsed time alone.
+  const queued = useMeetingJob(id);
+  const measured =
+    current?.state === "running" && queued?.state === "running" && queued.stage === current.stage
+      ? queued
+      : undefined;
+  const progress = measured?.progress ?? null;
 
   // Ticks only while something is working, for the elapsed time beside the spinner.
   const [now, setNow] = useState(() => Date.now());
@@ -651,12 +652,36 @@ export default function MeetingPage() {
                     : `${t("meeting.stageWaiting")}: ${t(
                         STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
                       )}`}
+                  {progress !== null && (
+                    <span className="tabular-nums" data-testid="stage-progress">
+                      {[phaseLabel(measured?.phase, t), formatPercent(progress, locale)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )}
                   {current?.state === "running" && current.started_at && (
                     <span className="tabular-nums text-tertiary" data-testid="stage-elapsed">
                       {formatElapsed(current.started_at, now)}
                     </span>
                   )}
+                  {progress !== null && timeLeft(measured?.eta_s, t) && (
+                    <span className="text-tertiary" data-testid="stage-eta">
+                      {timeLeft(measured?.eta_s, t)}
+                    </span>
+                  )}
                 </p>
+              )}
+              {working && progress !== null && (
+                <div
+                  className="-mt-1.5 mb-3 h-1 w-48 max-w-full overflow-hidden rounded-full bg-surface-2"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress * 100)}
+                  data-testid="stage-progress-bar"
+                >
+                  <div className="h-full bg-accent" style={{ width: `${Math.round(progress * 100)}%` }} />
+                </div>
               )}
               {/*
                * Why a stage is waiting rather than running, in the provider's own plain

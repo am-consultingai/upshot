@@ -86,6 +86,30 @@ class Scheduler:
         running = 1 if self.store.running() is not None or self._meeting_running() else 0
         return files + meetings + running + 1
 
+    def ordered(self) -> list[Job | Transcription]:
+        """Everything running or waiting, in the order it will run: what is running now,
+        then the waiting work as :meth:`next_head` would take it, head after head. Work
+        held back by a backoff keeps its place by key, as :meth:`position` counts it."""
+        running: list[Job | Transcription] = [*self.queue.running_jobs()]
+        current = self.store.running()
+        if current is not None:
+            running.append(current)
+        meetings = self.queue.pending_jobs()
+        files = self.store.pending()
+        waiting: list[Job | Transcription] = []
+        m = f = 0
+        while m < len(meetings) or f < len(files):
+            if f >= len(files):
+                waiting.append(meetings[m])
+                m += 1
+            elif m >= len(meetings) or _key(files[f]) < _key(meetings[m]):
+                waiting.append(files[f])
+                f += 1
+            else:
+                waiting.append(meetings[m])
+                m += 1
+        return running + waiting
+
     def files_ahead(self, meeting_job: Job) -> int:
         """File jobs that will run before this meeting job: the meeting page's "N files
         ahead in the queue"."""

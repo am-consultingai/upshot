@@ -52,6 +52,8 @@ class Services:
     transcriptions: Any = None
     #: app.transcription.scheduler.Scheduler: one FIFO across meeting and file jobs.
     scheduler: Any = None
+    #: app.pipeline.progress.MeetingProgress: how far a meeting's transcription has got.
+    progress: Any = None
     updates: Any = None  # app.updates.service.UpdateService
     installer: Any = None  # app.updates.install.UpdateInstaller
     reporter: Any = None  # app.diagnostics.reporter.CrashReporter
@@ -72,6 +74,10 @@ class Services:
             from app.transcription.scheduler import Scheduler
 
             self.scheduler = Scheduler(self.queue, self.transcriptions)
+        if self.progress is None:
+            from app.pipeline.progress import MeetingProgress
+
+            self.progress = MeetingProgress(self.clock, self.events)
 
     def close(self) -> None:
         if self.worker is not None:
