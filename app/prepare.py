@@ -7,8 +7,8 @@ install, in the open. It fetches, in order:
 1. the three speech models (``models.MODELS``: the language classifier, then the ivrit-ai
    turbo for Hebrew, then stock large-v3 for every other language, ~5.2 GB), through
    the same ``ModelSet`` the app uses: pinned revisions, resumable, checked file by file,
-   refused up front when the drive cannot hold all of them; then the folders of models
-   an earlier build used and this one does not (``models.RETIRED_REPOS``) are removed;
+   refused up front when the drive cannot hold all of them. The folders of models an
+   earlier build used and this one does not (``models.RETIRED_REPOS``) are removed first;
 2. the two speaker-diarization models (``models.download_diarization``, ~34 MB, D85),
    reported under the ``model`` stage so the installer needs no new page;
 3. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
@@ -197,6 +197,12 @@ def run(
     poll: float = 0.5,
 ) -> int:
     """Both stages, in order. Stops at the first that does not finish."""
+    # A model an earlier build used goes first (D93): nothing loads it any more, and its
+    # 3 GB may be what the current models need to fit.
+    from app.asr.model_manager import remove_retired
+
+    configured = config.get("asr.model_path")
+    remove_retired(keep=Path(str(configured)) if configured else None)
     if model is None:
         from app.asr.model_manager import model_set
 
@@ -212,10 +218,6 @@ def run(
         code = follow("model", "Speech models", model, progress, cancelled, poll=poll)
         if code != EXIT_OK:
             return code
-    # Every current model is here, so a model an earlier build used can go (D93).
-    from app.asr.model_manager import remove_retired
-
-    remove_retired()
     code = fetch_speaker_models(config, progress, cancelled)
     if code != EXIT_OK:
         return code

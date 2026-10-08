@@ -354,7 +354,7 @@ def test_a_one_frame_window_gets_no_word_timings_instead_of_crashing(
     def upstream(self: object, tokenizer: object, text_tokens: list[list[int]],
                  encoder_output: object, num_frames: int, median_filter_width: int = 7):  # type: ignore[no-untyped-def]  # fmt: skip
         called.append(num_frames)
-        if num_frames == 3:
+        if num_frames in (3, 30):
             raise IndexError("boolean index did not match indexed array")
         return [[{"word": "שלום"}] for _ in text_tokens]
 
@@ -363,6 +363,8 @@ def test_a_one_frame_window_gets_no_word_timings_instead_of_crashing(
     assert called == [], "never handed to faster-whisper"
     assert model.find_alignment(None, [[1, 2, 3]], None, 3) == [[]]
     assert model.find_alignment(None, [[1], [2]], None, 3000) == [[{"word": "שלום"}]] * 2
+    with pytest.raises(IndexError):  # on a real window it is a bug, not a sliver
+        model.find_alignment(None, [[1, 2, 3]], None, 30)
 
 
 def test_what_the_model_writes_for_the_last_sliver_of_audio_is_dropped(

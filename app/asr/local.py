@@ -343,6 +343,9 @@ def whisper_model_class() -> type:
                     tokenizer, text_tokens, encoder_output, num_frames, median_filter_width
                 )
             except IndexError as exc:
+                # Only a sliver; on a real window this would hide alignment broken for good.
+                if num_frames >= MIN_WINDOW_FRAMES:
+                    raise
                 log.warning("word alignment failed on a %d-frame window (%s)", num_frames, exc)
                 return [[] for _ in text_tokens]
 

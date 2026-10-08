@@ -97,17 +97,18 @@ def target_for(repo: str, home: Path | None = None) -> Path:
     return models_root(home) / repo.replace("/", "__")
 
 
-def remove_retired(home: Path | None = None) -> list[Path]:
+def remove_retired(home: Path | None = None, keep: Path | None = None) -> list[Path]:
     """Delete the folders of models no build loads any more (``models.RETIRED_REPOS``).
 
-    Only ever a folder this manager made under ``models/asr``: a copy a developer keeps
-    elsewhere (``asr.model_path``) is not touched. Never raises: a folder that will not go
-    now is tried again by the next install.
+    Only ever a folder this manager made under ``models/asr``, and never ``keep``: a
+    developer's ``asr.model_path`` may point at one. Never raises: a folder that will not
+    go now is tried again by the next install.
     """
     removed: list[Path] = []
+    kept = keep.expanduser().resolve() if keep is not None else None
     for repo in RETIRED_REPOS:
         folder = target_for(repo, home)
-        if not folder.exists():
+        if not folder.exists() or folder.resolve() == kept:
             continue
         try:
             shutil.rmtree(folder)
