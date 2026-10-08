@@ -156,8 +156,13 @@ def run(
     register_task: bool = True,
     exe: Path | None = None,
     setup_again: bool = False,
+    language: str | None = None,
 ) -> BootstrapReport:
-    """The whole first-run sequence. Safe to run on every launch."""
+    """The whole first-run sequence. Safe to run on every launch.
+
+    ``language`` is the one the installer ran in. It sets the interface language of a
+    first install only: a choice already saved is the user's, and an update keeps it.
+    """
     home = paths.ensure_app_home()
     report = BootstrapReport(home=home)
     cfg = config or default_config()
@@ -220,8 +225,12 @@ def run(
 
     config_path = paths.config_path()
     if not config_path.exists():
+        chosen = first_language(language)
+        cfg.set("ui.language", chosen)
         cfg.save(config_path)
-        report.steps.append(Step("config_file", True, str(config_path), changed=True))
+        report.steps.append(
+            Step("config_file", True, f"{config_path} (ui.language={chosen})", changed=True)
+        )
     else:
         report.steps.append(Step("config_file", True, f"{config_path} already exists"))
         if setup_again:
@@ -231,6 +240,19 @@ def run(
         failed = [step for step in report.steps if not step.ok]
         raise BootstrapError("; ".join(f"{step.name}: {step.detail}" for step in failed))
     return report
+
+
+def first_language(installer: str | None) -> str:
+    """The first run's interface language: the installer's, else Windows' own, else
+    English. Only a language with a catalogue counts."""
+    from app.config import _ENUMS
+    from app.locale_formats import windows_ui_language
+
+    supported = _ENUMS["ui.language"]
+    for candidate in (installer, windows_ui_language()):
+        if candidate in supported:
+            return str(candidate)
+    return "en"
 
 
 def ask_setup_again(config_path: Path) -> Step:

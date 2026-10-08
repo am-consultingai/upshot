@@ -24,12 +24,23 @@ DEFAULT_SHORT_TIME = "HH:mm"
 WEEKDAYS = {
     "en": ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"),
     "he": ("יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "שבת", "יום ראשון"),
+    "de": ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"),
+    # Capitalised, though Spanish and French write weekdays in lower case: the weekday
+    # opens a meeting's default title.
+    "es": ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"),
+    "fr": ("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"),
 }
 MONTHS = {
     "en": ("January", "February", "March", "April", "May", "June", "July", "August",
            "September", "October", "November", "December"),
     "he": ("ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט",
            "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"),
+    "de": ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
+           "September", "Oktober", "November", "Dezember"),
+    "es": ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+           "septiembre", "octubre", "noviembre", "diciembre"),
+    "fr": ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+           "septembre", "octobre", "novembre", "décembre"),
 }  # fmt: skip
 
 _TOKEN = re.compile(r"'[^']*'|d{1,4}|M{1,4}|y{1,5}|h{1,2}|H{1,2}|m{1,2}|s{1,2}|t{1,2}")
@@ -65,6 +76,28 @@ def windows_formats() -> Formats:
             )
     except OSError:
         return Formats()
+
+
+#: Windows' primary language ids (the low ten bits of a LANGID) of the interface languages.
+_PRIMARY_LANGUAGES = {0x09: "en", 0x0D: "he", 0x07: "de", 0x0A: "es", 0x0C: "fr"}
+
+
+def language_for_langid(langid: int) -> str | None:
+    """The interface language for a Windows LANGID, or None when Upshot has no catalogue."""
+    return _PRIMARY_LANGUAGES.get(langid & 0x3FF)
+
+
+def windows_ui_language() -> str | None:
+    """The language Windows' own interface is in, when it is one of Upshot's; None off
+    Windows or for any other language."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        return language_for_langid(int(ctypes.windll.kernel32.GetUserDefaultUILanguage()))
+    except (AttributeError, OSError):
+        return None
 
 
 def format_pattern(when: datetime, pattern: str, language: str = "en") -> str:
