@@ -287,11 +287,20 @@ begin
 end;
 
 procedure InitializeWizard;
+var
+  Delta: Integer;
 begin
   PreparePage := CreateOutputProgressPage(CustomMessage('PrepareTitle'), CustomMessage('PrepareLead'));
   { The Terms are English only (a legal text); every other language says so above them. }
-  if CustomMessage('TermsInEnglish') <> '' then
+  if CustomMessage('TermsInEnglish') <> '' then begin
     WizardForm.LicenseLabel1.Caption := CustomMessage('TermsInEnglish') + #13#10 + WizardForm.LicenseLabel1.Caption;
+    { The wizard sized the label and placed the Terms below it before this ran: grow the
+      label to the longer caption and move the Terms down by as much, or its last line
+      is cut off (German and French). }
+    Delta := WizardForm.AdjustLabelHeight(WizardForm.LicenseLabel1);
+    WizardForm.LicenseMemo.Top := WizardForm.LicenseMemo.Top + Delta;
+    WizardForm.LicenseMemo.Height := WizardForm.LicenseMemo.Height - Delta;
+  end;
 end;
 
 function ReadValue(const Lines: TArrayOfString; const Key: String): String;
