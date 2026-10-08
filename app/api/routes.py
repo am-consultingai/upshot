@@ -287,6 +287,8 @@ def status(request: Request) -> dict[str, Any]:
         "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
         "disk_free_bytes": disk.free,
         "storage_bytes": storage_bytes(svc),
+        # Where that is: Settings, Storage shows it, so "local only" can be checked.
+        "data_folder": str(svc.config.data_root),
         "fts": capabilities(svc.conn).fts,
         "now": iso(svc.clock.now()),
         # Which build answered: a report from a tester's machine names its commit.
