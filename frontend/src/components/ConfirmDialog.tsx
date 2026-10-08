@@ -1,5 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import Button from "./Button";
 
 /**
  * A destructive confirmation, replacing `window.confirm`.
@@ -71,7 +72,7 @@ export default function ConfirmHost() {
   if (!request) return null;
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-[4px]"
+      className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-xs"
       data-testid="confirm-backdrop"
     >
       <div
@@ -79,30 +80,28 @@ export default function ConfirmHost() {
         aria-modal="true"
         aria-labelledby="confirm-title"
         data-testid="confirm-dialog"
-        className="ma-dialog w-full max-w-[384px] rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
+        className="ma-dialog w-full max-w-sm rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
       >
         <h2 id="confirm-title" className="text-md font-semibold tracking-snug">
           {request.title}
         </h2>
         <div className="mt-2 text-sm leading-relaxed text-secondary">{request.body}</div>
         <div className="mt-4 flex justify-end gap-2">
-          <button
+          <Button
             ref={cancelRef}
-            type="button"
             data-testid="confirm-cancel"
             onClick={() => answer(false)}
-            className="h-7 rounded-md px-2.5 text-sm font-medium text-primary hover:bg-a-200 active:bg-a-300"
+            variant="ghost"
           >
             {request.cancel}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             data-testid="confirm-ok"
             onClick={() => answer(true)}
-            className="h-7 rounded-md bg-danger-quiet px-2.5 text-sm font-medium text-danger hover:brightness-95 active:translate-y-px"
+            variant="destructive"
           >
             {request.confirm}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

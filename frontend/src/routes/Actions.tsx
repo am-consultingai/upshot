@@ -187,7 +187,7 @@ export default function ActionsPage() {
             ] as const
           ).map(([keys, label]) => (
             <span key={keys} className="flex items-center gap-1">
-              <kbd className="rounded-[3px] px-1 font-mono text-[10px] shadow-[var(--shadow-ring-subtle)]">{keys}</kbd>
+              <kbd className="rounded-2xs px-1 font-mono text-3xs shadow-[var(--shadow-ring-subtle)]">{keys}</kbd>
               {t(label)}
             </span>
           ))}
@@ -196,7 +196,7 @@ export default function ActionsPage() {
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="max-w-[46rem] px-8 pt-7 pb-16">
+          <div className="box-content max-w-measure px-8 pt-7 pb-16">
             <h1 className="text-2xl font-semibold tracking-tight">{t("actions.title")}</h1>
             <p className="mt-1 mb-5 text-md text-tertiary">{t("actions.lead")}</p>
 
@@ -214,7 +214,7 @@ export default function ActionsPage() {
                   aria-selected={tab === value}
                   aria-pressed={tab === value}
                   onClick={() => setTab(value)}
-                  className={`flex h-6.5 items-center gap-1.5 rounded-sm px-3 text-sm ${
+                  className={`flex h-control-sm items-center gap-1.5 rounded-sm px-3 text-sm ${
                     tab === value
                       ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
                       : "text-secondary hover:bg-a-200 hover:text-primary"
@@ -368,7 +368,7 @@ function InboxRail({ items }: { items: ActionItem[] }) {
   return (
     <aside
       data-testid="actions-rail"
-      className="hidden w-[19rem] shrink-0 flex-col gap-6.5 overflow-y-auto border-s border-line-subtle px-5 pt-6.5 pb-10 xl:flex"
+      className="hidden w-rail shrink-0 flex-col gap-6.5 overflow-y-auto border-s border-line-subtle px-5 pt-6.5 pb-10 xl:flex"
     >
       {sources.length > 0 && (
         <section data-testid="actions-sources">
@@ -398,7 +398,7 @@ function InboxRail({ items }: { items: ActionItem[] }) {
               <li key={who} data-testid="actions-waiting-person" className="flex items-center gap-2 text-sm">
                 <span
                   aria-hidden="true"
-                  className="grid size-5.5 shrink-0 place-items-center rounded-full text-[9px] font-semibold text-on-speaker"
+                  className="grid size-5.5 shrink-0 place-items-center rounded-full text-4xs font-semibold text-on-speaker"
                   style={{ background: personColour(who) }}
                 >
                   {initials(who)}
@@ -421,7 +421,7 @@ function InboxRail({ items }: { items: ActionItem[] }) {
           </span>
           <span className="text-sm text-tertiary">{t("actions.ofItems").replace("{n}", String(outOf))}</span>
         </p>
-        <div className="mt-3 h-[3px] overflow-hidden rounded-sm bg-surface-3">
+        <div className="mt-3 h-0.75 overflow-hidden rounded-sm bg-surface-3">
           <i className="block h-full rounded-sm bg-accent opacity-60" style={{ width: `${outOf ? (cleared / outOf) * 100 : 0}%` }} />
         </div>
       </section>

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type LlmProvider } from "../api";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import { PinnedContext } from "./SettingRow";
 import Tooltip from "./Tooltip";
 import { openExternal } from "../lib/external";
@@ -75,7 +75,6 @@ const NOT_LISTED = new Set(["none", "ollama"]);
 /** A sign-in that ends on a code pasted back (Claude's may, Antigravity's does, D75, D79). */
 const TAKES_CODE = new Set(["claude-subscription", "antigravity-subscription"]);
 
-const BUTTON = "rounded border border-line px-2 py-1 text-sm disabled:opacity-40";
 
 /**
  * Whether the wait on an install or sign-in is over: the CLI reports signed in, or a
@@ -325,15 +324,16 @@ export default function ProviderSettings() {
                                 }
                                 className="w-48 rounded border border-line px-2 py-1 text-sm"
                               />
-                              <BusyButton
+                              <Button
                                 data-testid="provider-save-key"
                                 busy={saveKey.isPending && saveKey.variables?.name === secret}
                                 disabled={!(keys[provider.id] ?? "").trim()}
                                 onClick={() => saveKey.mutate({ name: secret, value: keys[provider.id] ?? "" })}
-                                className={BUTTON}
+                                variant="secondary"
+                                size="md"
                               >
                                 {t("settings.saveKey")}
-                              </BusyButton>
+                              </Button>
                               {provider.console && (
                                 <a
                                   data-testid="provider-console"
@@ -349,45 +349,49 @@ export default function ProviderSettings() {
                           )}
 
                           {provider.needs === "cli" && !provider.ready && (
-                            <BusyButton
+                            <Button
                               data-testid="provider-install"
                               busy={(install.isPending && install.variables === provider.id) || mine}
                               onClick={() => install.mutate(provider.id)}
-                              className={BUTTON}
+                              variant="secondary"
+                              size="md"
                             >
                               {t("settings.install")}
-                            </BusyButton>
+                            </Button>
                           )}
                           {provider.needs === "cli" && provider.ready && provider.signed_in === true && (
-                            <BusyButton
+                            <Button
                               data-testid="provider-signout"
                               busy={(signout.isPending && signout.variables === provider.id) || signingOut === provider.id}
                               disabled={provider.can_sign_out === false}
                               onClick={() => signout.mutate(provider.id)}
-                              className={BUTTON}
+                              variant="secondary"
+                              size="md"
                             >
                               {t("settings.signOut")}
-                            </BusyButton>
+                            </Button>
                           )}
                           {provider.needs === "cli" && provider.ready && provider.signed_in !== true && (
-                            <BusyButton
+                            <Button
                               data-testid="provider-signin"
                               busy={(signin.isPending && signin.variables === provider.id) || (mine && !signingIn)}
                               onClick={() => (signingIn ? undefined : signin.mutate(provider.id))}
-                              className={BUTTON}
+                              variant="secondary"
+                              size="md"
                             >
                               {t("settings.signIn")}
-                            </BusyButton>
+                            </Button>
                           )}
 
-                          <BusyButton
+                          <Button
                             data-testid="provider-test"
                             busy={test.isPending && test.variables === provider.id}
                             onClick={() => test.mutate(provider.id)}
-                            className={BUTTON}
+                            variant="secondary"
+                            size="md"
                           >
                             {t("settings.test")}
-                          </BusyButton>
+                          </Button>
                           {result && (
                             <span
                               data-testid="provider-test-result"
@@ -426,15 +430,16 @@ export default function ProviderSettings() {
                                 spellCheck={false}
                                 className="w-64 rounded border border-line px-2 py-1 font-mono text-sm"
                               />
-                              <BusyButton
+                              <Button
                                 type="submit"
                                 data-testid="provider-signin-submit"
                                 busy={sendCode.isPending && sendCode.variables?.provider === provider.id}
                                 disabled={!(codes[provider.id] ?? "").trim()}
-                                className={BUTTON}
+                                variant="secondary"
+                                size="md"
                               >
                                 {t("settings.signinSubmitCode")}
-                              </BusyButton>
+                              </Button>
                             </>
                           )}
                           <a

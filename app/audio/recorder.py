@@ -206,6 +206,9 @@ class Recorder:
         self.runtime.clear()
         self.armed = False
         self.committed = False
+        # A stop while paused ends the recording; the next one must not start paused, and
+        # /api/status must not go on reporting a paused recording that is gone.
+        self.paused = False
         # A stop while holding ends the file where the call ended: what the ring holds
         # since then was never written, and is dropped with it (D77).
         self.holding = False

@@ -4,6 +4,7 @@ import { api, type ActionItem } from "../api";
 import { useI18n } from "../i18n";
 import ActionItemRow from "./ActionItemRow";
 import Tooltip from "./Tooltip";
+import Button from "./Button";
 
 const COLLAPSED_KEY = "ma.meeting.actionsCollapsed";
 
@@ -93,17 +94,17 @@ export default function ActionItemsBlock({
           </span>
         )}
         <Tooltip label={t("meeting.addAction")} hint={t("help.addAction")}>
-        <button
-          type="button"
+        <Button
           data-testid="meeting-actions-add"
           onClick={() => {
             setCollapsed(false);
             setAdding(true);
           }}
-          className="ms-auto h-6 rounded-sm px-1.5 text-xs font-normal text-tertiary hover:bg-a-200 hover:text-primary"
+          variant="ghost"
+          className="ms-auto"
         >
           + {t("meeting.addAction")}
-        </button>
+        </Button>
         </Tooltip>
         <button
           type="button"
@@ -132,7 +133,7 @@ export default function ActionItemsBlock({
           )}
           {adding && (
             <li className="flex items-center gap-2.5 px-2.5 py-2">
-              <span aria-hidden="true" className="size-[18px] shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_var(--border-strong)]" />
+              <span aria-hidden="true" className="size-4.5 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_var(--border-strong)]" />
               <input
                 data-testid="meeting-actions-input"
                 autoFocus

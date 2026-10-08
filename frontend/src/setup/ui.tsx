@@ -1,17 +1,14 @@
 import type { ReactNode } from "react";
 import { useI18n, type MessageKey } from "../i18n";
+import type { BadgeTone } from "../components/Badge";
 
 /** Fill `{name}` placeholders in a catalogue string. */
 export function fill(text: string, values: Record<string, string | number>): string {
   return text.replace(/\{(\w+)\}/g, (whole, key: string) => (key in values ? String(values[key]) : whole));
 }
 
-export const PRIMARY =
-  "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50";
-export const SECONDARY = "rounded-md bg-surface-2 px-3 py-1.5 text-sm hover:bg-a-200 active:bg-a-300";
 export const FOOTER =
   "sticky bottom-0 mt-auto flex flex-row-reverse items-center justify-between gap-2 bg-canvas pt-4 pb-6 [@media(max-height:720px)]:pt-3 [@media(max-height:720px)]:pb-3";
-export const QUIET = "rounded-md px-3 py-1.5 text-sm text-secondary hover:bg-a-200 active:bg-a-300";
 
 /**
  * One step of setup: a heading that says what it is for, a lead that says why, the
@@ -62,22 +59,9 @@ export function StepFrame({
   );
 }
 
-export type Tone = "neutral" | "good" | "warn" | "bad";
-
-const TONE: Record<Tone, string> = {
-  neutral: "bg-surface-3 text-secondary",
-  good: "bg-success-quiet text-success",
-  warn: "bg-warning-quiet text-warning",
-  bad: "bg-danger-quiet text-danger",
-};
-
-export function Badge({ tone, children }: { tone: Tone; children: ReactNode }) {
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${TONE[tone]}`}>
-      {children}
-    </span>
-  );
-}
+/** Setup's tones are the shared Badge's (components/Badge.tsx). */
+export type Tone = BadgeTone;
+export { default as Badge } from "../components/Badge";
 
 /** A line of feedback under a control: what happened, in the colour of how it went. */
 export function Note({ tone, children, testId }: { tone: Tone; children: ReactNode; testId?: string }) {

@@ -4,13 +4,11 @@ import { api, type CalendarAccount, type CalendarStatus } from "../api";
 import { AccountDot } from "./AccountDots";
 import { confirmDialog } from "./ConfirmDialog";
 import { useI18n } from "../i18n";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import { CopySignInLink } from "./CopySignInLink";
 import SettingRow, { SELECT_CLASS, SettingGroup } from "./SettingRow";
 import { workingHours } from "../lib/calendar";
 
-const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent";
-const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
 
 /**
  * The Google accounts (Calendar 1, D82): several at once.
@@ -175,24 +173,25 @@ export default function CalendarSettings() {
         }
       >
         {connecting ? (
-          <BusyButton
+          <Button
             data-testid="calendar-cancel"
             busy={cancel.isPending}
             onClick={() => cancel.mutate()}
-            className={SECONDARY}
+            variant="secondary"
+            size="md"
           >
             {t("calendar.cancel")}
-          </BusyButton>
+          </Button>
         ) : (
-          <BusyButton
+          <Button
             data-testid={accounts.length ? "calendar-add" : "calendar-connect"}
             busy={connect.isPending}
             disabled={!data?.configured}
             onClick={() => connect.mutate(undefined)}
-            className={`${accounts.length ? SECONDARY : PRIMARY} disabled:opacity-40`}
+            variant={accounts.length ? "secondary" : "primary"} size="md"
           >
             {t(accounts.length ? "calendar.addAnother" : "calendar.connect")}
-          </BusyButton>
+          </Button>
         )}
       </SettingRow>
 
@@ -229,24 +228,26 @@ export default function CalendarSettings() {
           }
         >
           {account.state === "reconnect" && (
-            <BusyButton
+            <Button
               data-testid={`calendar-account-reconnect-${account.id}`}
               busy={connect.isPending}
               disabled={connecting || !data?.configured}
               onClick={() => connect.mutate(account.id)}
-              className={PRIMARY}
+              variant="primary"
+              size="md"
             >
               {t("calendar.reconnect")}
-            </BusyButton>
+            </Button>
           )}
-          <BusyButton
+          <Button
             data-testid={`calendar-account-remove-${account.id}`}
             busy={remove.isPending && remove.variables?.id === account.id}
             onClick={() => remove.mutate(account)}
-            className={SECONDARY}
+            variant="secondary"
+            size="md"
           >
             {t("calendar.remove")}
-          </BusyButton>
+          </Button>
         </SettingRow>
       ))}
 
@@ -259,14 +260,15 @@ export default function CalendarSettings() {
             </span>
           }
         >
-          <BusyButton
+          <Button
             data-testid="calendar-sync-now"
             busy={syncNow.isPending}
             onClick={() => syncNow.mutate()}
-            className={SECONDARY}
+            variant="secondary"
+            size="md"
           >
             {t("calendar.syncNow")}
-          </BusyButton>
+          </Button>
         </SettingRow>
       )}
 

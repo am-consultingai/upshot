@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { label, quickChoices, searchLanguages } from "../lib/transcribeAgain";
+import Button from "./Button";
 
 /**
  * "Transcribe again as…" (R9): for the rare meeting whose language was picked wrong.
@@ -57,13 +58,13 @@ export default function TranscribeAgainDialog({
   );
 
   return createPortal(
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-[4px]">
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-xs">
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="transcribe-again-title"
         data-testid="transcribe-again"
-        className="ma-dialog w-full max-w-[384px] rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
+        className="ma-dialog w-full max-w-sm rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
       >
         <h2 id="transcribe-again-title" className="text-md font-semibold tracking-snug">
           {t("transcribeAgain.title")}
@@ -98,14 +99,13 @@ export default function TranscribeAgainDialog({
           </div>
         )}
         <div className="mt-4 flex justify-end">
-          <button
-            type="button"
+          <Button
             data-testid="transcribe-again-cancel"
             onClick={onClose}
-            className="h-7 rounded-md px-2.5 text-sm font-medium text-primary hover:bg-a-200 active:bg-a-300"
+            variant="ghost"
           >
             {t("common.cancel")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

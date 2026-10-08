@@ -22,6 +22,37 @@ def meeting(**overrides: object) -> Prompt:
     return Prompt(**fields)  # type: ignore[arg-type]
 
 
+def test_a_detected_offer_carries_its_score_and_evidence() -> None:
+    """The banner says why it thinks a call is on (app, score, evidence), not only that."""
+    prompts = Prompts()
+    prompts.offer(
+        meeting(
+            kind="detected",
+            until=None,
+            process="Zoom.exe",
+            score=7,
+            evidence=(("mic.known_app", "Zoom.exe"), ("vad.loopback", "someone else is speaking")),
+        ),
+        recording=False,
+    )
+    offer = prompts.snapshot()
+    assert offer is not None
+    assert offer["score"] == 7
+    assert offer["evidence"] == [
+        {"code": "mic.known_app", "detail": "Zoom.exe"},
+        {"code": "vad.loopback", "detail": "someone else is speaking"},
+    ]
+
+
+def test_a_calendar_offer_has_no_score() -> None:
+    prompts = Prompts()
+    prompts.offer(meeting(), recording=False)
+    offer = prompts.snapshot()
+    assert offer is not None
+    assert offer["score"] is None
+    assert offer["evidence"] == []
+
+
 def test_nothing_is_offered_while_recording() -> None:
     prompts = Prompts()
     assert prompts.offer(meeting(), recording=True) is False

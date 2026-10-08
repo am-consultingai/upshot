@@ -153,7 +153,7 @@ export default function Sidebar() {
 
   const items = meetings.data?.meetings ?? [];
   const byDay = groupByDay(items);
-  const recording = status.data?.recorder.active ?? false;
+  const recording = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
   const queued = status.data?.queue_depth ?? 0;
 
   /*
@@ -280,13 +280,13 @@ export default function Sidebar() {
         data-testid={recording ? "stop-recording" : "start-recording"}
         aria-busy={start.isPending || stop.isPending}
         onClick={() => (recording ? stop.mutate() : start.mutate())}
-        className={`mx-2.5 mb-2 flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] ${
+        className={`mx-2.5 mb-2 flex h-control items-center gap-2.5 rounded-md px-2.5 text-sm font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] ${
           recording ? "bg-danger text-on-solid hover:brightness-95" : "bg-raised hover:bg-a-200 active:bg-a-300"
         }`}
       >
         <span className={`size-2.5 shrink-0 ${recording ? "rounded-[2px] bg-on-solid" : "rounded-full bg-danger"}`} />
         <span className="truncate">{recording ? t("timeline.stop") : t("timeline.start")}</span>
-        <kbd className="ms-auto shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
+        <kbd className="ms-auto shrink-0 rounded-2xs px-1 font-mono text-3xs text-tertiary shadow-[var(--shadow-ring-subtle)]">
           ⌘R
         </kbd>
       </button>
@@ -322,7 +322,7 @@ export default function Sidebar() {
               </span>
             )}
             {item.to === "/search" && (
-              <kbd className="ms-auto shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
+              <kbd className="ms-auto shrink-0 rounded-2xs px-1 font-mono text-3xs text-tertiary shadow-[var(--shadow-ring-subtle)]">
                 /
               </kbd>
             )}
