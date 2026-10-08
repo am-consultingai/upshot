@@ -12,6 +12,7 @@ added later as one file and one config value.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
@@ -330,6 +331,8 @@ class FakeDiarizer:
         self.speakers = max(1, speakers)
         self.turn_s = turn_s
         self.calls = 0
+        #: As OnnxDiarizer's: called with the fraction of the track done.
+        self.on_progress: Callable[[float], None] | None = None
 
     def diarize(self, samples: np.ndarray, rate: int) -> list[SpeakerTurn]:
         self.calls += 1
@@ -340,6 +343,8 @@ class FakeDiarizer:
         while start < duration:
             end = min(duration, start + self.turn_s)
             turns.append(SpeakerTurn(start, end, index % self.speakers))
+            if self.on_progress is not None:
+                self.on_progress(end / duration)
             index += 1
             start = end
         return turns
@@ -381,6 +386,9 @@ class OnnxDiarizer:
         self.merge_similarity = merge_similarity
         self._pipeline: Any = None
         self._extractor: Any = None
+        #: Called with the fraction of the track done, from sherpa-onnx's own count of
+        #: the chunks it has segmented and embedded: the meeting's and a file's progress.
+        self.on_progress: Callable[[float], None] | None = None
 
     def load(self) -> Any:
         if self._pipeline is not None:
@@ -423,7 +431,20 @@ class OnnxDiarizer:
             import soxr
 
             audio = np.asarray(soxr.resample(audio, rate, expected), dtype=np.float32)
-        result = pipeline.process(audio).sort_by_start_time()
+        hook = self.on_progress
+        if hook is None:
+            result = pipeline.process(audio).sort_by_start_time()
+        else:
+
+            def counted(done: int, total: int) -> int:
+                # Called from sherpa-onnx's C++: nothing may raise through it, and a
+                # non-zero answer would abort the diarization.
+                if total > 0:
+                    with contextlib.suppress(Exception):
+                        hook(done / total)
+                return 0
+
+            result = pipeline.process(audio, callback=counted).sort_by_start_time()
         turns = normalize_turns(
             [SpeakerTurn(float(s.start), float(s.end), int(s.speaker)) for s in result]
         )

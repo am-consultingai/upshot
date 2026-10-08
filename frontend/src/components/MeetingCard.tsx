@@ -1,25 +1,12 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import type { Meeting } from "../api";
-import { formatDuration, formatDurationShort, formatClock, formatElapsed } from "../lib/format";
+import { formatDurationShort, formatClock, formatElapsed } from "../lib/format";
+import { formatPercent, timeLeft, useMeetingJob } from "../lib/activeJobs";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 import Menu, { useContextMenu, type MenuItem } from "./Menu";
 import AccountDots from "./AccountDots";
-
-const ETA_PER_STATE: Record<string, number> = {
-  TRANSCRIBING: 8 * 60,
-  SUMMARIZING: 90,
-  SUMMARIZED: 20,
-  RECORDED: 10 * 60,
-};
-
-export function etaSeconds(meeting: Meeting): number | null {
-  const base = ETA_PER_STATE[meeting.state];
-  if (base === undefined) return null;
-  const factor = meeting.state === "TRANSCRIBING" ? (meeting.duration_s ?? 600) / 600 : 1;
-  return Math.round(base * factor);
-}
 
 /** A meeting that has finished its pipeline and needs nothing from anyone. */
 const SETTLED = new Set(["RENDERED", "DELIVERED"]);
@@ -72,7 +59,7 @@ export default function MeetingCard({
   /** Whether this is the meeting the detail pane is showing. */
   selected?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const navigate = useNavigate();
   const [now, setNow] = useState(() => Date.now());
   const recording = meeting.state === "RECORDING";
@@ -83,7 +70,15 @@ export default function MeetingCard({
     return () => window.clearInterval(timer);
   }, [recording]);
 
-  const eta = etaSeconds(meeting);
+  /*
+   * How far the transcription has got and how long it has left, as the worker measures
+   * this run (app/pipeline/progress.py). It used to be a constant per state — eight
+   * minutes for every ten of audio — which was wrong on every machine but one. A stage
+   * with no honest figure (a summary) shows its state word and nothing else.
+   */
+  const job = useMeetingJob(meeting.id);
+  const progress = job?.state === "running" ? job.progress : null;
+  const left = job?.state === "running" ? timeLeft(job.eta_s, t) : null;
   /*
    * What this meeting still owes: "3 items" while any are open, "done" once every one
    * is ticked. Zero open is not the same news as none recorded — a meeting whose
@@ -192,10 +187,16 @@ export default function MeetingCard({
                     </>
                   )
                 )}
-                {eta !== null && (
+                {progress !== null && (
                   <>
                     {dot}
-                    <bdi data-testid="eta">~{formatDuration(eta, t)}</bdi>
+                    <bdi data-testid="meeting-progress">{formatPercent(progress, locale)}</bdi>
+                  </>
+                )}
+                {left !== null && (
+                  <>
+                    {dot}
+                    <bdi data-testid="eta">{left}</bdi>
                   </>
                 )}
                 {/* Not linked to a calendar meeting yet: the user is asked (D89). */}

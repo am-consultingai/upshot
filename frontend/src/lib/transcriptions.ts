@@ -168,6 +168,7 @@ export interface TranscriptionEvent {
   state: Transcription["state"] | "deleted";
   phase: Transcription["phase"];
   progress: number;
+  eta_s?: number | null;
 }
 
 /**
@@ -193,7 +194,9 @@ export function applyEvent(client: QueryClient, event: TranscriptionEvent): void
   }
   client.setQueryData(LIST_KEY, {
     transcriptions: list.transcriptions.map((job) =>
-      job.id === event.id ? { ...job, phase: event.phase, progress: event.progress } : job,
+      job.id === event.id
+        ? { ...job, phase: event.phase, progress: event.progress, eta_s: event.eta_s ?? null }
+        : job,
     ),
   });
 }

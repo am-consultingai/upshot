@@ -12,6 +12,7 @@ import {
   isDone,
   stateLabel,
 } from "../lib/transcriptions";
+import { timeLeft } from "../lib/activeJobs";
 import Menu from "./Menu";
 import { confirmDialog } from "./ConfirmDialog";
 import { toast } from "./Toaster";
@@ -79,6 +80,11 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
             <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-surface-2">
               <div className="h-full bg-accent" style={{ width: `${Math.round(job.progress * 100)}%` }} />
             </div>
+          )}
+          {active && timeLeft(job.eta_s, t) && (
+            <p data-testid="transcription-eta" className="mt-0.5 text-tertiary">
+              {timeLeft(job.eta_s, t)}
+            </p>
           )}
         </div>
         <div className="flex items-center gap-1">

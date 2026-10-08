@@ -97,7 +97,9 @@ def transcribe_file(
         if options.diarize and segments:
             on_progress("diarize", 0.0)
             stop_check()
-            segments, diarized = _diarize(wav, segments, config)
+            segments, diarized = _diarize(
+                wav, segments, config, lambda fraction: on_progress("diarize", fraction)
+            )
             stop_check()
             on_progress("diarize", 1.0)
     finally:
@@ -184,7 +186,12 @@ def _transcribe(
     return [segment.shifted(0.0, new_id=index) for index, segment in enumerate(ordered)], model
 
 
-def _diarize(wav: Path, segments: list[Segment], config: Config) -> tuple[list[Segment], bool]:
+def _diarize(
+    wav: Path,
+    segments: list[Segment],
+    config: Config,
+    on_fraction: Callable[[float], None] | None = None,
+) -> tuple[list[Segment], bool]:
     """The whole file, clustered once, as a meeting's far track is (D85). Any length: the
     bound is ``transcription.max_hours`` at upload, not a skip here (R7)."""
     from app.asr.diarize import THEM, diarize_track, make_diarizer
@@ -193,6 +200,9 @@ def _diarize(wav: Path, segments: list[Segment], config: Config) -> tuple[list[S
     diarizer = make_diarizer(config)
     if diarizer is None:
         return segments, False
+    # sherpa-onnx counts its chunks (``OnnxDiarizer.on_progress``); not on the protocol.
+    if on_fraction is not None and hasattr(diarizer, "on_progress"):
+        setattr(diarizer, "on_progress", on_fraction)  # noqa: B010
     try:
         audio, rate = read_wav(wav)
         if not len(audio):

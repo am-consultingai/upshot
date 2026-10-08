@@ -910,6 +910,12 @@ export const en = {
   // File transcription (D86).
   "nav.transcriptions": "Transcriptions",
   "help.transcriptions": "Audio and video files transcribed on this computer, apart from your meetings.",
+  "progress.left": "~{time} left",
+  "progress.leftUnderMinute": "under a minute left",
+  "progress.phase.prepare": "preparing the audio",
+  "activeJobs.title": "Running and waiting",
+  "activeJobs.empty": "Nothing is being transcribed.",
+  "activeJobs.client.meeting": "Meeting",
   "transcriptions.title": "Transcriptions",
   "transcriptions.intro": "Transcribe audio and video files on this computer, with the same models as your meetings. They stay here, apart from your meetings.",
   "transcriptions.drop": "Drop audio or video files here",

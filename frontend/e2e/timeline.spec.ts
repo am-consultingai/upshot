@@ -42,7 +42,7 @@ test("recording_card_live", async ({ page, seed }) => {
   expect(await card.getByTestId("elapsed").textContent()).not.toBe(first);
 });
 
-test("queue_card_shows_eta", async ({ page, seed }) => {
+test("queue_card_shows_real_percent", async ({ page, seed }) => {
   await seed([
     {
       id: "e2e-queued",
@@ -50,12 +50,30 @@ test("queue_card_shows_eta", async ({ page, seed }) => {
       state: "TRANSCRIBING",
       started_at: isoAt(0, 12),
       jobs: { transcribe: "running" },
+      // 60% of the transcription phase: 3% + 4% + 0.6 × 75% of the stage.
+      progress: 0.6,
+      phase: "transcribe",
+    },
+    {
+      id: "e2e-summarizing",
+      title: "Being summarized",
+      state: "SUMMARIZING",
+      started_at: isoAt(0, 10),
+      jobs: { summarize: "running" },
     },
   ]);
   await gotoApp(page);
   const card = page.getByTestId("meeting-card").filter({ hasText: "Being transcribed" });
   await expect(card.getByTestId("meeting-state")).toHaveText("transcribing");
-  await expect(card.getByTestId("eta")).not.toHaveText("");
+  await expect(card.getByTestId("meeting-progress")).toHaveText("52%");
+  // A summary has no honest percentage, and no made-up time either.
+  const summarizing = page.getByTestId("meeting-card").filter({ hasText: "Being summarized" });
+  await expect(summarizing.getByTestId("meeting-state")).toHaveText("summarizing");
+  await expect(summarizing.getByTestId("meeting-progress")).toHaveCount(0);
+  await expect(summarizing.getByTestId("eta")).toHaveCount(0);
+  // The meeting page's stage line says the same, with its phase.
+  await card.getByTestId("meeting-link").click();
+  await expect(page.getByTestId("stage-progress")).toHaveText("transcribing · 52%");
 });
 
 test("default_locale_is_english", async ({ page }) => {

@@ -175,6 +175,17 @@ class JobQueue:
         ).fetchall()
         return [row["k"] for row in rows]
 
+    def pending_jobs(self) -> list[Job]:
+        """Every waiting job, due or not, in :meth:`claim_next`'s order."""
+        rows = self.conn.execute(
+            "SELECT * FROM jobs WHERE state='pending' ORDER BY priority, id"
+        ).fetchall()
+        return [_row_to_job(row) for row in rows]
+
+    def running_jobs(self) -> list[Job]:
+        rows = self.conn.execute("SELECT * FROM jobs WHERE state='running' ORDER BY id").fetchall()
+        return [_row_to_job(row) for row in rows]
+
     def complete(self, job: Job) -> Job:
         now = iso(self.clock.now())
         self.conn.execute(
