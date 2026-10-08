@@ -64,9 +64,11 @@ def app_profile_dir() -> Path:
     return paths.app_home() / "browser"
 
 
-def app_command(exe: str, url: str, profile_dir: Path | None = None) -> list[str]:
+def app_command(
+    exe: str, url: str, profile_dir: Path | None = None, *, maximized: bool = False
+) -> list[str]:
     folder = profile_dir or app_profile_dir()
-    return [
+    command = [
         exe,
         f"--app={url}",
         f"--user-data-dir={folder}",
@@ -75,6 +77,10 @@ def app_command(exe: str, url: str, profile_dir: Path | None = None) -> list[str
         "--no-first-run",
         "--no-default-browser-check",
     ]
+    # Setup fills the screen, so no step needs scrolling (product owner, 2026-10-08).
+    if maximized:
+        command.append("--start-maximized")
+    return command
 
 
 def open_external(url: str) -> bool:
@@ -379,8 +385,9 @@ def bring_to_front() -> bool:
     return True
 
 
-def open_window(url: str) -> str:
-    """Show Upshot's window: focus the open one, or start one at ``url``.
+def open_window(url: str, *, maximized: bool = False) -> str:
+    """Show Upshot's window: focus the open one, or start one at ``url``, filling the
+    screen when ``maximized``.
 
     Returns what it did, for the log and the tests: "focused", "app" or "tab".
     """
@@ -389,7 +396,7 @@ def open_window(url: str) -> str:
     browser = app_browser()
     if browser:
         try:
-            subprocess.Popen(app_command(browser, url), close_fds=True)
+            subprocess.Popen(app_command(browser, url, maximized=maximized), close_fds=True)
             return "app"
         except OSError as exc:
             log.warning("could not open the Upshot window with %s: %s", browser, exc)

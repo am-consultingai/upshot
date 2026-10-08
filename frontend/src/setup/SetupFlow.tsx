@@ -125,7 +125,10 @@ export default function SetupFlow({
      * centring down re-centred the whole column whenever a step changed height.
      */
     <div data-testid="setup-flow" data-step={step} className="flex min-w-0 flex-1 flex-col">
-      <header className="flex shrink-0 flex-col items-center gap-3 px-6 pt-8 pb-2">
+      <header className="flex shrink-0 flex-col items-center gap-2 px-6 pt-5 pb-1 [@media(max-height:720px)]:pt-3">
+      {/* The track and the language switch share a row: every line up here is a line
+          the step below cannot use, and setup must fit the screen unscrolled. */}
+      <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
       <nav aria-label={t("firstRun.progress")}>
         <ol className="flex flex-wrap items-center justify-center gap-x-1 gap-y-2 text-xs">
           {crumbs.map((id, i) => {
@@ -182,6 +185,7 @@ export default function SetupFlow({
             </button>
           ))}
         </div>
+      </div>
         {/* A line kept for it whether it shows or not, so it cannot push the step down. */}
         <p data-testid={resumed ? "setup-resumed" : undefined} className="h-4 text-xs leading-4 text-secondary">
           {resumed ? t("firstRun.resumed") : ""}

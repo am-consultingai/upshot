@@ -149,3 +149,14 @@ def test_after_the_sign_in_upshot_is_brought_to_the_front(desktop: FakeDesktop) 
 
 def test_nothing_to_bring_forward_without_a_window(desktop: FakeDesktop) -> None:
     assert window.bring_to_front() is False and desktop.keys == []
+
+
+def test_setup_opens_maximized(desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Setup's steps are laid out for a full screen; the app's window keeps its own size."""
+    launched: list[list[str]] = []
+    monkeypatch.setattr(window, "app_browser", lambda: "msedge.exe")
+    monkeypatch.setattr(window.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))
+    window.open_window("http://127.0.0.1:8078/", maximized=True)
+    window.open_window("http://127.0.0.1:8078/")
+    assert "--start-maximized" in launched[0]
+    assert "--start-maximized" not in launched[1]

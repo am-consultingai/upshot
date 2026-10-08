@@ -338,3 +338,18 @@
   to { stroke-dashoffset: 0; }
 }
 .su-draw { stroke-dasharray: 48; animation: su-draw 0.6s 0.15s ease-out both; }
+
+/*
+ * Setup fits the screen unscrolled (product owner, 2026-10-08). On a short screen, such as
+ * a laptop at 150% scaling, the two large scenes (Google's sign-in, a service's sign-in)
+ * are drawn smaller. They are fixed-pixel drawings, so `zoom` scales them whole and takes
+ * the space they no longer need with them, which `transform` would not.
+ */
+@media (max-height: 800px) {
+  [data-testid="scene-calendar"],
+  [data-testid^="scene-signin-"] { zoom: 0.75; }
+}
+@media (max-height: 680px) {
+  [data-testid="scene-calendar"],
+  [data-testid^="scene-signin-"] { zoom: 0.65; }
+}
