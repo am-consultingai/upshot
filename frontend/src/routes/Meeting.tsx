@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buttonClass } from "../components/Button";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type Job } from "../api";
@@ -421,7 +422,7 @@ export default function MeetingPage() {
             href={meeting.data.calendar.conference_url}
             target="_blank"
             rel="noreferrer"
-            className="h-7 rounded-md px-2.5 text-xs leading-7 text-secondary shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary"
+            className={buttonClass("secondary")}
           >
             {t("calendar.joinMeeting")}
           </a>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { buttonClass } from "./Button";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, reason } from "../api";
@@ -18,7 +19,7 @@ function CopyButton({ text, testid }: { text: string; testid: string }) {
       onClick={() => {
         void navigator.clipboard?.writeText(text).then(() => setCopied(true));
       }}
-      className="h-8 shrink-0 rounded-md bg-surface-2 px-3 text-sm hover:bg-a-200"
+      className={buttonClass("secondary", "md")}
     >
       {copied ? t("settings.transcriptionCopied") : t("settings.transcriptionCopy")}
     </button>
@@ -162,7 +163,7 @@ export default function TranscriptionServiceSettings() {
               data-testid="transcription-add-desktop"
               disabled={addToDesktop.isPending}
               onClick={() => addToDesktop.mutate()}
-              className="h-8 rounded-md bg-accent px-3 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
+              className={buttonClass("primary", "md")}
             >
               {t("settings.transcriptionAddDesktop")}
             </button>

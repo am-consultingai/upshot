@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { buttonClass } from "./Button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type ActiveJob } from "../api";
 import { useI18n } from "../i18n";
@@ -69,7 +70,7 @@ function Row({ job }: { job: ActiveJob }) {
           data-testid="active-job-cancel"
           aria-busy={cancel.isPending}
           onClick={() => cancel.mutate()}
-          className="h-7 shrink-0 rounded-md px-2 text-xs hover:bg-a-200"
+          className={buttonClass("ghost")}
         >
           {t("transcriptions.cancel")}
         </button>

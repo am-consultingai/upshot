@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { buttonClass } from "./Button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type Transcription } from "../api";
 import { useI18n } from "../i18n";
@@ -95,14 +96,14 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
                 data-testid="transcription-view"
                 aria-expanded={open}
                 onClick={() => setOpen(!open)}
-                className="h-7 rounded-md px-2 text-xs hover:bg-a-200"
+                className={buttonClass("ghost")}
               >
                 {open ? t("transcriptions.hide") : t("transcriptions.view")}
               </button>
               <Menu
                 label={t("transcriptions.download")}
                 testid="transcription-download"
-                triggerClassName="h-7 rounded-md px-2 text-xs hover:bg-a-200"
+                triggerClassName={buttonClass("ghost")}
                 trigger={<>{t("transcriptions.download")}</>}
                 items={DOWNLOAD_FORMATS.map((format) => ({
                   id: format,
@@ -119,7 +120,7 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
                     .then((text) => navigator.clipboard?.writeText(text))
                     .then(() => setCopied(true), failed);
                 }}
-                className="h-7 rounded-md px-2 text-xs hover:bg-a-200"
+                className={buttonClass("ghost")}
               >
                 {copied ? t("transcriptions.copied") : t("transcriptions.copy")}
               </button>
@@ -130,7 +131,7 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
               type="button"
               data-testid="transcription-cancel"
               onClick={() => cancel.mutate()}
-              className="h-7 rounded-md px-2 text-xs hover:bg-a-200"
+              className={buttonClass("ghost")}
             >
               {t("transcriptions.cancel")}
             </button>
@@ -140,7 +141,7 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
               type="button"
               data-testid="transcription-retry"
               onClick={() => retry.mutate()}
-              className="h-7 rounded-md px-2 text-xs hover:bg-a-200"
+              className={buttonClass("ghost")}
             >
               {t("transcriptions.retry")}
             </button>

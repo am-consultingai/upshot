@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { buttonClass } from "./Button";
 
 /**
  * What a screen says when it has nothing to show, or could not show it.
@@ -78,5 +79,4 @@ export const EMPTY_ICON = {
 } as const;
 
 /** The quiet button an empty state offers, the same weight as the bar's secondary actions. */
-export const EMPTY_BUTTON =
-  "inline-flex h-7 items-center gap-1.5 rounded-md bg-raised px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring),var(--shadow-sm)] hover:bg-a-200 active:bg-a-300";
+export const EMPTY_BUTTON = buttonClass("secondary");
