@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
@@ -30,17 +30,19 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
 }
 
 /**
- * Crash reports, asked once (D87). Two equal answers and nothing chosen for the user:
- * either one saves at once and moves on. Shown only in a build that can send them.
+ * Crash reports, asked once (D87). Two choices, Share chosen for the user, and the one
+ * Continue (product owner, 2026-10-08): the choice is saved when the user moves on. Going
+ * Back to it shows what was saved. Shown only in a build that can send them.
  */
 export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const { t } = useI18n();
   const backend = useSetupBackend();
   const { reports } = useSetupSnapshot();
-  const answer = (on: boolean) => {
-    backend.setCrashReports(on);
-    onNext();
-  };
+  const [share, setShare] = useState(reports.consent !== "off");
+  const choices: { on: boolean; label: MessageKey }[] = [
+    { on: true, label: "firstRun.reports.yes" },
+    { on: false, label: "firstRun.reports.no" },
+  ];
   return (
     <StepFrame
       id="reports"
@@ -48,11 +50,16 @@ export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: ()
       lead={<p>{t("firstRun.reports.lead")}</p>}
       footer={
         <>
-          <button type="button" data-testid="reports-yes" className={PRIMARY} onClick={() => answer(true)}>
-            {t("firstRun.reports.yes")}
-          </button>
-          <button type="button" data-testid="reports-no" className={PRIMARY} onClick={() => answer(false)}>
-            {t("firstRun.reports.no")}
+          <button
+            type="button"
+            data-testid="setup-next"
+            className={PRIMARY}
+            onClick={() => {
+              backend.setCrashReports(share);
+              onNext();
+            }}
+          >
+            {t("firstRun.continue")}
           </button>
           <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
             {t("firstRun.back")}
@@ -67,6 +74,36 @@ export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: ()
         <Panel title="firstRun.reports.neverTitle">
           <p className="text-sm text-secondary">{t("firstRun.reports.never")}</p>
         </Panel>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label={t("firstRun.reports.title")}
+        className="mt-4 flex flex-wrap items-center justify-center gap-3"
+      >
+        {choices.map(({ on, label }) => {
+          const chosen = share === on;
+          return (
+            <button
+              key={label}
+              type="button"
+              role="radio"
+              aria-checked={chosen}
+              data-testid={on ? "reports-yes" : "reports-no"}
+              onClick={() => setShare(on)}
+              className={`flex items-center gap-2 rounded-xl bg-raised px-4 py-2.5 text-sm shadow-sm ring-inset hover:bg-a-100 ${
+                chosen ? "font-medium ring-2 ring-accent" : "ring-1 ring-line-subtle"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`grid size-4 shrink-0 place-items-center rounded-full ${chosen ? "bg-accent" : "ring-1 ring-line-strong"}`}
+              >
+                {chosen && <span className="size-1.5 rounded-full bg-on-accent" />}
+              </span>
+              {t(label)}
+            </button>
+          );
+        })}
       </div>
       <p className="mt-3 text-center text-xs text-tertiary">
         {t("firstRun.reports.later")}{" "}
@@ -86,7 +123,7 @@ export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: ()
 function Panel({ title, children }: { title: MessageKey; children: ReactNode }) {
   const { t } = useI18n();
   return (
-    <section className="rounded-xl bg-raised px-5 py-4 shadow-sm">
+    <section className="rounded-xl bg-raised px-5 py-4 shadow-sm [@media(max-height:720px)]:py-3">
       <h2 className="mb-3 text-sm font-medium">{t(title)}</h2>
       {children}
     </section>
@@ -216,7 +253,7 @@ const CAPTURE_OPTIONS: { mode: CaptureMode; title: MessageKey; why: MessageKey }
 function CaptureChoice({ mode, onChange }: { mode: CaptureMode; onChange: (mode: CaptureMode) => void }) {
   const { t } = useI18n();
   return (
-    <section data-testid="capture-choice" className="mt-6">
+    <section data-testid="capture-choice" className="mt-4">
       <h2 id="setup-capture-title" className="text-base font-medium">
         {t("firstRun.capture.title")}
       </h2>
@@ -238,12 +275,13 @@ function CaptureChoice({ mode, onChange }: { mode: CaptureMode; onChange: (mode:
                 chosen ? "ring-2 ring-accent" : "ring-1 ring-line-subtle"
               }`}
             >
-              {/* The scene at 4/5 of its 160x80, whole: it scales by its viewBox. */}
-              <div className="grid h-16 w-32 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-2 [&_svg]:h-16 [&_svg]:w-32">
+              {/* The scene at 3/5 of its 160x80, whole: it scales by its viewBox. Small
+                  enough that the title keeps to one line and the step fits unscrolled. */}
+              <div className="grid h-12 w-24 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-2 [&_svg]:h-12 [&_svg]:w-24">
                 <CaptureScene mode={option.mode} active={chosen} />
               </div>
               <span className="flex min-w-0 flex-col gap-1">
-                <span className="flex items-center gap-2">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span
                     aria-hidden="true"
                     className={`grid size-4 shrink-0 place-items-center rounded-full ${

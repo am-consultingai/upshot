@@ -193,7 +193,8 @@ class TrayApp:
 
     def show_window(self) -> str:
         """Upshot's window (app/window.py): brought forward if open, opened if not."""
-        how = window.open_window(self.open_link())
+        # First-run setup opens maximized: its steps are laid out for a full screen.
+        how = window.open_window(self.open_link(), maximized=self.setup_pending())
         log.info("window: %s", how)
         return how
 
