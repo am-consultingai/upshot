@@ -114,6 +114,8 @@ def merge_minor_speakers(
 
 #: Turns shorter than this are not embedded on their own: "okay", "right", a laugh.
 CENTROID_MIN_TURN_S = 1.0
+#: Less than this embeds as NaN or as an empty vector.
+CENTROID_MIN_SAMPLES_S = 0.1
 
 
 def speaker_centroids(
@@ -139,9 +141,18 @@ def speaker_centroids(
         long = [turn for turn in own if turn.duration >= CENTROID_MIN_TURN_S]
         if long:
             vectors = [_unit(embed(piece(turn))) for turn in long]
-            mean = np.average(vectors, axis=0, weights=[turn.duration for turn in long])
+            weights = [turn.duration for turn in long]
         else:
-            mean = embed(np.concatenate([piece(turn) for turn in own]))
+            joined = np.concatenate([piece(turn) for turn in own])
+            # A few milliseconds embed as NaN or as nothing (sherpa-onnx's stream is not ready)
+            vectors = [_unit(embed(joined))] if len(joined) >= CENTROID_MIN_SAMPLES_S * rate else []
+            weights = [1.0] * len(vectors)
+        kept = [
+            (v, w) for v, w in zip(vectors, weights, strict=True) if v.size and np.isfinite(v).all()
+        ]
+        if not kept or len({v.size for v, _ in kept}) > 1:
+            continue  # no centroid: the voice is left alone
+        mean = np.average([v for v, _ in kept], axis=0, weights=[w for _, w in kept])
         centroids[speaker] = _unit(mean)
     return centroids
 
@@ -160,7 +171,13 @@ def merge_similar_speakers(
     talk: dict[int, float] = {}
     for turn in turns:
         talk[turn.speaker] = talk.get(turn.speaker, 0.0) + turn.duration
-    live = {speaker: _unit(centroids[speaker]) for speaker in talk if speaker in centroids}
+    live = {
+        speaker: _unit(centroids[speaker])
+        for speaker in talk
+        if speaker in centroids and np.isfinite(centroids[speaker]).all()
+    }
+    if len({vector.size for vector in live.values()}) > 1:
+        return normalize_turns(turns)
     owner = {speaker: speaker for speaker in talk}
     while len(live) > 1:
         ids = sorted(live)
@@ -410,12 +427,16 @@ class OnnxDiarizer:
         turns = normalize_turns(
             [SpeakerTurn(float(s.start), float(s.end), int(s.speaker)) for s in result]
         )
-        if speaker_count(turns) <= 1:
+        if speaker_count(turns) <= 1 or self.num_speakers > 0:
+            return turns  # a count the user set is kept as the clusterer met it
+        try:
+            centroids = speaker_centroids(
+                turns, audio, expected, lambda piece: self._embed(piece, expected)
+            )
+            return merge_similar_speakers(turns, centroids, bound=self.merge_similarity)
+        except Exception:
+            log.exception("joining similar voices failed; keeping the clusterer's voices")
             return turns
-        centroids = speaker_centroids(
-            turns, audio, expected, lambda piece: self._embed(piece, expected)
-        )
-        return merge_similar_speakers(turns, centroids, bound=self.merge_similarity)
 
     def _embed(self, samples: np.ndarray, rate: int) -> np.ndarray:
         if self._extractor is None:

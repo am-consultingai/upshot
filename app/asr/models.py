@@ -252,5 +252,6 @@ def download_diarization(config: Config, *, timeout: float = 300.0) -> Diarizati
         partial.replace(target)
     if models.embedding.parent == diarization_dir(config):
         for retired in RETIRED_EMBEDDING_FILES:
-            (models.embedding.parent / retired).unlink(missing_ok=True)
+            if retired != models.embedding.name:  # never the file the user pointed at
+                (models.embedding.parent / retired).unlink(missing_ok=True)
     return models

@@ -410,3 +410,116 @@ def test_fetching_the_new_embedding_removes_the_retired_one(tmp_path, monkeypatc
     assert models.present and models.embedding.name == EMBEDDING_FILE
     assert len(fetched) == 1 and "3dspeaker" in fetched[0], "segmentation was already there"
     assert not (tmp_path / "embedding.onnx").exists()
+
+
+class Segmented:
+    def __init__(self, start: float, end: float, speaker: int) -> None:
+        self.start, self.end, self.speaker = start, end, speaker
+
+
+def pipeline_of(*segments: tuple[float, float, int]) -> object:
+    """A stand-in for sherpa-onnx's pipeline that returns these clusters, at 16 kHz."""
+
+    class Result:
+        def sort_by_start_time(self) -> list[Segmented]:
+            return [Segmented(*segment) for segment in segments]
+
+    class Pipeline:
+        sample_rate = 16000
+
+        def process(self, audio: np.ndarray) -> Result:
+            return Result()
+
+    return Pipeline()
+
+
+SAME_VOICE_TWICE = ((0.0, 5.0, 0), (5.0, 10.0, 1), (10.0, 15.0, 0))
+
+
+def onnx_with(embed, **options: object):  # type: ignore[no-untyped-def]
+    from app.asr.diarize import OnnxDiarizer
+
+    diarizer = OnnxDiarizer("seg.onnx", "emb.onnx", **options)  # type: ignore[arg-type]
+    diarizer._pipeline = pipeline_of(*SAME_VOICE_TWICE)
+    diarizer._embed = lambda samples, rate: embed(samples)  # type: ignore[method-assign]
+    return diarizer
+
+
+def test_the_onnx_diarizer_joins_two_clusters_of_one_voice() -> None:
+    diarizer = onnx_with(lambda samples: unit(1.0, 0.0, 0.0))
+    turns = diarizer.diarize(np.zeros(16000 * 15, dtype=np.float32), 16000)
+    assert speaker_count(turns) == 1
+
+
+def test_a_speaker_count_the_user_set_is_kept() -> None:
+    diarizer = onnx_with(lambda samples: unit(1.0, 0.0, 0.0), num_speakers=2)
+    turns = diarizer.diarize(np.zeros(16000 * 15, dtype=np.float32), 16000)
+    assert speaker_count(turns) == 2
+
+
+def test_a_failed_join_keeps_the_clusterers_voices() -> None:
+    def broken(samples: np.ndarray) -> np.ndarray:
+        raise RuntimeError("the extractor fell over")
+
+    turns = onnx_with(broken).diarize(np.zeros(16000 * 15, dtype=np.float32), 16000)
+    assert speaker_count(turns) == 2
+
+
+def test_a_nan_or_empty_embedding_gives_no_centroid_and_merges_nothing() -> None:
+    from app.asr.diarize import merge_similar_speakers, speaker_centroids
+
+    turns = [SpeakerTurn(0.0, 5.0, 0), SpeakerTurn(5.0, 10.0, 1), SpeakerTurn(10.0, 15.0, 2)]
+    vectors = {0: np.full(3, np.nan, dtype=np.float32), 1: np.zeros(0), 2: unit(1.0, 0.0, 0.0)}
+
+    def embed(samples: np.ndarray) -> np.ndarray:
+        return vectors[int(samples[0])]
+
+    samples = np.repeat(np.array([0.0, 1.0, 2.0], dtype=np.float32), 16000 * 5)
+    centroids = speaker_centroids(turns, samples, 16000, embed)
+    assert list(centroids) == [2]
+    centroids[0] = np.full(3, np.nan, dtype=np.float32)
+    assert speaker_count(merge_similar_speakers(turns, centroids)) == 3
+
+
+def test_a_voice_of_a_few_milliseconds_is_not_embedded() -> None:
+    from app.asr.diarize import speaker_centroids
+
+    calls: list[int] = []
+
+    def embed(samples: np.ndarray) -> np.ndarray:
+        calls.append(len(samples))
+        return unit(1.0, 0.0)
+
+    turns = [SpeakerTurn(0.0, 3.0, 0), SpeakerTurn(3.0, 3.005, 1)]
+    centroids = speaker_centroids(turns, np.zeros(16000 * 4, dtype=np.float32), 16000, embed)
+    assert list(centroids) == [0] and calls == [48000]
+
+
+def test_a_chain_of_joins_keeps_the_id_of_the_voice_that_spoke_most() -> None:
+    from app.asr.diarize import merge_similar_speakers
+
+    turns = [
+        SpeakerTurn(0.0, 2.0, 0),
+        SpeakerTurn(2.0, 5.0, 1),
+        SpeakerTurn(5.0, 15.0, 2),
+        SpeakerTurn(15.0, 20.0, 3),
+    ]
+    base = unit(1.0, 0.0, 0.0)
+    centroids = {0: base, 1: base, 2: unit(0.8, 0.6, 0.0), 3: unit(0.0, 0.0, 1.0)}
+    merged = merge_similar_speakers(turns, centroids, bound=0.6)
+    assert [turn.speaker for turn in merged] == [0, 0, 0, 1]
+
+
+def test_retiring_the_old_embedding_spares_the_one_the_user_points_at(
+    tmp_path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    from app.asr.models import download_diarization
+
+    (tmp_path / "segmentation.onnx").write_bytes(b"x")
+    (tmp_path / "embedding.onnx").write_bytes(b"mine")
+    config = default_config(
+        asr__diarization_dir=str(tmp_path),
+        asr__diarization_embedding_path=str(tmp_path / "embedding.onnx"),
+    )
+    assert download_diarization(config).present
+    assert (tmp_path / "embedding.onnx").read_bytes() == b"mine"
