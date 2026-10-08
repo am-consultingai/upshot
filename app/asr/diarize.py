@@ -12,7 +12,7 @@ added later as one file and one config value.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -112,6 +112,97 @@ def merge_minor_speakers(
     )
 
 
+#: Turns shorter than this are not embedded on their own: "okay", "right", a laugh.
+CENTROID_MIN_TURN_S = 1.0
+#: Less than this embeds as NaN or as an empty vector.
+CENTROID_MIN_SAMPLES_S = 0.1
+
+
+def speaker_centroids(
+    turns: Sequence[SpeakerTurn],
+    samples: np.ndarray,
+    rate: int,
+    embed: Callable[[np.ndarray], np.ndarray],
+) -> dict[int, np.ndarray]:
+    """Each voice's mean embedding, unit length: its turns of a second or more, by length.
+
+    A voice made only of shorter turns is embedded once, as their concatenation, because
+    the embedding of half a second of speech says little about who spoke it.
+    """
+    by_speaker: dict[int, list[SpeakerTurn]] = {}
+    for turn in turns:
+        by_speaker.setdefault(turn.speaker, []).append(turn)
+
+    def piece(turn: SpeakerTurn) -> np.ndarray:
+        return samples[int(turn.start * rate) : int(turn.end * rate)]
+
+    centroids: dict[int, np.ndarray] = {}
+    for speaker, own in by_speaker.items():
+        long = [turn for turn in own if turn.duration >= CENTROID_MIN_TURN_S]
+        if long:
+            vectors = [_unit(embed(piece(turn))) for turn in long]
+            weights = [turn.duration for turn in long]
+        else:
+            joined = np.concatenate([piece(turn) for turn in own])
+            # A few milliseconds embed as NaN or as nothing (sherpa-onnx's stream is not ready)
+            vectors = [_unit(embed(joined))] if len(joined) >= CENTROID_MIN_SAMPLES_S * rate else []
+            weights = [1.0] * len(vectors)
+        kept = [
+            (v, w) for v, w in zip(vectors, weights, strict=True) if v.size and np.isfinite(v).all()
+        ]
+        if not kept or len({v.size for v, _ in kept}) > 1:
+            continue  # no centroid: the voice is left alone
+        mean = np.average([v for v, _ in kept], axis=0, weights=[w for _, w in kept])
+        centroids[speaker] = _unit(mean)
+    return centroids
+
+
+def merge_similar_speakers(
+    turns: Sequence[SpeakerTurn], centroids: dict[int, np.ndarray], *, bound: float = 0.6
+) -> list[SpeakerTurn]:
+    """Join voices whose centroids are at least ``bound`` alike (cosine), closest first.
+
+    sherpa-onnx clusters short segments, whose embeddings are noisy, so on a long track one
+    person comes back as many clusters whose centroids nearly agree: a 27-minute 1:1 call
+    gave 16 far-side voices (ClickUp z8tj1hfdwp). A joined voice's centroid is the
+    talk-weighted mean of its parts, and it keeps the id of the part that spoke more.
+    Measured bound in DECISIONS.md D91.
+    """
+    talk: dict[int, float] = {}
+    for turn in turns:
+        talk[turn.speaker] = talk.get(turn.speaker, 0.0) + turn.duration
+    live = {
+        speaker: _unit(centroids[speaker])
+        for speaker in talk
+        if speaker in centroids and np.isfinite(centroids[speaker]).all()
+    }
+    if len({vector.size for vector in live.values()}) > 1:
+        return normalize_turns(turns)
+    owner = {speaker: speaker for speaker in talk}
+    while len(live) > 1:
+        ids = sorted(live)
+        similarity, first, second = max(
+            (float(live[a] @ live[b]), a, b) for i, a in enumerate(ids) for b in ids[i + 1 :]
+        )
+        if similarity < bound:
+            break
+        keep, gone = (first, second) if talk[first] >= talk[second] else (second, first)
+        live[keep] = _unit(live[keep] * talk[keep] + live.pop(gone) * talk[gone])
+        talk[keep] += talk.pop(gone)
+        for speaker, current in owner.items():
+            if current == gone:
+                owner[speaker] = keep
+    return normalize_turns(
+        [SpeakerTurn(turn.start, turn.end, owner[turn.speaker]) for turn in turns]
+    )
+
+
+def _unit(vector: np.ndarray) -> np.ndarray:
+    vector = np.asarray(vector, dtype=np.float32)
+    norm = float(np.linalg.norm(vector))
+    return vector / norm if norm > 0 else vector
+
+
 def label_track(
     segments: Sequence[Segment], turns: Sequence[SpeakerTurn], *, track: str, base: str
 ) -> list[Segment]:
@@ -137,7 +228,7 @@ def diarize_track(
     alike. Returns the relabelled segments and ``{"speakers", "turns"}``, or the segments
     unchanged and ``None`` when the diarizer failed: a transcript is never lost for want
     of speaker turns. The microphone's quiet clusters are folded into its main voice
-    first.
+    first, and the far side's crumbs into its.
     """
     minutes = len(audio) / rate / 60
     if minutes > LONG_TRACK_MINUTES:
@@ -152,6 +243,13 @@ def diarize_track(
             turns,
             min_share=float(config.get("asr.diarization_mic_min_share", 0.05)),
             min_seconds=float(config.get("asr.diarization_mic_min_seconds", 20.0)),
+        )
+    else:
+        # The far side keeps a brief voice, but not a crumb under 2 % of the talk (D91).
+        turns = merge_minor_speakers(
+            turns,
+            min_share=float(config.get("asr.diarization_far_min_share", 0.02)),
+            min_seconds=0.0,
         )
     voices = len({turn.speaker for turn in turns})
     log.info("diarization: %d voice(s) on the %s track", voices, track)
@@ -251,10 +349,12 @@ class FakeDiarizer:
 
 
 class OnnxDiarizer:
-    """sherpa-onnx: pyannote segmentation + a wespeaker embedding, both as ONNX.
+    """sherpa-onnx: pyannote segmentation + a 3D-Speaker CAM++ embedding, both as ONNX.
 
     This build already ships onnxruntime for Silero VAD, so diarization adds ~19 MB of
-    wheels and ~37 MB of weights rather than a second deep-learning framework.
+    wheels and ~34 MB of weights rather than a second deep-learning framework. The
+    clusterer's voices are then joined by their centroids (``merge_similar_speakers``,
+    D91), embedded with the same model.
     """
 
     name = "onnx"
@@ -269,6 +369,7 @@ class OnnxDiarizer:
         min_duration_on: float = 0.3,
         min_duration_off: float = 0.5,
         num_threads: int = 2,
+        merge_similarity: float = 0.6,
     ) -> None:
         self.segmentation_model = segmentation_model
         self.embedding_model = embedding_model
@@ -277,7 +378,9 @@ class OnnxDiarizer:
         self.min_duration_on = min_duration_on
         self.min_duration_off = min_duration_off
         self.num_threads = num_threads
+        self.merge_similarity = merge_similarity
         self._pipeline: Any = None
+        self._extractor: Any = None
 
     def load(self) -> Any:
         if self._pipeline is not None:
@@ -321,12 +424,37 @@ class OnnxDiarizer:
 
             audio = np.asarray(soxr.resample(audio, rate, expected), dtype=np.float32)
         result = pipeline.process(audio).sort_by_start_time()
-        return normalize_turns(
+        turns = normalize_turns(
             [SpeakerTurn(float(s.start), float(s.end), int(s.speaker)) for s in result]
         )
+        if speaker_count(turns) <= 1 or self.num_speakers > 0:
+            return turns  # a count the user set is kept as the clusterer met it
+        try:
+            centroids = speaker_centroids(
+                turns, audio, expected, lambda piece: self._embed(piece, expected)
+            )
+            return merge_similar_speakers(turns, centroids, bound=self.merge_similarity)
+        except Exception:
+            log.exception("joining similar voices failed; keeping the clusterer's voices")
+            return turns
+
+    def _embed(self, samples: np.ndarray, rate: int) -> np.ndarray:
+        if self._extractor is None:
+            import sherpa_onnx
+
+            self._extractor = sherpa_onnx.SpeakerEmbeddingExtractor(
+                sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                    model=self.embedding_model, num_threads=self.num_threads
+                )
+            )
+        stream = self._extractor.create_stream()
+        stream.accept_waveform(rate, samples)
+        stream.input_finished()
+        return np.asarray(self._extractor.compute(stream), dtype=np.float32)
 
     def unload(self) -> None:
         self._pipeline = None
+        self._extractor = None
 
 
 def make_diarizer(config: Config) -> Diarizer | None:
@@ -356,5 +484,6 @@ def make_diarizer(config: Config) -> Diarizer | None:
             threshold=float(config.get("asr.diarization_threshold", 0.6)),
             min_duration_on=float(config.get("asr.diarization_min_duration_on", 0.3)),
             min_duration_off=float(config.get("asr.diarization_min_duration_off", 0.5)),
+            merge_similarity=float(config.get("asr.diarization_merge_similarity", 0.6)),
         )
     raise ValueError(f"unknown asr.diarization {kind!r}")

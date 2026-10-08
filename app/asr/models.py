@@ -22,10 +22,16 @@ SEGMENTATION_URL = (
     "resolve/main/model.onnx"
 )
 #: A GitHub release asset, so the diarization path needs no Hugging Face account at all.
+#: 3D-Speaker's CAM++ trained on Chinese and English (Apache-2.0). The English VoxCeleb
+#: CAM++ before it could not tell the two people of a Hebrew call apart (D91).
 EMBEDDING_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
-    "speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
+    "speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
 )
+#: Named for the model, so an install that holds an older embedding fetches this one.
+EMBEDDING_FILE = "embedding-3dspeaker-campplus-zh-en.onnx"
+#: Embeddings this build no longer uses, removed once the current one is on disk.
+RETIRED_EMBEDDING_FILES = ("embedding.onnx",)
 
 #: The three speech models (DECISIONS.md D80, superseding D60), each pinned to a hub
 #: revision so an upstream re-upload cannot silently change transcripts. All three are
@@ -220,12 +226,12 @@ def resolve_diarization(config: Config) -> DiarizationModels:
     segmentation = config.get("asr.diarization_segmentation_path") or (
         directory / "segmentation.onnx"
     )
-    embedding = config.get("asr.diarization_embedding_path") or (directory / "embedding.onnx")
+    embedding = config.get("asr.diarization_embedding_path") or (directory / EMBEDDING_FILE)
     return DiarizationModels(Path(str(segmentation)), Path(str(embedding)))
 
 
 def download_diarization(config: Config, *, timeout: float = 300.0) -> DiarizationModels:
-    """Fetch the two ONNX models. ~37 MB, no account, no token (DECISIONS.md D28)."""
+    """Fetch the two ONNX models. ~34 MB, no account, no token (DECISIONS.md D28, D91)."""
     import urllib.request
 
     from app.asr.model_manager import tls_context
@@ -244,4 +250,8 @@ def download_diarization(config: Config, *, timeout: float = 300.0) -> Diarizati
             while chunk := response.read(1 << 20):
                 out.write(chunk)
         partial.replace(target)
+    if models.embedding.parent == diarization_dir(config):
+        for retired in RETIRED_EMBEDDING_FILES:
+            if retired != models.embedding.name:  # never the file the user pointed at
+                (models.embedding.parent / retired).unlink(missing_ok=True)
     return models
