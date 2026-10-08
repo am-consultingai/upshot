@@ -91,6 +91,10 @@ DEFAULTS: dict[str, Any] = {
         # residue or noise, not a second person in the room (D85).
         "diarization_mic_min_seconds": 20.0,
         "diarization_mic_min_share": 0.05,
+        # measured: DECISIONS D91 (ClickUp z8tj1hfdwp); the bound is on the 3D-Speaker
+        # embedding's scale, so another diarization_embedding_path needs its own
+        "diarization_merge_similarity": 0.6,
+        "diarization_far_min_share": 0.02,
         "fake_language": "he",
         "fake_repetitions": 1,
     },
