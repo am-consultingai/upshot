@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
+import { Loading, Skeleton } from "./Skeleton";
 
 /** The instructions sent with every summary, shown in full and editable.
  *
@@ -46,7 +47,17 @@ export default function PromptSettings() {
       </section>
     );
   }
-  if (!prompt.data) return null;
+  if (!prompt.data)
+    return (
+      // The heading, its state chip and the editor box, at the editor's height.
+      <Loading testid="prompt-loading">
+        <div className="mb-2 flex items-center gap-2">
+          <Skeleton className="h-3.5 w-28" />
+          <Skeleton className="h-4 w-16 rounded-full" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-md" />
+      </Loading>
+    );
   const text = draft ?? prompt.data.text;
   const dirty = text.trim() !== prompt.data.text.trim();
 

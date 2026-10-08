@@ -324,7 +324,7 @@ test("ask_this_meeting_answers_with_a_moment_to_play", async ({ page }) => {
   const citation = page.getByTestId("ask-citation").first();
   await expect(citation).toHaveText("(00:01:15)");
   await citation.click();
-  await expect(page.getByTestId("meeting-tab-transcript")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("meeting-tab-transcript")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("audio-player")).toBeVisible();
 });
 

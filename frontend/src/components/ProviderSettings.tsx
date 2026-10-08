@@ -8,6 +8,7 @@ import { PinnedContext } from "./SettingRow";
 import Tooltip from "./Tooltip";
 import { openExternal } from "../lib/external";
 import { VendorLogo, type VendorId } from "../setup/logos";
+import { Loading, SkeletonRows } from "./Skeleton";
 
 /** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
 const LOGO: Record<string, VendorId | undefined> = {
@@ -251,6 +252,12 @@ export default function ProviderSettings() {
           {t("settings.providerUnlisted").replace("{provider}", unlisted)}
           {pinnedBy && ` ${t("settings.pinnedByEnv").replace("{var}", pinnedBy)}`}
         </p>
+      )}
+      {status.isLoading && (
+        // A group's worth of provider rows: a radio, a name, a line of explanation.
+        <Loading>
+          <SkeletonRows rows={3} lead="check" rowClassName="py-2.5" />
+        </Loading>
       )}
       <div className="grid gap-4">
         {GROUPS.map((group) => {

@@ -6,6 +6,8 @@ import { useI18n } from "../i18n";
 import TranscriptionDropzone from "../components/TranscriptionDropzone";
 import TranscriptionRow from "../components/TranscriptionRow";
 import { toast } from "../components/Toaster";
+import { Loading, Skeleton } from "../components/Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 import { LIST_KEY, loadOptions, saveOptions, upload, type UploadOptions } from "../lib/transcriptions";
 
 interface Uploading {
@@ -85,13 +87,43 @@ export default function TranscriptionsPage() {
         ))}
       </ul>
 
+      {list.isLoading && (
+        // Rows the shape of a transcription: a name, and its state at the far end.
+        <Loading className="space-y-1">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="flex items-center gap-4 rounded-lg bg-raised px-4 py-3.5 shadow-sm">
+              <Skeleton className={`h-3 ${index === 1 ? "w-1/3" : "w-1/2"}`} />
+              <Skeleton className="ms-auto h-3 w-20" />
+            </div>
+          ))}
+        </Loading>
+      )}
+      {list.isError && (
+        <EmptyState
+          testid="transcriptions-error"
+          tone="danger"
+          icon={EMPTY_ICON.error}
+          title={t("common.error")}
+          body={t("transcriptions.errorBody")}
+          action={
+            <button type="button" onClick={() => void list.refetch()} className={EMPTY_BUTTON}>
+              {t("common.retry")}
+            </button>
+          }
+        />
+      )}
       {list.isSuccess && !jobs.length && !uploading.length && (
-        <div data-testid="transcriptions-empty" className="mt-2 max-w-prose text-sm text-secondary">
-          <p>{t("transcriptions.empty")}</p>
-          <Link to="/settings#transcription" className="mt-2 inline-block underline">
-            {t("transcriptions.emptyLink")}
-          </Link>
-        </div>
+        <EmptyState
+          testid="transcriptions-empty"
+          icon={EMPTY_ICON.transcript}
+          title={t("transcriptions.emptyTitle")}
+          body={t("transcriptions.empty")}
+          action={
+            <Link to="/settings#transcription" className={EMPTY_BUTTON}>
+              {t("transcriptions.emptyLink")}
+            </Link>
+          }
+        />
       )}
       {keepDays ? (
         <p className="mt-6 text-xs text-tertiary">{t("transcriptions.kept").replace("{n}", String(keepDays))}</p>
