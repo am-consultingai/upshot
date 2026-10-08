@@ -215,12 +215,24 @@ test("the_transcript_follows_playback_until_the_reader_scrolls_away", async ({ p
   const blocks = page.getByTestId("transcript-block");
   await audio.evaluate((el) => ((el as HTMLAudioElement).currentTime = 50.6));
   await expect(blocks.nth(50)).toBeInViewport();
+  // Aimed at the middle of the transcript's own scrolling box, which is the transcript
+  // wherever the smooth scroll has got to, never at what passes under a line's old place
+  // (the player bar).
+  const aim = await page.getByTestId("transcript").evaluate((el) => {
+    let box: HTMLElement | null = el.parentElement;
+    while (box && !/(auto|scroll)/.test(getComputedStyle(box).overflowY)) box = box.parentElement;
+    const rect = (box ?? document.documentElement).getBoundingClientRect();
+    const top = Math.max(rect.top, 0);
+    const bottom = Math.min(rect.bottom, window.innerHeight);
+    return { x: rect.left + rect.width / 2, y: (top + bottom) / 2 };
+  });
 
-  // The reader scrolls: playback stops pulling the page.
-  await blocks.nth(50).hover();
+  // The reader scrolls: playback stops pulling the page, and says so before the seek.
+  await page.mouse.move(aim.x, aim.y);
   await page.mouse.wheel(0, -200);
+  await expect(page.getByTestId("transcript")).toHaveAttribute("data-following", "false");
   await audio.evaluate((el) => ((el as HTMLAudioElement).currentTime = 5.6));
-  await page.waitForTimeout(800);
+  await expect(page.getByTestId("transcript-turn").nth(5)).toHaveAttribute("data-speaking", "true");
   await expect(blocks.nth(5)).not.toBeInViewport();
 
   // A click on a line hands it back.
