@@ -7,6 +7,8 @@ import { hitSpeaker } from "../lib/speakers";
 import { forgetSearches, recentSearches, rememberSearch } from "../lib/recents";
 import { formatClock, formatDurationShort } from "../lib/format";
 import type { MessageKey } from "../locales/en";
+import { Loading, Skeleton, SkeletonRows } from "../components/Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 
 type Scope = "all" | SearchHit["kind"];
 
@@ -211,11 +213,60 @@ export default function SearchPage() {
         </div>
       )}
 
-      {ready && results.isLoading && <p className="mt-4 text-sm text-tertiary">{t("common.loading")}</p>}
-      {ready && !results.isLoading && groups.length === 0 && (
-        <p data-testid="search-none" className="mt-4 text-sm text-tertiary">
-          {t("search.none")}
-        </p>
+      {ready && results.isLoading && (
+        // A group header and rows of snippet-and-source, where the hits will be.
+        <Loading className="mt-4">
+          <Skeleton className="mb-3 h-2 w-20" />
+          <SkeletonRows rows={4} />
+        </Loading>
+      )}
+      {ready && results.isError && (
+        <EmptyState
+          testid="search-error"
+          tone="danger"
+          icon={EMPTY_ICON.error}
+          title={t("common.error")}
+          body={t("search.errorBody")}
+          action={
+            <button type="button" onClick={() => void results.refetch()} className={EMPTY_BUTTON}>
+              {t("common.retry")}
+            </button>
+          }
+        />
+      )}
+      {/*
+       * Nothing matched — or nothing matched *here*. A scope that hides hits found
+       * elsewhere says so and offers the way back, instead of reading as "not found".
+       */}
+      {ready && results.isSuccess && groups.length === 0 && (
+        <EmptyState
+          testid="search-none"
+          icon={EMPTY_ICON.search}
+          title={
+            <>
+              {t("search.none")} <bdi>“{term.trim()}”</bdi>
+            </>
+          }
+          body={hits.length > 0 ? t("search.noneInScope").replace("{n}", String(hits.length)) : t("search.noneBody")}
+          action={
+            hits.length > 0 ? (
+              <button type="button" data-testid="search-none-all" onClick={() => setScope("all")} className={EMPTY_BUTTON}>
+                {t("search.showAll")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setTerm("");
+                  input.current?.focus();
+                }}
+                className={EMPTY_BUTTON}
+              >
+                {t("search.clear")}
+              </button>
+            )
+          }
+        />
       )}
 
       <div data-testid="search-results" className="mt-4">

@@ -131,7 +131,13 @@
 
   --text-primary: color-mix(in oklab, var(--base), var(--ink) 94%);
   --text-secondary: color-mix(in oklab, var(--base), var(--ink) 68%);
-  --text-tertiary: color-mix(in oklab, var(--base), var(--ink) 48%);
+  /*
+   * 60%, not the 48% it was drawn at: that measured 3.0–3.8:1 on the surfaces it sits
+   * on, under WCAG AA's 4.5:1 for text this small (axe, e2e/a11y.spec.ts). 60% clears
+   * 4.5:1 on surface-3 in light and on every surface in dark, and stays a clear step
+   * below secondary.
+   */
+  --text-tertiary: color-mix(in oklab, var(--base), var(--ink) 60%);
   --text-on-accent: var(--accent-ink);
 
   /*
@@ -200,6 +206,8 @@
   --warning-quiet: color-mix(in oklab, var(--base), var(--warning) 10%);
   --success: #17683f;
   --success-quiet: color-mix(in oklab, var(--base), var(--success) 8%);
+  /* Text on a solid status fill. */
+  --on-solid: #ffffff;
 
   /*
    * Speakers. Five hues, spaced around the wheel away from the accent's teal and the
@@ -208,11 +216,13 @@
    * waveform, so the three can be read against each other.
    */
   --speaker-1: #56718d;
-  --speaker-2: #8b7ae6;
-  --speaker-3: #b9825a;
-  --speaker-4: #4f957a;
-  --speaker-5: #c0668a;
-  /* Initials on a speaker colour: white on the deep light-theme hues. */
+  --speaker-2: #7668c5;
+  --speaker-3: #996b49;
+  --speaker-4: #427f68;
+  --speaker-5: #ac5b7b;
+  /* Initials on a speaker colour: white on the deep light-theme hues. Each hue is deep
+     enough for 4.5:1 under white (axe, e2e/a11y.spec.ts): the four after the first were
+     drawn lighter and measured 3.3–3.8:1 behind 9px initials. */
   --on-speaker: #ffffff;
   /* Calendar accounts (D82): a dot each, never a fill. Six hues away from the state
      colours (the accent's teal, the recording red, amber and green) and from nothing
@@ -263,6 +273,12 @@
     --ink: #f2f3f5;
     --accent: #3dbdb0;
     --accent-ink: #06201e;
+    /* The light theme's status colours measured 2.7–3.3:1 on this canvas; these clear
+       4.5:1, and a solid fill of one takes dark ink, the way the accent does. */
+    --danger: #f2726b;
+    --warning: #e5a43a;
+    --success: #4cc38a;
+    --on-solid: #0e0f11;
 
     --lift: var(--ink);
     --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
@@ -300,6 +316,12 @@
   --ink: #f2f3f5;
   --accent: #3dbdb0;
   --accent-ink: #06201e;
+  /* The light theme's status colours measured 2.7–3.3:1 on this canvas; these clear
+     4.5:1, and a solid fill of one takes dark ink, the way the accent does. */
+  --danger: #f2726b;
+  --warning: #e5a43a;
+  --success: #4cc38a;
+  --on-solid: #0e0f11;
 
   --lift: var(--ink);
   --surface-raised: color-mix(in oklab, var(--base), var(--ink) 7%);
@@ -378,7 +400,7 @@
   --shadow-ring-subtle: var(--ring-subtle);
   --shadow-edge: var(--edge-highlight);
 
-  --color-on-solid: #ffffff;
+  --color-on-solid: var(--on-solid);
 
   --color-danger: var(--danger);
   --color-danger-quiet: var(--danger-quiet);

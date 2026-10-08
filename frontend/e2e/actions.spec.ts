@@ -119,11 +119,11 @@ test("the_keyboard_moves_ticks_and_snoozes", async ({ page, seedBody }) => {
   await expect(rows).toHaveCount(3);
 
   // The first row starts selected; J moves down, K back up.
-  await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
+  await expect(rows.nth(0)).toHaveAttribute("aria-current", "true");
   await page.keyboard.press("j");
-  await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true");
+  await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
   await page.keyboard.press("k");
-  await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
+  await expect(rows.nth(0)).toHaveAttribute("aria-current", "true");
 
   // H snoozes the selected one until tomorrow, with a toast that can take it back.
   const snoozed = await rows.nth(0).getByTestId("action-what").textContent();

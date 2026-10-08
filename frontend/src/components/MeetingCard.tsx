@@ -119,8 +119,7 @@ export default function MeetingCard({
       data-testid="meeting-card"
       data-meeting-id={meeting.id}
       data-state={meeting.state}
-      role="option"
-      aria-selected={selected}
+      data-selected={selected ? "true" : undefined}
       onContextMenu={context.onContextMenu}
       className={`ma-row group relative rounded-md ${
         selected ? "bg-a-100 hover:bg-a-200" : "hover:bg-a-200 active:bg-a-300"
