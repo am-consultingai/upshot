@@ -33,6 +33,9 @@ class StageContext:
     #: Set by a stage that completed without moving the meeting forward — a draft
     #: delivery finishes its job but must leave the meeting at RENDERED.
     hold_state: bool = False
+    #: ``(phase, fraction)``: how far the stage has got (``app/pipeline/progress.py``).
+    #: Set by the worker for the stage that reports; anywhere else it goes nowhere.
+    report: Callable[[str, float], None] = lambda _phase, _fraction: None
 
     @property
     def folder(self) -> Path:

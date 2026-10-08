@@ -49,6 +49,8 @@ class AppState:
     processing: bool = False
     error: bool = False
     queue_depth: int = 0
+    #: The running transcription's progress, 0–1; None while nothing reports one.
+    transcribing: float | None = None
     meeting_title: str | None = None
     detector_mode: str = "shadow"
     #: The call's app let go and the recording saves itself soon (D77).
@@ -104,6 +106,11 @@ def _tooltip(state: AppState) -> str:
         return "Evaluating — nothing on disk yet"
     if state.processing:
         depth = state.queue_depth
+        if state.transcribing is not None:
+            percent = round(state.transcribing * 100)
+            waiting = depth - 1
+            more = f", {waiting} more waiting" if waiting > 0 else ""
+            return f"Transcribing {percent} %{more}"
         return f"Processing {depth} job{'s' if depth != 1 else ''}"
     if not state.worker_alive:
         return "The worker stopped — recording still works"

@@ -10,6 +10,7 @@ import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
 import TranscriptionsPage from "./routes/Transcriptions";
 import { applyEvent, type TranscriptionEvent } from "./lib/transcriptions";
+import { applyFileEvent, applyJobProgress, type JobProgressEvent } from "./lib/activeJobs";
 import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
 import TermsPage from "./routes/Terms";
@@ -233,7 +234,13 @@ export default function App() {
     const invalidate = () => {
       void queryClient.invalidateQueries();
     };
-    source.addEventListener("job", invalidate);
+    // A meeting's transcription reports progress every second, like a file's: it patches
+    // the list of running work and nothing else. A job starting or ending refetches all.
+    source.addEventListener("job", (event) => {
+      const data = JSON.parse((event as MessageEvent<string>).data) as { action?: string };
+      if (data.action === "progress") applyJobProgress(queryClient, data as JobProgressEvent);
+      else invalidate();
+    });
     source.addEventListener("recorder", invalidate);
     source.addEventListener("meeting", invalidate);
     // The connection finishes in another tab — Google's — so Settings learns of it here.
@@ -247,7 +254,9 @@ export default function App() {
     // File transcriptions (D86) report progress every second: they update their own list
     // and nothing else, or each one would refetch the whole app.
     source.addEventListener("transcription", (event) => {
-      applyEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as TranscriptionEvent);
+      const data = JSON.parse((event as MessageEvent<string>).data) as TranscriptionEvent;
+      applyEvent(queryClient, data);
+      applyFileEvent(queryClient, data);
     });
     // An update was found, is downloading, or is ready to install (D87).
     source.addEventListener("updates", invalidate);
