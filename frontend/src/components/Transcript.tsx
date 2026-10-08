@@ -188,7 +188,7 @@ const Transcript = forwardRef<
         </kbd>
       </div>
 
-      <ol ref={list} data-testid="transcript" dir={dir} className="pb-6">
+      <ol ref={list} data-testid="transcript" data-following={following} dir={dir} className="pb-6">
         {segments.map((segment, index) => {
           const person = bySlot.get(segment.speaker);
           const continues = index > 0 && segments[index - 1].speaker === segment.speaker;
