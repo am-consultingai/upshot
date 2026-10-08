@@ -195,7 +195,8 @@ export default function ActionItemRow({
       data-done={done ? "true" : "false"}
       data-mine={item.mine ? "true" : "false"}
       data-due-at={item.due_at ?? undefined}
-      aria-selected={showMeeting ? selected : undefined}
+      aria-current={showMeeting && selected ? "true" : undefined}
+      data-selected={showMeeting && selected ? "true" : undefined}
       onContextMenu={context.onContextMenu}
       onFocus={onFocusRow}
       className={`ma-row group relative flex items-start gap-2.5 rounded-md px-2.5 ${
@@ -247,7 +248,7 @@ export default function ActionItemRow({
                 <Link
                   data-testid="action-meeting"
                   to={`/m/${item.meeting_id}`}
-                  className="text-secondary hover:text-primary hover:underline"
+                  className="text-secondary underline decoration-line-strong underline-offset-2 hover:text-primary hover:decoration-current"
                 >
                   {item.meeting_title ?? item.meeting_id}
                 </Link>
