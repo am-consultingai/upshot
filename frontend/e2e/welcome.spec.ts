@@ -254,15 +254,18 @@ test("every_screen_leads_to_setup_until_it_is_done", async ({ page }) => {
   await expect(page).toHaveURL(/\/welcome$/);
 });
 
-test("settings_has_no_transcription_or_storage_section", async ({ page, request }) => {
-  // Which model runs, where it runs and where recordings live are not the user's to
-  // manage: the installer and setup fetch the model, and Settings shows none of it.
+test("settings_has_no_model_section_and_storage_only_shows", async ({ page, request }) => {
+  // Which model runs and where it runs are not the user's to manage: the installer and
+  // setup fetch the model, and Settings shows none of it. Where recordings live is
+  // shown, so "local only" can be checked, but not chosen: nothing there to edit.
   await reset(request);
   await gotoSettings(page, "audio");
   await expect(page.getByTestId("settings-section-speech")).toHaveCount(0);
-  await expect(page.getByTestId("settings-section-storage")).toHaveCount(0);
   await expect(page.getByTestId("model-name")).toHaveCount(0);
   await expect(page.getByTestId("data-root")).toHaveCount(0);
+  await page.getByTestId("settings-section-storage").click();
+  await expect(page.getByTestId("storage-folder")).toBeVisible();
+  await expect(page.getByTestId("settings-page").locator("input, select, textarea")).toHaveCount(0);
 });
 
 test("setup_is_centred_and_reads_in_english_or_hebrew", async ({ page }) => {

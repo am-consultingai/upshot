@@ -5,6 +5,8 @@ import Tooltip from "./Tooltip";
 
 export interface AudioPlayerHandle {
   seek: (seconds: number) => void;
+  /** Play if paused, pause if playing: what Space does on the meeting page. */
+  toggle: () => void;
 }
 
 /** 00:00:27 — the transcript's own timestamp format, so the two can be matched by eye. */
@@ -52,8 +54,10 @@ export interface Band {
 const AudioPlayer = forwardRef<AudioPlayerHandle, {
   src: string;
   onTime?: (seconds: number) => void;
+  /** Told when playback starts and stops, so the transcript can follow it. */
+  onPlaying?: (playing: boolean) => void;
   bands?: Band[];
-}>(function AudioPlayer({ src, onTime, bands = [] }, ref) {
+}>(function AudioPlayer({ src, onTime, onPlaying, bands = [] }, ref) {
   const { t } = useI18n();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const waveBox = useRef<HTMLDivElement | null>(null);
@@ -74,6 +78,12 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
       audio.currentTime = seconds;
       // Seeking from the transcript means "play this bit", so it plays.
       void audio.play().catch(() => undefined);
+    },
+    toggle() {
+      const audio = audioRef.current;
+      if (!audio) return;
+      if (audio.paused) void audio.play().catch(() => undefined);
+      else audio.pause();
     },
   }), []);
 
@@ -151,8 +161,14 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
         className="hidden"
         onTimeUpdate={tick}
         onSeeked={tick}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
+        onPlay={() => {
+          setPlaying(true);
+          onPlaying?.(true);
+        }}
+        onPause={() => {
+          setPlaying(false);
+          onPlaying?.(false);
+        }}
         onLoadedMetadata={(event) => setTotal(event.currentTarget.duration)}
       />
 
@@ -171,6 +187,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
       </button>
       </Tooltip>
 
+      <Tooltip label={playing ? t("meeting.pause") : t("meeting.play")} keys="Space" side="top">
       <button
         type="button"
         data-testid="play-pause"
@@ -189,6 +206,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
           <svg viewBox="0 0 12 12" className="ms-0.5 size-3 fill-current"><path d="M3 1.5v9l7-4.5z" /></svg>
         )}
       </button>
+      </Tooltip>
 
       <Tooltip label={t("meeting.forward15")} side="top">
       <button

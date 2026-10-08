@@ -332,6 +332,12 @@ def test_status_reports_storage_and_caches_it(api) -> None:  # type: ignore[no-u
     assert client.get("/api/status").json()["storage_bytes"] >= before + 5000
 
 
+def test_status_names_the_data_folder(api) -> None:  # type: ignore[no-untyped-def]
+    # Settings, Storage shows where the library is, beside how much it takes.
+    body = api.client().get("/api/status").json()
+    assert body["data_folder"] == str(api.services.config.data_root)
+
+
 def test_storage_of_a_missing_root_is_zero(api) -> None:  # type: ignore[no-untyped-def]
     from app.api.routes import storage_bytes
 

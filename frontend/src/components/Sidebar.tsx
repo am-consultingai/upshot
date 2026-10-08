@@ -19,6 +19,7 @@ import AccountsPopover, { AccountsTrigger } from "./AccountsPopover";
 import { useCalendarFilter, type CalendarFilter } from "../lib/calendarFilter";
 import { Loading, Skeleton, SkeletonRows } from "./Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "./EmptyState";
+import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
 
 /**
@@ -172,7 +173,7 @@ export default function Sidebar() {
   };
   const onListKeyDown = (event: React.KeyboardEvent) => {
     if (event.target instanceof HTMLInputElement) return;
-    const key = event.key;
+    const key = shortcutKey(event.nativeEvent);
     if (key === "j" || key === "ArrowDown") {
       event.preventDefault();
       move(1);
