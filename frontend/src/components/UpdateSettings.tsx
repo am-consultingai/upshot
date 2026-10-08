@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import BusyButton from "./BusyButton";
 import SettingRow, { SettingGroup } from "./SettingRow";
 import { openFeedback } from "./FeedbackDialog";
+import { Skeleton } from "./Skeleton";
 
 const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent";
 const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
@@ -60,7 +61,7 @@ export default function UpdateSettings() {
                     .replace("{version}", build.version)
                     .replace("{commit}", build.commit.slice(0, 7))
                 : build.version
-              : "…"}
+              : <Skeleton className="inline-block h-3 w-28 align-middle" />}
           </span>
         }
       >

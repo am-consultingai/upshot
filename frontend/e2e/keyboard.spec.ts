@@ -82,7 +82,7 @@ test("the_selected_row_is_marked_whether_or_not_the_list_has_focus", async ({ pa
   await seed(THREE);
   await gotoApp(page, "/m/kb-2");
 
-  const selected = page.locator('[data-testid="meeting-card"][aria-selected="true"]');
+  const selected = page.locator('[data-testid="meeting-card"][data-selected="true"]');
   await expect(selected).toHaveCount(1);
   await expect(selected).toHaveAttribute("data-meeting-id", "kb-2");
 
