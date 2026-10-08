@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -413,6 +414,29 @@ def test_the_model_path_override_is_for_the_hebrew_model_only(
     assert not resolve(config, OTHER).local and resolve(config, OTHER).reference != str(mine)
     assert not resolve(config, CLASSIFIER).local
     assert model_manager.overridden_roles(config) == frozenset({HEBREW})
+
+
+def test_a_model_path_that_is_not_the_pinned_model_is_said_once(
+    tmp_path: Path,
+    app_home: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A developer's large-v3 copy still loads after D93, but the log says what it is."""
+    # Sizes scaled down: a real 3 GB file is not sparse on Windows, and writing it held up
+    # the next test's downloads past their timeout.
+    monkeypatch.setitem(MODELS, HEBREW, replace(MODELS[HEBREW], size_bytes=1_620))
+    mine = tmp_path / "large-v3"
+    mine.mkdir()
+    (mine / "model.bin").write_bytes(b"x" * 3_087)  # large-v3 against the turbo, in kB
+    (mine / "config.json").write_bytes(b"{}")
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+    with caplog.at_level("WARNING"):
+        assert resolve(config, HEBREW).reference == str(mine)
+        resolve(config, HEBREW)
+    said = [r for r in caplog.records if MODELS[HEBREW].repo in r.getMessage()]
+    assert len(said) == 1
 
 
 def recording_downloader(order: list[str], fail: str = "") -> Any:

@@ -132,6 +132,23 @@ def looks_like_model_dir(path: Path) -> bool:
     return path.is_dir() and all((path / name).exists() for name in MODEL_FILES)
 
 
+_warned: set[Path] = set()
+
+
+def warn_if_not_pinned(path: Path, model: SpeechModel) -> None:
+    """Say so, once, when ``asr.model_path`` is plainly another model: a developer's copy
+    of ivrit-ai large-v3 (3 GB) still loads after D93, reported as the turbo (1.6 GB)."""
+    try:
+        size = (path / "model.bin").stat().st_size
+    except OSError:
+        return
+    if abs(size - model.size_bytes) > model.size_bytes // 10 and path not in _warned:
+        _warned.add(path)
+        log.warning("asr.model_path %s holds a %.1f GB model, not %s (%.1f GB): "
+                    "transcription runs on it, but it is not the model this build is tuned for",
+                    path, size / 1e9, model.repo, model.size_bytes / 1e9)  # fmt: skip
+
+
 def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
     """Where one role's model is: the managed folder, verified at its pinned revision.
 
@@ -145,6 +162,7 @@ def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
         if configured:
             path = Path(str(configured)).expanduser()
             if looks_like_model_dir(path):
+                warn_if_not_pinned(path, model)
                 return ModelChoice(str(path), local=True, repo_id=model.repo)
             log.warning("asr.model_path %s is not a CTranslate2 model directory", path)
     from app.asr.model_manager import is_verified, target_for
