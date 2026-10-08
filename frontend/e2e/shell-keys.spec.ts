@@ -144,7 +144,7 @@ test("space_plays_and_pauses_from_either_pill", async ({ page, seed }) => {
 
   // From the summary, Space opens the transcript and its transport, and plays.
   await page.keyboard.press("Space");
-  await expect(page.getByTestId("meeting-tab-transcript")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("meeting-tab-transcript")).toHaveAttribute("aria-selected", "true");
   await expect.poll(() => paused(page)).toBe(false);
 
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
