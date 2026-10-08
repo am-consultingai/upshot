@@ -60,10 +60,10 @@ EXTRA: tuple[tuple[str, str, str], ...] = (
         " corresponding source on request at office@amconsultingai.com.",
     ),
     (
-        "ivrit-ai/whisper-large-v3-ct2",
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
         "Apache-2.0",
         "Hebrew speech-recognition model by ivrit.ai, downloaded by the installer"
-        " unmodified. https://huggingface.co/ivrit-ai/whisper-large-v3-ct2",
+        " unmodified. https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ct2",
     ),
     (
         "Systran/faster-whisper-large-v3 and Systran/faster-whisper-small",

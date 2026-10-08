@@ -408,7 +408,7 @@ export interface AudioLevel {
 /**
  * The speech model, and where it will run: `/api/model`.
  *
- * `repo` is always ivrit-ai large-v3 (D60): the same model on the GPU and the CPU.
+ * `repo` is always the ivrit-ai turbo (D93): the same model on the GPU and the CPU.
  */
 export interface ModelStatus {
   repo: string;
