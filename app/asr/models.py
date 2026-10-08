@@ -22,10 +22,16 @@ SEGMENTATION_URL = (
     "resolve/main/model.onnx"
 )
 #: A GitHub release asset, so the diarization path needs no Hugging Face account at all.
+#: 3D-Speaker's CAM++ trained on Chinese and English (Apache-2.0). The English VoxCeleb
+#: CAM++ before it could not tell the two people of a Hebrew call apart (D91).
 EMBEDDING_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
-    "speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
+    "speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
 )
+#: Named for the model, so an install that holds an older embedding fetches this one.
+EMBEDDING_FILE = "embedding-3dspeaker-campplus-zh-en.onnx"
+#: Embeddings this build no longer uses, removed once the current one is on disk.
+RETIRED_EMBEDDING_FILES = ("embedding.onnx",)
 
 #: The three speech models (DECISIONS.md D80, superseding D60), each pinned to a hub
 #: revision so an upstream re-upload cannot silently change transcripts. All three are
@@ -34,12 +40,13 @@ EMBEDDING_URL = (
 #: - ``classifier``: Whisper small. It hears 5 × 30 s of the meeting's speech and says
 #:   which language it was in, before either large model loads (``app/asr/classify.py``).
 #:   As accurate as large-v3 at that on every recording measured, at a fifth of the cost.
-#: - ``hebrew``: ivrit-ai large-v3, for a meeting that is mostly Hebrew. Its newest Hebrew
-#:   large model (2025-10-27); its later uploads are turbo variants and format conversions.
+#: - ``hebrew``: ivrit-ai large-v3-turbo, for a meeting that is mostly Hebrew (D93,
+#:   superseding R6's "large-v3, never turbo" for Hebrew). The same 2025 weights as
+#:   ivrit's large-v3 with 4 decoder layers instead of 32: 0.1-0.7 points of WER on
+#:   ivrit.ai's leaderboard, for 4-5 times the speed on the CPU, about half the memory and
+#:   half the download.
 #: - ``other``: stock Whisper large-v3, for every other language. ivrit cannot write
 #:   them: on FLEURS it scored 99-103 % WER on Spanish, French and Russian.
-#:
-#: Large-v3 and never turbo for transcription (R6): turbo is smaller and less accurate.
 CLASSIFIER = "classifier"
 HEBREW = "hebrew"
 OTHER = "other"
@@ -72,9 +79,9 @@ MODELS: dict[str, SpeechModel] = {
     ),
     HEBREW: SpeechModel(
         HEBREW,
-        "ivrit-ai/whisper-large-v3-ct2",
-        "e9ed4a4a98d761b0f617d668303de2c514236c66",
-        3_090_000_000,
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
+        "72ad623a37947395efcc3933132353790e5a12f5",
+        1_620_000_000,
     ),
     OTHER: SpeechModel(
         OTHER,
@@ -85,7 +92,12 @@ MODELS: dict[str, SpeechModel] = {
 }
 ROLES: tuple[str, ...] = tuple(MODELS)
 
-#: All three together, about 6.67 GB.
+#: Models an earlier build installed and none now loads. ``--prepare`` removes their
+#: folders once every current model is in place, so an upgrade does not leave gigabytes
+#: behind. ivrit-ai large-v3 (3.09 GB) gave way to its turbo (D93).
+RETIRED_REPOS: tuple[str, ...] = ("ivrit-ai/whisper-large-v3-ct2",)
+
+#: All three together, about 5.2 GB.
 TOTAL_BYTES = sum(model.size_bytes for model in MODELS.values())
 
 #: A meeting's language when nothing says otherwise: an empty meeting, a missing field.
@@ -120,6 +132,23 @@ def looks_like_model_dir(path: Path) -> bool:
     return path.is_dir() and all((path / name).exists() for name in MODEL_FILES)
 
 
+_warned: set[Path] = set()
+
+
+def warn_if_not_pinned(path: Path, model: SpeechModel) -> None:
+    """Say so, once, when ``asr.model_path`` is plainly another model: a developer's copy
+    of ivrit-ai large-v3 (3 GB) still loads after D93, reported as the turbo (1.6 GB)."""
+    try:
+        size = (path / "model.bin").stat().st_size
+    except OSError:
+        return
+    if abs(size - model.size_bytes) > model.size_bytes // 10 and path not in _warned:
+        _warned.add(path)
+        log.warning("asr.model_path %s holds a %.1f GB model, not %s (%.1f GB): "
+                    "transcription runs on it, but it is not the model this build is tuned for",
+                    path, size / 1e9, model.repo, model.size_bytes / 1e9)  # fmt: skip
+
+
 def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
     """Where one role's model is: the managed folder, verified at its pinned revision.
 
@@ -133,6 +162,7 @@ def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
         if configured:
             path = Path(str(configured)).expanduser()
             if looks_like_model_dir(path):
+                warn_if_not_pinned(path, model)
                 return ModelChoice(str(path), local=True, repo_id=model.repo)
             log.warning("asr.model_path %s is not a CTranslate2 model directory", path)
     from app.asr.model_manager import is_verified, target_for
@@ -220,12 +250,12 @@ def resolve_diarization(config: Config) -> DiarizationModels:
     segmentation = config.get("asr.diarization_segmentation_path") or (
         directory / "segmentation.onnx"
     )
-    embedding = config.get("asr.diarization_embedding_path") or (directory / "embedding.onnx")
+    embedding = config.get("asr.diarization_embedding_path") or (directory / EMBEDDING_FILE)
     return DiarizationModels(Path(str(segmentation)), Path(str(embedding)))
 
 
 def download_diarization(config: Config, *, timeout: float = 300.0) -> DiarizationModels:
-    """Fetch the two ONNX models. ~37 MB, no account, no token (DECISIONS.md D28)."""
+    """Fetch the two ONNX models. ~34 MB, no account, no token (DECISIONS.md D28, D91)."""
     import urllib.request
 
     from app.asr.model_manager import tls_context
@@ -244,4 +274,8 @@ def download_diarization(config: Config, *, timeout: float = 300.0) -> Diarizati
             while chunk := response.read(1 << 20):
                 out.write(chunk)
         partial.replace(target)
+    if models.embedding.parent == diarization_dir(config):
+        for retired in RETIRED_EMBEDDING_FILES:
+            if retired != models.embedding.name:  # never the file the user pointed at
+                (models.embedding.parent / retired).unlink(missing_ok=True)
     return models

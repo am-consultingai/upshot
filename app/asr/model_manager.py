@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from app import paths
-from app.asr.models import MODELS, ROLES, SpeechModel, looks_like_model_dir
+from app.asr.models import MODELS, RETIRED_REPOS, ROLES, SpeechModel, looks_like_model_dir
 from app.log import get
 
 log = get(__name__)
@@ -95,6 +95,29 @@ def models_root(home: Path | None = None) -> Path:
 
 def target_for(repo: str, home: Path | None = None) -> Path:
     return models_root(home) / repo.replace("/", "__")
+
+
+def remove_retired(home: Path | None = None, keep: Path | None = None) -> list[Path]:
+    """Delete the folders of models no build loads any more (``models.RETIRED_REPOS``).
+
+    Only ever a folder this manager made under ``models/asr``, and never ``keep``: a
+    developer's ``asr.model_path`` may point at one. Never raises: a folder that will not
+    go now is tried again by the next install.
+    """
+    removed: list[Path] = []
+    kept = keep.expanduser().resolve() if keep is not None else None
+    for repo in RETIRED_REPOS:
+        folder = target_for(repo, home)
+        if not folder.exists() or folder.resolve() == kept:
+            continue
+        try:
+            shutil.rmtree(folder)
+        except OSError as exc:
+            log.warning("could not remove the retired model %s: %s", folder, exc)
+            continue
+        log.info("removed the retired model %s", folder)
+        removed.append(folder)
+    return removed
 
 
 def is_verified(folder: Path, model: SpeechModel) -> bool:

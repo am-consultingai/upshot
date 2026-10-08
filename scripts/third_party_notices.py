@@ -60,10 +60,10 @@ EXTRA: tuple[tuple[str, str, str], ...] = (
         " corresponding source on request at office@amconsultingai.com.",
     ),
     (
-        "ivrit-ai/whisper-large-v3-ct2",
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
         "Apache-2.0",
         "Hebrew speech-recognition model by ivrit.ai, downloaded by the installer"
-        " unmodified. https://huggingface.co/ivrit-ai/whisper-large-v3-ct2",
+        " unmodified. https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ct2",
     ),
     (
         "Systran/faster-whisper-large-v3 and Systran/faster-whisper-small",
@@ -78,10 +78,10 @@ EXTRA: tuple[tuple[str, str, str], ...] = (
         " https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
     ),
     (
-        "WeSpeaker CAM++ speaker embedding (VoxCeleb, ONNX export by k2-fsa)",
-        "CC-BY-4.0",
+        "3D-Speaker CAM++ zh-en speaker embedding (Alibaba DAMO, ONNX export by k2-fsa)",
+        "Apache-2.0",
         "Speaker-embedding model for diarization, downloaded by the installer unmodified."
-        " https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models",
+        " https://www.modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced",
     ),
     (
         "Frank Ruhl Libre and IBM Plex Sans Hebrew fonts",
