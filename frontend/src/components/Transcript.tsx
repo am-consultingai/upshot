@@ -87,16 +87,18 @@ const Transcript = forwardRef<
       ?.querySelector(`[data-segment-index="${speaking}"]`)
       ?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [following, speaking]);
+  // Listening whether or not playback is following right now: a seek can pause the audio
+  // for a moment while it buffers, and a wheel in that gap would otherwise go unheard and
+  // the page would be pulled back the moment it plays again. Taking over is idempotent.
   useEffect(() => {
-    if (!following) return undefined;
     let scroller: HTMLElement | null = list.current?.parentElement ?? null;
     while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
       scroller = scroller.parentElement;
     }
-    if (!scroller) return undefined;
-    const box = scroller;
+    // No scrolling box of its own: the page itself scrolls, and wheels reach the window.
+    const box: HTMLElement | Window = scroller ?? window;
     const taken = () => unfollow.current?.();
-    const onPointer = (event: PointerEvent) => {
+    const onPointer = (event: Event) => {
       // A press on the scroller itself, not on anything in it, is a press on its scrollbar.
       if (event.target === box) taken();
     };
@@ -114,7 +116,7 @@ const Transcript = forwardRef<
       box.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
-  }, [following]);
+  }, []);
 
   const step = (by: number) => {
     if (matches.length === 0) return;
