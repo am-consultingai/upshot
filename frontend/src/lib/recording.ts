@@ -5,7 +5,7 @@ import { openMeetingInfo } from "../components/MeetingInfoDialog";
 import { useI18n } from "../i18n";
 
 /**
- * Start and stop, for every control that offers them: the sidebar button, the
+ * Start, stop and pause, for every control that offers them: the sidebar button, the
  * recording bar, the rail, the palette and Ctrl+R.
  *
  * One definition because the copies had drifted into the worst failure a recorder can
@@ -17,7 +17,8 @@ import { useI18n } from "../i18n";
 export function useRecordingControls() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const failed = (key: "recording.stopFailed" | "recording.startFailed") => (error: Error) =>
+  const failed =
+    (key: "recording.stopFailed" | "recording.startFailed" | "recording.pauseFailed") => (error: Error) =>
     toast({ title: t(key), sub: error.message, tone: "danger" });
   const start = useMutation({
     mutationFn: () => api.startRecording(),
@@ -33,5 +34,11 @@ export function useRecordingControls() {
     onSuccess: () => queryClient.invalidateQueries(),
     onError: failed("recording.stopFailed"),
   });
-  return { start, stop };
+  // Pause and Resume are one endpoint that toggles, as the tray's menu item is.
+  const pause = useMutation({
+    mutationFn: api.togglePause,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["status"] }),
+    onError: failed("recording.pauseFailed"),
+  });
+  return { start, stop, pause };
 }

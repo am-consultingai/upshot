@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { fill, PRIMARY, QUIET } from "../setup/ui";
+import { fill } from "../setup/ui";
+import Button from "../components/Button";
 
 /**
  * The Terms of Service (D83).
@@ -109,33 +110,33 @@ export default function TermsPage() {
               </span>
             </label>
             <div className="flex flex-row-reverse items-center justify-between gap-2">
-              <button
-                type="button"
-                className={PRIMARY}
+              <Button
+                variant="primary"
+                size="md"
                 disabled={!agreed || accept.isPending}
                 onClick={() => accept.mutate(doc.data.version)}
                 data-testid="terms-accept"
               >
                 {t("terms.accept")}
-              </button>
-              <button
-                type="button"
-                className={QUIET}
+              </Button>
+              <Button
+                variant="ghost"
+                size="md"
                 disabled={decline.isPending}
                 onClick={() => decline.mutate()}
                 data-testid="terms-decline"
               >
                 {t("terms.decline")}
-              </button>
+              </Button>
             </div>
             {declined && <p className="text-sm text-secondary">{t("terms.declinedNoQuit")}</p>}
             {accept.isError && <p className="text-sm text-danger">{t("terms.error")}</p>}
           </div>
         ) : (
           <div className="py-5">
-            <button type="button" className={QUIET} onClick={() => navigate(-1)}>
+            <Button variant="ghost" size="md" onClick={() => navigate(-1)}>
               {t("terms.back")}
-            </button>
+            </Button>
           </div>
         )}
       </div>

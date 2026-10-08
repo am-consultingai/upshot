@@ -119,7 +119,7 @@ export default function SearchPage() {
             {results.data.count} {results.data.count === 1 ? t("search.countOne") : t("search.countMany")}
           </span>
         )}
-        <kbd className="shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
+        <kbd className="shrink-0 rounded-2xs px-1 font-mono text-3xs text-tertiary shadow-[var(--shadow-ring-subtle)]">
           /
         </kbd>
       </label>
@@ -132,7 +132,7 @@ export default function SearchPage() {
             data-testid={`search-scope-${option.id}`}
             aria-pressed={scope === option.id}
             onClick={() => setScope(option.id)}
-            className={`flex h-6 items-center gap-1.5 rounded-xs px-2.5 text-xs ${
+            className={`flex h-control-sm items-center gap-1.5 rounded-xs px-2.5 text-xs ${
               scope === option.id
                 ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
                 : "text-secondary hover:bg-a-200 hover:text-primary"

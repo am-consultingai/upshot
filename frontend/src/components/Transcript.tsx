@@ -125,7 +125,7 @@ const Transcript = forwardRef<
             </button>
           </span>
         )}
-        <kbd className="shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
+        <kbd className="shrink-0 rounded-2xs px-1 font-mono text-3xs text-tertiary shadow-[var(--shadow-ring-subtle)]">
           Ctrl F
         </kbd>
       </div>
@@ -149,7 +149,7 @@ const Transcript = forwardRef<
                   data-testid="transcript-match"
                   data-match-index={matchIndex}
                   data-current={matchIndex === current ? "true" : undefined}
-                  className={`font-medium text-accent underline decoration-from-font underline-offset-[3px] ${
+                  className={`font-medium text-accent underline decoration-from-font underline-offset-3 ${
                     matchIndex === current ? "rounded-xs bg-accent-quiet" : "bg-transparent"
                   }`}
                 >
@@ -196,7 +196,7 @@ const Transcript = forwardRef<
                   data-track={isMicSlot(segment.speaker) ? "me" : "them"}
                   data-speaking={isSpeaking ? "true" : undefined}
                   onClick={() => onSeek(segment.start)}
-                  className="me-1.5 align-baseline font-mono text-xs text-accent underline decoration-from-font underline-offset-[3px] hover:brightness-110"
+                  className="me-1.5 align-baseline font-mono text-xs text-accent underline decoration-from-font underline-offset-3 hover:brightness-110"
                 >
                   ({stamp(segment.start)})
                 </button>
