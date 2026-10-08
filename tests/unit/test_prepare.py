@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import sys
 import threading
 import zipfile
@@ -42,7 +43,8 @@ def speaker_models(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
 
 
 def read_progress(path: Path) -> dict[str, str]:
-    return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines())
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    return dict(line.split("=", 1) for line in lines)
 
 
 # -- the speech models stage ---------------------------------------------------------
@@ -521,3 +523,56 @@ def test_a_failed_speaker_model_download_fails_the_install(app_home: Path, tmp_p
     final = read_progress(progress_path)
     assert final["stage"] == "model" and final["state"] == "failed"
     assert "connection reset" in final["error"]
+
+
+# -- the installer's language ---------------------------------------------------------
+
+
+def test_the_progress_text_is_in_the_installer_s_language(app_home: Path, tmp_path: Path) -> None:
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    texts: list[str] = []
+    original = progress.write
+
+    def spy(**fields: object) -> None:
+        original(**fields)
+        texts.append(progress.last.get("text", ""))
+
+    progress.write = spy  # type: ignore[method-assign]
+    code = run(default_config(), progress, model=model_manager(app_home),
+               gpu_wanted=(False, "no NVIDIA GPU found"), poll=0.01, language="es")  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert any(t.startswith("Modelos de voz (detección de idioma, 1 de 3): ") for t in texts), texts
+    assert "Modelos de voz: descarga completa" in texts
+    assert "Bibliotecas de GPU: no son necesarias (no se encontró una GPU NVIDIA)" in texts
+    assert texts[-1] == "Listo para transcribir"
+    # Only the text is translated: the keys and values the installer acts on are not.
+    final = read_progress(tmp_path / "prepare.txt")
+    assert final["stage"] == "done" and final["state"] == "ready" and final["percent"] == "100"
+
+
+def test_a_reason_for_no_gpu_libraries_is_translated() -> None:
+    small = "the GPU has 2048 MB, under the 4096 MB the model needs"
+    assert prepare.reason(small, "de") == (
+        "die Grafikkarte hat 2048 MB, weniger als die 4096 MB, die das Modell braucht"
+    )
+    assert prepare.reason(small, "en") == small
+    assert prepare.reason("something new", "fr") == "something new"
+
+
+def test_the_progress_file_is_utf8_with_a_mark_and_a_first_line_nobody_reads(
+    tmp_path: Path,
+) -> None:
+    """Inno reads UTF-8 only after a byte-order mark, and finds a key with
+    ``Pos(Key + '=', Line) = 1``: the mark must not land on a key it looks up."""
+    path = tmp_path / "prepare.txt"
+    ProgressFile(path).write(stage="model", state="working", text="מודלי דיבור: בהורדה")
+    raw = path.read_bytes()
+    # The platform's line ending: CRLF on Windows, which Inno has always read.
+    assert raw.startswith(b"\xef\xbb\xbfencoding=utf-8" + os.linesep.encode())
+    # A reader that keeps the mark still finds every real key at the start of its line.
+    lines = raw.decode("utf-8").splitlines()
+    assert lines[0] == "﻿encoding=utf-8"
+    found = dict(line.split("=", 1) for line in lines[1:])
+    assert found["stage"] == "model"
+    assert found["text"] == "מודלי דיבור: בהורדה"
+    assert found["tick"] == "1"

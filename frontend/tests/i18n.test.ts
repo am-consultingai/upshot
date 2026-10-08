@@ -2,8 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { en } from "../src/locales/en";
-import { he } from "../src/locales/he";
-import { directionFor } from "../src/i18n";
+import { catalogues, directionFor, LANGUAGES, type Locale } from "../src/i18n";
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -15,8 +14,22 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("catalogue parity", () => {
-  it("he has exactly the key set of en", () => {
-    expect(Object.keys(he).sort()).toEqual(Object.keys(en).sort());
+  const others = LANGUAGES.map(({ code }) => code).filter((code) => code !== "en");
+
+  it.each(others)("%s has exactly the key set of en", (locale) => {
+    expect(Object.keys(catalogues[locale]).sort()).toEqual(Object.keys(en).sort());
+  });
+
+  // Shown only for a count of one, which Hebrew writes as a word ("משימה אחת").
+  const NUMBER_IN_WORDS: Partial<Record<Locale, readonly string[]>> = { he: ["sidebar.item"] };
+
+  it.each(others)("%s keeps every {placeholder} of en", (locale) => {
+    const missing = Object.entries(en).flatMap(([key, english]) =>
+      (NUMBER_IN_WORDS[locale]?.includes(key) ? [] : (english.match(/\{\w+\}/g) ?? []))
+        .filter((slot) => !catalogues[locale][key as keyof typeof en].includes(slot))
+        .map((slot) => `${key}: ${slot}`),
+    );
+    expect(missing).toEqual([]);
   });
 
   /*
@@ -45,18 +58,41 @@ describe("catalogue parity", () => {
     "firstRun.services.gemini.name",
     "firstRun.done.sum.claude-subscription",
     "firstRun.done.sum.codex-subscription",
-    // Each language named in itself, in both catalogues.
-    "firstRun.languageEnglish",
-    "firstRun.languageHebrew",
     // A pattern with no words of its own ("{greeting}, {name}"), the same in both.
     "greeting.named",
   ]);
 
-  it("no translation is left as the English string", () => {
+  /*
+   * Words German, Spanish and French share with English, and the abbreviations and
+   * product names they keep in Latin script as English does: identical, yet translated.
+   */
+  const SAME_AS_ENGLISH: Partial<Record<Locale, readonly string[]>> = {
+    de: [
+      "meeting.pause", "meetingInfo.hours", "meetingInfo.minutes", "calendar.google",
+      "invite.links", "invite.optional", "feedback.title", "feedback.kind.problem",
+      "updates.version", "updates.status", "common.minutes", "common.hours", "rail.in",
+      "firstRun.ai.code", "terms.ok",
+    ],
+    es: [
+      "meetingInfo.hours", "meetingInfo.minutes", "calendar.google", "feedback.kind.idea",
+      "common.minutes", "common.hours",
+    ],
+    fr: [
+      "palette.do", "meeting.pause", "meetingInfo.description", "meetingInfo.hours",
+      "meetingInfo.minutes", "settings.microphone", "calendar.google", "updates.version",
+      "updates.versionValue", "common.minutes", "common.hours", "assistant.title",
+      "assistant.open", "assistant.source", "meeting.sections", "firstRun.ai.code",
+      "firstRun.audio.mic", "terms.ok", "nav.transcriptions", "transcriptions.title",
+      "recording.pause", "detector.score",
+    ],
+  };
+
+  it.each(others)("%s leaves no translation as the English string", (locale) => {
+    const allowed = new Set([...PROPER_NOUNS, ...(SAME_AS_ENGLISH[locale] ?? [])]);
     const identical = Object.keys(en).filter(
       (key) =>
-        !PROPER_NOUNS.has(key) &&
-        he[key as keyof typeof he] === en[key as keyof typeof en],
+        !allowed.has(key) &&
+        catalogues[locale][key as keyof typeof en] === en[key as keyof typeof en],
     );
     expect(identical).toEqual([]);
   });
@@ -66,6 +102,7 @@ describe("direction", () => {
   it("follows the locale", () => {
     expect(directionFor("he")).toBe("rtl");
     expect(directionFor("en")).toBe("ltr");
+    for (const locale of ["de", "es", "fr"] as const) expect(directionFor(locale)).toBe("ltr");
   });
 });
 

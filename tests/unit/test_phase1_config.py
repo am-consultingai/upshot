@@ -50,6 +50,17 @@ def test_config_rejects_bad_enum(tmp_path: Path) -> None:
         Config.load(file=tmp_path / "x.json", environ={"UP_PROFILE": "banana"})
 
 
+@pytest.mark.parametrize("language", ["en", "he", "de", "es", "fr"])
+def test_config_accepts_every_interface_language(tmp_path: Path, language: str) -> None:
+    cfg = Config.load(file=tmp_path / "x.json", environ={"UP_UI__LANGUAGE": f'"{language}"'})
+    assert cfg.ui_language == language
+
+
+def test_config_rejects_an_interface_language_it_has_no_catalogue_for(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError):
+        Config.load(file=tmp_path / "x.json", environ={"UP_UI__LANGUAGE": '"it"'})
+
+
 def test_config_rejects_wrong_type(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         Config.load(file=tmp_path / "x.json", environ={"UP_AUDIO__CHUNK_S": '"sixty"'})

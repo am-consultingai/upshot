@@ -370,7 +370,7 @@ LLM_PROVIDERS: tuple[str, ...] = (
 _ENUMS: dict[str, tuple[str, ...]] = {
     "profile": ("auto", "gpu-live", "cpu-deferred"),
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),
-    "ui.language": ("en", "he"),
+    "ui.language": ("en", "he", "de", "es", "fr"),
     "updates.channel": ("stable", "beta"),
     "diagnostics.crash_reports": ("unset", "on", "off"),
     "summary.language": ("en", "he", "auto"),
