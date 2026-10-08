@@ -2,7 +2,8 @@ import { useI18n, type MessageKey } from "../i18n";
 import { useSetupSnapshot } from "./backend";
 import { CLI_IDS, cliUsable, type CliId } from "./flow";
 import { VendorLogo } from "./logos";
-import { Badge, PRIMARY, QUIET, StepFrame, fill } from "./ui";
+import { Badge, StepFrame, fill } from "./ui";
+import Button from "../components/Button";
 
 const VENDORS: { id: CliId; name: MessageKey; plan: MessageKey }[] = [
   { id: "claude", name: "firstRun.services.claude.name", plan: "firstRun.services.claude.plan" },
@@ -49,17 +50,17 @@ export default function ServicesStep({
       footer={
         <>
           {any ? (
-            <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
+            <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
               {forward}
-            </button>
+            </Button>
           ) : (
-            <button type="button" data-testid="setup-skip" className={QUIET} onClick={onNext}>
+            <Button data-testid="setup-skip" variant="ghost" size="md" onClick={onNext}>
               {t("firstRun.services.none")}
-            </button>
+            </Button>
           )}
-          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
-          </button>
+          </Button>
         </>
       }
     >

@@ -188,6 +188,10 @@ def test_a_call_the_clues_settle_is_offered_as_that_meeting(tmp_path: Path) -> N
     h.seconds(12)
     offer = h.detector.prompts.current
     assert offer is not None and offer.event_id == "design" and offer.candidates == ()
+    # Why it is a call, for the banner to say: the score and the evidence behind it.
+    assert offer.score is not None and offer.score >= h.detector.threshold
+    codes = {code for code, _ in offer.evidence}
+    assert {"vad.loopback", "window.title"} <= codes
     titles = [t.title for t in h.notifier.shown]
     assert "Meeting started: Design review: onboarding and settings" in titles
 

@@ -76,7 +76,7 @@ export default function AccountsPopover({
         onClose();
         anchor.focus();
       }}
-      className="ma-menu fixed z-[60] rounded-[10px] bg-raised p-1.5 shadow-[var(--shadow-ring),var(--shadow-md),var(--shadow-edge)]"
+      className="ma-menu fixed z-[60] rounded-lg bg-raised p-1.5 shadow-[var(--shadow-ring),var(--shadow-md),var(--shadow-edge)]"
       data-open=""
       style={{ width: WIDTH, left: place?.left ?? -9999, top: place?.top ?? -9999 }}
     >
@@ -136,7 +136,7 @@ export function AccountsTrigger({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((was) => !was)}
-        className={`inline-flex h-6.5 items-center gap-1 rounded-sm px-2 text-xs shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary ${
+        className={`inline-flex h-control-sm items-center gap-1 rounded-sm px-2 text-xs shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary ${
           active ? "text-primary" : "text-secondary"
         }`}
       >

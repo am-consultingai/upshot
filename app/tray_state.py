@@ -51,6 +51,8 @@ class AppState:
     processing: bool = False
     error: bool = False
     queue_depth: int = 0
+    #: The running transcription's progress, 0–1; None while nothing reports one.
+    transcribing: float | None = None
     meeting_title: str | None = None
     detector_mode: str = "shadow"
     #: The call's app let go and the recording saves itself soon (D77).
@@ -111,6 +113,12 @@ def _tooltip(state: AppState) -> str:
         return tr("tooltip.armed", language)
     if state.processing:
         depth = state.queue_depth
+        if state.transcribing is not None:
+            percent = round(state.transcribing * 100)
+            waiting = depth - 1
+            if waiting > 0:
+                return tr("tooltip.transcribingMore", language, percent=percent, count=waiting)
+            return tr("tooltip.transcribing", language, percent=percent)
         key = "tooltip.processingOne" if depth == 1 else "tooltip.processingMany"
         return tr(key, language, count=depth)
     if not state.worker_alive:

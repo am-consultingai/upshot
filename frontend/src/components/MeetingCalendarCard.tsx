@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import { formatClock } from "../lib/format";
 import AccountDots from "./AccountDots";
 import { eventKey } from "../lib/calendar";
+import Button from "./Button";
 
 /**
  * Everything this recording knows about the meeting it was: which calendar event it
@@ -297,9 +298,8 @@ export default function MeetingCalendarCard({
       {proposals.length > 1 && (
         <div className="flex flex-wrap gap-2" data-testid="meeting-calendar-proposals">
           {proposals.map((option) => (
-            <button
+            <Button
               key={eventKey(option)}
-              type="button"
               data-testid="meeting-calendar-proposal-option"
               onClick={() =>
                 choose.mutate({
@@ -308,10 +308,10 @@ export default function MeetingCalendarCard({
                   event_id: option.event_id,
                 })
               }
-              className="rounded bg-accent px-2 py-0.5 text-xs text-on-accent"
+              variant="primary"
             >
               {t("calendar.itWas").replace("{title}", option.title ?? t("calendar.untitled"))}
-            </button>
+            </Button>
           ))}
           {known.match?.reason && (
             <span className="block w-full text-xs text-tertiary">{known.match.reason}</span>
@@ -338,8 +338,7 @@ export default function MeetingCalendarCard({
 
       <div className="mt-2 flex flex-wrap gap-2">
         {proposed && (
-          <button
-            type="button"
+          <Button
             data-testid="meeting-calendar-confirm"
             onClick={() =>
               choose.mutate({
@@ -348,29 +347,27 @@ export default function MeetingCalendarCard({
                 event_id: proposed.event_id,
               })
             }
-            className="rounded bg-accent px-2 py-0.5 text-xs text-on-accent"
+            variant="primary"
           >
             {t("calendar.yes")}
-          </button>
+          </Button>
         )}
         {needsMeeting && (
-          <button
-            type="button"
+          <Button
             data-testid="meeting-calendar-not-on-calendar"
             onClick={() => choose.mutate({ none: true })}
-            className="rounded border border-line px-2 py-0.5 text-xs"
+            variant="secondary"
           >
             {t("calendar.noEvent")}
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
+        <Button
           data-testid="meeting-calendar-pick"
           onClick={() => setPicking((open) => !open)}
-          className="rounded border border-line px-2 py-0.5 text-xs"
+          variant="secondary"
         >
           {state === "matched" ? t("calendar.notThisOne") : t("calendar.chooseEvent")}
-        </button>
+        </Button>
       </div>
 
       {mergeWith && (
@@ -381,15 +378,14 @@ export default function MeetingCalendarCard({
           <span className="text-secondary">
             {t("calendar.mergeWith").replace("{time}", formatClock(mergeWith.started_at))}
           </span>
-          <button
-            type="button"
+          <Button
             data-testid="meeting-calendar-merge-button"
             disabled={merge.isPending}
             onClick={() => merge.mutate(mergeWith.id)}
-            className="rounded border border-line px-2 py-0.5"
+            variant="secondary"
           >
             {t("calendar.merge")}
-          </button>
+          </Button>
         </div>
       )}
 

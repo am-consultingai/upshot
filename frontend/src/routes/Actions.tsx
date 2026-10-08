@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type ActionItem } from "../api";
@@ -10,7 +10,10 @@ import { addDays, dayKey, startOfDay } from "../lib/calendar";
 import { dueBucket, isSnoozed, type DueBucket } from "../lib/due";
 import { formatShortDate } from "../lib/format";
 import { initials, personColour } from "../lib/speakers";
+import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
+import { Loading, Skeleton, SkeletonRows } from "../components/Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 
 type Tab = "mine" | "everyone" | "done";
 
@@ -27,7 +30,7 @@ function typing(target: EventTarget | null): boolean {
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     // The sidebar's list has its own J and K.
-    (target instanceof HTMLElement && target.closest("[role=listbox]") !== null)
+    (target instanceof HTMLElement && target.closest("[data-testid=meeting-list]") !== null)
   );
 }
 
@@ -121,7 +124,7 @@ export default function ActionsPage() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      if ((event.ctrlKey || event.metaKey) && event.code === "KeyF") {
         event.preventDefault();
         setFilter((was) => was ?? "");
         window.setTimeout(() => filterRef.current?.focus(), 0);
@@ -129,7 +132,7 @@ export default function ActionsPage() {
       }
       if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
-      const key = event.key.toLowerCase();
+      const key = shortcutKey(event);
       if (key === "j" || event.key === "ArrowDown") {
         event.preventDefault();
         setSelected((at) => Math.min(order.length - 1, at + 1));
@@ -164,6 +167,44 @@ export default function ActionsPage() {
       ?.scrollIntoView({ block: "nearest" });
   }, [current?.id]);
 
+  /*
+   * Four different empties, each with its own next step. A filter that matches
+   * nothing used to say "Everything so far is done", which was simply untrue.
+   */
+  const actionsEmpty = () => {
+    const [title, body, action]: [string, string, ReactNode] =
+      all.length === 0
+        ? [
+            t("actions.emptyTitle"),
+            t("actions.empty"),
+            <Link key="go" to="/" className={EMPTY_BUTTON}>
+              {t("actions.emptyGo")}
+            </Link>,
+          ]
+        : needle
+          ? [
+              t("actions.emptyFilterTitle"),
+              t("actions.emptyFilter"),
+              <button key="clear" type="button" onClick={() => setFilter(null)} className={EMPTY_BUTTON}>
+                {t("actions.clearFilter")}
+              </button>,
+            ]
+          : tab === "done"
+            ? [t("actions.emptyDoneTitle"), t("actions.emptyDone"), null]
+            : tab === "mine" && counts.everyone > 0
+              ? [
+                  t("actions.emptyMineTitle"),
+                  t("actions.emptyMine").replace("{n}", String(counts.everyone)),
+                  <button key="everyone" type="button" onClick={() => setTab("everyone")} className={EMPTY_BUTTON}>
+                    {t("actions.showEveryone")}
+                  </button>,
+                ]
+              : [t("actions.emptyOpenTitle"), t("actions.emptyOpen"), null];
+    return (
+      <EmptyState testid="actions-empty" icon={needle ? EMPTY_ICON.search : EMPTY_ICON.check} title={title} body={body} action={action} />
+    );
+  };
+
   const row = (item: ActionItem) => (
     <ActionItemRow
       key={item.id}
@@ -187,7 +228,7 @@ export default function ActionsPage() {
             ] as const
           ).map(([keys, label]) => (
             <span key={keys} className="flex items-center gap-1">
-              <kbd className="rounded-[3px] px-1 font-mono text-[10px] shadow-[var(--shadow-ring-subtle)]">{keys}</kbd>
+              <kbd className="rounded-2xs px-1 font-mono text-3xs shadow-[var(--shadow-ring-subtle)]">{keys}</kbd>
               {t(label)}
             </span>
           ))}
@@ -196,7 +237,7 @@ export default function ActionsPage() {
 
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="max-w-[46rem] px-8 pt-7 pb-16">
+          <div className="box-content max-w-measure px-8 pt-7 pb-16">
             <h1 className="text-2xl font-semibold tracking-tight">{t("actions.title")}</h1>
             <p className="mt-1 mb-5 text-md text-tertiary">{t("actions.lead")}</p>
 
@@ -212,9 +253,8 @@ export default function ActionsPage() {
                   role="tab"
                   data-testid={`actions-tab-${value}`}
                   aria-selected={tab === value}
-                  aria-pressed={tab === value}
                   onClick={() => setTab(value)}
-                  className={`flex h-6.5 items-center gap-1.5 rounded-sm px-3 text-sm ${
+                  className={`flex h-control-sm items-center gap-1.5 rounded-sm px-3 text-sm ${
                     tab === value
                       ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
                       : "text-secondary hover:bg-a-200 hover:text-primary"
@@ -248,18 +288,29 @@ export default function ActionsPage() {
               </div>
             )}
 
-            {query.isLoading && <p className="text-sm text-tertiary">{t("common.loading")}</p>}
-            {query.isError && <p className="text-sm text-danger">{t("common.error")}</p>}
-
-            {!query.isLoading && !query.isError && visible.length === 0 && (
-              <p data-testid="actions-empty" className="py-10 text-center text-sm text-tertiary">
-                {all.length === 0
-                  ? t("actions.empty")
-                  : tab === "done"
-                    ? t("actions.emptyDone")
-                    : t("actions.emptyOpen")}
-              </p>
+            {query.isLoading && (
+              // A group header over rows of checkbox and two lines, as the inbox draws them.
+              <Loading>
+                <Skeleton className="mb-3 h-3.5 w-28" />
+                <SkeletonRows rows={5} lead="check" rowClassName="px-2.5 py-2.5" />
+              </Loading>
             )}
+            {query.isError && (
+              <EmptyState
+                testid="actions-error"
+                tone="danger"
+                icon={EMPTY_ICON.error}
+                title={t("common.error")}
+                body={t("actions.errorBody")}
+                action={
+                  <button type="button" onClick={() => void query.refetch()} className={EMPTY_BUTTON}>
+                    {t("common.retry")}
+                  </button>
+                }
+              />
+            )}
+
+            {query.isSuccess && visible.length === 0 && actionsEmpty()}
 
             {groups.map(([bucket, rows]) => {
               const meta = BUCKETS.find((entry) => entry.id === bucket);
@@ -368,7 +419,7 @@ function InboxRail({ items }: { items: ActionItem[] }) {
   return (
     <aside
       data-testid="actions-rail"
-      className="hidden w-[19rem] shrink-0 flex-col gap-6.5 overflow-y-auto border-s border-line-subtle px-5 pt-6.5 pb-10 xl:flex"
+      className="hidden w-rail shrink-0 flex-col gap-6.5 overflow-y-auto border-s border-line-subtle px-5 pt-6.5 pb-10 xl:flex"
     >
       {sources.length > 0 && (
         <section data-testid="actions-sources">
@@ -398,7 +449,7 @@ function InboxRail({ items }: { items: ActionItem[] }) {
               <li key={who} data-testid="actions-waiting-person" className="flex items-center gap-2 text-sm">
                 <span
                   aria-hidden="true"
-                  className="grid size-5.5 shrink-0 place-items-center rounded-full text-[9px] font-semibold text-on-speaker"
+                  className="grid size-5.5 shrink-0 place-items-center rounded-full text-4xs font-semibold text-on-speaker"
                   style={{ background: personColour(who) }}
                 >
                   {initials(who)}
@@ -421,7 +472,7 @@ function InboxRail({ items }: { items: ActionItem[] }) {
           </span>
           <span className="text-sm text-tertiary">{t("actions.ofItems").replace("{n}", String(outOf))}</span>
         </p>
-        <div className="mt-3 h-[3px] overflow-hidden rounded-sm bg-surface-3">
+        <div className="mt-3 h-0.75 overflow-hidden rounded-sm bg-surface-3">
           <i className="block h-full rounded-sm bg-accent opacity-60" style={{ width: `${outOf ? (cleared / outOf) * 100 : 0}%` }} />
         </div>
       </section>

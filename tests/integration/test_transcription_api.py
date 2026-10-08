@@ -390,7 +390,8 @@ def test_the_list_pages_newest_first(h: ApiHarness, tmp_path: Path) -> None:
 def test_a_change_is_published_as_an_event(h: ApiHarness, tmp_path: Path) -> None:
     job = upload(Program(h), wav(tmp_path / "a.wav", 3)).json()
     sent = [e.payload for e in h.services.events.history if e.type == "transcription"]
-    assert {"id": job["id"], "state": "pending", "phase": None, "progress": 0.0} in sent
+    expected = {"id": job["id"], "state": "pending", "phase": None, "progress": 0.0, "eta_s": None}
+    assert expected in sent
 
 
 def test_info(h: ApiHarness) -> None:

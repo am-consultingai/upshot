@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
-import { Spinner } from "../components/BusyButton";
+import Button, { Spinner, buttonClass } from "../components/Button";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import type { KeyProviderId } from "./flow";
-import { Note, PRIMARY, QUIET, StepFrame, fill } from "./ui";
+import { Note, StepFrame, fill } from "./ui";
 
 /**
  * Setup: an API key, offered only when no subscription was signed in on the step before
@@ -22,17 +22,17 @@ export default function KeyStep({ onNext, onBack }: { onNext: () => void; onBack
       footer={
         <>
           {key.phase === "valid" ? (
-            <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
+            <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
               {t("firstRun.continue")}
-            </button>
+            </Button>
           ) : (
-            <button type="button" data-testid="setup-skip" className={QUIET} onClick={onNext}>
+            <Button data-testid="setup-skip" variant="ghost" size="md" onClick={onNext}>
               {t("firstRun.skip")}
-            </button>
+            </Button>
           )}
-          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -86,7 +86,7 @@ function KeyOffer() {
           href={GEMINI.console}
           target="_blank"
           rel="noreferrer"
-          className={PRIMARY}
+          className={buttonClass("primary", "md")}
           onClick={() => backend.chooseKeyProvider("gemini")}
         >
           {t("firstRun.key.getGemini")}

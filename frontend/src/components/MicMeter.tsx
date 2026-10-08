@@ -114,7 +114,7 @@ export default function MicMeter({
       */}
       <div
         dir="ltr"
-        className="flex h-6 gap-[2px]"
+        className="flex h-6 gap-0.5"
         role="meter"
         aria-valuemin={0}
         aria-valuemax={1}

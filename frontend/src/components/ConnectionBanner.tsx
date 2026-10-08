@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import Banner from "./Banner";
 
 /**
  * Says so when the app behind the page has stopped answering.
@@ -20,14 +21,8 @@ export default function ConnectionBanner() {
   if (!status.isError) return null;
 
   return (
-    <div
-      data-testid="connection-lost"
-      role="alert"
-      className="border-b border-warning bg-warning-quiet"
-    >
-      <p className="mx-auto max-w-5xl px-4 py-2 text-sm text-warning">
-        {t("app.offline")}
-      </p>
-    </div>
+    <Banner data-testid="connection-lost" role="alert" tone="attention">
+      <span className="text-warning">{t("app.offline")}</span>
+    </Banner>
   );
 }

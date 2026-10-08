@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, reason, type FeedbackBody } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 
 const KINDS: { value: FeedbackBody["kind"]; label: MessageKey }[] = [
   { value: "idea", label: "feedback.kind.idea" },
@@ -10,8 +10,6 @@ const KINDS: { value: FeedbackBody["kind"]; label: MessageKey }[] = [
   { value: "praise", label: "feedback.kind.praise" },
   { value: "other", label: "feedback.kind.other" },
 ];
-const PRIMARY = "rounded bg-accent px-3 py-1.5 text-sm text-on-accent disabled:opacity-40";
-const SECONDARY = "rounded border border-line px-3 py-1.5 text-sm";
 
 /** Open the feedback dialog from anywhere: the palette, Settings, the tray. */
 export function openFeedback(): void {
@@ -114,7 +112,7 @@ export default function FeedbackDialog() {
   if (!open || hidden) return null;
   const available = state.data?.available ?? true;
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-[4px]" role="presentation">
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-xs" role="presentation">
       <div
         role="dialog"
         aria-modal="true"
@@ -131,9 +129,9 @@ export default function FeedbackDialog() {
               {t(done.sent ? "feedback.sent" : "feedback.kept").replace("{reference}", done.reference)}
             </p>
             <div className="flex justify-end">
-              <button type="button" className={PRIMARY} onClick={() => setOpen(false)}>
+              <Button variant="primary" onClick={() => setOpen(false)}>
                 {t("feedback.close")}
-              </button>
+              </Button>
             </div>
           </>
         ) : (
@@ -229,18 +227,18 @@ export default function FeedbackDialog() {
               </p>
             )}
             <div className="flex justify-end gap-2">
-              <button type="button" className={SECONDARY} onClick={() => setOpen(false)}>
+              <Button variant="ghost" onClick={() => setOpen(false)}>
                 {t("feedback.cancel")}
-              </button>
-              <BusyButton
+              </Button>
+              <Button
                 data-testid="feedback-send"
                 busy={busy}
                 disabled={!available || !message.trim()}
                 onClick={() => void send()}
-                className={PRIMARY}
+                variant="primary"
               >
                 {t("feedback.send")}
-              </BusyButton>
+              </Button>
             </div>
           </>
         )}

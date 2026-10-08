@@ -42,9 +42,13 @@ const Transcript = forwardRef<
     dir: "ltr" | "rtl";
     /** The segment being spoken, from the player. */
     speaking: number;
+    /** Keep the line being spoken in view: on while playing, until the reader scrolls away. */
+    following?: boolean;
+    /** The reader scrolled the transcript themselves. */
+    onUnfollow?: () => void;
     onSeek: (seconds: number) => void;
   }
->(function Transcript({ segments, people, dir, speaking, onSeek }, findRef) {
+>(function Transcript({ segments, people, dir, speaking, following = false, onUnfollow, onSeek }, findRef) {
   const { t } = useI18n();
   const [find, setFind] = useState("");
   const [current, setCurrent] = useState(0);
@@ -53,13 +57,66 @@ const Transcript = forwardRef<
   const matches = useMemo(() => findMatches(segments, needle), [segments, needle]);
   const bySlot = new Map(people.map((person) => [person.slot, person]));
 
+  const unfollow = useRef(onUnfollow);
+  unfollow.current = onUnfollow;
+
   useEffect(() => setCurrent(0), [needle]);
   useEffect(() => {
     if (matches.length === 0) return;
+    // Finding is reading somewhere else: playback stops pulling the page back.
+    unfollow.current?.();
     list.current
       ?.querySelector(`[data-match-index="${current}"]`)
       ?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [current, matches.length]);
+
+  /*
+   * The transcript follows playback, as Descript's and Otter's do: each new line
+   * scrolls into the middle of the view as it starts.
+   *
+   * Only "nearest" would be calmer, but it parks the line at the bottom edge where the
+   * next one is always off screen. And it stops the moment the reader takes the scroll
+   * themselves — a page that drags you back mid-sentence is worse than one that does
+   * not follow at all. A click on a line, play, J or K turn it back on (the page owns
+   * that state). Only gestures count as taking over: wheel, touch, the scrollbar and
+   * the scrolling keys; the smooth scroll this does itself fires none of them.
+   */
+  useEffect(() => {
+    if (!following || speaking < 0) return;
+    list.current
+      ?.querySelector(`[data-segment-index="${speaking}"]`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [following, speaking]);
+  // Listening whether or not playback is following right now: a seek can pause the audio
+  // for a moment while it buffers, and a wheel in that gap would otherwise go unheard and
+  // the page would be pulled back the moment it plays again. Taking over is idempotent.
+  useEffect(() => {
+    let scroller: HTMLElement | null = list.current?.parentElement ?? null;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) {
+      scroller = scroller.parentElement;
+    }
+    // No scrolling box of its own: the page itself scrolls, and wheels reach the window.
+    const box: HTMLElement | Window = scroller ?? window;
+    const taken = () => unfollow.current?.();
+    const onPointer = (event: Event) => {
+      // A press on the scroller itself, not on anything in it, is a press on its scrollbar.
+      if (event.target === box) taken();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (["PageUp", "PageDown", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) taken();
+    };
+    box.addEventListener("wheel", taken, { passive: true });
+    box.addEventListener("touchmove", taken, { passive: true });
+    box.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      box.removeEventListener("wheel", taken);
+      box.removeEventListener("touchmove", taken);
+      box.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   const step = (by: number) => {
     if (matches.length === 0) return;
@@ -125,12 +182,13 @@ const Transcript = forwardRef<
             </button>
           </span>
         )}
-        <kbd className="shrink-0 rounded-[3px] px-1 font-mono text-[10px] text-tertiary shadow-[var(--shadow-ring-subtle)]">
-          Ctrl F
+        {/* The short key; Ctrl+F still works, and is what people try first. */}
+        <kbd className="kbd-hint shrink-0 rounded-2xs px-1 font-mono text-3xs text-tertiary shadow-[var(--shadow-ring-subtle)]">
+          /
         </kbd>
       </div>
 
-      <ol ref={list} data-testid="transcript" dir={dir} className="pb-6">
+      <ol ref={list} data-testid="transcript" data-following={following} dir={dir} className="pb-6">
         {segments.map((segment, index) => {
           const person = bySlot.get(segment.speaker);
           const continues = index > 0 && segments[index - 1].speaker === segment.speaker;
@@ -149,7 +207,7 @@ const Transcript = forwardRef<
                   data-testid="transcript-match"
                   data-match-index={matchIndex}
                   data-current={matchIndex === current ? "true" : undefined}
-                  className={`font-medium text-accent underline decoration-from-font underline-offset-[3px] ${
+                  className={`font-medium text-accent underline decoration-from-font underline-offset-3 ${
                     matchIndex === current ? "rounded-xs bg-accent-quiet" : "bg-transparent"
                   }`}
                 >
@@ -164,6 +222,7 @@ const Transcript = forwardRef<
             <li
               key={index}
               data-testid="transcript-block"
+              data-segment-index={index}
               data-current-match={holdsCurrent ? "true" : undefined}
               className={`${continues ? "pt-3" : "pt-5 first:pt-0"} ${
                 holdsCurrent || isSpeaking ? "-ms-3.5 ps-3 shadow-[inset_2px_0_0_0_var(--accent)]" : ""
@@ -196,7 +255,7 @@ const Transcript = forwardRef<
                   data-track={isMicSlot(segment.speaker) ? "me" : "them"}
                   data-speaking={isSpeaking ? "true" : undefined}
                   onClick={() => onSeek(segment.start)}
-                  className="me-1.5 align-baseline font-mono text-xs text-accent underline decoration-from-font underline-offset-[3px] hover:brightness-110"
+                  className="me-1.5 align-baseline font-mono text-xs text-accent underline decoration-from-font underline-offset-3 hover:brightness-110"
                 >
                   ({stamp(segment.start)})
                 </button>

@@ -334,13 +334,25 @@ test("a_detected_meeting_nudges_on_any_screen", async ({ page, seedBody, seedMor
 
   await seedMore({
     detector_events: [
-      { process: "C:\\Program Files\\Zoom\\bin\\Zoom.exe", peak_score: 8, outcome: "shadow" },
+      {
+        process: "C:\\Program Files\\Zoom\\bin\\Zoom.exe",
+        peak_score: 8,
+        outcome: "shadow",
+        evidence: [
+          { code: "mic.known_app", weight: 3, detail: "Zoom.exe" },
+          { code: "vad.loopback", weight: 2, detail: "someone else is speaking" },
+          { code: "camera", weight: 1, detail: "the camera is on" },
+        ],
+      },
     ],
   });
 
   const nudge = page.getByTestId("detection-nudge");
   await expect(nudge).toBeVisible({ timeout: 10_000 });
-  await expect(nudge).toContainText("Zoom");
+  // What it detected and why, in one line: the app, the score and the evidence.
+  await expect(nudge.getByTestId("detection-nudge-why")).toHaveText(
+    "Zoom · score 8 · a call app took the microphone, someone else is speaking, the camera is on",
+  );
 
   await nudge.getByTestId("detection-nudge-dismiss").click();
   await expect(page.getByTestId("detection-nudge")).toHaveCount(0);

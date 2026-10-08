@@ -3,6 +3,7 @@ import { api, type Transcription } from "../api";
 import { useI18n } from "../i18n";
 import { textDirection } from "../lib/direction";
 import { formatOffset } from "../lib/format";
+import { Loading, SkeletonProse } from "./Skeleton";
 
 /** A finished transcript, read-only: who spoke when. It runs in its language's direction. */
 export default function TranscriptView({ job }: { job: Transcription }) {
@@ -11,7 +12,12 @@ export default function TranscriptView({ job }: { job: Transcription }) {
     queryKey: ["transcription-result", job.id],
     queryFn: () => api.transcriptionResult(job.id),
   });
-  if (result.isLoading) return <p className="px-4 py-3 text-sm text-tertiary">…</p>;
+  if (result.isLoading)
+    return (
+      <Loading className="px-4 py-3">
+        <SkeletonProse lines={4} />
+      </Loading>
+    );
   const segments = result.data?.segments ?? [];
   if (!segments.length) {
     return (

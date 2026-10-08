@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import { addDays, dayKey, startOfWeek } from "../lib/calendar";
+import Button from "./Button";
 
 /**
  * A due-date popover: a month, a today mark, the chosen day in accent.
@@ -102,7 +103,7 @@ export default function DatePicker({
       aria-label={t("actions.pickDate")}
       data-testid="date-picker"
       onKeyDown={onKeyDown}
-      className="ma-menu fixed z-[60] w-[212px] rounded-[10px] bg-raised p-2.5 shadow-[var(--shadow-ring),var(--shadow-md),var(--shadow-edge)]"
+      className="ma-menu fixed z-[60] w-53 rounded-lg bg-raised p-2.5 shadow-[var(--shadow-ring),var(--shadow-md),var(--shadow-edge)]"
       data-open=""
       style={{ left: place?.left ?? -9999, top: place?.top ?? -9999 }}
     >
@@ -138,7 +139,7 @@ export default function DatePicker({
       </div>
       <div role="grid" className="grid grid-cols-7 gap-y-0.5 text-center">
         {weekdays.map((name, index) => (
-          <span key={index} className="pb-1 text-[10px] uppercase text-tertiary">
+          <span key={index} className="pb-1 text-3xs uppercase text-tertiary">
             {name}
           </span>
         ))}
@@ -156,7 +157,7 @@ export default function DatePicker({
               aria-selected={chosen}
               tabIndex={key === focus ? 0 : -1}
               onClick={() => onPick(key)}
-              className={`mx-auto grid size-[26px] place-items-center rounded-sm text-xs tabular-nums ${
+              className={`mx-auto grid size-6.5 place-items-center rounded-sm text-xs tabular-nums ${
                 chosen
                   ? "bg-accent font-semibold text-on-accent"
                   : key === today
@@ -172,14 +173,14 @@ export default function DatePicker({
         })}
       </div>
       {value && (
-        <button
-          type="button"
+        <Button
           data-testid="date-picker-clear"
           onClick={() => onPick(null)}
-          className="mt-2 h-6 w-full rounded-sm text-xs text-secondary hover:bg-a-200 hover:text-primary"
+          variant="ghost"
+          className="mt-2 w-full"
         >
           {t("actions.clearDate")}
-        </button>
+        </Button>
       )}
     </div>,
     document.body,

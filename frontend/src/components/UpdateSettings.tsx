@@ -2,12 +2,11 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type UpdateState } from "../api";
 import { useI18n } from "../i18n";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import SettingRow, { SettingGroup } from "./SettingRow";
 import { openFeedback } from "./FeedbackDialog";
+import { Skeleton } from "./Skeleton";
 
-const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent";
-const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
 
 /** Phases that change by themselves: watched closely until they settle. */
 const MOVING = new Set<UpdateState["phase"]>(["checking", "downloading"]);
@@ -60,7 +59,7 @@ export default function UpdateSettings() {
                     .replace("{version}", build.version)
                     .replace("{commit}", build.commit.slice(0, 7))
                 : build.version
-              : "…"}
+              : <Skeleton className="inline-block h-3 w-28 align-middle" />}
           </span>
         }
       >
@@ -68,9 +67,9 @@ export default function UpdateSettings() {
       </SettingRow>
 
       <SettingRow label={t("feedback.title")} description={t("feedback.settingsHint")}>
-        <button type="button" data-testid="open-feedback" className={SECONDARY} onClick={openFeedback}>
+        <Button data-testid="open-feedback" variant="secondary" size="md" onClick={openFeedback}>
           {t("feedback.open")}
-        </button>
+        </Button>
       </SettingRow>
 
       <SettingRow
@@ -130,23 +129,25 @@ export default function UpdateSettings() {
       >
         <div className="flex gap-2">
           {canInstall && (
-            <BusyButton
+            <Button
               data-testid="update-install"
               busy={install.isPending || install.isSuccess}
               onClick={() => install.mutate()}
-              className={PRIMARY}
+              variant="primary"
+              size="md"
             >
               {t(install.isPending || install.isSuccess ? "updates.installing" : "updates.installNow")}
-            </BusyButton>
+            </Button>
           )}
-          <BusyButton
+          <Button
             data-testid="update-check"
             busy={check.isPending || state?.phase === "checking"}
             onClick={() => check.mutate()}
-            className={SECONDARY}
+            variant="secondary"
+            size="md"
           >
             {t("updates.checkNow")}
-          </BusyButton>
+          </Button>
         </div>
       </SettingRow>
 

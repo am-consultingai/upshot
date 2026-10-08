@@ -5,6 +5,8 @@ import {
   bucketByDay,
   dayKey,
   daysFor,
+  FOLDED_PX,
+  foldNights,
   isSameMonth,
   periodLabel,
   placement,
@@ -254,6 +256,45 @@ describe("several calendar accounts (D82)", () => {
     // A removed account is not listed, so it has no dot.
     expect(accountsOf({ account_id: "ga_gone" }, listed)).toEqual([]);
     expect(accountsOf({}, listed)).toEqual([]);
+  });
+});
+
+describe("folded nights", () => {
+  const work = { start: 8, end: 18 };
+  const px = 0.8;
+
+  it("unfolded, every minute is at its full height", () => {
+    const fold = foldNights(work, false, [], px);
+    expect(fold.early).toBe(false);
+    expect(fold.late).toBe(false);
+    expect(fold.y(9 * 60)).toBe(9 * 60 * px);
+    expect(fold.height).toBe(24 * 60 * px);
+  });
+
+  it("folded, each night is one thin band and the working day keeps its scale", () => {
+    const fold = foldNights(work, true, [[10 * 60, 11 * 60]], px);
+    expect(fold.early && fold.late).toBe(true);
+    expect(fold.y(8 * 60)).toBe(FOLDED_PX);
+    expect(fold.y(10 * 60) - fold.y(9 * 60)).toBeCloseTo(60 * px);
+    expect(fold.height).toBeCloseTo(2 * FOLDED_PX + 10 * 60 * px);
+    // Inside a band minutes are scaled, not clipped: the now-line still has a place.
+    expect(fold.y(4 * 60)).toBeCloseTo(FOLDED_PX / 2);
+  });
+
+  it("a night with a meeting in it stays open", () => {
+    const early = foldNights(work, true, [[7 * 60, 8 * 60 + 30]], px);
+    expect(early.early).toBe(false);
+    expect(early.late).toBe(true);
+    expect(early.y(7 * 60)).toBe(7 * 60 * px);
+    const late = foldNights(work, true, [[17 * 60, 19 * 60]], px);
+    expect(late.early).toBe(true);
+    expect(late.late).toBe(false);
+  });
+
+  it("a working day from midnight to midnight has no night to fold", () => {
+    const fold = foldNights({ start: 0, end: 24 }, true, [], px);
+    expect(fold.early || fold.late).toBe(false);
+    expect(fold.height).toBe(24 * 60 * px);
   });
 });
 

@@ -167,6 +167,7 @@ class Bridge:
                     "state": job["state"],
                     "phase": job.get("phase"),
                     "progress": job.get("progress"),
+                    "eta_s": job.get("eta_s"),
                     "position": job.get("position"),
                     "waiting_reason": job.get("waiting_reason"),
                     "status": _status(job),
@@ -280,8 +281,18 @@ def _status(job: dict[str, Any]) -> str:
         return f"waiting{where}" + (f"; {reason}" if reason else "")
     if state == "running":
         percent = round(float(job.get("progress") or 0) * 100)
-        return f"transcribing ({job.get('phase') or 'starting'}, {percent}%)"
+        left = _left(job.get("eta_s"))
+        return f"transcribing ({job.get('phase') or 'starting'}, {percent}%{left})"
     return STATE_WORDS.get(state, state)
+
+
+def _left(eta_s: Any) -> str:
+    """The app's own estimate of the time left, once it has one: it says nothing until
+    the run has gone far enough to be measured."""
+    if eta_s is None:
+        return ""
+    minutes = round(float(eta_s) / 60)
+    return ", under a minute left" if minutes < 1 else f", about {minutes} min left"
 
 
 def _line(job: dict[str, Any]) -> str:

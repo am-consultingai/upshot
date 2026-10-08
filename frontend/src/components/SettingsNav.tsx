@@ -9,6 +9,8 @@ export interface SettingsSection {
   label: MessageKey;
   /** What the section is for, on hover — for the ones a name does not explain. */
   hint?: MessageKey;
+  /** One line under the section's heading: what the section is for. */
+  purpose?: MessageKey;
 }
 
 /**

@@ -287,11 +287,22 @@ def status(request: Request) -> dict[str, Any]:
         "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
         "disk_free_bytes": disk.free,
         "storage_bytes": storage_bytes(svc),
+        # Where that is: Settings, Storage shows it, so "local only" can be checked.
+        "data_folder": str(svc.config.data_root),
         "fts": capabilities(svc.conn).fts,
         "now": iso(svc.clock.now()),
         # Which build answered: a report from a tester's machine names its commit.
         "build": build_info().as_dict(),
     }
+
+
+@router.get("/jobs/active")
+def active_jobs(request: Request) -> dict[str, Any]:
+    """Every transcription running or waiting, meetings and files together, in the order
+    the one worker will take them, with percent done and time left where known."""
+    from app.transcription.active import active_jobs as listed
+
+    return {"jobs": listed(services_of(request))}
 
 
 @router.get("/attention")
@@ -2930,6 +2941,8 @@ def test_router() -> APIRouter:
             for meeting in svc.dao.list_meetings(limit=10_000, include_hidden=True):
                 svc.dao.clear_turns(meeting.id)
             svc.conn.execute("DELETE FROM jobs")
+            if svc.progress is not None:
+                svc.progress.clear()
             # Cascades from meetings too; said here so the reset does not depend on
             # PRAGMA foreign_keys being on for whichever connection runs it.
             svc.conn.execute("DELETE FROM meeting_tags")
@@ -2953,7 +2966,14 @@ def test_router() -> APIRouter:
             # cannot silently make the reset wrong.
             from app.config import DEFAULTS
 
-            for key in ("language", "theme", "view", "calendar_span", "tooltips_off"):
+            for key in (
+                "language",
+                "theme",
+                "view",
+                "calendar_span",
+                "fold_nights",
+                "tooltips_off",
+            ):
                 svc.config.set(f"ui.{key}", DEFAULTS["ui"][key])
             # Setup counts as done for every spec except the one about setup, which
             # asks for the opposite below: a spec that died on /welcome must not send
@@ -3109,6 +3129,11 @@ def test_router() -> APIRouter:
                         process=event.get("process"),
                         watch_process=False,
                         candidates=candidates,
+                        score=int(event.get("peak_score", 7)),
+                        evidence=tuple(
+                            (str(item.get("code", "")), str(item.get("detail", "")))
+                            for item in event.get("evidence", [])
+                        ),
                     ),
                     recording=svc.recorder is not None and svc.recorder.committed,
                 )
@@ -3150,6 +3175,12 @@ def test_router() -> APIRouter:
                 job = svc.queue.enqueue(meeting.id, stage)
                 if state != "pending":
                     svc.conn.execute("UPDATE jobs SET state = ? WHERE id = ?", (state, job.id))
+            if item.get("progress") is not None and svc.progress is not None:
+                # As far as a running transcribe stage would have reported (0–1 of it).
+                svc.progress.start(meeting.id, "transcribe")
+                svc.progress.report(
+                    meeting.id, str(item.get("phase", "transcribe")), float(item["progress"])
+                )
             if item.get("turns"):
                 from app.asr.backend import Segment, TranscriptFile
                 from app.asr.diarize import track_of

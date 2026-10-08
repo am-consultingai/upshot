@@ -161,7 +161,10 @@ test("a_transcription_event_refetches_the_list_and_nothing_else", async ({ page,
   // Created through the API, as a program would: the page hears of it by event only.
   await seedMore({ transcriptions: [{ state: "pending", source_name: "from-claude.mp3", client: "mcp" }] });
   await expect(page.getByTestId("transcription-row")).toHaveCount(1);
-  expect(fetched.filter((path) => path !== "/api/test/seed")).toEqual(["/api/v1/transcriptions"]);
+  // The list, and the list of running and waiting work the sidebar and Settings read.
+  await expect
+    .poll(() => fetched.filter((path) => path !== "/api/test/seed").sort())
+    .toEqual(["/api/jobs/active", "/api/v1/transcriptions"]);
 });
 
 test("file_transcriptions_never_reach_the_library", async ({ page, seedBody }) => {
@@ -232,4 +235,28 @@ test("settings_show_how_to_connect_claude_with_this_install", async ({ page, see
   await expect(page.getByTestId("transcriptions-empty")).toBeVisible();
   await gotoSettings(page, "transcription");
   await page.getByTestId("transcription-enabled").check();
+});
+
+test("settings_list_a_job_claude_sends_live_and_cancel_it", async ({ page, seedBody, playwright }) => {
+  await seedBody({});
+  await gotoSettings(page, "transcription");
+  await expect(page.getByTestId("active-jobs-empty")).toHaveText("Nothing is being transcribed.");
+
+  // Through the API, as the MCP bridge sends it: its own request context, no cookie of the
+  // page's. The e2e worker does not run by itself, so the job waits.
+  const program = await playwright.request.newContext({ baseURL: BASE_URL });
+  const created = await program.post("/api/v1/transcriptions", {
+    headers: { "X-Upshot-Client": "mcp" },
+    multipart: { file: { name: "from-claude.wav", mimeType: "audio/wav", buffer: wav(2) } },
+  });
+  expect(created.status()).toBe(202);
+  await program.dispose();
+
+  const row = page.getByTestId("active-job").filter({ hasText: "from-claude.wav" });
+  await expect(row).toBeVisible();
+  await expect(row.getByTestId("active-job-client")).toHaveText("Claude");
+  await expect(row.getByTestId("active-job-status")).toHaveText(/Waiting/);
+  await row.getByTestId("active-job-cancel").click();
+  await expect(row).toHaveCount(0);
+  await expect(page.getByTestId("active-jobs-empty")).toHaveText("Nothing is being transcribed.");
 });

@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
-import BusyButton from "../components/BusyButton";
+import Button from "../components/Button";
 import { CopySignInLink } from "../components/CopySignInLink";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
-import { Note, PRIMARY, QUIET, SECONDARY, StepFrame, fill } from "./ui";
+import { Note, StepFrame, fill } from "./ui";
 import { CalendarScene } from "./visuals";
 
 /**
@@ -56,17 +56,17 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
       footer={
         <>
           {connected ? (
-            <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
+            <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
               {t("firstRun.continue")}
-            </button>
+            </Button>
           ) : (
-            <button type="button" data-testid="setup-skip" className={QUIET} onClick={onNext}>
+            <Button data-testid="setup-skip" variant="ghost" size="md" onClick={onNext}>
               {t("firstRun.skip")}
-            </button>
+            </Button>
           )}
-          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -89,45 +89,46 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
             {/* Another Google account: the same sign-in, with Google's account chooser.
                 The accounts above stay connected whatever it comes to. */}
             <div className="flex flex-wrap items-center gap-2">
-              <BusyButton
+              <Button
                 data-testid="calendar-add"
                 busy={phase === "waiting"}
-                className={QUIET}
+                variant="ghost"
+                size="md"
                 onClick={() => backend.connectCalendar()}
               >
                 {t("firstRun.calendar.add")}
-              </BusyButton>
+              </Button>
               {phase === "waiting" && (
-                <button
-                  type="button"
+                <Button
                   data-testid="calendar-cancel"
-                  className={QUIET}
+                  variant="ghost"
+                  size="md"
                   onClick={() => backend.cancelCalendar()}
                 >
                   {t("firstRun.calendar.cancel")}
-                </button>
+                </Button>
               )}
             </div>
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <BusyButton
+            <Button
               data-testid="calendar-connect"
               busy={phase === "waiting"}
-              className={`${problem ? SECONDARY : PRIMARY} px-4 py-2`}
+              variant={problem ? "secondary" : "primary"} size="md"
               onClick={() => backend.connectCalendar()}
             >
               {problem ? t("firstRun.calendar.retry") : t("firstRun.calendar.connect")}
-            </BusyButton>
+            </Button>
             {phase === "waiting" && (
-              <button
-                type="button"
+              <Button
                 data-testid="calendar-cancel"
-                className={QUIET}
+                variant="ghost"
+                size="md"
                 onClick={() => backend.cancelCalendar()}
               >
                 {t("firstRun.calendar.cancel")}
-              </button>
+              </Button>
             )}
           </div>
         )}

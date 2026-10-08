@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import SettingRow, { SettingGroup } from "./SettingRow";
+import Button from "./Button";
 
-const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
 
 /**
  * Privacy (D87): the crash-report answer given in setup, changeable here, and the last
@@ -71,14 +71,14 @@ export default function PrivacySettings() {
         }
       >
         {report ? (
-          <button
-            type="button"
+          <Button
             data-testid="crash-report-show"
-            className={SECONDARY}
+            variant="secondary"
+            size="md"
             onClick={() => setShowing((value) => !value)}
           >
             {t(showing ? "privacy.hideReport" : "privacy.showReport")}
-          </button>
+          </Button>
         ) : (
           <span />
         )}

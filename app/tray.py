@@ -111,11 +111,17 @@ class TrayApp:
         scheduler = getattr(self.services, "scheduler", None)
         depth = scheduler.depth() if scheduler is not None else self.services.queue.depth()
         failed = self.services.queue.counts().get("failed", 0)
+        transcribing = None
+        if depth and recorder_state is RecorderState.IDLE:
+            from app.transcription.active import running_progress
+
+            transcribing = running_progress(self.services)
         self.state = AppState(
             recorder=recorder_state,
             processing=depth > 0 and recorder_state is RecorderState.IDLE,
             error=failed > 0,
             queue_depth=depth,
+            transcribing=transcribing,
             meeting_title=self._title(),
             detector_mode=str(self.services.config.get("detection.mode", "shadow")),
             ending=bool(recorder is not None and recorder.holding),

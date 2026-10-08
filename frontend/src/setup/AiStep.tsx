@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
-import { Spinner } from "../components/BusyButton";
+import Button, { Spinner } from "../components/Button";
 import { useSetupBackend, useSetupSnapshot, type CliSnapshot } from "./backend";
 import { CLI_IDS, chooseSummarizer, cliUsable, type CliId } from "./flow";
-import { Badge, Note, PRIMARY, QUIET, SECONDARY, StepFrame, fill, type Tone } from "./ui";
+import { Badge, Note, StepFrame, fill, type Tone } from "./ui";
 import { VendorLogo } from "./logos";
 import { StageTrack, VendorSignInScene } from "./visuals";
 
@@ -108,7 +108,7 @@ export default function AiStep({
         <p data-testid="ai-notice" className="inline-flex items-start gap-2">
           <span
             aria-hidden="true"
-            className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-accent text-[11px] font-bold text-on-accent"
+            className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-accent text-2xs font-bold text-on-accent"
           >
             i
           </span>
@@ -120,15 +120,16 @@ export default function AiStep({
           <span className="relative">
             {/* aria-disabled, not disabled: a disabled button never hears the press it
                 has to answer. */}
-            <button
-              type="button"
+            <Button
               data-testid="setup-next"
               aria-disabled={installing}
-              className={`${PRIMARY} ${installing ? "cursor-not-allowed opacity-50 hover:bg-accent" : ""}`}
+              variant="primary"
+              size="md"
+              className={installing ? "cursor-not-allowed opacity-50 hover:brightness-100" : ""}
               onClick={() => (installing ? setWaitNote(true) : onNext())}
             >
               {t("firstRun.continue")}
-            </button>
+            </Button>
             {waitNote && (
               <span
                 role="status"
@@ -139,9 +140,9 @@ export default function AiStep({
               </span>
             )}
           </span>
-          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -223,9 +224,9 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
         <>
           <StageTrack current="install" failed />
           <Note tone="bad" testId={`ai-install-failed-${id}`}>{t("firstRun.ai.installFailed")}</Note>
-          <button type="button" className={SECONDARY} onClick={() => backend.install(id)}>
+          <Button variant="secondary" size="md" onClick={() => backend.install(id)}>
             {t("firstRun.ai.retry")}
-          </button>
+          </Button>
         </>
       );
     case "signing-in":
@@ -235,9 +236,9 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
         <>
           <StageTrack current="signin" failed skipInstall={skipInstall} />
           <Note tone="bad" testId={`ai-signin-failed-${id}`}>{t("firstRun.ai.signinFailed")}</Note>
-          <button type="button" className={SECONDARY} onClick={() => backend.signIn(id)}>
+          <Button variant="secondary" size="md" onClick={() => backend.signIn(id)}>
             {t("firstRun.ai.retry")}
-          </button>
+          </Button>
         </>
       );
     case "testing":
@@ -255,9 +256,9 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
     return (
       <>
         <Note tone="warn" testId={`ai-free-${id}`}>{fill(t("firstRun.ai.freePlan"), { account })}</Note>
-        <button type="button" className={SECONDARY} onClick={() => backend.signIn(id)}>
+        <Button variant="secondary" size="md" onClick={() => backend.signIn(id)}>
           {t("firstRun.ai.otherAccount")}
-        </button>
+        </Button>
       </>
     );
   }
@@ -277,17 +278,17 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
         <StageTrack current="signin" skipInstall={skipInstall} />
         <p className="text-sm text-secondary">{t(INTRO[id])}</p>
         <VendorSignInScene vendor={id} />
-        <button type="button" data-testid={`ai-signin-${id}`} className={PRIMARY} onClick={() => backend.signIn(id)}>
+        <Button data-testid={`ai-signin-${id}`} variant="primary" size="md" onClick={() => backend.signIn(id)}>
           {fill(t("firstRun.ai.signinButton"), { name })}
-        </button>
+        </Button>
       </div>
     );
   }
   // Not installed and not installing: the install was cancelled or never started.
   return (
-    <button type="button" data-testid={`ai-resume-${id}`} className={PRIMARY} onClick={() => backend.install(id)}>
+    <Button data-testid={`ai-resume-${id}`} variant="primary" size="md" onClick={() => backend.install(id)}>
       {t("firstRun.ai.stage.install")}
-    </button>
+    </Button>
   );
 }
 
@@ -336,9 +337,9 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
               spellCheck={false}
               className="h-9 min-w-0 flex-1 rounded-md bg-surface-2 px-2.5 font-mono text-sm text-primary"
             />
-            <button type="submit" data-testid={`ai-submit-code-${id}`} disabled={!code.trim()} className={PRIMARY}>
+            <Button type="submit" data-testid={`ai-submit-code-${id}`} disabled={!code.trim()} variant="primary" size="md">
               {t("firstRun.ai.finishSignIn")}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (

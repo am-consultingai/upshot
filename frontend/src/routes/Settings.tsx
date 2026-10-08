@@ -7,13 +7,16 @@ import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
 import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
+import ActiveJobs from "../components/ActiveJobs";
 import TranscriptionServiceSettings from "../components/TranscriptionServiceSettings";
 import UpdateSettings from "../components/UpdateSettings";
 import PrivacySettings from "../components/PrivacySettings";
+import StorageSettings from "../components/StorageSettings";
 import SettingRow, { PinnedContext, SELECT_CLASS, SettingGroup } from "../components/SettingRow";
 import SettingsNav, { useSection, type SettingsSection } from "../components/SettingsNav";
 import Tooltip from "../components/Tooltip";
 import { useSetupWarnings } from "../lib/setup";
+import { DETECTION_MODES } from "../lib/detection";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -25,34 +28,33 @@ interface ConfigShape {
   asr?: { cpu_fast?: boolean };
 }
 
-/** What the three detection modes mean, said in terms of what happens to you. */
-const DETECTION_MODES = [
-  { value: "shadow", label: "settings.detectionWatch" },
-  { value: "on", label: "settings.detectionAuto" },
-  { value: "off", label: "settings.detectionOff" },
-] as const;
-
 /*
  * Sections, in the order someone meets them: what it records, how it looks, what it
- * connects to, then the two long ones. There is no Transcription or Storage section:
- * which model runs, where it runs and where recordings are kept are the app's business,
- * not the user's (first-run setup still downloads the model and says where it runs).
+ * connects to, then the two long ones. Which model runs and where it runs are the
+ * app's business, not the user's (first-run setup still downloads the model and says
+ * where it runs). Where recordings are kept is shown, not chosen: Storage says where
+ * and how much, which is how "local only" can be checked.
+ *
+ * Each carries one line of purpose under its heading, said in terms of what it is for
+ * rather than what is in it — the name says the second.
  */
 const SECTIONS: SettingsSection[] = [
-  { id: "audio", label: "settings.groupAudio" },
-  { id: "appearance", label: "settings.groupAppearance" },
-  { id: "calendar", label: "settings.groupCalendar" },
-  { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents" },
-  { id: "prompt", label: "settings.prompt" },
-  { id: "transcription", label: "settings.groupTranscription" },
+  { id: "audio", label: "settings.groupAudio", purpose: "settings.purposeAudio" },
+  { id: "appearance", label: "settings.groupAppearance", purpose: "settings.purposeAppearance" },
+  { id: "calendar", label: "settings.groupCalendar", purpose: "settings.purposeCalendar" },
+  { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents", purpose: "settings.purposeSummaries" },
+  { id: "prompt", label: "settings.prompt", purpose: "settings.purposePrompt" },
+  { id: "transcription", label: "settings.groupTranscription", purpose: "settings.purposeTranscription" },
+  { id: "storage", label: "settings.groupStorage", purpose: "settings.purposeStorage" },
   // Crash reports: the answer given in setup, and what was last sent (D87).
-  { id: "privacy", label: "settings.groupPrivacy" },
+  { id: "privacy", label: "settings.groupPrivacy", purpose: "settings.purposePrivacy" },
   // Last: what version this is, and the updates that arrive by themselves (D87).
-  { id: "about", label: "settings.groupAbout" },
+  { id: "about", label: "settings.groupAbout", purpose: "settings.purposeAbout" },
 ];
 
 export default function Settings() {
   const section = useSection(SECTIONS);
+  const current = SECTIONS.find((s) => s.id === section)!;
   const setup = useSetupWarnings();
   const { t, locale, setLocale, theme, setTheme, tooltips, setTooltips } = useI18n();
   const queryClient = useQueryClient();
@@ -84,7 +86,14 @@ export default function Settings() {
       />
 
       <div className="min-w-0 flex-1">
-      <h1 className="display mb-6 text-2xl">{t(SECTIONS.find((s) => s.id === section)!.label)}</h1>
+      <header className="mb-6">
+        <h1 className="display text-2xl">{t(current.label)}</h1>
+        {current.purpose && (
+          <p data-testid="settings-purpose" className="mt-1 max-w-prose text-sm text-secondary">
+            {t(current.purpose)}
+          </p>
+        )}
+      </header>
 
       {/*
        * Everything here applies the moment it changes. There is no Save button and
@@ -250,7 +259,14 @@ export default function Settings() {
       {section === "calendar" && <CalendarSettings />}
       {section === "summaries" && <ProviderSettings />}
       {section === "prompt" && <PromptSettings />}
-      {section === "transcription" && <TranscriptionServiceSettings />}
+      {/* What is running and waiting comes first, above how other apps connect. */}
+      {section === "transcription" && (
+        <>
+          <ActiveJobs />
+          <TranscriptionServiceSettings />
+        </>
+      )}
+      {section === "storage" && <StorageSettings />}
       {section === "privacy" && <PrivacySettings />}
       {section === "about" && <UpdateSettings />}
       </div>

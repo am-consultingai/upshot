@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import { fill, PRIMARY, QUIET } from "../setup/ui";
+import { fill } from "../setup/ui";
+import Button from "../components/Button";
+import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
 
 /**
  * The Terms of Service (D83).
@@ -48,7 +50,15 @@ export default function TermsPage() {
   if (legal.isError || doc.isError) {
     return <p className="p-8 text-sm text-danger">{t("terms.error")}</p>;
   }
-  if (!legal.data || !doc.data) return null;
+  if (!legal.data || !doc.data)
+    return (
+      <Loading className="mx-auto w-full max-w-3xl px-8 pt-8">
+        <Skeleton className="mb-3 h-7 w-1/2 rounded-md" />
+        <Skeleton className="mb-8 h-3 w-3/4" />
+        <SkeletonProse lines={6} className="mb-6" />
+        <SkeletonProse lines={5} />
+      </Loading>
+    );
 
   const updated = gate && legal.data.accepted_version !== null;
   return (
@@ -109,33 +119,33 @@ export default function TermsPage() {
               </span>
             </label>
             <div className="flex flex-row-reverse items-center justify-between gap-2">
-              <button
-                type="button"
-                className={PRIMARY}
+              <Button
+                variant="primary"
+                size="md"
                 disabled={!agreed || accept.isPending}
                 onClick={() => accept.mutate(doc.data.version)}
                 data-testid="terms-accept"
               >
                 {t("terms.accept")}
-              </button>
-              <button
-                type="button"
-                className={QUIET}
+              </Button>
+              <Button
+                variant="ghost"
+                size="md"
                 disabled={decline.isPending}
                 onClick={() => decline.mutate()}
                 data-testid="terms-decline"
               >
                 {t("terms.decline")}
-              </button>
+              </Button>
             </div>
             {declined && <p className="text-sm text-secondary">{t("terms.declinedNoQuit")}</p>}
             {accept.isError && <p className="text-sm text-danger">{t("terms.error")}</p>}
           </div>
         ) : (
           <div className="py-5">
-            <button type="button" className={QUIET} onClick={() => navigate(-1)}>
+            <Button variant="ghost" size="md" onClick={() => navigate(-1)}>
               {t("terms.back")}
-            </button>
+            </Button>
           </div>
         )}
       </div>
