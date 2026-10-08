@@ -215,6 +215,52 @@ def test_prepare_resumes_a_partial_download(app_home: Path, tmp_path: Path) -> N
     assert order == ["hebrew", "other"], "the verified classifier is not fetched again"
 
 
+def test_an_upgrade_removes_the_model_it_no_longer_uses(app_home: Path, tmp_path: Path) -> None:
+    """ivrit-ai large-v3 gave way to its turbo (D93): 3 GB an upgrade would leave behind."""
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    (retired / "model.bin").write_bytes(MODEL)
+    kept = tmp_path / "my-copy"  # a developer's own copy, outside models/asr
+    kept.mkdir()
+    (kept / "model.bin").write_bytes(MODEL)
+    code = run(default_config(asr__model_path=str(kept)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert not retired.exists()
+    assert (kept / "model.bin").exists()
+
+
+def test_the_retired_model_goes_before_the_download(app_home: Path, tmp_path: Path) -> None:
+    """Its 3 GB may be what the turbo needs to fit, and nothing loads it any more."""
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home, fail="hebrew"),
+               gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_FAILED
+    assert not retired.exists()
+
+
+def test_a_retired_folder_that_is_the_developers_model_path_is_kept(
+    app_home: Path, tmp_path: Path
+) -> None:
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(asr__model_path=str(retired)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert retired.exists()
+
+
 # -- the GPU libraries ---------------------------------------------------------------
 
 

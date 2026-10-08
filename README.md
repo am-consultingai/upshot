@@ -31,7 +31,7 @@ recordings and transcriptions to their datasets.
 How Upshot uses them:
 
 - **Which model.** Upshot transcribes Hebrew meetings with
-  [`ivrit-ai/whisper-large-v3-ct2`](https://huggingface.co/ivrit-ai/whisper-large-v3-ct2),
+  [`ivrit-ai/whisper-large-v3-turbo-ct2`](https://huggingface.co/ivrit-ai/whisper-large-v3-turbo-ct2),
   on an NVIDIA GPU or on the CPU. Meetings in any other language go to OpenAI's Whisper
   large-v3 ([`Systran/faster-whisper-large-v3`](https://huggingface.co/Systran/faster-whisper-large-v3)),
   and Whisper small ([`Systran/faster-whisper-small`](https://huggingface.co/Systran/faster-whisper-small))
@@ -40,7 +40,7 @@ How Upshot uses them:
   audio is sent anywhere to be transcribed.
 - **How it gets there.** The models are not part of this repository or the application.
   The installer downloads all three from Hugging Face onto the user's machine, about
-  6.7 GB, each pinned to a revision and checked file by file. Nothing is downloaded while
+  5.2 GB, each pinned to a revision and checked file by file. Nothing is downloaded while
   transcribing.
 - **Unmodified.** Upshot loads the published weights as they are.
 
