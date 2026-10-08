@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useI18n } from "../i18n";
+import { useI18n, type Locale } from "../i18n";
 import SetupFlow from "./SetupFlow";
 import { SetupBackendContext } from "./backend";
 import type { SetupChoices, StepId } from "./flow";
@@ -93,9 +93,9 @@ function Panel({
   finished,
 }: {
   backend: MockSetupBackend;
-  locale: "en" | "he";
+  locale: Locale;
   theme: string;
-  onLocale: (locale: "en" | "he") => void;
+  onLocale: (locale: Locale) => void;
   onTheme: (theme: "light" | "dark") => void;
   onReset: (scenario: ScenarioId) => void;
   onReopen: () => void;
