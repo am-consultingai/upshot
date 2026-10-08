@@ -1,6 +1,6 @@
 # Build the Windows one-dir app and the per-user installer.
 #
-#   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 [-Sign] [-SkipInstaller]
+#   powershell -ExecutionPolicy Bypass -File packaging\build.ps1 [-Sign [-NoReports]] [-SkipInstaller]
 #
 # Chain: deps -> ffmpeg -> vite build -> PyInstaller -> selftest against the freeze ->
 # secret scan -> Inno -> (optionally) Authenticode signing -> sha256.
@@ -14,6 +14,10 @@ param(
     [switch]$Sign,
     [string]$CertSubject = "CN=Upshot test signing",
     [string]$TimestampServer = "http://timestamp.digicert.com",
+    # A signed build is the one users get, so it refuses to build without the release
+    # settings (no DSNs means no crash reports and no feedback). -NoReports says that a
+    # signed build without them is meant.
+    [switch]$NoReports,
     [switch]$SkipInstaller
 )
 $ErrorActionPreference = "Stop"
@@ -41,22 +45,41 @@ $commit = (git rev-parse --short=12 HEAD).Trim()
 Assert-Exit "git rev-parse"
 $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $info = [ordered]@{ version = $version; commit = $commit; built = $built }
-# The official build's Sentry DSNs (D87), from the gitignored packaging\release.local.json.
-# A DSN only lets the app send crash reports and feedback, so it ships; it stays out of
-# the repository so that a build from source has none and sends nothing. The secrets it
-# lists (the Sentry auth token, the update signing keys) are never read into the build:
-# only the publish step uses them, and the scan below refuses a build that carries one.
-$releaseLocal = Join-Path $PSScriptRoot "release.local.json"
+# The official build's Sentry DSNs (D87), from the release settings: the file named by
+# the UPSHOT_RELEASE_LOCAL environment variable (the one copy, kept beside the signing
+# key), else a gitignored packaging\release.local.json in this clone. A DSN only lets the
+# app send crash reports and feedback, so it ships; it stays out of the repository so
+# that a build from source has none and sends nothing. The secrets it lists (the Sentry
+# auth token, the update signing keys) are never read into the build: only the publish
+# step uses them, and the scan below refuses a build that carries one.
+#
+# Each build clone used to need its own copy, and a clone without one built a signed
+# installer with reports off behind a warning nobody read (machine A, 2026-10-08).
+if ($env:UPSHOT_RELEASE_LOCAL) {
+    $releaseLocal = $env:UPSHOT_RELEASE_LOCAL
+    if (-not (Test-Path $releaseLocal)) { throw "UPSHOT_RELEASE_LOCAL names $releaseLocal, which cannot be read" }
+} else {
+    $releaseLocal = Join-Path $PSScriptRoot "release.local.json"
+}
 $secretFiles = @()
-if (Test-Path $releaseLocal) {
+if ($NoReports) {
+    Write-Host "reports: off (-NoReports)"
+} elseif (Test-Path $releaseLocal) {
     $release = Get-Content -Raw -Encoding UTF8 $releaseLocal | ConvertFrom-Json
+    if (-not $release.sentry.desktop.dsn -or -not $release.sentry.frontend.dsn) { throw "$releaseLocal has no DSNs" }
     $info.sentry = [ordered]@{ dsn = $release.sentry.desktop.dsn; frontend_dsn = $release.sentry.frontend.dsn }
     $secretFiles = @($release.secret_files | Where-Object { $_ })
-    Write-Host "reports: on (DSNs from packaging\release.local.json)"
+    # The scan looks for each secret's own bytes only where it can read the file; one it
+    # cannot read is skipped. A signed build must have at least one of them to look for.
+    if ($Sign -and -not ($secretFiles | Where-Object { Test-Path $_ })) {
+        throw "none of the secret_files in $releaseLocal can be read here: the scan could not look for them"
+    }
+    Write-Host "reports: on (DSNs from $releaseLocal)"
 } elseif ($Sign) {
-    Write-Warning "packaging\release.local.json is missing: this signed build will send no crash reports or feedback"
+    throw ("no release settings: set UPSHOT_RELEASE_LOCAL or add packaging\release.local.json " +
+        "(see the release runbook), or pass -NoReports for a signed build that sends nothing")
 } else {
-    Write-Host "reports: off (no packaging\release.local.json)"
+    Write-Host "reports: off (no release settings)"
 }
 [System.IO.File]::WriteAllText((Join-Path $root "app\build_info.json"), ($info | ConvertTo-Json), (New-Object System.Text.UTF8Encoding $false))
 Write-Host "version $version, commit $commit"
