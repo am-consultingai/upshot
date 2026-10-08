@@ -138,7 +138,7 @@ def test_a_link_opens_pages_itself_and_hands_the_rest_on(
 
     opened: list[str] = []
     forwarded: list[actions.Link] = []
-    monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "app")
+    monkeypatch.setattr(window, "open_window", lambda url, **_: opened.append(url) or "app")
     monkeypatch.setattr(actions, "forward", lambda link, port, home: forwarded.append(link) or True)
 
     # Not running: a page link starts Upshot normally, an action has nothing to go to.

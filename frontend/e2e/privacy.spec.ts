@@ -41,7 +41,10 @@ test("setup asks once, just before the sound check, with nothing chosen for the 
   await expect(page.getByTestId("setup-crumb-reports")).toHaveAttribute("aria-current", "step");
   await expect(page.getByTestId("setup-step-reports")).toContainText("Never in a report");
   expect(await consent(page)).toBe("unset");
+  await expect(page.getByTestId("reports-yes")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("reports-no").click();
+  expect(await consent(page)).toBe("unset");
+  await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-audio")).toBeVisible();
   await expect.poll(() => consent(page)).toBe("off");
 });

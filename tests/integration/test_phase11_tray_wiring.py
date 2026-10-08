@@ -48,7 +48,7 @@ def test_open_dashboard_hands_every_click_a_fresh_link(
 
     harness = build_harness(tmp_path)
     opened: list[str] = []
-    monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "app")
+    monkeypatch.setattr(window, "open_window", lambda url, **_: opened.append(url) or "app")
     tray = TrayApp(harness.services)
     tray.dispatch(Action.OPEN)
     tray.dispatch(Action.OPEN)
@@ -69,7 +69,7 @@ def test_a_start_shows_the_window_unless_it_is_a_background_start(
 
     harness = build_harness(tmp_path)
     opened: list[str] = []
-    monkeypatch.setattr(window, "open_window", lambda url: opened.append(url) or "app")
+    monkeypatch.setattr(window, "open_window", lambda url, **_: opened.append(url) or "app")
     tray = TrayApp(harness.services)
 
     closed: list[int] = []

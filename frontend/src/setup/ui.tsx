@@ -10,7 +10,7 @@ export const PRIMARY =
   "rounded-md bg-accent px-3.5 py-1.5 text-sm font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50";
 export const SECONDARY = "rounded-md bg-surface-2 px-3 py-1.5 text-sm hover:bg-a-200 active:bg-a-300";
 export const FOOTER =
-  "sticky bottom-0 mt-auto flex flex-row-reverse items-center justify-between gap-2 bg-canvas pt-6 pb-8";
+  "sticky bottom-0 mt-auto flex flex-row-reverse items-center justify-between gap-2 bg-canvas pt-4 pb-6 [@media(max-height:720px)]:pt-3 [@media(max-height:720px)]:pb-3";
 export const QUIET = "rounded-md px-3 py-1.5 text-sm text-secondary hover:bg-a-200 active:bg-a-300";
 
 /**
@@ -19,7 +19,8 @@ export const QUIET = "rounded-md px-3 py-1.5 text-sm text-secondary hover:bg-a-2
  * every part in the same box from step to step: the title on one line, then a lead
  * slot of fixed height whether the step has a lead or not, so the step's main content
  * (the cards, the panels, the choices) always starts on the same line and only what
- * is inside it changes. Keep a lead to two lines; the slot does not grow.
+ * is inside it changes. Keep a lead to two lines; the slot does not grow. On a short
+ * screen an empty slot closes up: there, fitting unscrolled comes first.
  */
 export function StepFrame({
   id,
@@ -42,12 +43,12 @@ export function StepFrame({
     <section data-testid={`setup-step-${id}`} aria-labelledby={`setup-title-${id}`} className="flex w-full flex-1 flex-col">
       <h1
         id={`setup-title-${id}`}
-        className="display mb-2 flex h-10 items-center justify-center gap-3 text-center text-3xl"
+        className="display mb-2 flex h-10 [@media(max-height:720px)]:mb-1 items-center justify-center gap-3 text-center text-3xl"
       >
         {icon}
         {t(title)}
       </h1>
-      <div data-testid="setup-lead" className="mx-auto mb-6 h-12 max-w-2xl text-center text-base text-secondary">
+      <div data-testid="setup-lead" className="mx-auto mb-4 h-12 max-w-2xl [@media(max-height:720px)]:mb-2 [@media(max-height:639px)]:empty:h-0 text-center text-base text-secondary">
         {lead}
       </div>
       <div data-testid="setup-content">{children}</div>
