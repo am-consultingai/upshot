@@ -310,3 +310,50 @@ export function workingHours(config: Record<string, unknown> | undefined): Worki
   const end = typeof calendar.work_end === "number" ? calendar.work_end : DEFAULT_WORKING_HOURS.end;
   return start >= 0 && start < end && end <= 24 ? { start, end } : DEFAULT_WORKING_HOURS;
 }
+
+/** How tall a folded night is drawn: one line of the hour gutter, and no more. */
+export const FOLDED_PX = 22;
+
+/** Where the day and week grids put each minute, with the nights folded or not. */
+export interface NightFold {
+  /** Midnight to the start of the working day is folded. */
+  early: boolean;
+  /** The end of the working day to midnight is folded. */
+  late: boolean;
+  /** Pixels from the top of a day column to `minute` past midnight. */
+  y: (minute: number) => number;
+  /** The whole column. */
+  height: number;
+}
+
+/**
+ * The hours outside the working day, folded into a thin band each.
+ *
+ * Dimming the nights said "nothing happens here" and still spent fourteen hours of
+ * scrolling on them. Folded, the working day fills the grid. A night that has a
+ * meeting in it in the period shown stays open whatever the setting says: folding
+ * must never hide something that happened, and a block squeezed into a 22px band
+ * would be unreadable anyway. Inside a folded band the minutes are scaled rather
+ * than clipped, so the now-line and the scroll position still have somewhere to be.
+ */
+export function foldNights(
+  work: WorkingHours,
+  folded: boolean,
+  /** [start, end] in minutes past midnight, for everything drawn on any day shown. */
+  busy: [number, number][],
+  pxPerMinute: number,
+): NightFold {
+  const start = work.start * 60;
+  const end = work.end * 60;
+  const early = folded && start > 0 && !busy.some(([from]) => from < start);
+  const late = folded && end < 24 * 60 && !busy.some(([, to]) => to > end);
+  const top = early ? FOLDED_PX : start * pxPerMinute;
+  const day = (end - start) * pxPerMinute;
+  const y = (minute: number): number => {
+    if (minute <= start) return early ? (minute / start) * FOLDED_PX : minute * pxPerMinute;
+    if (minute <= end) return top + (minute - start) * pxPerMinute;
+    const past = minute - end;
+    return top + day + (late ? (past / (24 * 60 - end)) * FOLDED_PX : past * pxPerMinute);
+  };
+  return { early, late, y, height: y(24 * 60) };
+}

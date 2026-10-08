@@ -33,7 +33,7 @@ const SPAN_LABEL = {
 const SPAN_KEY: Record<string, CalendarSpan> = { d: "day", w: "week", m: "month", l: "list" };
 
 interface UiConfig {
-  ui?: { calendar_span?: CalendarSpan };
+  ui?: { calendar_span?: CalendarSpan; fold_nights?: boolean };
 }
 
 /** Typing into a field is not a shortcut. */
@@ -66,7 +66,7 @@ export default function Library() {
   const open = useMatch("/m/:id");
   const reading = open !== null;
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
-  const [override, setOverride] = useState<{ span?: CalendarSpan }>({});
+  const [override, setOverride] = useState<{ span?: CalendarSpan; nights?: boolean }>({});
 
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const stored = ((settings.data?.config ?? {}) as UiConfig).ui ?? {};
@@ -78,6 +78,11 @@ export default function Library() {
   const pickSpan = (next: CalendarSpan) => {
     setOverride((current) => ({ ...current, span: next }));
     remember.mutate({ "ui.calendar_span": next });
+  };
+  const folded = override.nights ?? stored.fold_nights ?? false;
+  const foldNights = (next: boolean) => {
+    setOverride((current) => ({ ...current, nights: next }));
+    remember.mutate({ "ui.fold_nights": next });
   };
 
   /*
@@ -215,7 +220,33 @@ export default function Library() {
                 </span>
                 </Tooltip>
               )}
-              <div className="ms-auto flex gap-0.5 rounded-md bg-surface-3 p-0.5" role="group">
+              {/*
+               * Fold the nights. Only where there are hours to fold; the month and the
+               * list have none. A toggle, so it says which way it is set.
+               */}
+              {(span === "day" || span === "week") && (
+                <Tooltip label={folded ? t("timeline.nightsShow") : t("timeline.nightsHide")} hint={t("help.nights")}>
+                  <button
+                    type="button"
+                    data-testid="calendar-fold-nights"
+                    aria-label={t("timeline.nightsHide")}
+                    aria-pressed={folded}
+                    onClick={() => foldNights(!folded)}
+                    className={`ms-auto grid size-6.5 place-items-center rounded-sm hover:bg-a-200 hover:text-primary active:bg-a-300 ${
+                      folded ? "bg-a-200 text-primary" : "text-tertiary"
+                    }`}
+                  >
+                    {/* Two rules drawn together: the hours above and below pressed in. */}
+                    <svg viewBox="0 0 16 16" className="size-[15px] fill-none stroke-current stroke-[1.5]" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2.5 6.5h11M2.5 9.5h11M8 1.5v3M6.5 3 8 4.5 9.5 3M8 14.5v-3M6.5 13 8 11.5 9.5 13" />
+                    </svg>
+                  </button>
+                </Tooltip>
+              )}
+              <div
+                className={`${span === "day" || span === "week" ? "" : "ms-auto "}flex gap-0.5 rounded-md bg-surface-3 p-0.5`}
+                role="group"
+              >
                 {(["day", "week", "month", "list"] as const).map((option) => (
                   <Tooltip
                     key={option}
@@ -249,7 +280,14 @@ export default function Library() {
                 ) : span === "list" ? (
                   <AgendaList days={days} meetings={windowed} events={events} onEvent={setOpenEvent} />
                 ) : (
-                  <TimeGrid days={days} meetings={windowed} events={events} onEvent={setOpenEvent} />
+                  <TimeGrid
+                    days={days}
+                    meetings={windowed}
+                    events={events}
+                    onEvent={setOpenEvent}
+                    foldedNights={folded}
+                    onUnfold={() => foldNights(false)}
+                  />
                 )}
               </div>
               <LibraryRail />

@@ -17,6 +17,8 @@ import { confirmDialog } from "./ConfirmDialog";
 import { toast } from "./Toaster";
 import AccountsPopover, { AccountsTrigger } from "./AccountsPopover";
 import { useCalendarFilter, type CalendarFilter } from "../lib/calendarFilter";
+import { Loading, Skeleton, SkeletonRows } from "./Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "./EmptyState";
 import type { MessageKey } from "../locales/en";
 
 /**
@@ -363,30 +365,68 @@ export default function Sidebar() {
       <div
         ref={listRef}
         data-testid="meeting-list"
-        role="listbox"
+        // A group, not a listbox: each row holds a link and a menu button, and an
+        // option may not contain controls of its own. The open row is the link with
+        // aria-current; j and k still move it.
+        role="group"
         aria-label={t("nav.timeline")}
         tabIndex={0}
         onKeyDown={onListKeyDown}
         className="ma-list min-h-0 flex-1 overflow-y-auto px-2 pb-20 outline-none"
       >
         {meetings.isLoading && (
-          <p data-testid="loading" className="px-2 py-3 text-sm text-tertiary">
-            {t("common.loading")}
-          </p>
+          // The shape of the list it stands in for: a day header, then rows.
+          <Loading className="px-2 pt-2.5">
+            <Skeleton className="mb-2.5 h-2 w-16" />
+            <SkeletonRows rows={5} lead="dot" rowClassName="py-1.5" />
+          </Loading>
         )}
         {meetings.isError && (
-          <p data-testid="error" className="px-2 py-3 text-sm text-danger">
-            {t("common.error")}
-          </p>
+          <EmptyState
+            compact
+            testid="error"
+            tone="danger"
+            icon={EMPTY_ICON.error}
+            title={t("common.error")}
+            body={t("timeline.errorBody")}
+            action={
+              <button type="button" onClick={() => void meetings.refetch()} className={EMPTY_BUTTON}>
+                {t("common.retry")}
+              </button>
+            }
+          />
         )}
-        {!meetings.isLoading && items.length === 0 && (
-          <p data-testid="timeline-empty" className="px-2 py-10 text-center text-sm text-tertiary">
-            {t("timeline.empty")}
-          </p>
+        {/*
+         * The first thing a new user sees, so it says what the app does and offers the
+         * one button that starts it — the same one at the top of this column, here
+         * where the eye already is.
+         */}
+        {meetings.isSuccess && items.length === 0 && (
+          <EmptyState
+            compact
+            testid="timeline-empty"
+            icon={EMPTY_ICON.record}
+            title={t("timeline.emptyTitle")}
+            body={t("timeline.empty")}
+            action={
+              <button
+                type="button"
+                data-testid="timeline-empty-record"
+                aria-busy={start.isPending}
+                disabled={recording}
+                onClick={() => start.mutate()}
+                className={EMPTY_BUTTON}
+              >
+                <span aria-hidden="true" className="size-2 rounded-full bg-danger" />
+                {t("timeline.start")}
+              </button>
+            }
+          />
         )}
         {byDay.map(([day, group]) => (
           <div key={day} data-testid="timeline-day" data-day={day} className="mb-1">
-            <h2 className="px-2 pt-2.5 pb-1 text-2xs uppercase tracking-wide text-tertiary">
+            {/* Sticky, so a long day keeps its date in view while it scrolls past. */}
+            <h2 className="sticky top-0 z-[2] -mx-2 bg-surface-1 px-4 pt-2.5 pb-1 text-2xs uppercase tracking-wide text-tertiary">
               {formatDayLabel(day, locale, t)}
             </h2>
             {group.map((meeting) => (
