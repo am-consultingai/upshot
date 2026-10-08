@@ -25,7 +25,7 @@ from typing import Any
 
 from app import paths
 from app.asr.backend import Segment, Word, track_of
-from app.asr.models import HEBREW, MODELS, ModelChoice, require, resolve
+from app.asr.models import HEBREW, HEBREW_LANGUAGE, MODELS, ModelChoice, require, resolve
 from app.config import Config
 from app.log import get
 
@@ -276,10 +276,84 @@ def supported_compute_type() -> str:
     return "int8"
 
 
-def _default_factory(**kwargs: Any) -> Any:  # pragma: no cover - needs the real package
+#: faster-whisper decodes a 30 s window again, at a higher temperature, when the zlib
+#: compression ratio of its text is above this: it takes the window for a repetition
+#: loop. 2.4 is faster-whisper's own default, and right for Latin text.
+COMPRESSION_RATIO_LIMIT = 2.4
+#: The same limit for Hebrew (ClickUp z8tj1hebaw). Every Hebrew letter is two bytes in
+#: UTF-8 with the same first byte, so ordinary Hebrew compresses about 1.3 times better
+#: than English and crossed 2.4 on conversational and lecture speech: one 31 s clip was
+#: decoded six times over, for the same text, at 37x its length on the CPU. Measured on
+#: 170 windows of Hebrew (both tracks of a 27-minute meeting, 18 lecture clips, 40 minutes
+#: of lectures), 19 of which crossed 2.4: ordinary speech scored up to 2.79 (a lecture
+#: repeating its own phrases); the one real
+#: loop, a hesitation written as "אהההה…" a hundred times at the end of a normal window,
+#: scored 2.99. A loop that fills its window scores 7 or more.
+HEBREW_COMPRESSION_RATIO_LIMIT = 2.9
+
+#: The retries on the CPU: two, not faster-whisper's five, each sampling two candidates,
+#: not five. A genuine loop then costs about two cheap passes instead of six full ones.
+#: The GPU keeps faster-whisper's defaults, where a retry costs little.
+CPU_TEMPERATURES = (0.0, 0.5, 1.0)
+CPU_BEST_OF = 2
+
+
+#: A window shorter than this holds no word: what the model writes for it is invented.
+MIN_WINDOW_FRAMES = 10  # 0.1 s
+
+
+@functools.cache
+def whisper_model_class() -> type:
+    """faster-whisper's ``WhisperModel``, without its last-sliver window (z8tj1hebaw).
+
+    faster-whisper decodes whatever is left after the last full 30 s window, even one
+    frame of it (10 ms). The ivrit turbo writes text for that sliver anyway, and the
+    Knesset sessions it learned from show: "אדוני היושב-ראש, חבריי חברי הכנסת", timed
+    past the end of the audio. Its alignment over zero frames then comes back empty and
+    faster-whisper 1.2.1 indexes it regardless: an IndexError that failed the whole
+    track. So such a window's segments are dropped, and alignment that finds nothing
+    gives no word timings instead of a crash, which is what faster-whisper already does
+    for a segment too short to split into words.
+    """
     from faster_whisper import WhisperModel
 
-    return WhisperModel(**kwargs)
+    class GuardedWhisperModel(WhisperModel):  # type: ignore[misc]
+        def generate_segments(
+            self, features: Any, tokenizer: Any, options: Any, log_progress: Any,
+            encoder_output: Any = None,
+        ) -> Any:  # fmt: skip
+            content_frames = features.shape[-1] - 1
+            for segment in super().generate_segments(
+                features, tokenizer, options, log_progress, encoder_output
+            ):
+                if content_frames - segment.seek < MIN_WINDOW_FRAMES:
+                    log.info("dropped a segment from a %d-frame last window",
+                             content_frames - segment.seek)  # fmt: skip
+                    continue
+                yield segment
+
+        def find_alignment(
+            self, tokenizer: Any, text_tokens: list[list[int]], encoder_output: Any,
+            num_frames: int, median_filter_width: int = 7,
+        ) -> list[list[dict[str, Any]]]:  # fmt: skip
+            if num_frames // 2 == 0:  # alignment runs on every second frame
+                return [[] for _ in text_tokens]
+            try:
+                return super().find_alignment(  # type: ignore[no-any-return]
+                    tokenizer, text_tokens, encoder_output, num_frames, median_filter_width
+                )
+            except IndexError as exc:
+                # Only a sliver; on a real window this would hide alignment broken for good.
+                if num_frames >= MIN_WINDOW_FRAMES:
+                    raise
+                log.warning("word alignment failed on a %d-frame window (%s)", num_frames, exc)
+                return [[] for _ in text_tokens]
+
+    return GuardedWhisperModel
+
+
+def _default_factory(**kwargs: Any) -> Any:  # pragma: no cover - needs the real package
+    return whisper_model_class()(**kwargs)
 
 
 class LocalAsr:
@@ -349,8 +423,8 @@ class LocalAsr:
                 raise
             log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
             self.fell_back = True
-            # The same model on the CPU: slower, about four times the meeting's length,
-            # but the meeting's language already chose it.
+            # The same model on the CPU: slower, but the meeting's language already
+            # chose it.
             self.model = self._build("cpu", "int8")
             self.device, self.compute_type = "cpu", "int8"
             self._warmup()
@@ -405,6 +479,8 @@ class LocalAsr:
             word_timestamps=word_timestamps,
             condition_on_previous_text=False,  # the repetition-loop guard; do not remove
             beam_size=self.beam_size(),
+            compression_ratio_threshold=self.compression_ratio_limit(language),
+            **self.retries(),
         )
         out = []
         for segment in segments:  # decoded lazily, one window at a time
@@ -424,6 +500,22 @@ class LocalAsr:
         if self.device == "cpu" and bool(self.config.get("asr.cpu_fast", False)):
             return 1
         return int(self.config.get("asr.beam_size", 5))
+
+    def compression_ratio_limit(self, language: str | None) -> float:
+        """The Hebrew limit for Hebrew, the default for everything else.
+
+        The Hebrew model is told "he", but its role decides too: whatever it writes is
+        Hebrew text.
+        """
+        if language == HEBREW_LANGUAGE or self.role == HEBREW:
+            return HEBREW_COMPRESSION_RATIO_LIMIT
+        return COMPRESSION_RATIO_LIMIT
+
+    def retries(self) -> dict[str, Any]:
+        """Fewer, smaller retries on the CPU; faster-whisper's own on the GPU."""
+        if self.device == "cpu":
+            return {"temperature": list(CPU_TEMPERATURES), "best_of": CPU_BEST_OF}
+        return {}
 
     def transcribe(
         self,

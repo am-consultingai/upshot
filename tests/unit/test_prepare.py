@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import sys
 import threading
 import zipfile
@@ -214,6 +215,52 @@ def test_prepare_resumes_a_partial_download(app_home: Path, tmp_path: Path) -> N
                model=model_manager(app_home, order=order),
                gpu_wanted=(False, "x"), poll=0.01) == prepare.EXIT_OK  # fmt: skip
     assert order == ["hebrew", "other"], "the verified classifier is not fetched again"
+
+
+def test_an_upgrade_removes_the_model_it_no_longer_uses(app_home: Path, tmp_path: Path) -> None:
+    """ivrit-ai large-v3 gave way to its turbo (D93): 3 GB an upgrade would leave behind."""
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    (retired / "model.bin").write_bytes(MODEL)
+    kept = tmp_path / "my-copy"  # a developer's own copy, outside models/asr
+    kept.mkdir()
+    (kept / "model.bin").write_bytes(MODEL)
+    code = run(default_config(asr__model_path=str(kept)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert not retired.exists()
+    assert (kept / "model.bin").exists()
+
+
+def test_the_retired_model_goes_before_the_download(app_home: Path, tmp_path: Path) -> None:
+    """Its 3 GB may be what the turbo needs to fit, and nothing loads it any more."""
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home, fail="hebrew"),
+               gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_FAILED
+    assert not retired.exists()
+
+
+def test_a_retired_folder_that_is_the_developers_model_path_is_kept(
+    app_home: Path, tmp_path: Path
+) -> None:
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(asr__model_path=str(retired)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert retired.exists()
 
 
 # -- the GPU libraries ---------------------------------------------------------------
@@ -431,7 +478,10 @@ def test_the_speaker_models_come_after_the_speech_models(
     code = run(default_config(), progress, model=model_manager(app_home),
                gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
     assert code == prepare.EXIT_OK
-    assert [path.name for path in speaker_models] == ["segmentation.onnx", "embedding.onnx"]
+    assert [path.name for path in speaker_models] == [
+        "segmentation.onnx",
+        "embedding-3dspeaker-campplus-zh-en.onnx",
+    ]
     speech = max(i for i, text in enumerate(texts) if text.startswith("Speech models"))
     assert texts.index("Speaker models: downloading") > speech
 
@@ -517,7 +567,8 @@ def test_the_progress_file_is_utf8_with_a_mark_and_a_first_line_nobody_reads(
     path = tmp_path / "prepare.txt"
     ProgressFile(path).write(stage="model", state="working", text="מודלי דיבור: בהורדה")
     raw = path.read_bytes()
-    assert raw.startswith(b"\xef\xbb\xbfencoding=utf-8\n")
+    # The platform's line ending: CRLF on Windows, which Inno has always read.
+    assert raw.startswith(b"\xef\xbb\xbfencoding=utf-8" + os.linesep.encode())
     # A reader that keeps the mark still finds every real key at the start of its line.
     lines = raw.decode("utf-8").splitlines()
     assert lines[0] == "﻿encoding=utf-8"
