@@ -233,8 +233,8 @@ def test_an_upgrade_removes_the_model_it_no_longer_uses(app_home: Path, tmp_path
     assert (kept / "model.bin").exists()
 
 
-def test_a_failed_download_keeps_the_retired_model(app_home: Path, tmp_path: Path) -> None:
-    """Removed only once every current model is in place, never in the middle."""
+def test_the_retired_model_goes_before_the_download(app_home: Path, tmp_path: Path) -> None:
+    """Its 3 GB may be what the turbo needs to fit, and nothing loads it any more."""
     from app.asr.model_manager import target_for
     from app.asr.models import RETIRED_REPOS
 
@@ -244,6 +244,20 @@ def test_a_failed_download_keeps_the_retired_model(app_home: Path, tmp_path: Pat
                model=model_manager(app_home, fail="hebrew"),
                gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
     assert code == prepare.EXIT_FAILED
+    assert not retired.exists()
+
+
+def test_a_retired_folder_that_is_the_developers_model_path_is_kept(
+    app_home: Path, tmp_path: Path
+) -> None:
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(asr__model_path=str(retired)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
     assert retired.exists()
 
 
