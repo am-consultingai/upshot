@@ -8,7 +8,7 @@ install, in the open. It fetches, in order:
    large-v3 for Hebrew, then stock large-v3 for every other language, ~6.7 GB), through
    the same ``ModelSet`` the app uses: pinned revisions, resumable, checked file by file,
    refused up front when the drive cannot hold all of them;
-2. the two speaker-diarization models (``models.download_diarization``, ~37 MB, D85),
+2. the two speaker-diarization models (``models.download_diarization``, ~34 MB, D85),
    reported under the ``model`` stage so the installer needs no new page;
 3. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
    model.
@@ -157,7 +157,7 @@ def fetch_speaker_models(
 ) -> int:
     """The diarization models (D85), after the speech models and as part of their stage.
 
-    ~37 MB in two files, so it reports at the start and the end rather than by the byte.
+    ~34 MB in two files, so it reports at the start and the end rather than by the byte.
     Also runs on an upgrade whose speech models are already here, which is how an install
     from before D85 gets them. A failure fails the install like a speech model's would:
     diarization is always on, and running the installer again finishes it.
