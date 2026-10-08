@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { openFeedback } from "./FeedbackDialog";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
 import { api, type SearchHit } from "../api";
@@ -12,11 +12,46 @@ import type { MessageKey } from "../locales/en";
 import { formatOffset } from "../lib/format";
 import { splitSnippet } from "../routes/Search";
 import { rememberSearch } from "../lib/recents";
+import { meetingKey, type MeetingKey } from "../lib/meetingKeys";
+import { DETECTION_MODES } from "../lib/detection";
+
+/*
+ * One glyph per command, so the list can be scanned by shape rather than read line
+ * by line. The sidebar's own icons where it has one — the same 16px grid and 1.5
+ * stroke — so a destination looks the same in both places.
+ */
+const ICONS = {
+  calendar: "M2.5 4.5h11v9h-11zM2.5 7h11M5.5 2.5v2M10.5 2.5v2",
+  check: "M3 8.5 6.2 11.6 13 4.8",
+  file: "M5.5 2.5h5l3 3v8h-8zM10.5 2.5v3h3M7.5 8.5v3M9.5 7.5v4M11.5 9v1.5",
+  search: "M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z",
+  gear: "M8 10.2A2.2 2.2 0 1 0 8 5.8a2.2 2.2 0 0 0 0 4.4ZM8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.4 3.6l-1 1M4.6 11.4l-1 1M12.4 12.4l-1-1M4.6 4.6l-1-1",
+  chat: "M2.5 3.5h11v7.5h-6l-3 2.5V11h-2z",
+  send: "M3 8h9M8.5 4.5 12 8l-3.5 3.5",
+  record: "M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM9.8 8a1.8 1.8 0 1 1-3.6 0 1.8 1.8 0 0 1 3.6 0Z",
+  stop: "M4.5 4.5h7v7h-7z",
+  sun: "M8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM8 1.5V3M8 13v1.5M14.5 8H13M3 8H1.5M12.6 3.4l-1 1M4.4 11.6l-1 1M12.6 12.6l-1-1M4.4 4.4l-1-1",
+  moon: "M13 9.8A5.5 5.5 0 1 1 6.2 3a4.5 4.5 0 0 0 6.8 6.8Z",
+  screen: "M2.5 3.5h11v7.5h-11zM6 13.5h4M8 11v2.5",
+  radar: "M9.5 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM4.8 11.2a4.5 4.5 0 0 1 0-6.4M11.2 4.8a4.5 4.5 0 0 1 0 6.4M2.7 13.3a7.5 7.5 0 0 1 0-10.6M13.3 2.7a7.5 7.5 0 0 1 0 10.6",
+  meeting: "M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM8 5v3.2l2 1.2",
+  lines: "M2.5 4h11M4.5 8h7M6.5 12h3",
+  play: "M5 3.5v9l7-4.5z",
+  down: "M4 6.5 8 10.5l4-4",
+  up: "M4 9.5 8 5.5l4 4",
+} as const;
+
+type Icon = keyof typeof ICONS;
 
 interface Command {
   id: string;
   group: MessageKey;
   label: string;
+  icon: Icon;
+  /** Other words for it, matched as well as the label: "theme" finds Dark. */
+  aliases?: string[];
+  /** The alias that matched, when it matched better than the label did. */
+  matched?: string;
   /** A second, quieter line: where a hit came from, or who said it. */
   sub?: string;
   /** A search hit's matched line, with the term marked. */
@@ -57,6 +92,7 @@ function recordUse(id: string): void {
 /** The order groups are drawn in. A meeting name is a stronger answer than a sentence. */
 const GROUP_ORDER: MessageKey[] = [
   "palette.recent",
+  "palette.meeting",
   "palette.open",
   "palette.actionItems",
   "palette.summaries",
@@ -86,6 +122,9 @@ const GROUP_ORDER: MessageKey[] = [
 export default function CommandPalette() {
   const { t, setTheme, locale } = useI18n();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // On a meeting, its keys are commands too: the palette is where they are learned.
+  const onMeeting = pathname.startsWith("/m/");
   const queryClient = useQueryClient();
 
   const [open, setOpen] = useState(false);
@@ -113,15 +152,89 @@ export default function CommandPalette() {
 
   const recording = status.data?.recorder.active ?? false;
 
+  const detection = status.data?.detector.mode;
+
   const commands = useMemo<Command[]>(() => {
     const go = (to: string) => () => navigate(to);
-    const list: Command[] = [
-      { id: "nav.timeline", group: "palette.navigate", label: t("nav.timeline"), keys: "G L", run: go("/") },
-      { id: "nav.actions", group: "palette.navigate", label: t("nav.actions"), keys: "G A", run: go("/actions") },
+    /** A locale's comma-separated list of other words for a command. */
+    const aka = (key: MessageKey) =>
+      t(key)
+        .split(",")
+        .map((word) => word.trim())
+        .filter(Boolean);
+    const list: Command[] = [];
+
+    if (onMeeting) {
+      /*
+       * Run a tick later: the palette gives focus back to where it was as it closes,
+       * and the find box has to be focused after that, not before.
+       */
+      const send = (key: MeetingKey) => () => window.setTimeout(() => meetingKey(key), 0);
+      list.push(
+        {
+          id: "meeting.play",
+          group: "palette.meeting",
+          label: t("palette.playPause"),
+          icon: "play",
+          aliases: aka("palette.aliasPlay"),
+          keys: "Space",
+          run: send("play"),
+        },
+        {
+          id: "meeting.next",
+          group: "palette.meeting",
+          label: t("palette.nextTurn"),
+          icon: "down",
+          aliases: aka("palette.aliasTurn"),
+          keys: "J",
+          run: send("next"),
+        },
+        {
+          id: "meeting.previous",
+          group: "palette.meeting",
+          label: t("palette.previousTurn"),
+          icon: "up",
+          aliases: aka("palette.aliasTurn"),
+          keys: "K",
+          run: send("previous"),
+        },
+        {
+          id: "meeting.find",
+          group: "palette.meeting",
+          label: t("meeting.findInTranscript"),
+          icon: "search",
+          aliases: aka("palette.aliasFind"),
+          keys: "/",
+          run: send("find"),
+        },
+      );
+    }
+
+    list.push(
+      {
+        id: "nav.timeline",
+        group: "palette.navigate",
+        label: t("nav.timeline"),
+        icon: "calendar",
+        aliases: aka("palette.aliasTimeline"),
+        keys: "G L",
+        run: go("/"),
+      },
+      {
+        id: "nav.actions",
+        group: "palette.navigate",
+        label: t("nav.actions"),
+        icon: "check",
+        aliases: aka("palette.aliasActions"),
+        keys: "G A",
+        run: go("/actions"),
+      },
       {
         id: "nav.transcriptions",
         group: "palette.navigate",
         label: t("nav.transcriptions"),
+        icon: "file",
+        aliases: aka("palette.aliasTranscriptions"),
         keys: "G T",
         run: go("/transcriptions"),
       },
@@ -129,25 +242,91 @@ export default function CommandPalette() {
         id: "assistant",
         group: "palette.do",
         label: t("assistant.open"),
+        icon: "chat",
+        aliases: aka("palette.aliasAssistant"),
         keys: "Ctrl J",
         run: () => window.dispatchEvent(new CustomEvent("upshot:assistant")),
       },
-      { id: "nav.search", group: "palette.navigate", label: t("nav.search"), keys: "/", run: go("/search") },
-      { id: "nav.settings", group: "palette.navigate", label: t("nav.settings"), keys: "G ,", run: go("/settings") },
+      {
+        id: "nav.search",
+        group: "palette.navigate",
+        label: t("nav.search"),
+        icon: "search",
+        aliases: aka("palette.aliasSearch"),
+        // On a meeting, / finds in its transcript instead.
+        keys: onMeeting ? "G S" : "/",
+        run: go("/search"),
+      },
+      {
+        id: "nav.settings",
+        group: "palette.navigate",
+        label: t("nav.settings"),
+        icon: "gear",
+        aliases: aka("palette.aliasSettings"),
+        keys: "G ,",
+        run: go("/settings"),
+      },
       // Anonymous unless an email is added (D87).
-      { id: "feedback", group: "palette.do", label: t("feedback.open"), run: openFeedback },
-    ];
+      {
+        id: "feedback",
+        group: "palette.do",
+        label: t("feedback.open"),
+        icon: "send",
+        aliases: aka("palette.aliasFeedback"),
+        run: openFeedback,
+      },
+    );
 
     list.push(
       recording
-        ? { id: "rec.stop", group: "palette.do", label: t("timeline.stop"), run: () => stop.mutate() }
-        : { id: "rec.start", group: "palette.do", label: t("timeline.start"), keys: "Ctrl R", run: () => start.mutate() },
+        ? {
+            id: "rec.stop",
+            group: "palette.do",
+            label: t("timeline.stop"),
+            icon: "stop",
+            aliases: aka("palette.aliasStop"),
+            run: () => stop.mutate(),
+          }
+        : {
+            id: "rec.start",
+            group: "palette.do",
+            label: t("timeline.start"),
+            icon: "record",
+            aliases: aka("palette.aliasRecord"),
+            keys: "Ctrl R",
+            run: () => start.mutate(),
+          },
     );
+
+    /*
+     * The detection mode, the one setting someone changes on the way into or out of a
+     * call ("not this one") — which is why it is here and the others are not. Saved
+     * the way Settings saves it; the mode in force says so.
+     */
+    for (const mode of DETECTION_MODES) {
+      list.push({
+        id: `detection.${mode.value}`,
+        group: "palette.do",
+        label: t(mode.label),
+        icon: "radar",
+        aliases: aka("palette.aliasDetection"),
+        hint: t("settings.detection"),
+        sub: detection === mode.value ? t("palette.current") : undefined,
+        run: () => {
+          void api.putSettings({ "detection.mode": mode.value }).then(() => {
+            void queryClient.invalidateQueries({ queryKey: ["settings"] });
+            void queryClient.invalidateQueries({ queryKey: ["status"] });
+          });
+        },
+      });
+    }
 
     for (const option of ["light", "dark", "system"] as const) {
       list.push({
         id: `theme.${option}`,
         group: "palette.do",
+        icon: option === "light" ? "sun" : option === "dark" ? "moon" : "screen",
+        aliases: aka("palette.aliasTheme"),
         label: t(
           option === "light"
             ? "settings.themeLight"
@@ -171,12 +350,13 @@ export default function CommandPalette() {
         id: `meeting.${meeting.id}`,
         group: "palette.open",
         label: meeting.title ?? meeting.id,
+        icon: "meeting",
         sub: new Date(meeting.started_at).toLocaleDateString(locale, { day: "numeric", month: "short" }),
         run: go(`/m/${meeting.id}`),
       });
     }
     return list;
-  }, [t, navigate, recording, meetings.data, start, stop, setTheme, locale]);
+  }, [t, navigate, recording, meetings.data, start, stop, setTheme, locale, onMeeting, detection, queryClient]);
 
   /** Server hits for what was typed: action items and transcript lines. */
   const hits = useMemo<Command[]>(() => {
@@ -195,6 +375,7 @@ export default function CommandPalette() {
               : hit.kind === "summary"
                 ? "palette.summaries"
                 : "palette.transcript",
+          icon: hit.kind === "action" ? "check" : hit.kind === "summary" ? "lines" : "chat",
           // A summary is a whole document; the row shows the part that matched.
           label: hit.kind === "summary" ? hit.snippet.replace(/[[\]]/g, "") : hit.text,
           snippet: hit.snippet,
@@ -225,10 +406,21 @@ export default function CommandPalette() {
     const frecency = readFrecency();
     const ranked = commands
       .map((command) => {
-        const base = score(`${command.label} ${command.hint ?? ""}`.trim(), term);
+        const own = score(`${command.label} ${command.hint ?? ""}`.trim(), term);
+        // The best of the aliases, kept only when it beats the label, so the row can
+        // say which word it was found by: "Dark (theme)".
+        let alias: { word: string; rank: number } | null = null;
+        for (const word of command.aliases ?? []) {
+          const rank = score(word, term);
+          if (rank > own && rank > (alias?.rank ?? 0)) alias = { word, rank };
+        }
+        const base = alias?.rank ?? own;
         if (base === 0) return null;
         const seen = frecency[command.id];
-        return { command, rank: base * boost(seen?.hits ?? 0, seen?.last ?? 0, now) };
+        return {
+          command: alias ? { ...command, matched: alias.word } : command,
+          rank: base * boost(seen?.hits ?? 0, seen?.last ?? 0, now),
+        };
       })
       .filter((row): row is { command: Command; rank: number } => row !== null)
       .sort((a, b) => b.rank - a.rank)
@@ -253,7 +445,8 @@ export default function CommandPalette() {
     const onKey = (event: KeyboardEvent) => {
       // The same key opens and closes it, and closing puts focus back where it
       // was — a palette that swallows your place is worse than no palette.
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      // The physical key, as Ctrl+J and Ctrl+R are: on a Hebrew layout event.key is "ל".
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyK") {
         event.preventDefault();
         setOpen((was) => {
           if (!was) restoreTo.current = document.activeElement;
@@ -304,10 +497,10 @@ export default function CommandPalette() {
     if (event.key === "Escape") {
       event.preventDefault();
       setOpen(false);
-    } else if (event.key === "ArrowDown" || (event.ctrlKey && event.key === "n")) {
+    } else if (event.key === "ArrowDown" || (event.ctrlKey && event.code === "KeyN")) {
       event.preventDefault();
       setActive((index) => Math.min(results.length - 1, index + 1));
-    } else if (event.key === "ArrowUp" || (event.ctrlKey && event.key === "p")) {
+    } else if (event.key === "ArrowUp" || (event.ctrlKey && event.code === "KeyP")) {
       event.preventDefault();
       setActive((index) => Math.max(0, index - 1));
     } else if (event.key === "Enter" && results[active]) {
@@ -358,7 +551,11 @@ export default function CommandPalette() {
           ref={listRef}
           role="listbox"
           aria-label={t("palette.title")}
-          className="max-h-[400px] overflow-y-auto overscroll-contain p-2"
+          /*
+           * Tall enough for a heading and four and a half rows: the fifth is cut on
+           * purpose, which says "there is more" without a scrollbar (Superhuman).
+           */
+          className="max-h-[13.5rem] overflow-y-auto overscroll-contain p-2"
         >
           {results.length === 0 && !(searching && found.isFetching) && (
             <p data-testid="palette-empty" className="grid h-16 place-items-center text-sm text-tertiary">
@@ -387,6 +584,17 @@ export default function CommandPalette() {
                       command.snippet ? "min-h-11 py-1.5" : "h-10"
                     } ${index === active ? "bg-surface-2 text-primary" : "text-secondary"}`}
                   >
+                    <svg
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                      data-testid="palette-icon"
+                      data-icon={command.icon}
+                      className={`size-4 shrink-0 fill-none stroke-current stroke-[1.5] ${
+                        index === active ? "text-secondary" : "text-tertiary"
+                      }`}
+                    >
+                      <path d={ICONS[command.icon]} />
+                    </svg>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">
                         {command.snippet
@@ -399,7 +607,16 @@ export default function CommandPalette() {
                                 <span key={at}>{part.text}</span>
                               ),
                             )
-                          : command.label}
+                          : command.matched
+                            ? (
+                                <>
+                                  {command.label}{" "}
+                                  <span data-testid="palette-alias" className="text-tertiary">
+                                    ({command.matched})
+                                  </span>
+                                </>
+                              )
+                            : command.label}
                       </span>
                       {command.snippet && command.sub && (
                         <span className="block truncate text-2xs text-tertiary">{command.sub}</span>
@@ -411,7 +628,7 @@ export default function CommandPalette() {
                     {command.hint && <span className="shrink-0 text-xs text-tertiary">{command.hint}</span>}
                     {/* The binding that would have skipped this palette entirely. */}
                     {command.keys && (
-                      <kbd className="shrink-0 rounded-xs bg-surface-3 px-1.5 py-0.5 text-2xs text-tertiary">
+                      <kbd className="kbd-hint shrink-0 rounded-xs bg-surface-3 px-1.5 py-0.5 text-2xs text-tertiary">
                         {command.keys}
                       </kbd>
                     )}
@@ -427,13 +644,13 @@ export default function CommandPalette() {
           data-testid="palette-footer"
           className="flex items-center gap-3 border-t border-line-subtle px-4 py-2 text-2xs text-tertiary"
         >
-          <span className="flex items-center gap-1">
+          <span className="kbd-hint flex items-center gap-1">
             <kbd className="rounded-xs bg-surface-3 px-1 py-px">↑↓</kbd> {t("palette.move")}
           </span>
-          <span className="flex items-center gap-1">
+          <span className="kbd-hint flex items-center gap-1">
             <kbd className="rounded-xs bg-surface-3 px-1 py-px">↵</kbd> {t("palette.choose")}
           </span>
-          <span className="flex items-center gap-1">
+          <span className="kbd-hint flex items-center gap-1">
             <kbd className="rounded-xs bg-surface-3 px-1 py-px">{"esc"}</kbd> {t("palette.close")}
           </span>
           {term.length > 1 && (
