@@ -10,6 +10,7 @@ import { addDays, dayKey, startOfDay } from "../lib/calendar";
 import { dueBucket, isSnoozed, type DueBucket } from "../lib/due";
 import { formatShortDate } from "../lib/format";
 import { initials, personColour } from "../lib/speakers";
+import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
 import { Loading, Skeleton, SkeletonRows } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
@@ -123,7 +124,7 @@ export default function ActionsPage() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      if ((event.ctrlKey || event.metaKey) && event.code === "KeyF") {
         event.preventDefault();
         setFilter((was) => was ?? "");
         window.setTimeout(() => filterRef.current?.focus(), 0);
@@ -131,7 +132,7 @@ export default function ActionsPage() {
       }
       if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
-      const key = event.key.toLowerCase();
+      const key = shortcutKey(event);
       if (key === "j" || event.key === "ArrowDown") {
         event.preventDefault();
         setSelected((at) => Math.min(order.length - 1, at + 1));
