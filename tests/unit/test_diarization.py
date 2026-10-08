@@ -247,3 +247,166 @@ def test_int16_samples_reach_the_onnx_models_scaled_to_one() -> None:
     assert seen[0].dtype == np.float32 and np.abs(seen[0]).max() <= 1.0
     assert seen[0][2] == 0.5
     assert seen[1].tolist() == [0.5, -0.25], "float input is already scaled"
+
+
+# ------------------------------------------------------------------ over-clustering (z8tj1hfdwp)
+
+
+def unit(*values: float) -> np.ndarray:
+    vector = np.array(values, dtype=np.float32)
+    return vector / np.linalg.norm(vector)
+
+
+def near(base: np.ndarray, seed: int, spread: float = 0.4) -> np.ndarray:
+    """A centroid close to ``base``: the same voice, clustered apart (cosine ~0.9)."""
+    sigma = spread / np.sqrt(base.size)
+    noise = np.random.default_rng(seed).normal(0, sigma, base.shape).astype(np.float32)
+    return (base + noise) / np.linalg.norm(base + noise)
+
+
+def test_a_one_to_one_call_split_into_sixteen_clusters_is_one_voice() -> None:
+    """The far side of the 2026-10-08 meeting: one person, sixteen clusters whose centroids
+    agree (cosine 0.8-0.98), the largest 144 s. They are one voice."""
+    from app.asr.diarize import merge_similar_speakers
+
+    voice = unit(*np.random.default_rng(0).normal(0, 1, 192))
+    talk = [144, 101, 75, 69, 63, 28, 11, 9, 8, 8, 3, 2, 1, 1, 1, 0.4]
+    turns, centroids, clock = [], {}, 0.0
+    for speaker, seconds in enumerate(talk):
+        turns.append(SpeakerTurn(clock, clock + seconds, speaker))
+        centroids[speaker] = near(voice, speaker)
+        clock += seconds + 1.0
+    assert min(float(centroids[0] @ c) for c in centroids.values()) > 0.7
+    assert speaker_count(merge_similar_speakers(turns, centroids)) == 1
+
+
+def test_two_people_split_into_several_clusters_each_stay_two() -> None:
+    """The merge must not buy one voice per track by merging everyone: two people's
+    centroids are far apart (cosine ~0.1 with the 3D-Speaker embedding)."""
+    from app.asr.diarize import merge_similar_speakers
+
+    rng = np.random.default_rng(1)
+    first, second = unit(*rng.normal(0, 1, 192)), unit(*rng.normal(0, 1, 192))
+    assert abs(float(first @ second)) < 0.3
+    turns, centroids = [], {}
+    for speaker in range(6):
+        voice = first if speaker % 2 == 0 else second
+        turns.append(SpeakerTurn(speaker * 30.0, speaker * 30.0 + 25.0, speaker))
+        centroids[speaker] = near(voice, 10 + speaker)
+    merged = merge_similar_speakers(turns, centroids)
+    assert speaker_count(merged) == 2
+    assert [turn.speaker for turn in merged] == [0, 1, 0, 1, 0, 1]
+
+
+def test_the_merge_bound_is_a_cosine_similarity() -> None:
+    from app.asr.diarize import merge_similar_speakers
+
+    turns = [SpeakerTurn(0.0, 10.0, 0), SpeakerTurn(10.0, 20.0, 1)]
+    centroids = {0: unit(1.0, 0.0), 1: unit(0.6, 0.8)}  # cosine 0.6
+    assert speaker_count(merge_similar_speakers(turns, centroids, bound=0.6)) == 1
+    assert speaker_count(merge_similar_speakers(turns, centroids, bound=0.61)) == 2
+
+
+def test_a_voice_without_a_centroid_is_left_alone() -> None:
+    from app.asr.diarize import merge_similar_speakers
+
+    turns = [SpeakerTurn(0.0, 10.0, 0), SpeakerTurn(10.0, 20.0, 1)]
+    assert speaker_count(merge_similar_speakers(turns, {0: unit(1.0, 0.0)})) == 2
+
+
+def test_centroids_weigh_the_long_turns_and_embed_a_short_only_voice_whole() -> None:
+    """Embeddings of sub-second turns are noise ("okay", "right"): a voice's centroid comes
+    from its turns of a second or more, weighted by length. A voice made only of short
+    turns is embedded as one concatenation."""
+    from app.asr.diarize import speaker_centroids
+
+    rate = 10
+    samples = np.zeros(rate * 40, dtype=np.float32)
+    samples[0:100] = 1.0  # speaker 0, 10 s, "points" along x
+    samples[100:120] = 2.0  # speaker 0, 2 s, "points" along y
+    samples[200:205] = 3.0  # speaker 1, two half-second turns
+    samples[300:305] = 3.0
+    turns = [
+        SpeakerTurn(0.0, 10.0, 0),
+        SpeakerTurn(10.0, 12.0, 0),
+        SpeakerTurn(12.0, 12.5, 0),
+        SpeakerTurn(20.0, 20.5, 1),
+        SpeakerTurn(30.0, 30.5, 1),
+    ]
+    calls: list[int] = []
+
+    def embed(audio: np.ndarray) -> np.ndarray:
+        calls.append(len(audio))
+        value = float(audio[0]) if len(audio) else 0.0
+        return {1.0: unit(1.0, 0.0), 2.0: unit(0.0, 1.0)}.get(value, unit(1.0, 1.0))
+
+    centroids = speaker_centroids(turns, samples, rate, embed)
+    assert calls == [100, 20, 10], "two long turns of speaker 0, then speaker 1 as one piece"
+    assert centroids[0] == pytest.approx(unit(10.0, 2.0), abs=1e-6)
+    assert centroids[1] == pytest.approx(unit(1.0, 1.0), abs=1e-6)
+
+
+def test_the_far_side_folds_its_crumbs_but_keeps_a_brief_real_voice() -> None:
+    """After the merge, a far-side voice under 2 % of the talk is a fragment (a laugh, a
+    clipped "yes"); the 4-speaker reference's quietest speaker is 19 % and stays."""
+    from app.asr.diarize import diarize_track
+
+    class Fixed:
+        name = "fixed"
+
+        def __init__(self, turns: list[SpeakerTurn]) -> None:
+            self.turns = turns
+
+        def diarize(self, samples: np.ndarray, rate: int) -> list[SpeakerTurn]:
+            return self.turns
+
+        def unload(self) -> None:
+            return None
+
+    audio = np.zeros(16000, dtype=np.float32)
+    crumbs = Fixed([SpeakerTurn(0.0, 500.0, 0), SpeakerTurn(500.0, 503.0, 1)])
+    _, found = diarize_track(crumbs, audio, 16000, [], track="them", base="THEM",
+                             config=default_config())  # fmt: skip
+    assert found is not None and found["speakers"] == 1
+    brief = Fixed([SpeakerTurn(0.0, 11.0, 0), SpeakerTurn(11.0, 19.0, 1),
+                   SpeakerTurn(19.0, 25.0, 2), SpeakerTurn(25.0, 31.0, 3)])  # fmt: skip
+    _, found = diarize_track(brief, audio, 16000, [], track="them", base="THEM",
+                             config=default_config())  # fmt: skip
+    assert found is not None and found["speakers"] == 4
+
+
+def test_the_embedding_is_the_multilingual_one_under_its_own_file_name(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The English VoxCeleb CAM++ could not tell the two people of a Hebrew call apart
+    (centroids 0.92 alike); 3D-Speaker's zh-en CAM++ puts them at 0.16. The file is named
+    for the model, so an install holding the old ``embedding.onnx`` fetches the new one."""
+    from app.asr.models import EMBEDDING_URL, resolve_diarization
+
+    assert "3dspeaker" in EMBEDDING_URL and "voxceleb" not in EMBEDDING_URL
+    config = default_config(asr__diarization_dir=str(tmp_path))
+    (tmp_path / "segmentation.onnx").write_bytes(b"x")
+    (tmp_path / "embedding.onnx").write_bytes(b"old")
+    assert not resolve_diarization(config).present
+
+
+def test_fetching_the_new_embedding_removes_the_retired_one(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """An upgrade downloads the 3D-Speaker embedding and deletes the VoxCeleb one it replaces."""
+    import io
+    import urllib.request
+
+    from app.asr import model_manager
+    from app.asr.models import EMBEDDING_FILE, download_diarization
+
+    fetched: list[str] = []
+
+    def urlopen(url: str, **_: object) -> io.BytesIO:
+        fetched.append(url)
+        return io.BytesIO(b"onnx")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(model_manager, "tls_context", lambda: None)
+    (tmp_path / "segmentation.onnx").write_bytes(b"x")
+    (tmp_path / "embedding.onnx").write_bytes(b"old")
+    models = download_diarization(default_config(asr__diarization_dir=str(tmp_path)))
+    assert models.present and models.embedding.name == EMBEDDING_FILE
+    assert len(fetched) == 1 and "3dspeaker" in fetched[0], "segmentation was already there"
+    assert not (tmp_path / "embedding.onnx").exists()
