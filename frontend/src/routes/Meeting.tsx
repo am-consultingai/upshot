@@ -31,6 +31,8 @@ import { meetingDirections } from "../lib/direction";
 import { STAGE_LABEL, formatPercent, phaseLabel, timeLeft, useMeetingJob } from "../lib/activeJobs";
 import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
+import { shortcutKey, typing } from "../lib/keys";
+import { onMeetingKey, type MeetingKey } from "../lib/meetingKeys";
 
 /**
  * What a failed stage says in the user's terms.
@@ -47,6 +49,22 @@ const FAILED_WHILE: Record<string, MessageKey> = {
   render: "meeting.failedWhileRender",
   deliver: "meeting.failedWhileDeliver",
 };
+
+/**
+ * A control that Space already presses. Space on a focused button is that button's
+ * own key, and taking it away would strand anyone working the page by keyboard; the
+ * transcript's timestamps are the exception, since pressing one is "play from here"
+ * and the next Space should pause what it started.
+ */
+function pressable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.closest("[data-testid=transcript-turn]")) return false;
+  return (
+    target.closest(
+      "button,a[href],summary,[role=button],[role=checkbox],[role=switch],[role=tab],[role=option],[role=menuitem]",
+    ) !== null
+  );
+}
 
 /** The stage actually working, else the first one waiting. */
 function currentJob(jobs: Job[]): Job | undefined {
@@ -246,15 +264,74 @@ export default function MeetingPage() {
     setParams(next, { replace: true });
   }, [params, setParams, meeting.data]);
   const findRef = useRef<HTMLInputElement | null>(null);
+  /*
+   * Whether the transcript keeps the line being spoken in view. On until the reader
+   * scrolls away to read something else, and back on when they ask for playback
+   * again — a click on a line, play, J or K.
+   */
+  const [following, setFollowing] = useState(true);
+  const [playing, setPlaying] = useState(false);
+  // Leaving the pill removes the player, and a removed <audio> stops without a word.
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
-      event.preventDefault();
+    if (tab !== "transcript") setPlaying(false);
+  }, [tab]);
+  /*
+   * The meeting page's keys, as a media player's are: Space plays and pauses, J and K
+   * step to the next and previous line and play from there, and / finds in the
+   * transcript (Ctrl+F too, which is what people try first). Kept in a ref so the one
+   * listener always acts on the page as it is now.
+   */
+  const keyAction = useRef<(key: MeetingKey) => void>(() => undefined);
+  keyAction.current = (key) => {
+    if (key === "find") {
       setTab("transcript");
       window.setTimeout(() => findRef.current?.focus(), 0);
+      return;
+    }
+    if (key === "play") {
+      if (Object.keys(meeting.data?.audio_tracks ?? {}).length === 0) return;
+      setFollowing(true);
+      // The transport lives on the transcript pill: from the summary, Space opens it
+      // and plays from where it was left.
+      if (playerRef.current) playerRef.current.toggle();
+      else seekTo(playhead);
+      return;
+    }
+    const lines = transcript.data?.segments ?? [];
+    if (lines.length === 0) return;
+    let here = -1;
+    for (let index = 0; index < lines.length && lines[index].start <= playhead + 0.05; index += 1) here = index;
+    const next = key === "next" ? (playhead <= 0 ? 0 : here + 1) : Math.max(0, here - 1);
+    if (next >= lines.length) return;
+    setFollowing(true);
+    seekTo(lines[next].start);
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.code === "KeyF") {
+        event.preventDefault();
+        keyAction.current("find");
+        return;
+      }
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
+      if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
+      // The sidebar's list has its own J and K, for moving between meetings.
+      if (event.target instanceof HTMLElement && event.target.closest("[role=listbox]")) return;
+      const key = shortcutKey(event);
+      const action: MeetingKey | null =
+        key === " " ? "play" : key === "j" ? "next" : key === "k" ? "previous" : key === "/" ? "find" : null;
+      if (!action || (action === "play" && pressable(event.target))) return;
+      // Prevented here, in the capture phase, so the app-wide / (go to Search) sees
+      // that it was taken and leaves it alone.
+      event.preventDefault();
+      keyAction.current(action);
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    const off = onMeetingKey((key) => keyAction.current(key));
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      off();
+    };
   }, []);
   /*
    * Escape has to beat the blur that follows it. Removing the focused field makes the
@@ -831,7 +908,10 @@ export default function MeetingPage() {
                   people={people}
                   dir={directions.transcript}
                   speaking={spokenIndex}
+                  following={following && playing}
+                  onUnfollow={() => setFollowing(false)}
                   onSeek={(seconds) => {
+                    setFollowing(true);
                     playerRef.current?.seek(seconds);
                     setPlayhead(seconds);
                   }}
@@ -852,7 +932,16 @@ export default function MeetingPage() {
       </div>
 
       {hasAudio && tab === "transcript" && (
-        <AudioPlayer ref={playerRef} src={api.audioUrl(id, "mix")} onTime={setPlayhead} bands={bands} />
+        <AudioPlayer
+          ref={playerRef}
+          src={api.audioUrl(id, "mix")}
+          onTime={setPlayhead}
+          onPlaying={(now) => {
+            setPlaying(now);
+            if (now) setFollowing(true);
+          }}
+          bands={bands}
+        />
       )}
       {transcribeAgain && (
         <TranscribeAgainDialog

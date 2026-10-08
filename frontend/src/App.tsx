@@ -32,6 +32,7 @@ import AssistantPanel from "./components/assistant/AssistantPanel";
 import AssistantLauncher from "./components/assistant/AssistantLauncher";
 import Confetti from "./components/Confetti";
 import { useRecordingControls } from "./lib/recording";
+import { shortcutKey, typing } from "./lib/keys";
 
 /*
  * The first-run setup mock (Setup 0, z8tj1hb03a), for confirming the flow before it is
@@ -40,16 +41,6 @@ import { useRecordingControls } from "./lib/recording";
  */
 const SETUP_MOCK = import.meta.env.DEV || import.meta.env.VITE_SETUP_MOCK === "1";
 const MockSetup = SETUP_MOCK ? lazy(() => import("./setup/MockSetup")) : null;
-
-/** Typing into a field is not a shortcut. */
-function typing(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
-}
 
 /**
  * The keys the interface advertises, made true.
@@ -73,22 +64,22 @@ function useShortcuts(onRecord: () => void) {
       }
       if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
+      const key = shortcutKey(event);
       if (pendingG.current !== null) {
         window.clearTimeout(pendingG.current);
         pendingG.current = null;
-        const to = { l: "/", a: "/actions", t: "/transcriptions", s: "/search", ",": "/settings" }[
-          event.key.toLowerCase()
-        ];
+        const to = { l: "/", a: "/actions", t: "/transcriptions", s: "/search", ",": "/settings" }[key];
         if (to) {
           event.preventDefault();
           navigate(to);
         }
         return;
       }
-      if (event.key === "/") {
+      // Unless the page under it took it: on a meeting, / is find-in-transcript.
+      if (key === "/" && !event.defaultPrevented) {
         event.preventDefault();
         navigate("/search");
-      } else if (event.key.toLowerCase() === "g") {
+      } else if (key === "g") {
         pendingG.current = window.setTimeout(() => {
           pendingG.current = null;
         }, 1000);
