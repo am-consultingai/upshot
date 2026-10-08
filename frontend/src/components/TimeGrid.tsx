@@ -3,12 +3,14 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CalendarEvent, type Meeting } from "../api";
 import { useI18n } from "../i18n";
+import { IconBadge } from "./Badge";
 import {
   allDayKeys,
   asGridItem,
   bucketByDay,
   dayKey,
   eventKey,
+  foldNights,
   isToday,
   placement,
   recordedIds,
@@ -99,7 +101,7 @@ export function OpenBalloon({ count, label }: { count: number | undefined; label
       data-testid="chip-open"
       data-count={count}
       aria-label={label.replace("{n}", String(count))}
-      className="grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-[10px] font-semibold leading-none text-canvas tabular-nums"
+      className="grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-3xs font-semibold leading-none text-canvas tabular-nums"
     >
       {count}
     </span>
@@ -107,26 +109,15 @@ export function OpenBalloon({ count, label }: { count: number | undefined; label
   );
 }
 
-function Badge({ kind }: { kind: ChipKind }) {
-  if (kind === "live") {
-    return (
-      <span
-        aria-hidden="true"
-        className="grid size-[15px] shrink-0 place-items-center rounded-[4px] bg-danger"
-      >
-        <span className="ma-pulse size-1.5 rounded-full bg-on-solid" />
-      </span>
-    );
-  }
+/** The chip's flag: the shared IconBadge, with the glyph for what the chip is. */
+function ChipFlag({ kind }: { kind: ChipKind }) {
+  if (kind === "live") return <IconBadge live />;
   return (
-    <span
+    <IconBadge
       data-testid={kind === "scheduled" ? "calendar-event-flag" : "calendar-recorded-flag"}
-      aria-hidden="true"
-      className={`grid size-[15px] shrink-0 place-items-center rounded-[4px] bg-raised shadow-[var(--shadow-ring-subtle)] ${
-        kind === "failed" ? "text-danger" : "text-secondary"
-      }`}
+      tone={kind === "failed" ? "bad" : "neutral"}
     >
-      <svg viewBox="0 0 16 16" className="size-[9px] fill-none stroke-current" strokeLinecap="round">
+      <svg viewBox="0 0 16 16" className="size-2.25 fill-none stroke-current" strokeLinecap="round">
         {kind === "scheduled" ? (
           <g strokeWidth={1.8}>
             <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
@@ -138,7 +129,7 @@ function Badge({ kind }: { kind: ChipKind }) {
           <path d="M2 9.5 5 5l3 4 3-6 3 6.5" strokeWidth={2} />
         )}
       </svg>
-    </span>
+    </IconBadge>
   );
 }
 
@@ -182,12 +173,17 @@ export default function TimeGrid({
   meetings,
   events = [],
   onEvent,
+  foldedNights = false,
+  onUnfold,
 }: {
   days: Date[];
   meetings: Meeting[];
   /** Google Calendar events behind the recordings. A matched pair draws as one block. */
   events?: CalendarEvent[];
   onEvent?: (event: CalendarEvent) => void;
+  /** The hours outside the working day folded to a thin band (`ui.fold_nights`). */
+  foldedNights?: boolean;
+  onUnfold?: () => void;
 }) {
   const { t, locale } = useI18n();
   // The event keeps its name and its slot; a recording of it only marks the block. A
@@ -243,6 +239,25 @@ export default function TimeGrid({
   // the day starts pulls the opening earlier so it is not hidden above the fold.
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const work = workingHours(settings.data?.config);
+  // Everything drawn, as minutes into its day, so a night with a meeting in it stays open.
+  const busy = days.flatMap((day): [number, number][] => [
+    ...(buckets.get(dayKey(day)) ?? []).map((meeting): [number, number] => {
+      const { startMinute, minutes } = placement(meeting, day);
+      const ran =
+        kindOf(meeting) === "live" ? (Date.now() - new Date(meeting.started_at).getTime()) / 60_000 : 0;
+      return [startMinute, startMinute + Math.max(minutes, ran)];
+    }),
+    ...(eventBuckets.get(dayKey(day)) ?? []).map((event): [number, number] => {
+      const { startMinute, minutes } = placement(
+        { started_at: event.start, duration_s: asGridItem(event).duration_s },
+        day,
+      );
+      return [startMinute, startMinute + minutes];
+    }),
+  ]);
+  const fold = foldNights(work, foldedNights, busy, PX_PER_MINUTE);
+  /** Whether an hour's line and label sit inside a folded night. */
+  const foldedHour = (hour: number) => (fold.early && hour < work.start) || (fold.late && hour > work.end);
   const openAt = Math.min(
     firstMinute(
       [...meetings.map((meeting) => meeting.started_at), ...shown.map((event) => event.start)],
@@ -261,12 +276,15 @@ export default function TimeGrid({
    */
   const aimedAt = useRef<string | null>(null);
   const empty = meetings.length === 0 && shown.length === 0;
+  // Folding or unfolding moves every hour, so it aims again too.
+  const aimKey = `${spanKey}|${fold.early}|${fold.late}`;
+  const openY = fold.y(openAt);
   useEffect(() => {
     const node = scroller.current;
-    if (!node || aimedAt.current === spanKey) return;
-    node.scrollTop = openAt * PX_PER_MINUTE;
-    if (!empty && settings.isSuccess) aimedAt.current = spanKey;
-  }, [spanKey, openAt, empty, settings.isSuccess]);
+    if (!node || aimedAt.current === aimKey) return;
+    node.scrollTop = openY;
+    if (!empty && settings.isSuccess) aimedAt.current = aimKey;
+  }, [aimKey, openY, empty, settings.isSuccess]);
 
   const columns = `${GUTTER}px repeat(${days.length}, minmax(6rem, 1fr))`;
   const first = days[0];
@@ -290,12 +308,12 @@ export default function TimeGrid({
   }) => {
     const short = input.minutes < SHORT_MINUTES;
     return {
-      className: `absolute flex gap-[5px] overflow-hidden rounded-xs text-start ${CHIP[input.kind]} ${
-        short ? "items-center px-[5px] py-px" : "px-[5px] py-[3px]"
-      } ${input.past && input.kind !== "live" ? "opacity-[.82]" : ""}`,
+      className: `absolute flex gap-1.25 overflow-hidden rounded-xs text-start ${CHIP[input.kind]} ${
+        short ? "items-center px-1.25 py-px" : "px-1.25 py-0.75"
+      } ${input.past && input.kind !== "live" ? "opacity-90" : ""}`,
       style: {
-        top: input.startMinute * PX_PER_MINUTE,
-        height: Math.max(16, input.minutes * PX_PER_MINUTE),
+        top: fold.y(input.startMinute),
+        height: Math.max(16, fold.y(input.startMinute + input.minutes) - fold.y(input.startMinute)),
         // Logical properties: the columns mirror under RTL for free. 3px/4px of air
         // either side, so two blocks in one hour do not read as one.
         insetInlineStart: `calc(${(input.slot.column / input.slot.columns) * 100}% + 3px)`,
@@ -303,7 +321,7 @@ export default function TimeGrid({
       },
       body: (
         <>
-          <Badge kind={input.kind} />
+          <ChipFlag kind={input.kind} />
           <span className="min-w-0 flex-1 leading-tight">
             <span
               className={`block truncate text-xs ${
@@ -319,7 +337,7 @@ export default function TimeGrid({
             {!short && (
               <span
                 data-testid="chip-when"
-                className="mt-px block truncate font-mono text-[10px] text-secondary opacity-75"
+                className="mt-px block truncate font-mono text-3xs text-secondary"
               >
                 {chipWhen(input.kind, input.start, input.length, words)}
               </span>
@@ -336,7 +354,12 @@ export default function TimeGrid({
       ref={scroller}
       data-testid="calendar-timegrid"
       data-open-minute={openAt}
-      className="h-full overflow-auto"
+      data-folded={fold.early || fold.late ? "true" : undefined}
+      // Reachable from the keyboard, so an empty week can still be scrolled without a mouse.
+      tabIndex={0}
+      role="region"
+      aria-label={t("nav.timeline")}
+      className="h-full overflow-auto outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)]"
     >
       <div style={{ minWidth: GUTTER + days.length * 96 }}>
         {/*
@@ -347,7 +370,7 @@ export default function TimeGrid({
           <div className="grid border-b border-line-subtle" style={{ gridTemplateColumns: columns }}>
             <div
               data-testid="calendar-zone"
-              className="grid place-items-center font-mono text-[10px] text-tertiary"
+              className="grid place-items-center font-mono text-3xs text-tertiary"
             >
               {zoneLabel(new Date(), locale)}
             </div>
@@ -360,7 +383,7 @@ export default function TimeGrid({
                   data-testid="calendar-daycolumn"
                   data-day={dayKey(day)}
                   data-today={today ? "true" : undefined}
-                  className="pt-2 pb-[7px] text-center"
+                  className="pt-2 pb-1.75 text-center"
                 >
                   <div
                     className="text-2xs uppercase tracking-wide text-tertiary"
@@ -389,13 +412,13 @@ export default function TimeGrid({
            */}
           <div data-testid="calendar-allday-band" className="flex min-h-6.5 border-b border-line-subtle">
             <div
-              className="grid shrink-0 place-items-center text-[10px] text-tertiary"
+              className="grid shrink-0 place-items-center text-3xs text-tertiary"
               style={{ width: GUTTER }}
             >
               {t("timeline.allDay")}
             </div>
             <div
-              className="grid flex-1 gap-y-0.5 py-[3px]"
+              className="grid flex-1 gap-y-0.5 py-0.75"
               style={{
                 gridTemplateColumns: `repeat(${days.length}, minmax(6rem, 1fr))`,
                 gridAutoFlow: "row dense",
@@ -413,7 +436,7 @@ export default function TimeGrid({
                     data-event={event.event_id}
                     onClick={() => onEvent?.(event)}
                     title={event.title ?? t("calendar.untitled")}
-                    className="mx-[3px] block truncate rounded-xs bg-warning-quiet px-1.5 py-0.5 text-start text-2xs text-warning hover:brightness-95"
+                    className="mx-0.75 block truncate rounded-xs bg-warning-quiet px-1.5 py-0.5 text-start text-2xs text-warning hover:brightness-95"
                     style={{ gridColumn: `${from + 1} / span ${keys.length}` }}
                   >
                     {event.title ?? t("calendar.untitled")}
@@ -425,9 +448,33 @@ export default function TimeGrid({
         </div>
 
         <div className="grid" style={{ gridTemplateColumns: columns }}>
-          <div className="relative" style={{ height: 24 * 60 * PX_PER_MINUTE }}>
+          <div className="relative" style={{ height: fold.height }}>
+            {/*
+             * A folded night is one line in the gutter, "00–08", and pressing it opens
+             * the night again — the same as the switch in the bar above.
+             */}
+            {([
+              ["early", fold.early, 0, work.start],
+              ["late", fold.late, work.end, 24],
+            ] as const).map(([which, folded, from, to]) =>
+              folded ? (
+                <Tooltip key={which} label={t("timeline.nightsShow")} hint={t("help.nights")} side="end">
+                  <button
+                    type="button"
+                    data-testid="night-fold"
+                    data-which={which}
+                    aria-label={t("timeline.nightsShow")}
+                    onClick={onUnfold}
+                    className="absolute inset-x-1 grid place-items-center rounded-xs font-mono text-[10px] text-tertiary tabular-nums hover:bg-a-200 hover:text-primary"
+                    style={{ top: fold.y(from * 60) + 2, height: fold.y(to * 60) - fold.y(from * 60) - 4 }}
+                  >
+                    {String(from).padStart(2, "0")}–{String(to % 24).padStart(2, "0")}
+                  </button>
+                </Tooltip>
+              ) : null,
+            )}
             {HOURS.map((hour) =>
-              hour === 0 ? null : (
+              hour === 0 || foldedHour(hour) ? null : (
                 <div
                   key={hour}
                   className={`absolute -translate-y-1/2 font-mono text-2xs tabular-nums ${
@@ -435,7 +482,7 @@ export default function TimeGrid({
                       ? "opacity-0"
                       : "text-tertiary"
                   }`}
-                  style={{ top: hour * 60 * PX_PER_MINUTE, insetInlineEnd: "0.5rem" }}
+                  style={{ top: fold.y(hour * 60), insetInlineEnd: "0.5rem" }}
                 >
                   {String(hour).padStart(2, "0")}:00
                 </div>
@@ -445,7 +492,7 @@ export default function TimeGrid({
               <span
                 data-testid="now-time"
                 className="absolute z-10 -translate-y-1/2 font-mono text-2xs font-medium tabular-nums text-accent"
-                style={{ top: nowMinute * PX_PER_MINUTE, insetInlineEnd: "0.5rem" }}
+                style={{ top: fold.y(nowMinute), insetInlineEnd: "0.5rem" }}
               >
                 {nowLabel}
               </span>
@@ -471,7 +518,7 @@ export default function TimeGrid({
                     ? "bg-[color-mix(in_oklab,var(--surface-0),var(--warning)_3%)]"
                     : ""
                 }`}
-                style={{ height: 24 * 60 * PX_PER_MINUTE }}
+                style={{ height: fold.height }}
               >
                 {/* Outside working hours: shaded, still there to scroll to. */}
                 {work.start > 0 && (
@@ -479,7 +526,8 @@ export default function TimeGrid({
                     data-testid="off-hours"
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-x-0 top-0 bg-a-100"
-                    style={{ height: work.start * 60 * PX_PER_MINUTE }}
+                    data-folded={fold.early ? "true" : undefined}
+                    style={{ height: fold.y(work.start * 60) }}
                   />
                 )}
                 {work.end < 24 && (
@@ -487,25 +535,28 @@ export default function TimeGrid({
                     data-testid="off-hours"
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-x-0 bottom-0 bg-a-100"
-                    style={{ top: work.end * 60 * PX_PER_MINUTE }}
+                    data-folded={fold.late ? "true" : undefined}
+                    style={{ top: fold.y(work.end * 60) }}
                   />
                 )}
-                {HOURS.map((hour) => (
-                  <div
-                    key={hour}
-                    className="absolute w-full border-t border-line-subtle"
-                    style={{ top: hour * 60 * PX_PER_MINUTE }}
-                  />
-                ))}
+                {HOURS.map((hour) =>
+                  foldedHour(hour) ? null : (
+                    <div
+                      key={hour}
+                      className="absolute w-full border-t border-line-subtle"
+                      style={{ top: fold.y(hour * 60) }}
+                    />
+                  ),
+                )}
                 {isToday(day) && nowMinute !== null && (
                   <div
                     data-testid="now-line"
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-x-0 z-10 h-px bg-accent"
-                    style={{ top: nowMinute * PX_PER_MINUTE }}
+                    style={{ top: fold.y(nowMinute) }}
                   >
                     <span
-                      className="absolute -top-[3px] size-[7px] rounded-full bg-accent"
+                      className="absolute -top-0.75 size-1.75 rounded-full bg-accent"
                       style={{ insetInlineStart: -3 }}
                     />
                   </div>

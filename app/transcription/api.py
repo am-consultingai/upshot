@@ -237,6 +237,8 @@ def describe(svc: Services, job: Transcription) -> dict[str, Any]:
     payload = job.as_dict()
     payload["position"] = svc.scheduler.position(job) if svc.scheduler else None
     payload["waiting_reason"] = waiting_reason(svc, job)
+    # Seconds left at this run's pace, once it can be measured (app/pipeline/progress.py).
+    payload["eta_s"] = svc.transcriptions.eta_s(job) if svc.transcriptions else None
     # Which way the transcript runs: the RTL list lives in app/asr/languages.py only.
     payload["direction"] = languages.direction_for(job.language)
     payload["links"] = links(job.id)

@@ -87,8 +87,12 @@ def test_provider_count_matches_config(page: Path) -> None:
 
 @each_page
 def test_audio_retention_matches_config(page: Path) -> None:
+    """The page says recordings are kept until the user deletes them: true only while
+    nothing deletes them by default (D92)."""
     html, _ = _parse(page)
-    assert _numbers(html, "data-audio-days") == {str(DEFAULTS["retention"]["audio_days"])}
+    assert DEFAULTS["retention"]["audio_days"] is None
+    assert DEFAULTS["transcription"]["keep_days"] is None
+    assert re.search(r"<[^>]*\bdata-audio-kept\b[^>]*>∞<", html)
 
 
 @every_page

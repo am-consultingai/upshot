@@ -7,7 +7,7 @@ import { useI18n } from "../i18n";
 import { addDays, dayKey, isHappening } from "../lib/calendar";
 import { dueCounts } from "../lib/due";
 import { formatClock } from "../lib/format";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import Tooltip from "./Tooltip";
 import AccountDots from "./AccountDots";
 
@@ -64,7 +64,7 @@ export default function LibraryRail() {
     onSuccess: () => queryClient.invalidateQueries(),
   });
 
-  const recording = status.data?.recorder.active ?? false;
+  const recording = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
   const live = (meetings.data?.meetings ?? []).find(
     (meeting) =>
       meeting.state === "RECORDING" &&
@@ -114,14 +114,15 @@ export default function LibraryRail() {
               </p>
             )}
             <Tooltip label={t("rail.stopAndSummarize")} hint={t("help.stopSummarize")}>
-            <BusyButton
+            <Button
               data-testid="rail-stop"
               busy={stop.isPending}
               onClick={() => stop.mutate()}
-              className="mt-2.5 h-7 w-full justify-center rounded-md text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200 active:bg-a-300"
+              variant="secondary"
+            className="mt-2.5 w-full"
             >
               {t("rail.stopAndSummarize")}
-            </BusyButton>
+            </Button>
             </Tooltip>
           </div>
         </section>
@@ -145,14 +146,15 @@ export default function LibraryRail() {
             </p>
             {!recording && (
               <Tooltip label={t("rail.recordThisOne")} hint={t("help.recordThis")}>
-              <BusyButton
+              <Button
                 data-testid="rail-record-this"
                 busy={record.isPending}
                 onClick={() => record.mutate(next)}
-                className="mt-2.5 h-7 w-full justify-center rounded-md bg-accent text-xs font-medium text-on-accent shadow-[var(--shadow-sm),var(--shadow-edge)] hover:brightness-110 active:translate-y-px"
+                variant="primary"
+            className="mt-2.5 w-full"
               >
                 {t("rail.recordThisOne")}
-              </BusyButton>
+              </Button>
               </Tooltip>
             )}
           </div>

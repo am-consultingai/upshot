@@ -1,4 +1,4 @@
-"""The retention sweep: `retention.audio_days` finally deletes something (D38)."""
+"""The retention sweep: off by default (D92); `retention.audio_days`, when set, deletes (D38)."""
 
 from __future__ import annotations
 
@@ -46,6 +46,45 @@ def plan_for(api):  # type: ignore[no-untyped-def]
         clock=svc.clock,
         recorder=svc.recorder,
     )
+
+
+# ------------------------------------------------------------------ the default: nothing goes
+
+
+def test_by_default_nothing_is_ever_deleted(tmp_path: Path, app_home: Path) -> None:
+    """Nothing leaves the disk unless the user deletes it (D92)."""
+    harness = build_harness(tmp_path)
+    old = recorded(harness, days=4000)
+    result = retention.sweep_services(harness.services)
+    assert result.audio_removed == 0 and result.meetings_removed == 0
+    assert (old.path / "audio" / "me.wav").exists()
+    assert (old.path / "transcript.md").exists()
+    assert harness.services.dao.get_meeting(old.id) is not None
+    shown = harness.client().get("/api/retention").json()
+    assert shown["audio_days"] is None and shown["transcript_days"] is None
+    assert shown["transcriptions"]["keep_days"] is None
+
+
+@pytest.mark.parametrize(
+    ("saved", "expected"),
+    [(30, None), (14, 14), (None, None)],
+)
+def test_a_saved_30_was_the_old_default_not_a_choice(
+    tmp_path: Path, saved: int | None, expected: int | None
+) -> None:
+    """`save` writes every key, so every install has 30 on disk from the old default."""
+    import json
+
+    from app.config import Config
+
+    file = tmp_path / "app_config.json"
+    file.write_text(
+        json.dumps({"retention": {"audio_days": saved}, "transcription": {"keep_days": saved}}),
+        encoding="utf-8",
+    )
+    cfg = Config.load(file=file, environ={})
+    assert cfg.get("retention.audio_days") == expected
+    assert cfg.get("transcription.keep_days") == expected
 
 
 # ------------------------------------------------------------------ the audio sweep

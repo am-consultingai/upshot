@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buttonClass } from "../components/Button";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type Job } from "../api";
@@ -14,7 +15,7 @@ import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
 import { openMeetingInfo } from "../components/MeetingInfoDialog";
 import Tooltip from "../components/Tooltip";
 import StateBadge from "../components/StateBadge";
-import { Spinner } from "../components/BusyButton";
+import Button, { Spinner } from "../components/Button";
 import AudioPlayer, { type AudioPlayerHandle, type Band } from "../components/AudioPlayer";
 import ActionItemsBlock from "../components/ActionItemsBlock";
 import SummaryMinimap from "../components/SummaryMinimap";
@@ -26,15 +27,12 @@ import { speakers } from "../lib/speakers";
 import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
 import { leadFirst } from "../lib/summary";
 import { meetingDirections } from "../lib/direction";
-
-/** What each stage is doing, in words. "summarize: running" told nobody anything. */
-const STAGE_LABEL: Record<string, MessageKey> = {
-  transcribe: "meeting.stageTranscribe",
-  assemble: "meeting.stageAssemble",
-  summarize: "meeting.stageSummarize",
-  render: "meeting.stageRender",
-  deliver: "meeting.stageDeliver",
-};
+// What each stage is doing, in words. "summarize: running" told nobody anything.
+import { STAGE_LABEL, formatPercent, phaseLabel, timeLeft, useMeetingJob } from "../lib/activeJobs";
+import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
+import { shortcutKey, typing } from "../lib/keys";
+import { onMeetingKey, type MeetingKey } from "../lib/meetingKeys";
 
 /**
  * What a failed stage says in the user's terms.
@@ -51,6 +49,22 @@ const FAILED_WHILE: Record<string, MessageKey> = {
   render: "meeting.failedWhileRender",
   deliver: "meeting.failedWhileDeliver",
 };
+
+/**
+ * A control that Space already presses. Space on a focused button is that button's
+ * own key, and taking it away would strand anyone working the page by keyboard; the
+ * transcript's timestamps are the exception, since pressing one is "play from here"
+ * and the next Space should pause what it started.
+ */
+function pressable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.closest("[data-testid=transcript-turn]")) return false;
+  return (
+    target.closest(
+      "button,a[href],summary,[role=button],[role=checkbox],[role=switch],[role=tab],[role=option],[role=menuitem]",
+    ) !== null
+  );
+}
 
 /** The stage actually working, else the first one waiting. */
 function currentJob(jobs: Job[]): Job | undefined {
@@ -198,6 +212,14 @@ export default function MeetingPage() {
     (item) => item.meeting_id === id && item.state === "waiting",
   );
   const working = summarize.isPending || awaitingFirstPoll || running.length > 0;
+  // How far the running stage has got, where it can say (the transcription); a summary
+  // has no honest percentage and keeps its spinner and elapsed time alone.
+  const queued = useMeetingJob(id);
+  const measured =
+    current?.state === "running" && queued?.state === "running" && queued.stage === current.stage
+      ? queued
+      : undefined;
+  const progress = measured?.progress ?? null;
 
   // Ticks only while something is working, for the elapsed time beside the spinner.
   const [now, setNow] = useState(() => Date.now());
@@ -242,15 +264,74 @@ export default function MeetingPage() {
     setParams(next, { replace: true });
   }, [params, setParams, meeting.data]);
   const findRef = useRef<HTMLInputElement | null>(null);
+  /*
+   * Whether the transcript keeps the line being spoken in view. On until the reader
+   * scrolls away to read something else, and back on when they ask for playback
+   * again — a click on a line, play, J or K.
+   */
+  const [following, setFollowing] = useState(true);
+  const [playing, setPlaying] = useState(false);
+  // Leaving the pill removes the player, and a removed <audio> stops without a word.
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
-      event.preventDefault();
+    if (tab !== "transcript") setPlaying(false);
+  }, [tab]);
+  /*
+   * The meeting page's keys, as a media player's are: Space plays and pauses, J and K
+   * step to the next and previous line and play from there, and / finds in the
+   * transcript (Ctrl+F too, which is what people try first). Kept in a ref so the one
+   * listener always acts on the page as it is now.
+   */
+  const keyAction = useRef<(key: MeetingKey) => void>(() => undefined);
+  keyAction.current = (key) => {
+    if (key === "find") {
       setTab("transcript");
       window.setTimeout(() => findRef.current?.focus(), 0);
+      return;
+    }
+    if (key === "play") {
+      if (Object.keys(meeting.data?.audio_tracks ?? {}).length === 0) return;
+      setFollowing(true);
+      // The transport lives on the transcript pill: from the summary, Space opens it
+      // and plays from where it was left.
+      if (playerRef.current) playerRef.current.toggle();
+      else seekTo(playhead);
+      return;
+    }
+    const lines = transcript.data?.segments ?? [];
+    if (lines.length === 0) return;
+    let here = -1;
+    for (let index = 0; index < lines.length && lines[index].start <= playhead + 0.05; index += 1) here = index;
+    const next = key === "next" ? (playhead <= 0 ? 0 : here + 1) : Math.max(0, here - 1);
+    if (next >= lines.length) return;
+    setFollowing(true);
+    seekTo(lines[next].start);
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.code === "KeyF") {
+        event.preventDefault();
+        keyAction.current("find");
+        return;
+      }
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
+      if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
+      // The sidebar's list has its own J and K, for moving between meetings.
+      if (event.target instanceof HTMLElement && event.target.closest("[role=listbox]")) return;
+      const key = shortcutKey(event);
+      const action: MeetingKey | null =
+        key === " " ? "play" : key === "j" ? "next" : key === "k" ? "previous" : key === "/" ? "find" : null;
+      if (!action || (action === "play" && pressable(event.target))) return;
+      // Prevented here, in the capture phase, so the app-wide / (go to Search) sees
+      // that it was taken and leaves it alone.
+      event.preventDefault();
+      keyAction.current(action);
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    const off = onMeetingKey((key) => keyAction.current(key));
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      off();
+    };
   }, []);
   /*
    * Escape has to beat the blur that follows it. Removing the focused field makes the
@@ -357,9 +438,27 @@ export default function MeetingPage() {
     return found;
   }, [transcript.data, playhead]);
 
-  if (meeting.isLoading)
-    return <p data-testid="loading">{t("common.loading")}</p>;
-  if (!meeting.data) return <p data-testid="error">{t("common.error")}</p>;
+  if (meeting.isLoading) return <MeetingSkeleton />;
+  if (!meeting.data)
+    return (
+      <EmptyState
+        testid="error"
+        tone="danger"
+        icon={EMPTY_ICON.error}
+        title={t("meeting.loadFailed")}
+        body={t("meeting.loadFailedBody")}
+        action={
+          <>
+            <button type="button" onClick={() => void meeting.refetch()} className={EMPTY_BUTTON}>
+              {t("common.retry")}
+            </button>
+            <Link to="/" className={EMPTY_BUTTON}>
+              {t("nav.timeline")}
+            </Link>
+          </>
+        }
+      />
+    );
 
   // Press play, hear the meeting. The server mixes both sides into one stream as it is
   // read; the per-track URLs still exist for diagnosis but the UI does not offer them —
@@ -400,7 +499,7 @@ export default function MeetingPage() {
             href={meeting.data.calendar.conference_url}
             target="_blank"
             rel="noreferrer"
-            className="h-7 rounded-md px-2.5 text-xs leading-7 text-secondary shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary"
+            className={buttonClass("secondary")}
           >
             {t("calendar.joinMeeting")}
           </a>
@@ -408,31 +507,39 @@ export default function MeetingPage() {
         <StateBadge state={meeting.data.state} />
         {/*
          * One primary action per view. Beside the summary it is copying it — the
-         * summary is written to be pasted into mail. Beside the transcript it is
-         * exporting, as a ghost, because the transcript is read here, not sent.
+         * summary is written to be pasted into mail. Export sits beside it as a ghost
+         * on both tabs: it is the other way the summary leaves the app, and it was
+         * too far away at the bottom of the ⋯ menu.
          */}
-        {summary.data && tab === "summary" && (
-          <Tooltip label={t("meeting.copy")} hint={t("help.copySummary")}>
-          <button
-            type="button"
-            data-testid="copy-summary-bar"
-            onClick={() => copySummary(summary.data as string)}
-            className="h-7 rounded-md bg-accent px-2.5 text-xs font-medium text-on-accent shadow-[var(--shadow-sm),var(--shadow-edge)] hover:brightness-110 active:translate-y-px"
-          >
-            {copied ? t("meeting.copied") : t("meeting.copy")}
-          </button>
-          </Tooltip>
-        )}
-        {summary.data && tab === "transcript" && (
+        {summary.data && (
           <Tooltip label={t("meeting.export")} hint={t("help.export")}>
-          <button
-            type="button"
+          <Button
             data-testid="export-bar"
             onClick={() => exportMarkdown(summary.data as string)}
-            className="h-7 rounded-md px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200 active:bg-a-300"
+            variant="secondary"
           >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="size-3.5 fill-none stroke-current stroke-[1.5]"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M8 2.5v7.5M5 7l3 3 3-3M3 12.5v1h10v-1" />
+            </svg>
             {t("meeting.export")}
-          </button>
+          </Button>
+          </Tooltip>
+        )}
+        {summary.data && tab === "summary" && (
+          <Tooltip label={t("meeting.copy")} hint={t("help.copySummary")}>
+          <Button
+            data-testid="copy-summary-bar"
+            onClick={() => copySummary(summary.data as string)}
+            variant="primary"
+          >
+            {copied ? t("meeting.copied") : t("meeting.copy")}
+          </Button>
           </Tooltip>
         )}
         <Menu
@@ -566,10 +673,9 @@ export default function MeetingPage() {
                     type="button"
                     role="tab"
                     data-testid={`meeting-tab-${value}`}
-                    aria-pressed={tab === value}
                     aria-selected={tab === value}
                     onClick={() => setTab(value)}
-                    className={`h-6.5 rounded-sm px-3.5 text-sm ${
+                    className={`h-control-sm rounded-sm px-3.5 text-sm ${
                       tab === value
                         ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
                         : "text-secondary hover:bg-a-200 hover:text-primary"
@@ -599,15 +705,15 @@ export default function MeetingPage() {
                   className="mb-5 flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-sm"
                 >
                   <span className="text-secondary">{t("meeting.discardedShort")}</span>
-                  <button
-                    type="button"
+                  <Button
                     data-testid="keep-meeting"
-                    aria-busy={keep.isPending}
+                    busy={keep.isPending}
                     onClick={() => keep.mutate()}
-                    className="ms-auto rounded-sm bg-accent px-2.5 py-1 text-xs font-medium text-on-accent"
+                    variant="primary"
+                    className="ms-auto"
                   >
                     {t("meeting.keepAnyway")}
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -651,12 +757,36 @@ export default function MeetingPage() {
                     : `${t("meeting.stageWaiting")}: ${t(
                         STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
                       )}`}
+                  {progress !== null && (
+                    <span className="tabular-nums" data-testid="stage-progress">
+                      {[phaseLabel(measured?.phase, t), formatPercent(progress, locale)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )}
                   {current?.state === "running" && current.started_at && (
                     <span className="tabular-nums text-tertiary" data-testid="stage-elapsed">
                       {formatElapsed(current.started_at, now)}
                     </span>
                   )}
+                  {progress !== null && timeLeft(measured?.eta_s, t) && (
+                    <span className="text-tertiary" data-testid="stage-eta">
+                      {timeLeft(measured?.eta_s, t)}
+                    </span>
+                  )}
                 </p>
+              )}
+              {working && progress !== null && (
+                <div
+                  className="-mt-1.5 mb-3 h-1 w-48 max-w-full overflow-hidden rounded-full bg-surface-2"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(progress * 100)}
+                  data-testid="stage-progress-bar"
+                >
+                  <div className="h-full bg-accent" style={{ width: `${Math.round(progress * 100)}%` }} />
+                </div>
               )}
               {/*
                * Why a stage is waiting rather than running, in the provider's own plain
@@ -697,14 +827,14 @@ export default function MeetingPage() {
                       ))}
                     </details>
                   )}
-                  <button
-                    type="button"
+                  <Button
                     data-testid="retry-summarize"
                     onClick={() => summarize.mutate()}
-                    className="mt-2.5 h-7 rounded-md bg-raised px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200"
+                    variant="secondary"
+                    className="mt-2.5"
                   >
                     {t("meeting.summarize")}
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -731,22 +861,57 @@ export default function MeetingPage() {
                     }}
                     dangerouslySetInnerHTML={{ __html: leadFirst(summary.data, meeting.data.title) }}
                   />
+                ) : summary.isLoading ? (
+                  <Loading testid="summary-loading" className="mb-12">
+                    <SkeletonProse lines={4} className="mb-6" />
+                    <Skeleton className="mb-3 h-3.5 w-40" />
+                    <SkeletonProse lines={5} />
+                  </Loading>
                 ) : (
-                  <p data-testid="no-summary" className="mb-6 text-sm text-secondary">
-                    {t("meeting.notRendered")}
-                  </p>
+                  <NoSummary
+                    working={working}
+                    failed={failed.length > 0}
+                    transcribed={segments.length > 0}
+                    onSummarize={() => summarize.mutate()}
+                    onTranscript={() => setTab("transcript")}
+                  />
                 ))}
               {/* Was it good? Up or down, sent only when the user sends it (D87, D3). */}
               {tab === "summary" && summary.data && <SummaryRating meetingId={meeting.data.id} />}
 
-              {tab === "transcript" && (
+              {tab === "transcript" && transcript.isLoading && (
+                <Loading testid="transcript-loading">
+                  {[0, 1, 2].map((turn) => (
+                    <div key={turn} className="pt-5 first:pt-0">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Skeleton className="size-4 rounded-full" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                      <SkeletonProse lines={turn === 1 ? 2 : 3} />
+                    </div>
+                  ))}
+                </Loading>
+              )}
+              {tab === "transcript" && !transcript.isLoading && segments.length === 0 && (
+                <EmptyState
+                  testid="no-transcript"
+                  icon={EMPTY_ICON.transcript}
+                  title={t("meeting.noTranscriptTitle")}
+                  body={working ? t("meeting.noTranscriptWorking") : t("meeting.noTranscriptBody")}
+                  className="rounded-lg bg-surface-1"
+                />
+              )}
+              {tab === "transcript" && segments.length > 0 && (
                 <Transcript
                   ref={findRef}
                   segments={segments}
                   people={people}
                   dir={directions.transcript}
                   speaking={spokenIndex}
+                  following={following && playing}
+                  onUnfollow={() => setFollowing(false)}
                   onSeek={(seconds) => {
+                    setFollowing(true);
                     playerRef.current?.seek(seconds);
                     setPlayhead(seconds);
                   }}
@@ -767,7 +932,16 @@ export default function MeetingPage() {
       </div>
 
       {hasAudio && tab === "transcript" && (
-        <AudioPlayer ref={playerRef} src={api.audioUrl(id, "mix")} onTime={setPlayhead} bands={bands} />
+        <AudioPlayer
+          ref={playerRef}
+          src={api.audioUrl(id, "mix")}
+          onTime={setPlayhead}
+          onPlaying={(now) => {
+            setPlaying(now);
+            if (now) setFollowing(true);
+          }}
+          bands={bands}
+        />
       )}
       {transcribeAgain && (
         <TranscribeAgainDialog
@@ -783,5 +957,96 @@ export default function MeetingPage() {
         <MeetingDetailsDialog meetingId={id} calendar={meeting.data.calendar} onClose={() => setDetails(false)} />
       )}
     </section>
+  );
+}
+
+/**
+ * The page before the meeting has arrived: the bar, the title, the chips, the two
+ * pills and a summary's worth of lines, where each of them will be.
+ */
+function MeetingSkeleton() {
+  return (
+    <Loading className="flex h-full min-h-0 flex-col">
+      <div className="flex h-11 flex-none items-center gap-2 border-b border-line-subtle px-5">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="ms-auto h-7 w-24 rounded-md" />
+      </div>
+      <div className="px-8 pt-7">
+        <div className="w-full max-w-[37rem]">
+          <Skeleton className="mb-4 h-8 w-2/3 rounded-md" />
+          <div className="mb-5 flex gap-1.5">
+            <Skeleton className="h-6 w-24 rounded-full" />
+            <Skeleton className="h-6 w-14 rounded-full" />
+            <Skeleton className="h-6 w-20 rounded-full" />
+          </div>
+          <Skeleton className="mb-7 h-7 w-44 rounded-md" />
+          <SkeletonProse lines={4} className="mb-6" />
+          <SkeletonProse lines={5} />
+        </div>
+      </div>
+    </Loading>
+  );
+}
+
+/**
+ * The summary's place when there is no summary, which is one of three situations
+ * with three different next steps: it is being written (wait for it), the work failed
+ * (the box above says why and offers Summarize), or nothing has produced one yet
+ * (summarize, or read the transcript meanwhile).
+ */
+function NoSummary({
+  working,
+  failed,
+  transcribed,
+  onSummarize,
+  onTranscript,
+}: {
+  working: boolean;
+  failed: boolean;
+  transcribed: boolean;
+  onSummarize: () => void;
+  onTranscript: () => void;
+}) {
+  const { t } = useI18n();
+  if (working) {
+    // Shaped like the summary it is waiting for; the stage line above says which step.
+    return (
+      <div data-testid="no-summary" data-reason="working" className="mb-12">
+        <p className="mb-4 text-sm text-secondary">{t("meeting.noSummaryWorking")}</p>
+        <div aria-hidden="true">
+          <SkeletonProse lines={4} className="mb-6" />
+          <SkeletonProse lines={3} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <EmptyState
+      testid="no-summary"
+      icon={EMPTY_ICON.page}
+      title={t("meeting.notRendered")}
+      body={
+        failed
+          ? t("meeting.noSummaryFailed")
+          : transcribed
+            ? t("meeting.noSummaryBody")
+            : t("meeting.noSummaryNoTranscript")
+      }
+      className="mb-8 rounded-lg bg-surface-1"
+      action={
+        // A failure already offers Summarize in its own box: one button per question.
+        failed || !transcribed ? undefined : (
+          <>
+            <button type="button" data-testid="no-summary-summarize" onClick={onSummarize} className={EMPTY_BUTTON}>
+              {t("meeting.summarize")}
+            </button>
+            <button type="button" onClick={onTranscript} className={EMPTY_BUTTON}>
+              {t("meeting.readTranscript")}
+            </button>
+          </>
+        )
+      }
+    />
   );
 }

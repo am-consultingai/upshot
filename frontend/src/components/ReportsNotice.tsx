@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import Banner from "./Banner";
+import Button from "./Button";
 
 /**
  * The crash-report question for an install that finished setup before setup asked it
@@ -18,30 +20,32 @@ export default function ReportsNotice() {
   const state = diagnostics.data;
   if (!state?.available || state.consent !== "unset" || answer.isSuccess) return null;
   return (
-    <div data-testid="reports-notice" role="status" className="border-b border-line bg-surface-2">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2 text-sm">
-        <span>{t("reportsNotice.text")}</span>
-        <span className="ms-auto flex gap-2">
-          <button
-            type="button"
+    <Banner
+      data-testid="reports-notice"
+      role="status"
+      tone="notice"
+      actions={
+        <>
+          <Button
             data-testid="reports-notice-yes"
-            className="rounded-md px-2 py-1 hover:bg-a-200"
+            variant="ghost"
             disabled={answer.isPending}
             onClick={() => answer.mutate(true)}
           >
             {t("reportsNotice.yes")}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             data-testid="reports-notice-no"
-            className="rounded-md px-2 py-1 hover:bg-a-200"
+            variant="ghost"
             disabled={answer.isPending}
             onClick={() => answer.mutate(false)}
           >
             {t("reportsNotice.no")}
-          </button>
-        </span>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <span>{t("reportsNotice.text")}</span>
+    </Banner>
   );
 }

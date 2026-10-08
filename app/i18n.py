@@ -125,6 +125,20 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Procesando {count} tareas",
         "fr": "Traitement de {count} tâches",
     },
+    "tooltip.transcribing": {
+        "en": "Transcribing {percent} %",
+        "he": "מתמלל {percent}%",
+        "de": "Transkription {percent} %",
+        "es": "Transcribiendo {percent} %",
+        "fr": "Transcription {percent} %",
+    },
+    "tooltip.transcribingMore": {
+        "en": "Transcribing {percent} %, {count} more waiting",
+        "he": "מתמלל {percent}%, עוד {count} בהמתנה",
+        "de": "Transkription {percent} %, {count} weitere warten",
+        "es": "Transcribiendo {percent} %, {count} más en espera",
+        "fr": "Transcription {percent} %, {count} autres en attente",
+    },
     "tooltip.workerStopped": {
         "en": "The worker stopped — recording still works",
         "he": "העיבוד נעצר — ההקלטה עדיין פועלת",

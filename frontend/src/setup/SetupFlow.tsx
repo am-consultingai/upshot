@@ -152,7 +152,7 @@ export default function SetupFlow({
                 >
                   <span
                     aria-hidden="true"
-                    className={`grid size-4 place-items-center rounded-full text-[10px] tabular-nums ${
+                    className={`grid size-4 place-items-center rounded-full text-3xs tabular-nums ${
                       state === "todo" ? "ring-1 ring-line-strong" : "bg-accent text-on-accent"
                     }`}
                   >

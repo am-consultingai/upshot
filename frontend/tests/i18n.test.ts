@@ -83,6 +83,7 @@ describe("catalogue parity", () => {
       "updates.versionValue", "common.minutes", "common.hours", "assistant.title",
       "assistant.open", "assistant.source", "meeting.sections", "firstRun.ai.code",
       "firstRun.audio.mic", "terms.ok", "nav.transcriptions", "transcriptions.title",
+      "recording.pause", "detector.score",
     ],
   };
 

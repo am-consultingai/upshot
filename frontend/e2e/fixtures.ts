@@ -12,6 +12,9 @@ export interface SeedMeeting {
   state?: string;
   started_at?: string;
   jobs?: Record<string, string>;
+  /** How far a running transcribe stage has reported, 0–1 of `phase`. */
+  progress?: number;
+  phase?: "prepare" | "language" | "transcribe" | "diarize";
   turns?: { speaker: string; at_ms: number; end_ms?: number; text: string }[];
   /** How long it ran, so a row and a chip can say "42m". */
   duration_s?: number;
@@ -237,7 +240,7 @@ export async function gotoApp(page: Page, path = "/"): Promise<void> {
  */
 export async function gotoSettings(
   page: Page,
-  section: "audio" | "appearance" | "calendar" | "summaries" | "prompt" | "transcription" = "audio",
+  section: "audio" | "appearance" | "calendar" | "summaries" | "prompt" | "transcription" | "storage" = "audio",
 ): Promise<void> {
   await gotoApp(page, `/settings#${section}`);
   await expect(page.getByTestId(`settings-section-${section}`)).toHaveAttribute(
