@@ -722,8 +722,6 @@ export const en = {
   "settings.signinSubmitCode": "Done",
   "settings.signinLog": "The sign-in's output is recorded to",
 
-  "firstRun.languageEnglish": "English",
-  "firstRun.languageHebrew": "עברית",
   "firstRun.progress": "Setup progress",
   "firstRun.step.welcome": "Welcome",
   "firstRun.step.calendar": "Calendar",

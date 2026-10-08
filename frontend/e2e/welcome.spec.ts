@@ -141,7 +141,7 @@ test("the_services_button_says_what_it_will_install", async ({ page }) => {
   await page.getByTestId("service-antigravity").click();
   await page.getByTestId("service-codex").click();
   await expect(page.getByTestId("setup-next")).toHaveText("Install Claude, ChatGPT, and Gemini");
-  await page.getByTestId("setup-language-he").click();
+  await page.getByTestId("setup-language").selectOption("he");
   await expect(page.getByTestId("setup-next")).toContainText("התקנת");
 });
 
@@ -273,15 +273,32 @@ test("setup_is_centred_and_reads_in_english_or_hebrew", async ({ page }) => {
   // Centred: as much room on either side, give or take the scrollbar.
   expect(Math.abs(box.x - (width - box.x - box.width))).toBeLessThan(40);
 
-  await page.getByTestId("setup-language-he").click();
+  await page.getByTestId("setup-language").selectOption("he");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(title).toHaveText("ברוכים הבאים ל-Upshot");
   await expect
     .poll(async () => (await (await page.request.get("/api/settings")).json()).config.ui.language)
     .toBe("he");
-  await page.getByTestId("setup-language-en").click();
+  await page.getByTestId("setup-language").selectOption("en");
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
 });
+
+for (const [language, welcome] of [
+  ["de", "Willkommen bei Upshot"],
+  ["es", "Le damos la bienvenida a Upshot"],
+  ["fr", "Bienvenue dans Upshot"],
+] as const) {
+  test(`setup_reads_in_${language}_and_keeps_it_as_the_apps_language`, async ({ page }) => {
+    await gotoApp(page, "/welcome");
+    await page.getByTestId("setup-language").selectOption(language);
+    await expect(page.locator("html")).toHaveAttribute("lang", language);
+    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+    await expect(page.getByTestId("setup-step-welcome").locator("h1")).toHaveText(welcome);
+    await expect
+      .poll(async () => (await (await page.request.get("/api/settings")).json()).config.ui.language)
+      .toBe(language);
+  });
+}
 
 test("closing_googles_tab_puts_the_connect_button_back", async ({ page }) => {
   await gotoApp(page, "/welcome");
