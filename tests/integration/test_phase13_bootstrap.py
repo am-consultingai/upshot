@@ -230,3 +230,52 @@ def test_an_install_sends_the_next_start_through_setup_again(
     assert after.get("setup.done") is False
     assert after.get("setup.step") == ""
     assert after.get("detection.mode") == "on"
+
+
+def test_the_installers_language_sets_a_first_install_only(tmp_path: Path, app_home: Path) -> None:
+    from app.config import Config
+
+    config = default_config()
+    config.set("data_root", str(tmp_path / "meetings"))
+    bootstrap.run(config, register_task=False, language="de")
+    assert Config.load(file=paths.config_path()).ui_language == "de"
+
+    # A reinstall in another language keeps the choice already saved.
+    bootstrap.run(default_config(), register_task=False, language="fr", setup_again=True)
+    assert Config.load(file=paths.config_path()).ui_language == "de"
+
+
+def test_the_first_language_falls_back_to_windows_then_english(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import locale_formats
+
+    monkeypatch.setattr(locale_formats, "windows_ui_language", lambda: "es")
+    assert bootstrap.first_language("he") == "he"
+    assert bootstrap.first_language("it") == "es"
+    assert bootstrap.first_language(None) == "es"
+    monkeypatch.setattr(locale_formats, "windows_ui_language", lambda: None)
+    assert bootstrap.first_language(None) == "en"
+
+
+def test_the_installer_speaks_every_interface_language() -> None:
+    """Each [Languages] entry has Upshot's messages, every one the script asks for, and
+    the bootstrap is told which language Setup ran in."""
+    import re
+
+    from app.config import _ENUMS
+
+    installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
+    used = set(re.findall(r"CustomMessage\('(\w+)'\)", installer))
+    used |= set(re.findall(r"\{cm:(\w+)\}", installer))
+    used.discard("LaunchProgram")  # Inno's own, in every translation it ships
+    english = None
+    for language in _ENUMS["ui.language"]:
+        assert f'Name: "{language}"; MessagesFile: ' in installer, language
+        raw = Path("packaging/lang", f"{language}.isl").read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf"), f"{language}.isl needs a BOM (else read as ANSI)"
+        keys = set(re.findall(r"^(\w+)=", raw.decode("utf-8-sig"), re.MULTILINE))
+        assert used <= keys, f"{language}.isl lacks {used - keys}"
+        english = english or keys
+        assert keys == english, f"{language}.isl differs from en.isl: {keys ^ english}"
+    assert "--language={language}" in installer

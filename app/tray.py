@@ -80,7 +80,10 @@ class TrayApp:
     ) -> None:
         self.services = services
         self.on_action = on_action or self.dispatch
-        self.state = AppState(detector_mode=str(services.config.get("detection.mode", "shadow")))
+        self.state = AppState(
+            detector_mode=str(services.config.get("detection.mode", "shadow")),
+            language=services.config.ui_language,
+        )
         self.icon: Any = None
         self._stop = threading.Event()
         #: Quit from the tray menu, not by the installer or the uninstaller: only such a
@@ -118,6 +121,9 @@ class TrayApp:
             ending=bool(recorder is not None and recorder.holding),
             worker_alive=worker is None or worker.is_alive(),
             update_ready=self._update_ready(),
+            # Read on every poll, so a language chosen in Settings reaches the menu within
+            # one refresh.
+            language=self.services.config.ui_language,
         )
         return self.state
 
@@ -352,7 +358,13 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         # ONLOGON task also needs admin, so on a standard account it failed and took the
         # whole first run down with it (machine B).
         # The installer passes --setup-again: setup runs after every install (D69).
-        report = bootstrap_run(register_task=False, setup_again="--setup-again" in arguments)
+        # --language=<code>: the language the installer ran in, for a first install.
+        language = next(
+            (arg.split("=", 1)[1] for arg in arguments if arg.startswith("--language=")), None
+        )
+        report = bootstrap_run(
+            register_task=False, setup_again="--setup-again" in arguments, language=language
+        )
         print(json.dumps(report.as_dict(), indent=2))
         return 0 if report.ok else 1
     link = actions.link_argument(arguments)

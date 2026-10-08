@@ -10,8 +10,19 @@
 /** `list` is the month as an agenda: the same period as `month`, read as rows. */
 export type CalendarSpan = "day" | "week" | "month" | "list";
 
-/** Sunday. Correct for both he-IL and en-US, the two locales this app ships. */
-const WEEK_START = 0;
+/** The day a week starts on: Sunday in Hebrew and English (Israel, the US), Monday in
+ * German, Spanish and French. Set with the interface language (`applyLocale`). */
+let WEEK_START = 0;
+
+const MONDAY_FIRST: ReadonlySet<string> = new Set(["de", "es", "fr"]);
+
+export function setWeekStart(locale: string): void {
+  WEEK_START = MONDAY_FIRST.has(locale.slice(0, 2)) ? 1 : 0;
+}
+
+export function weekStart(): number {
+  return WEEK_START;
+}
 
 export function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -115,19 +126,19 @@ export function placement(
 /** Locale-correct labels, so Hebrew needs no translation table of its own. */
 export function weekdayLabels(locale: string, short = true): string[] {
   const format = new Intl.DateTimeFormat(locale, { weekday: short ? "short" : "long" });
-  const sunday = startOfWeek(new Date());
-  return Array.from({ length: 7 }, (_, index) => format.format(addDays(sunday, index)));
+  const first = startOfWeek(new Date());
+  return Array.from({ length: 7 }, (_, index) => format.format(addDays(first, index)));
 }
 
 /**
  * The ISO-8601 week number of the week that holds `date`.
  *
- * Weeks here start on Sunday, ISO's on Monday, so the Sunday that opens a row would
- * otherwise carry the previous week's number. The row is numbered by its Monday,
- * which is how an Israeli or American calendar that shows ISO weeks labels it.
+ * ISO weeks start on Monday. Where a row starts on Sunday, the Sunday would otherwise
+ * carry the previous week's number, so the row is numbered by its Monday, which is how
+ * an Israeli or American calendar that shows ISO weeks labels it.
  */
 export function isoWeek(date: Date): number {
-  const monday = addDays(startOfWeek(date), 1);
+  const monday = addDays(startOfWeek(date), (1 - WEEK_START + 7) % 7);
   const thursday = addDays(monday, 3);
   const firstThursday = new Date(thursday.getFullYear(), 0, 4);
   const firstMonday = addDays(firstThursday, -((firstThursday.getDay() + 6) % 7));

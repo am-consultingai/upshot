@@ -42,6 +42,29 @@ def test_the_default_name_is_weekday_date_and_time() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("language", "pattern", "expected"),
+    [
+        ("de", "dddd, d. MMMM", "Mittwoch, 30. September"),
+        ("es", "dddd d 'de' MMMM", "Miércoles 30 de septiembre"),
+        ("fr", "dddd d MMMM", "Mercredi 30 septembre"),
+    ],
+)
+def test_every_interface_language_names_days_and_months(
+    language: str, pattern: str, expected: str
+) -> None:
+    assert format_pattern(WHEN, pattern, language) == expected
+
+
+def test_every_interface_language_has_day_and_month_names() -> None:
+    from app.config import _ENUMS
+    from app.locale_formats import MONTHS, WEEKDAYS
+
+    for language in _ENUMS["ui.language"]:
+        assert len(WEEKDAYS[language]) == 7
+        assert len(MONTHS[language]) == 12
+
+
 def test_seconds_never_reach_the_name() -> None:
     assert default_meeting_title(WHEN, "en", Formats("dd/MM/yyyy", "HH:mm:ss")).endswith(" 14:05")
 
@@ -71,3 +94,16 @@ def test_anything_else_replaces_the_default_name() -> None:
     from app.meetings import AUTOMATIC_TITLES, DEFAULT_TITLE
 
     assert DEFAULT_TITLE in AUTOMATIC_TITLES, "a calendar match or the summary may rename it"
+
+
+@pytest.mark.parametrize(
+    ("langid", "language"),
+    [(0x0409, "en"), (0x0809, "en"), (0x040D, "he"), (0x0407, "de"), (0x0C0A, "es"),
+     (0x080A, "es"), (0x040C, "fr"), (0x0C0C, "fr"), (0x0410, None), (0x0419, None)],
+)  # fmt: skip
+def test_a_windows_language_maps_to_its_interface_language(
+    langid: int, language: str | None
+) -> None:
+    from app.locale_formats import language_for_langid
+
+    assert language_for_langid(langid) == language

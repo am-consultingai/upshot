@@ -3,7 +3,7 @@ import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
 import { api, reason } from "../api";
-import { useI18n } from "../i18n";
+import { LANGUAGES, useI18n, type Locale } from "../i18n";
 import { groupByDay } from "../lib/timeline";
 import { formatBytes, formatDayLabel } from "../lib/format";
 import { applyTheme } from "../theme";
@@ -75,6 +75,7 @@ export function openPalette(): void {
 export default function Sidebar() {
   const { t, locale, theme, setTheme, setLocale } = useI18n();
   const [workspace, setWorkspace] = useState<MenuAnchor | null>(null);
+  const [languages, setLanguages] = useState<MenuAnchor | null>(null);
   const brand = useRef<HTMLButtonElement | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -145,8 +146,7 @@ export default function Sidebar() {
     setTheme(next);
     void api.putSettings({ "ui.theme": next });
   };
-  const switchLanguage = () => {
-    const next = locale === "he" ? "en" : "he";
+  const switchLanguage = (next: Locale) => {
     setLocale(next);
     void api.putSettings({ "ui.language": next });
   };
@@ -238,13 +238,32 @@ export default function Sidebar() {
                 label: theme === "dark" ? t("workspace.lightTheme") : t("workspace.darkTheme"),
                 run: switchTheme,
               },
+              // Five languages do not fit a toggle: the item opens a menu of them, in place.
+              // "Language" in English too, so someone stuck in a language they cannot read
+              // can still find the way back.
               {
                 id: "language",
-                label: locale === "he" ? "English" : "עברית",
-                run: switchLanguage,
+                label: locale === "en" ? t("settings.language") : `${t("settings.language")} · Language`,
+                run: () => setLanguages(workspace),
               },
               { id: "palette", label: t("workspace.commands"), keys: "Ctrl K", separated: true, run: openPalette },
             ]}
+          />
+        )}
+        {languages && (
+          <MenuSurface
+            testid="language-menu"
+            at={languages}
+            onClose={(refocus) => {
+              setLanguages(null);
+              if (refocus) brand.current?.focus();
+            }}
+            items={LANGUAGES.map(({ code, name }) => ({
+              id: code,
+              label: name,
+              keys: code === locale ? "\u2713" : undefined,
+              run: () => switchLanguage(code),
+            }))}
           />
         )}
         <Tooltip label={t("nav.search")} keys="Ctrl K">

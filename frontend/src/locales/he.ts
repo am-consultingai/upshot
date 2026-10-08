@@ -716,8 +716,6 @@ export const he: Record<MessageKey, string> = {
   "settings.signinCodePlaceholder": "הקוד מהדפדפן, אם מופיע",
   "settings.signinSubmitCode": "סיום",
   "settings.signinLog": "הפלט של ההתחברות נרשם אל",
-  "firstRun.languageEnglish": "English",
-  "firstRun.languageHebrew": "עברית",
   "firstRun.progress": "התקדמות ההגדרה",
   "firstRun.step.welcome": "ברוכים הבאים",
   "firstRun.step.calendar": "יומן",
