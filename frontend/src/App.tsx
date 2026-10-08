@@ -269,7 +269,7 @@ export default function App() {
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
   // Ctrl+R starts a recording, and stops the one running: the same key both ways.
   const recording = useRecordingControls();
-  const active = status.data?.recorder.active ?? false;
+  const active = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
   const recordNow = useCallback(() => {
     if (active) recording.stop.mutate();
     else recording.start.mutate();

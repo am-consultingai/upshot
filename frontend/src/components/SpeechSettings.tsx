@@ -3,11 +3,9 @@ import { api, type ModelStatus } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
 import { formatBytes } from "../lib/format";
 import { downloadFraction, roomForModel } from "../lib/speech";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import SettingRow, { SELECT_CLASS } from "./SettingRow";
 
-const PRIMARY = "rounded bg-accent px-2.5 py-1 text-sm text-on-accent disabled:opacity-40";
-const SECONDARY = "rounded border border-line px-2.5 py-1 text-sm";
 
 const DEVICE_REASONS: Record<ModelStatus["device_reason"], MessageKey> = {
   gpu: "speech.reasonGpu",
@@ -163,27 +161,29 @@ export function SpeechModelRow() {
         </span>
       )}
       {status?.state === "downloading" && (
-        <BusyButton
+        <Button
           data-testid="model-cancel"
           busy={cancel.isPending}
           onClick={() => cancel.mutate()}
-          className={SECONDARY}
+          variant="secondary"
+          size="md"
         >
           {t("speech.cancel")}
-        </BusyButton>
+        </Button>
       )}
       {status && ["missing", "failed", "cancelled"].includes(status.state) && (
-        <BusyButton
+        <Button
           data-testid="model-download"
           busy={download.isPending}
           // A drive that cannot take it is refused here, in words, rather than by the
           // backend a moment later. Unknown sizes are left to the backend to judge.
           disabled={!room}
           onClick={() => download.mutate()}
-          className={PRIMARY}
+          variant="primary"
+          size="md"
         >
           {t(status.state === "missing" ? "speech.download" : "speech.retry")}
-        </BusyButton>
+        </Button>
       )}
     </SettingRow>
   );

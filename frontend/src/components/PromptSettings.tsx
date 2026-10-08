@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import { Loading, Skeleton } from "./Skeleton";
 
 /** The instructions sent with every summary, shown in full and editable.
@@ -86,16 +86,17 @@ export default function PromptSettings() {
         className="w-full rounded border border-line bg-raised p-2 font-mono text-xs"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <BusyButton
+        <Button
           data-testid="prompt-save"
           busy={save.isPending && save.variables !== null}
           disabled={!dirty || (save.isPending && save.variables === null)}
           onClick={() => save.mutate(text.trim())}
-          className="rounded bg-accent px-2 py-1 text-sm text-on-accent disabled:opacity-40"
+          variant="primary"
+          size="md"
         >
           {t("settings.promptSave")}
-        </BusyButton>
-        <BusyButton
+        </Button>
+        <Button
           data-testid="prompt-reset"
           busy={save.isPending && save.variables === null}
           disabled={!prompt.data.custom || (save.isPending && save.variables !== null)}
@@ -105,10 +106,10 @@ export default function PromptSettings() {
             // prompt at today's wording and miss every later improvement to the shipped one.
             save.mutate(null);
           }}
-          className="rounded border border-line px-2 py-1 text-sm disabled:opacity-40"
+          size="md"
         >
           {t("settings.promptReset")}
-        </BusyButton>
+        </Button>
       </div>
     </section>
   );
