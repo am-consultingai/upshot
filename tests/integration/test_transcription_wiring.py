@@ -40,7 +40,12 @@ def test_a_failed_file_job_is_not_a_meeting_error(tmp_path: Path, app_home: Path
 
 
 def test_old_file_jobs_are_swept_with_meeting_retention_off(tmp_path: Path, app_home: Path) -> None:
-    h = build_harness(tmp_path, retention__audio_days=None, retention__transcript_days=None)
+    h = build_harness(
+        tmp_path,
+        retention__audio_days=None,
+        retention__transcript_days=None,
+        transcription__keep_days=30,
+    )
     svc = h.services
     store = svc.transcriptions
     old, recent, waiting = add(svc, "done"), add(svc, "done"), add(svc)

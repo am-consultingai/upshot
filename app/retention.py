@@ -1,4 +1,7 @@
-"""Retention: the raw audio goes after N days, the transcript stays (D38).
+"""Retention: off by default; when set, the raw audio goes after N days (D38, D92).
+
+Nothing is deleted unless the user deletes it: every key below defaults to ``null``
+(D92). The sweep remains for anyone who sets a period by hand.
 
 ``retention.audio_days`` has shipped in the default config since the first release and
 nothing ever read it (D27). A key that promises deletion and does not delete is a trust
@@ -9,7 +12,7 @@ real machine before it is believed.
 
 Two clocks, deliberately separate:
 
-- ``retention.audio_days`` (30) removes the raw WAVs. A 45-minute meeting is ~85 MB of
+- ``retention.audio_days`` (``null``) removes the raw WAVs. A 45-minute meeting is ~85 MB of
   audio against a few kilobytes of transcript, so this is the one that earns its keep.
 - ``retention.transcript_days`` (``null``) removes the meeting entirely. Off by default:
   transcripts and summaries are kept indefinitely (DESIGN.md §17).
