@@ -1,8 +1,8 @@
 """Which language a meeting was in, decided from its audio before a large model loads.
 
 The multilingual epic's key decision (DECISIONS.md D80). A meeting has one language (R1),
-and one large model transcribes all of it (R3): ivrit-ai large-v3 when it is mostly
-Hebrew, stock Whisper large-v3 otherwise. The choice is made here, by Whisper small:
+and one model transcribes all of it (R3): the ivrit-ai turbo when it is mostly Hebrew
+(D93), stock Whisper large-v3 otherwise. The choice is made here, by Whisper small:
 
 1. Silero VAD finds the speech on each track (the files transcription will read, so the
    echo-cancelled near track when the far side leaks into the microphone).

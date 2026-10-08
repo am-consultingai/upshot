@@ -252,7 +252,12 @@ def test_the_notices_name_every_component_shipped_outside_a_package_manager() ->
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     text = module.render()
-    for name in ("FFmpeg", "ivrit-ai/whisper-large-v3-ct2", "Systran", "SIL OPEN FONT LICENSE"):
+    for name in (
+        "FFmpeg",
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
+        "Systran",
+        "SIL OPEN FONT LICENSE",
+    ):
         assert name.lower() in text.lower(), name
     # What else is listed depends on what this machine installed: the build machine has it
     # all, CI's Python job has no node_modules (2026-10-05).
