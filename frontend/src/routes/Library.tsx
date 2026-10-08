@@ -19,6 +19,7 @@ import LibraryRail from "../components/LibraryRail";
 import EventDetails from "../components/EventDetails";
 import Tooltip from "../components/Tooltip";
 import { greeting } from "../lib/greeting";
+import { shortcutKey } from "../lib/keys";
 import type { CalendarEvent } from "../api";
 
 /** Explicit, so the message keys stay type-checked rather than cast away. */
@@ -92,7 +93,7 @@ export default function Library() {
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
-      const key = event.key.toLowerCase();
+      const key = shortcutKey(event);
       if (key === "t") {
         event.preventDefault();
         setAnchor(startOfDay(new Date()));

@@ -325,6 +325,8 @@ export interface Status {
   disk_free_bytes: number;
   /** Everything under the data folder: recordings, transcripts, summaries. */
   storage_bytes?: number;
+  /** The data folder itself, as the server resolved it. */
+  data_folder?: string;
   fts: boolean;
   now: string;
   /** Which build answered (app/version.py). */

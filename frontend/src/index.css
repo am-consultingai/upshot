@@ -655,3 +655,15 @@ kbd {
 .terms-text a {
   text-decoration: underline;
 }
+
+/*
+ * A key hint with no keyboard to press it is dead UI, and dead UI teaches the reader
+ * that hints are decoration. Linear's KBD is hidden the same way. `any-hover` rather
+ * than `hover`, for the reason given at the top of this file: a touchscreen laptop
+ * reports touch as its primary input while its keyboard sits right there.
+ */
+@media not (any-hover: hover) {
+  .kbd-hint {
+    display: none;
+  }
+}
