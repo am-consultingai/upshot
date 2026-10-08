@@ -24,7 +24,7 @@ from app.asr.local import (
     probe_device,
 )
 from app.asr.model_manager import VERIFIED, target_for
-from app.asr.models import HEBREW, MODELS, OTHER, ROLES, resolve
+from app.asr.models import HEBREW, MODELS, OTHER, RETIRED_REPOS, ROLES, resolve
 from app.config import Config, default_config
 
 # ------------------------------------------------------------------ the setup flag
@@ -141,17 +141,18 @@ def test_the_device_setting_is_checked() -> None:
 
 @pytest.mark.parametrize("device", ["auto", "cpu", "cuda"])
 def test_the_device_never_changes_which_models(device: str) -> None:
-    """large-v3 for transcription on the GPU and the CPU alike (R6): no smaller model
-    for a smaller machine."""
+    """The same models on the GPU and the CPU alike: no smaller model for a smaller
+    machine (D93)."""
     config = default_config(asr__device=device)
     assert {resolve(config, role).repo_id for role in ROLES} == {m.repo for m in MODELS.values()}
-    assert resolve(config, HEBREW).repo_id == "ivrit-ai/whisper-large-v3-ct2"
+    assert resolve(config, HEBREW).repo_id == "ivrit-ai/whisper-large-v3-turbo-ct2"
     assert resolve(config, OTHER).repo_id == "Systran/faster-whisper-large-v3"
 
 
 def test_only_the_three_speech_models_are_named_anywhere_in_the_app() -> None:
-    """D80 in one line: a classifier and two large-v3 models, and no other Whisper. A
-    fourth model id (a turbo variant, a distil model) is how an untested one would come in."""
+    """D80 and D93 in one line: a classifier, the ivrit turbo and stock large-v3, and no
+    other Whisper. A fourth model id (another turbo, a distil model) is how an untested
+    one would come in. A retired model is named only to be removed."""
     import re
 
     pattern = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]*whisper[A-Za-z0-9_.-]*", re.I)
@@ -162,8 +163,9 @@ def test_only_the_three_speech_models_are_named_anywhere_in_the_app() -> None:
     }
     assert {match for _path, match in named} == {
         "Systran/faster-whisper-small",
-        "ivrit-ai/whisper-large-v3-ct2",
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
         "Systran/faster-whisper-large-v3",
+        *RETIRED_REPOS,
     }, sorted(named)
 
 
@@ -194,7 +196,7 @@ def test_the_model_api_names_the_three_models_and_says_where_they_run(
     assert [row["repo"] for row in model["models"]] == [m.repo for m in MODELS.values()]
     assert model["state"] == "missing"
     # The size is known before the download is started, for the screen to show.
-    assert model["expected_bytes"] > 6_500_000_000
+    assert model["expected_bytes"] > 5_100_000_000
     assert model["free_bytes"] > 0
     assert (model["device"], model["device_reason"]) == ("cpu", "configured")
     assert model["min_vram_mb"] == MIN_VRAM_MB
