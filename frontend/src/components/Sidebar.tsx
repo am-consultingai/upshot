@@ -239,7 +239,13 @@ export default function Sidebar() {
                 run: switchTheme,
               },
               // Five languages do not fit a toggle: the item opens a menu of them, in place.
-              { id: "language", label: t("settings.language"), run: () => setLanguages(workspace) },
+              // "Language" in English too, so someone stuck in a language they cannot read
+              // can still find the way back.
+              {
+                id: "language",
+                label: locale === "en" ? t("settings.language") : `${t("settings.language")} · Language`,
+                run: () => setLanguages(workspace),
+              },
               { id: "palette", label: t("workspace.commands"), keys: "Ctrl K", separated: true, run: openPalette },
             ]}
           />

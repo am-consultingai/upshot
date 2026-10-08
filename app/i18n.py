@@ -113,7 +113,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "tooltip.processingOne": {
         "en": "Processing {count} job",
-        "he": "מעבד משימה {count}",
+        "he": "משימות בעיבוד: {count}",
         "de": "{count} Auftrag wird verarbeitet",
         "es": "Procesando {count} tarea",
         "fr": "Traitement de {count} tâche",
@@ -208,7 +208,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "You left the call, so Upshot stopped recording.",
         "he": "יצאת מהשיחה, ולכן Upshot הפסיק להקליט.",
         "de": "Sie haben den Anruf verlassen, daher hat Upshot die Aufnahme beendet.",
-        "es": "Saliste de la llamada, así que Upshot dejó de grabar.",
+        "es": "Salió de la llamada, así que Upshot dejó de grabar.",
         "fr": "Vous avez quitté l'appel, Upshot a donc arrêté l'enregistrement.",
     },
     "toast.ended.silent": {
@@ -278,7 +278,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Upshot will ask to record it when it starts.",
         "he": "Upshot ישאל אם להקליט אותה כשהיא תתחיל.",
         "de": "Upshot fragt beim Beginn, ob sie aufgenommen werden soll.",
-        "es": "Upshot te preguntará si quieres grabarla cuando empiece.",
+        "es": "Upshot le preguntará si desea grabarla cuando empiece.",
         "fr": "Upshot vous proposera de l'enregistrer quand elle commencera.",
     },
     "toast.starting.ago": {

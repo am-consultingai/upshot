@@ -5,6 +5,7 @@ import { de } from "./locales/de";
 import { es } from "./locales/es";
 import { fr } from "./locales/fr";
 import type { Theme } from "./theme";
+import { setWeekStart } from "./lib/calendar";
 
 export type Locale = "en" | "he" | "de" | "es" | "fr";
 
@@ -66,6 +67,7 @@ export function useI18n(): I18n {
 export function applyLocale(locale: Locale): void {
   document.documentElement.lang = locale;
   document.documentElement.dir = directionFor(locale);
+  setWeekStart(locale);
 }
 
 export type { MessageKey };
