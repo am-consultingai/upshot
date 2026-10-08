@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { I18nContext, applyLocale, catalogues, isLocale, type Locale, type MessageKey } from "./i18n";
+import { setWeekStart } from "./lib/calendar";
 import { applyTheme, isTheme, type Theme } from "./theme";
 import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
@@ -178,6 +179,9 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>("light");
   const [tooltips, setTooltips] = useState(true);
   const queryClient = useQueryClient();
+  // Before the children render, not in the effect below (which runs after them): the
+  // calendar reads the week start while it renders. Idempotent.
+  setWeekStart(locale);
 
   useEffect(() => {
     applyLocale(locale);
