@@ -251,10 +251,11 @@ DEFAULTS: dict[str, Any] = {
         },
     },
     "retention": {
-        # Days before the raw WAVs are deleted; the transcript and summary stay. null or
-        # 0 means never. `transcript_days` deletes the meeting outright and is off by
-        # default (DECISIONS D38).
-        "audio_days": 30,
+        # Nothing is deleted unless the user deletes it (D92). Both keys stay for anyone
+        # who sets them by hand: `audio_days` removes the raw WAVs and keeps the
+        # transcript and summary, `transcript_days` deletes the meeting outright. null or
+        # 0 means never (DECISIONS D38).
+        "audio_days": None,
         "transcript_days": None,
         "sweep_hours": 6,  # how often the worker looks; 0 disables the sweep entirely
     },
@@ -263,7 +264,7 @@ DEFAULTS: dict[str, Any] = {
         # The Settings switch "Transcription for other apps". A courtesy, not an access
         # control: when off, programs get 403 and the page still works.
         "service_enabled": True,
-        "keep_days": 30,  # finished jobs and their files; null or 0 keeps them
+        "keep_days": None,  # days to keep finished jobs and their files; null keeps them (D92)
         "keep_input": False,  # keep the uploaded copy once the transcript exists
         "max_upload_mb": 4096,
         # null: 6 hours on a GPU, 2 on the CPU, where large-v3 runs at about 4× the
@@ -470,6 +471,10 @@ _OLD_DEFAULTS: dict[str, Any] = {
     # Diarization was off by default and no setting could turn it on, so "off" in a saved
     # file is the old default, never a choice. It is always on now (D85).
     "asr.diarization": "off",
+    # Retention deleted after 30 days by default, and `save` writes every key, so 30 in a
+    # saved file is the old default, not a choice. Nothing is deleted by default now (D92).
+    "retention.audio_days": 30,
+    "transcription.keep_days": 30,
 }
 
 
