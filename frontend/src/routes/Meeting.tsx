@@ -26,6 +26,8 @@ import { speakers } from "../lib/speakers";
 import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
 import { leadFirst } from "../lib/summary";
 import { meetingDirections } from "../lib/direction";
+import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 
 /** What each stage is doing, in words. "summarize: running" told nobody anything. */
 const STAGE_LABEL: Record<string, MessageKey> = {
@@ -357,9 +359,27 @@ export default function MeetingPage() {
     return found;
   }, [transcript.data, playhead]);
 
-  if (meeting.isLoading)
-    return <p data-testid="loading">{t("common.loading")}</p>;
-  if (!meeting.data) return <p data-testid="error">{t("common.error")}</p>;
+  if (meeting.isLoading) return <MeetingSkeleton />;
+  if (!meeting.data)
+    return (
+      <EmptyState
+        testid="error"
+        tone="danger"
+        icon={EMPTY_ICON.error}
+        title={t("meeting.loadFailed")}
+        body={t("meeting.loadFailedBody")}
+        action={
+          <>
+            <button type="button" onClick={() => void meeting.refetch()} className={EMPTY_BUTTON}>
+              {t("common.retry")}
+            </button>
+            <Link to="/" className={EMPTY_BUTTON}>
+              {t("nav.timeline")}
+            </Link>
+          </>
+        }
+      />
+    );
 
   // Press play, hear the meeting. The server mixes both sides into one stream as it is
   // read; the per-track URLs still exist for diagnosis but the UI does not offer them —
@@ -408,9 +428,31 @@ export default function MeetingPage() {
         <StateBadge state={meeting.data.state} />
         {/*
          * One primary action per view. Beside the summary it is copying it — the
-         * summary is written to be pasted into mail. Beside the transcript it is
-         * exporting, as a ghost, because the transcript is read here, not sent.
+         * summary is written to be pasted into mail. Export sits beside it as a ghost
+         * on both tabs: it is the other way the summary leaves the app, and it was
+         * too far away at the bottom of the ⋯ menu.
          */}
+        {summary.data && (
+          <Tooltip label={t("meeting.export")} hint={t("help.export")}>
+          <button
+            type="button"
+            data-testid="export-bar"
+            onClick={() => exportMarkdown(summary.data as string)}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200 active:bg-a-300"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              className="size-3.5 fill-none stroke-current stroke-[1.5]"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M8 2.5v7.5M5 7l3 3 3-3M3 12.5v1h10v-1" />
+            </svg>
+            {t("meeting.export")}
+          </button>
+          </Tooltip>
+        )}
         {summary.data && tab === "summary" && (
           <Tooltip label={t("meeting.copy")} hint={t("help.copySummary")}>
           <button
@@ -420,18 +462,6 @@ export default function MeetingPage() {
             className="h-7 rounded-md bg-accent px-2.5 text-xs font-medium text-on-accent shadow-[var(--shadow-sm),var(--shadow-edge)] hover:brightness-110 active:translate-y-px"
           >
             {copied ? t("meeting.copied") : t("meeting.copy")}
-          </button>
-          </Tooltip>
-        )}
-        {summary.data && tab === "transcript" && (
-          <Tooltip label={t("meeting.export")} hint={t("help.export")}>
-          <button
-            type="button"
-            data-testid="export-bar"
-            onClick={() => exportMarkdown(summary.data as string)}
-            className="h-7 rounded-md px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200 active:bg-a-300"
-          >
-            {t("meeting.export")}
           </button>
           </Tooltip>
         )}
@@ -566,7 +596,6 @@ export default function MeetingPage() {
                     type="button"
                     role="tab"
                     data-testid={`meeting-tab-${value}`}
-                    aria-pressed={tab === value}
                     aria-selected={tab === value}
                     onClick={() => setTab(value)}
                     className={`h-6.5 rounded-sm px-3.5 text-sm ${
@@ -731,15 +760,47 @@ export default function MeetingPage() {
                     }}
                     dangerouslySetInnerHTML={{ __html: leadFirst(summary.data, meeting.data.title) }}
                   />
+                ) : summary.isLoading ? (
+                  <Loading testid="summary-loading" className="mb-12">
+                    <SkeletonProse lines={4} className="mb-6" />
+                    <Skeleton className="mb-3 h-3.5 w-40" />
+                    <SkeletonProse lines={5} />
+                  </Loading>
                 ) : (
-                  <p data-testid="no-summary" className="mb-6 text-sm text-secondary">
-                    {t("meeting.notRendered")}
-                  </p>
+                  <NoSummary
+                    working={working}
+                    failed={failed.length > 0}
+                    transcribed={segments.length > 0}
+                    onSummarize={() => summarize.mutate()}
+                    onTranscript={() => setTab("transcript")}
+                  />
                 ))}
               {/* Was it good? Up or down, sent only when the user sends it (D87, D3). */}
               {tab === "summary" && summary.data && <SummaryRating meetingId={meeting.data.id} />}
 
-              {tab === "transcript" && (
+              {tab === "transcript" && transcript.isLoading && (
+                <Loading testid="transcript-loading">
+                  {[0, 1, 2].map((turn) => (
+                    <div key={turn} className="pt-5 first:pt-0">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Skeleton className="size-4 rounded-full" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                      <SkeletonProse lines={turn === 1 ? 2 : 3} />
+                    </div>
+                  ))}
+                </Loading>
+              )}
+              {tab === "transcript" && !transcript.isLoading && segments.length === 0 && (
+                <EmptyState
+                  testid="no-transcript"
+                  icon={EMPTY_ICON.transcript}
+                  title={t("meeting.noTranscriptTitle")}
+                  body={working ? t("meeting.noTranscriptWorking") : t("meeting.noTranscriptBody")}
+                  className="rounded-lg bg-surface-1"
+                />
+              )}
+              {tab === "transcript" && segments.length > 0 && (
                 <Transcript
                   ref={findRef}
                   segments={segments}
@@ -783,5 +844,96 @@ export default function MeetingPage() {
         <MeetingDetailsDialog meetingId={id} calendar={meeting.data.calendar} onClose={() => setDetails(false)} />
       )}
     </section>
+  );
+}
+
+/**
+ * The page before the meeting has arrived: the bar, the title, the chips, the two
+ * pills and a summary's worth of lines, where each of them will be.
+ */
+function MeetingSkeleton() {
+  return (
+    <Loading className="flex h-full min-h-0 flex-col">
+      <div className="flex h-11 flex-none items-center gap-2 border-b border-line-subtle px-5">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="ms-auto h-7 w-24 rounded-md" />
+      </div>
+      <div className="px-8 pt-7">
+        <div className="w-full max-w-[37rem]">
+          <Skeleton className="mb-4 h-8 w-2/3 rounded-md" />
+          <div className="mb-5 flex gap-1.5">
+            <Skeleton className="h-6 w-24 rounded-full" />
+            <Skeleton className="h-6 w-14 rounded-full" />
+            <Skeleton className="h-6 w-20 rounded-full" />
+          </div>
+          <Skeleton className="mb-7 h-7 w-44 rounded-md" />
+          <SkeletonProse lines={4} className="mb-6" />
+          <SkeletonProse lines={5} />
+        </div>
+      </div>
+    </Loading>
+  );
+}
+
+/**
+ * The summary's place when there is no summary, which is one of three situations
+ * with three different next steps: it is being written (wait for it), the work failed
+ * (the box above says why and offers Summarize), or nothing has produced one yet
+ * (summarize, or read the transcript meanwhile).
+ */
+function NoSummary({
+  working,
+  failed,
+  transcribed,
+  onSummarize,
+  onTranscript,
+}: {
+  working: boolean;
+  failed: boolean;
+  transcribed: boolean;
+  onSummarize: () => void;
+  onTranscript: () => void;
+}) {
+  const { t } = useI18n();
+  if (working) {
+    // Shaped like the summary it is waiting for; the stage line above says which step.
+    return (
+      <div data-testid="no-summary" data-reason="working" className="mb-12">
+        <p className="mb-4 text-sm text-secondary">{t("meeting.noSummaryWorking")}</p>
+        <div aria-hidden="true">
+          <SkeletonProse lines={4} className="mb-6" />
+          <SkeletonProse lines={3} />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <EmptyState
+      testid="no-summary"
+      icon={EMPTY_ICON.page}
+      title={t("meeting.notRendered")}
+      body={
+        failed
+          ? t("meeting.noSummaryFailed")
+          : transcribed
+            ? t("meeting.noSummaryBody")
+            : t("meeting.noSummaryNoTranscript")
+      }
+      className="mb-8 rounded-lg bg-surface-1"
+      action={
+        // A failure already offers Summarize in its own box: one button per question.
+        failed || !transcribed ? undefined : (
+          <>
+            <button type="button" data-testid="no-summary-summarize" onClick={onSummarize} className={EMPTY_BUTTON}>
+              {t("meeting.summarize")}
+            </button>
+            <button type="button" onClick={onTranscript} className={EMPTY_BUTTON}>
+              {t("meeting.readTranscript")}
+            </button>
+          </>
+        )
+      }
+    />
   );
 }

@@ -48,6 +48,8 @@ DEFAULTS: dict[str, Any] = {
         "language": "en",
         "view": "list",  # list|calendar — the main screen's layout
         "calendar_span": "week",  # day|week|month|list
+        # The day and week grids fold the hours outside the working day to a thin band.
+        "fold_nights": False,
         # light|dark|system. Defaults to light rather than system on purpose: this is
         # read in daylight, and every comparable product ships light only. "system"
         # is offered, not assumed.

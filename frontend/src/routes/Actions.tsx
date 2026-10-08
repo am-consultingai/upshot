@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type ActionItem } from "../api";
@@ -11,6 +11,8 @@ import { dueBucket, isSnoozed, type DueBucket } from "../lib/due";
 import { formatShortDate } from "../lib/format";
 import { initials, personColour } from "../lib/speakers";
 import type { MessageKey } from "../locales/en";
+import { Loading, Skeleton, SkeletonRows } from "../components/Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 
 type Tab = "mine" | "everyone" | "done";
 
@@ -27,7 +29,7 @@ function typing(target: EventTarget | null): boolean {
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     // The sidebar's list has its own J and K.
-    (target instanceof HTMLElement && target.closest("[role=listbox]") !== null)
+    (target instanceof HTMLElement && target.closest("[data-testid=meeting-list]") !== null)
   );
 }
 
@@ -164,6 +166,44 @@ export default function ActionsPage() {
       ?.scrollIntoView({ block: "nearest" });
   }, [current?.id]);
 
+  /*
+   * Four different empties, each with its own next step. A filter that matches
+   * nothing used to say "Everything so far is done", which was simply untrue.
+   */
+  const actionsEmpty = () => {
+    const [title, body, action]: [string, string, ReactNode] =
+      all.length === 0
+        ? [
+            t("actions.emptyTitle"),
+            t("actions.empty"),
+            <Link key="go" to="/" className={EMPTY_BUTTON}>
+              {t("actions.emptyGo")}
+            </Link>,
+          ]
+        : needle
+          ? [
+              t("actions.emptyFilterTitle"),
+              t("actions.emptyFilter"),
+              <button key="clear" type="button" onClick={() => setFilter(null)} className={EMPTY_BUTTON}>
+                {t("actions.clearFilter")}
+              </button>,
+            ]
+          : tab === "done"
+            ? [t("actions.emptyDoneTitle"), t("actions.emptyDone"), null]
+            : tab === "mine" && counts.everyone > 0
+              ? [
+                  t("actions.emptyMineTitle"),
+                  t("actions.emptyMine").replace("{n}", String(counts.everyone)),
+                  <button key="everyone" type="button" onClick={() => setTab("everyone")} className={EMPTY_BUTTON}>
+                    {t("actions.showEveryone")}
+                  </button>,
+                ]
+              : [t("actions.emptyOpenTitle"), t("actions.emptyOpen"), null];
+    return (
+      <EmptyState testid="actions-empty" icon={needle ? EMPTY_ICON.search : EMPTY_ICON.check} title={title} body={body} action={action} />
+    );
+  };
+
   const row = (item: ActionItem) => (
     <ActionItemRow
       key={item.id}
@@ -212,7 +252,6 @@ export default function ActionsPage() {
                   role="tab"
                   data-testid={`actions-tab-${value}`}
                   aria-selected={tab === value}
-                  aria-pressed={tab === value}
                   onClick={() => setTab(value)}
                   className={`flex h-6.5 items-center gap-1.5 rounded-sm px-3 text-sm ${
                     tab === value
@@ -248,18 +287,29 @@ export default function ActionsPage() {
               </div>
             )}
 
-            {query.isLoading && <p className="text-sm text-tertiary">{t("common.loading")}</p>}
-            {query.isError && <p className="text-sm text-danger">{t("common.error")}</p>}
-
-            {!query.isLoading && !query.isError && visible.length === 0 && (
-              <p data-testid="actions-empty" className="py-10 text-center text-sm text-tertiary">
-                {all.length === 0
-                  ? t("actions.empty")
-                  : tab === "done"
-                    ? t("actions.emptyDone")
-                    : t("actions.emptyOpen")}
-              </p>
+            {query.isLoading && (
+              // A group header over rows of checkbox and two lines, as the inbox draws them.
+              <Loading>
+                <Skeleton className="mb-3 h-3.5 w-28" />
+                <SkeletonRows rows={5} lead="check" rowClassName="px-2.5 py-2.5" />
+              </Loading>
             )}
+            {query.isError && (
+              <EmptyState
+                testid="actions-error"
+                tone="danger"
+                icon={EMPTY_ICON.error}
+                title={t("common.error")}
+                body={t("actions.errorBody")}
+                action={
+                  <button type="button" onClick={() => void query.refetch()} className={EMPTY_BUTTON}>
+                    {t("common.retry")}
+                  </button>
+                }
+              />
+            )}
+
+            {query.isSuccess && visible.length === 0 && actionsEmpty()}
 
             {groups.map(([bucket, rows]) => {
               const meta = BUCKETS.find((entry) => entry.id === bucket);

@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { fill, PRIMARY, QUIET } from "../setup/ui";
+import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
 
 /**
  * The Terms of Service (D83).
@@ -48,7 +49,15 @@ export default function TermsPage() {
   if (legal.isError || doc.isError) {
     return <p className="p-8 text-sm text-danger">{t("terms.error")}</p>;
   }
-  if (!legal.data || !doc.data) return null;
+  if (!legal.data || !doc.data)
+    return (
+      <Loading className="mx-auto w-full max-w-3xl px-8 pt-8">
+        <Skeleton className="mb-3 h-7 w-1/2 rounded-md" />
+        <Skeleton className="mb-8 h-3 w-3/4" />
+        <SkeletonProse lines={6} className="mb-6" />
+        <SkeletonProse lines={5} />
+      </Loading>
+    );
 
   const updated = gate && legal.data.accepted_version !== null;
   return (
