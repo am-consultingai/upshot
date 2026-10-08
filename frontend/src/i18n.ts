@@ -1,11 +1,34 @@
 import { createContext, useContext } from "react";
 import { en, type MessageKey } from "./locales/en";
 import { he } from "./locales/he";
+import { de } from "./locales/de";
+import { es } from "./locales/es";
+import { fr } from "./locales/fr";
 import type { Theme } from "./theme";
 
-export type Locale = "en" | "he";
+export type Locale = "en" | "he" | "de" | "es" | "fr";
 
-export const catalogues: Record<Locale, Record<MessageKey, string>> = { en, he };
+export const catalogues: Record<Locale, Record<MessageKey, string>> = { en, he, de, es, fr };
+
+/**
+ * The interface languages, in the order every picker lists them, each named in its own
+ * language: someone who cannot read the current one must still find theirs.
+ */
+export const LANGUAGES: readonly { code: Locale; name: string }[] = [
+  { code: "en", name: "English" },
+  { code: "he", name: "עברית" },
+  { code: "de", name: "Deutsch" },
+  { code: "es", name: "Español" },
+  { code: "fr", name: "Français" },
+];
+
+export function isLocale(value: unknown): value is Locale {
+  return LANGUAGES.some((language) => language.code === value);
+}
+
+export function languageName(locale: Locale): string {
+  return LANGUAGES.find((language) => language.code === locale)?.name ?? locale;
+}
 
 export const RTL_LOCALES: ReadonlySet<Locale> = new Set<Locale>(["he"]);
 

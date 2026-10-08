@@ -1,4 +1,5 @@
 import { api, type AudioLevel, type CalendarStatus, type LlmProvider } from "../api";
+import type { Locale } from "../i18n";
 import type { CalendarPhase, CliPhase, CliSnapshot, SetupBackend, SetupSnapshot } from "./backend";
 import { CHIME_SECONDS, chime } from "./chime";
 import { CLI_PROVIDER, type CliId, type KeyProviderId, type SetupChoices, type StepId } from "./flow";
@@ -352,7 +353,7 @@ export class ApiSetupBackend implements SetupBackend {
 
   // ------------------------------------------------------------------ progress
 
-  setLanguage(language: "en" | "he"): void {
+  setLanguage(language: Locale): void {
     void api.putSettings({ "ui.language": language }).catch(() => undefined);
   }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useI18n, type MessageKey } from "../i18n";
+import { LANGUAGES, useI18n, type Locale, type MessageKey } from "../i18n";
 import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
 import KeyStep from "./KeyStep";
@@ -165,26 +165,27 @@ export default function SetupFlow({
           })}
         </ol>
       </nav>
-        {/* Setup reads in English or Hebrew; the choice stays the app's language. */}
-        <div role="radiogroup" aria-label={t("settings.language")} className="flex h-8 rounded-full bg-surface-2 p-0.5 text-xs">
-          {(["en", "he"] as const).map((language) => (
-            <button
-              key={language}
-              type="button"
-              role="radio"
-              aria-checked={locale === language}
-              data-testid={`setup-language-${language}`}
-              lang={language}
-              onClick={() => {
-                setLocale(language);
-                backend.setLanguage(language);
-              }}
-              className={`h-7 rounded-full px-3 leading-7 ${locale === language ? "bg-raised font-medium shadow-sm" : "text-secondary hover:text-primary"}`}
-            >
-              {language === "en" ? t("firstRun.languageEnglish") : t("firstRun.languageHebrew")}
-            </button>
+        {/*
+         * Setup reads in any of the five interface languages; the choice stays the app's
+         * language. A select, not a row of buttons: five names do not fit beside the steps.
+         */}
+        <select
+          aria-label={t("settings.language")}
+          data-testid="setup-language"
+          value={locale}
+          onChange={(event) => {
+            const language = event.target.value as Locale;
+            setLocale(language);
+            backend.setLanguage(language);
+          }}
+          className="h-8 rounded-full bg-surface-2 px-3 text-xs text-primary"
+        >
+          {LANGUAGES.map(({ code, name }) => (
+            <option key={code} value={code} lang={code}>
+              {name}
+            </option>
           ))}
-        </div>
+        </select>
       </div>
         {/* A line kept for it whether it shows or not, so it cannot push the step down. */}
         <p data-testid={resumed ? "setup-resumed" : undefined} className="h-4 text-xs leading-4 text-secondary">
