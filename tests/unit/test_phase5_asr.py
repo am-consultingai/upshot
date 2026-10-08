@@ -267,6 +267,129 @@ def test_cpu_acceleration_applies_without_a_restart(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("installed_models")
+@pytest.mark.parametrize(
+    ("role", "language", "limit"),
+    [(HEBREW, "he", 2.9), (OTHER, "he", 2.9), (OTHER, "en", 2.4), (OTHER, None, 2.4)],
+)
+def test_hebrew_gets_a_higher_compression_ratio_limit(
+    tmp_path: Path, role: str, language: str | None, limit: float
+) -> None:
+    """Hebrew compresses about 1.3 times better than English, so faster-whisper's 2.4
+    took ordinary Hebrew for a loop and decoded it six times over (z8tj1hebaw)."""
+    models: list[RecordingModel] = []
+
+    def factory(**kwargs: object) -> RecordingModel:
+        model = RecordingModel(**kwargs)
+        models.append(model)
+        return model
+
+    backend = LocalAsr(default_config(), role=role, model_factory=factory)
+    backend.transcribe(make_wav(tmp_path / "them" / "0001.wav", 2), language=language)
+    assert models[-1].calls[-1]["compression_ratio_threshold"] == limit
+
+
+def _compression_ratio(text: str) -> float:
+    """faster-whisper's own measure (``transcribe.get_compression_ratio``)."""
+    import zlib
+
+    data = text.encode("utf-8")
+    return len(data) / len(zlib.compress(data))
+
+
+#: One 28 s window of a Hebrew lecture that repeats its phrases, as the ivrit turbo wrote
+#: it: the window that was decoded six times over on the CPU (z8tj1hebaw).
+LECTURE_WINDOW = (
+    "היום זה יום האושפיזין של אברהם אבינו, היום הראשון של סוכות "
+    "וכנגד האושפיזין של אברהם אבינו יש לנו שבעה אושפיזין שבאים לבקר אותנו בחג הסוכות. "
+    "היום הראשון שייך לאברהם אבינו, עמוד החסד. "
+    "אומר ביום של אברהם אבינו אי אפשר לברוח מהסוכה למרות שיורד גשם. זאת אומרת אי אפשר "
+    "לבוא ולהגיד יש לי כאן דין מצטייר פטור מן הסוכה אז אני אכנס לבית "
+    "ובגלל זה אני צריך לאכול כזית בלי ברכה רק כדי לצאת ידי חובה."
+)
+
+
+def test_the_hebrew_limit_passes_repetitive_speech_and_still_catches_a_loop() -> None:
+    from app.asr.local import COMPRESSION_RATIO_LIMIT, HEBREW_COMPRESSION_RATIO_LIMIT
+
+    ordinary = _compression_ratio(LECTURE_WINDOW)
+    assert COMPRESSION_RATIO_LIMIT < ordinary < HEBREW_COMPRESSION_RATIO_LIMIT
+    loop = "היום הראשון שייך לאברהם אבינו, " * 12
+    assert _compression_ratio(loop) > 2 * HEBREW_COMPRESSION_RATIO_LIMIT
+
+
+@pytest.mark.usefixtures("installed_models")
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_retries_are_fewer_and_smaller_on_the_cpu_only(tmp_path: Path, device: str) -> None:
+    """A retry on the CPU costs a full decode; on the GPU it costs little (z8tj1hebaw)."""
+    models: list[RecordingModel] = []
+
+    def factory(**kwargs: object) -> RecordingModel:
+        model = RecordingModel(**kwargs)
+        models.append(model)
+        return model
+
+    backend = LocalAsr(default_config(), model_factory=factory)
+    backend.load()
+    backend.device = device
+    backend.transcribe(make_wav(tmp_path / "them" / "0001.wav", 2), language="he")
+    call = models[-1].calls[-1]
+    if device == "cpu":
+        assert (call["temperature"], call["best_of"]) == ([0.0, 0.5, 1.0], 2)
+    else:
+        assert "temperature" not in call and "best_of" not in call, "faster-whisper's own"
+
+
+def test_a_one_frame_window_gets_no_word_timings_instead_of_crashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ivrit turbo writes text for a 1-frame tail window; aligning it over zero
+    frames raised an IndexError in faster-whisper and lost the track (z8tj1hebaw)."""
+    from faster_whisper import WhisperModel
+
+    from app.asr.local import whisper_model_class
+
+    model = object.__new__(whisper_model_class())  # no weights: alignment only
+    called: list[int] = []
+
+    def upstream(self: object, tokenizer: object, text_tokens: list[list[int]],
+                 encoder_output: object, num_frames: int, median_filter_width: int = 7):  # type: ignore[no-untyped-def]  # fmt: skip
+        called.append(num_frames)
+        if num_frames == 3:
+            raise IndexError("boolean index did not match indexed array")
+        return [[{"word": "שלום"}] for _ in text_tokens]
+
+    monkeypatch.setattr(WhisperModel, "find_alignment", upstream)
+    assert model.find_alignment(None, [[1, 2, 3]], None, 1) == [[]]
+    assert called == [], "never handed to faster-whisper"
+    assert model.find_alignment(None, [[1, 2, 3]], None, 3) == [[]]
+    assert model.find_alignment(None, [[1], [2]], None, 3000) == [[{"word": "שלום"}]] * 2
+
+
+def test_what_the_model_writes_for_the_last_sliver_of_audio_is_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """faster-whisper decodes the 10 ms left after the last full window; the ivrit turbo
+    wrote a Knesset greeting for it, timed past the end of the audio (z8tj1hebaw)."""
+    from types import SimpleNamespace
+
+    from faster_whisper import WhisperModel
+
+    from app.asr.local import whisper_model_class
+
+    model = object.__new__(whisper_model_class())
+    written = [SimpleNamespace(seek=0, text="ok"), SimpleNamespace(seek=2990, text="ok too"),
+               SimpleNamespace(seek=2999, text="אדוני היושב-ראש")]  # fmt: skip
+
+    def upstream(self: object, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        yield from written
+
+    monkeypatch.setattr(WhisperModel, "generate_segments", upstream)
+    features = np.zeros((128, 3001), dtype=np.float32)  # 3000 frames of content
+    kept = list(model.generate_segments(features, None, None, False))
+    assert [segment.text for segment in kept] == ["ok", "ok too"]
+
+
+@pytest.mark.usefixtures("installed_models")
 def test_initial_prompt_passed(tmp_path: Path) -> None:
     models: list[RecordingModel] = []
 
