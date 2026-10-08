@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import { I18nContext, applyLocale, catalogues, type Locale, type MessageKey } from "./i18n";
+import { I18nContext, applyLocale, catalogues, isLocale, type Locale, type MessageKey } from "./i18n";
 import { applyTheme, isTheme, type Theme } from "./theme";
 import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
@@ -199,7 +199,7 @@ export default function App() {
     | undefined;
   useEffect(() => {
     const language = savedConfig?.ui?.language;
-    if (language === "en" || language === "he") setLocale(language);
+    if (isLocale(language)) setLocale(language);
   }, [savedConfig?.ui?.language]);
   useEffect(() => {
     setTooltips(savedConfig?.ui?.tooltips_off !== true);

@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import type { CliFacts, CliId, KeyProviderId, SetupChoices, StepId } from "./flow";
+import type { Locale } from "../i18n";
 
 /**
  * Everything the setup screens need from the outside world, and nothing more.
@@ -90,7 +91,7 @@ export interface SetupBackend {
   testSpeakers(): void;
 
   /** Keep the language chosen in setup as the app's language. */
-  setLanguage(language: "en" | "he"): void;
+  setLanguage(language: Locale): void;
   saveStep(step: StepId): void;
   /** The answer to "send crash reports?", saved at once (D87). */
   setCrashReports(on: boolean): void;

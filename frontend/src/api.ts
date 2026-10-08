@@ -570,7 +570,7 @@ export interface UpdateOffer {
   mandatory: boolean;
   min_version: string | null;
   published: string | null;
-  notes: Partial<Record<"en" | "he", string>>;
+  notes: Partial<Record<string, string>>;
   notes_url: string | null;
 }
 
