@@ -904,6 +904,12 @@ export const he: Record<MessageKey, string> = {
   // File transcription (D86).
   "nav.transcriptions": "תמלולים",
   "help.transcriptions": "קובצי אודיו ווידאו שתומללו במחשב הזה, בנפרד מהפגישות שלך.",
+  "progress.left": "עוד כ־{time}",
+  "progress.leftUnderMinute": "נותרה פחות מדקה",
+  "progress.phase.prepare": "הכנת השמע",
+  "activeJobs.title": "בעבודה ובהמתנה",
+  "activeJobs.empty": "שום דבר לא מתומלל כרגע.",
+  "activeJobs.client.meeting": "פגישה",
   "transcriptions.title": "תמלולים",
   "transcriptions.intro": "תמלול קובצי אודיו ווידאו במחשב הזה, באותם מודלים כמו בפגישות. הם נשארים כאן, בנפרד מהפגישות שלך.",
   "transcriptions.drop": "גררו לכאן קובצי אודיו או וידאו",

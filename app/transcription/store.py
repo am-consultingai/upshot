@@ -30,6 +30,7 @@ from typing import Any
 from app.clock import Clock, SystemClock, iso, parse_iso
 from app.errors import Cancelled
 from app.log import get
+from app.pipeline.progress import eta_since
 from app.pipeline.queue import MAX_ATTEMPTS, backoff_seconds
 from app.transcription.types import Options
 
@@ -149,6 +150,8 @@ class TranscriptionStore:
         #: ``JobQueue._deleting``: a request outlives nothing but the run it was made in.
         self._stopping: dict[str, str] = {}
         self._last_event: dict[str, float] = {}
+        #: When each running job was claimed, for its time left (``eta_s``) in events.
+        self._started: dict[str, str] = {}
         #: Claim, cancel and delete read a state and act on it: under one lock, so an API
         #: thread can't cancel or delete a job the worker claims in between (a cancelled
         #: job then finished as done, a deleted one took the worker down; the PR #1 review).
@@ -238,6 +241,8 @@ class TranscriptionStore:
         if row is None:
             return None
         claimed = _row(row)
+        if claimed.started_at:
+            self._started[claimed.id] = claimed.started_at
         self._publish(claimed)
         return claimed
 
@@ -250,7 +255,9 @@ class TranscriptionStore:
         last = self._last_event.get(transcription_id)
         if last is None or now - last >= EVENT_INTERVAL_S:
             self._last_event[transcription_id] = now
-            self._emit(transcription_id, RUNNING, phase, progress)
+            self._emit(
+                transcription_id, RUNNING, phase, progress, self._started.get(transcription_id)
+            )
 
     def complete(
         self,
@@ -364,6 +371,7 @@ class TranscriptionStore:
         self.conn.execute("DELETE FROM transcriptions WHERE id=?", (transcription_id,))
         self._stopping.pop(transcription_id, None)
         self._last_event.pop(transcription_id, None)
+        self._started.pop(transcription_id, None)
         if self.events is not None:
             self.events.publish("transcription", id=transcription_id, state="deleted")
 
@@ -492,13 +500,28 @@ class TranscriptionStore:
     def _finished(self, transcription_id: str) -> Transcription:
         job = self.require(transcription_id)
         self._last_event.pop(transcription_id, None)
+        self._started.pop(transcription_id, None)
         self._publish(job)
         return job
 
-    def _publish(self, job: Transcription) -> None:
-        self._emit(job.id, job.state, job.phase, job.progress)
+    def eta_s(self, job: Transcription) -> int | None:
+        """Seconds left for a running job, at this run's pace; ``None`` otherwise."""
+        if job.state != RUNNING:
+            return None
+        return eta_since(job.progress, job.started_at, self.clock.now())
 
-    def _emit(self, transcription_id: str, state: str, phase: str | None, progress: float) -> None:
+    def _publish(self, job: Transcription) -> None:
+        started = job.started_at if job.state == RUNNING else None
+        self._emit(job.id, job.state, job.phase, job.progress, started)
+
+    def _emit(
+        self,
+        transcription_id: str,
+        state: str,
+        phase: str | None,
+        progress: float,
+        started_at: str | None = None,
+    ) -> None:
         if self.events is not None:
             self.events.publish(
                 "transcription",
@@ -506,4 +529,7 @@ class TranscriptionStore:
                 state=state,
                 phase=phase,
                 progress=round(progress, 4),
+                eta_s=eta_since(progress, started_at, self.clock.now())
+                if state == RUNNING
+                else None,
             )
