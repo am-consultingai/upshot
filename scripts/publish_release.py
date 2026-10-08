@@ -72,7 +72,19 @@ import release_key  # noqa: E402
 
 SITE_UPDATES = ROOT / "site" / "updates"
 SITE_URL = "https://upshot.amconsultingai.com/updates/"
-RELEASE_LOCAL = ROOT / "packaging" / "release.local.json"
+#: The release settings: the file UPSHOT_RELEASE_LOCAL names, else the one copy kept
+#: beside the signing key, else a gitignored copy in this checkout (as build.ps1 finds it).
+RELEASE_LOCAL_HOME = Path("~/.config/upshot-release/release.local.json").expanduser()
+RELEASE_LOCAL_CLONE = ROOT / "packaging" / "release.local.json"
+
+
+def release_local_path() -> Path:
+    named = os.environ.get("UPSHOT_RELEASE_LOCAL")
+    if named:
+        return Path(named)
+    return RELEASE_LOCAL_HOME if RELEASE_LOCAL_HOME.is_file() else RELEASE_LOCAL_CLONE
+
+
 SIGNING_KEY = "update-2026-10"
 #: Pages takes a minute or two to deploy; the read-back waits this long at most.
 READ_BACK_S = 300
@@ -232,12 +244,11 @@ def project_version() -> str:
 
 
 def local_settings() -> dict[str, Any]:
+    path = release_local_path()
     try:
-        return dict(json.loads(RELEASE_LOCAL.read_text(encoding="utf-8")))
+        return dict(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError) as exc:
-        raise PublishError(
-            f"{RELEASE_LOCAL.relative_to(ROOT)} is missing or broken: {exc}"
-        ) from exc
+        raise PublishError(f"{path} is missing or broken: {exc}") from exc
 
 
 def upload_sourcemaps(

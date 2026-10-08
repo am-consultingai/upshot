@@ -331,3 +331,17 @@ def test_a_tampered_beta_manifest_is_not_promoted(
     monkeypatch.setattr(publish_release, "check_repository", lambda tag: None)
     assert publish_release.main(["--promote"]) == 1
     assert not (site / "stable.json").exists()
+
+
+def test_the_release_settings_are_found_where_build_ps1_finds_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The variable first, then the one copy beside the signing key, then the clone's."""
+    home_copy = tmp_path / "home.json"
+    monkeypatch.setattr(publish_release, "RELEASE_LOCAL_HOME", home_copy)
+    monkeypatch.delenv("UPSHOT_RELEASE_LOCAL", raising=False)
+    assert publish_release.release_local_path() == publish_release.RELEASE_LOCAL_CLONE
+    home_copy.write_text("{}", encoding="utf-8")
+    assert publish_release.release_local_path() == home_copy
+    monkeypatch.setenv("UPSHOT_RELEASE_LOCAL", str(tmp_path / "named.json"))
+    assert publish_release.release_local_path() == tmp_path / "named.json"
