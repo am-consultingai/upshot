@@ -18,7 +18,7 @@
 
 .PARAMETER CudaDir
   A folder holding cuBLAS and cuDNN DLLs. Without it CTranslate2 silently runs on the CPU,
-  which on a 3 GB large-v3 model is several times slower. Defaults to the CudaDir in
+  which is several times slower. Defaults to the CudaDir in
   run-app.local.psd1, if there is one.
 
 .PARAMETER Provider
@@ -276,7 +276,7 @@ try {
     $modelOk = ($ModelPath -ne "") -and (Test-Path -LiteralPath $modelBin)
     if (-not $modelOk) {
         if ($ModelPath -ne "") { Write-Warn "no model.bin under: $ModelPath" }
-        $plan += "the three speech models (~6.7 GB, one time: run upshot --prepare, or the setup screen's Download)"
+        $plan += "the three speech models (~5.2 GB, one time: run upshot --prepare, or the setup screen's Download)"
     }
 
     $needUi = -not (Test-Path "frontend\dist\index.html")
