@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, reason } from "../api";
 import { useI18n } from "../i18n";
+import Button from "./Button";
 
 /**
  * Was this summary good? (D87, D3). Up or down, then an optional comment. What is sent:
@@ -79,18 +80,17 @@ export default function SummaryRating({ meetingId }: { meetingId: string }) {
           </label>
           {rate.isError && <p className="mb-2 text-danger">{reason(rate.error)}</p>}
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
               data-testid="rating-send"
               disabled={rate.isPending}
               onClick={() => rate.mutate()}
-              className="rounded bg-accent px-3 py-1 text-on-accent disabled:opacity-40"
+              variant="primary"
             >
               {t("rating.send")}
-            </button>
-            <button type="button" className="rounded px-3 py-1 hover:bg-a-200" onClick={() => setChoice(null)}>
+            </Button>
+            <Button variant="ghost" onClick={() => setChoice(null)}>
               {t("feedback.cancel")}
-            </button>
+            </Button>
           </div>
         </div>
       )}

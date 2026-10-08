@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api, type AskAnswer } from "../api";
 import { useI18n } from "../i18n";
 import { stamp } from "../lib/speakers";
-import { Spinner } from "./BusyButton";
+import { Spinner } from "./Button";
 import Menu from "./Menu";
 import Tooltip from "./Tooltip";
 
@@ -100,7 +100,7 @@ export default function AskMeeting({
                           ? navigate(`/m/${citation.meeting_id}?at=${citation.at_ms}`)
                           : onSeek(citation.at_ms / 1000)
                       }
-                      className="font-mono text-2xs text-accent underline decoration-from-font underline-offset-[3px] hover:brightness-110"
+                      className="font-mono text-2xs text-accent underline decoration-from-font underline-offset-3 hover:brightness-110"
                     >
                       ({stamp(citation.at_ms / 1000)})
                     </button>

@@ -3127,6 +3127,11 @@ def test_router() -> APIRouter:
                         process=event.get("process"),
                         watch_process=False,
                         candidates=candidates,
+                        score=int(event.get("peak_score", 7)),
+                        evidence=tuple(
+                            (str(item.get("code", "")), str(item.get("detail", "")))
+                            for item in event.get("evidence", [])
+                        ),
                     ),
                     recording=svc.recorder is not None and svc.recorder.committed,
                 )

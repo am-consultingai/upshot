@@ -14,7 +14,7 @@ import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
 import { openMeetingInfo } from "../components/MeetingInfoDialog";
 import Tooltip from "../components/Tooltip";
 import StateBadge from "../components/StateBadge";
-import { Spinner } from "../components/BusyButton";
+import Button, { Spinner } from "../components/Button";
 import AudioPlayer, { type AudioPlayerHandle, type Band } from "../components/AudioPlayer";
 import ActionItemsBlock from "../components/ActionItemsBlock";
 import SummaryMinimap from "../components/SummaryMinimap";
@@ -435,11 +435,10 @@ export default function MeetingPage() {
          */}
         {summary.data && (
           <Tooltip label={t("meeting.export")} hint={t("help.export")}>
-          <button
-            type="button"
+          <Button
             data-testid="export-bar"
             onClick={() => exportMarkdown(summary.data as string)}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200 active:bg-a-300"
+            variant="secondary"
           >
             <svg
               aria-hidden="true"
@@ -451,19 +450,18 @@ export default function MeetingPage() {
               <path d="M8 2.5v7.5M5 7l3 3 3-3M3 12.5v1h10v-1" />
             </svg>
             {t("meeting.export")}
-          </button>
+          </Button>
           </Tooltip>
         )}
         {summary.data && tab === "summary" && (
           <Tooltip label={t("meeting.copy")} hint={t("help.copySummary")}>
-          <button
-            type="button"
+          <Button
             data-testid="copy-summary-bar"
             onClick={() => copySummary(summary.data as string)}
-            className="h-7 rounded-md bg-accent px-2.5 text-xs font-medium text-on-accent shadow-[var(--shadow-sm),var(--shadow-edge)] hover:brightness-110 active:translate-y-px"
+            variant="primary"
           >
             {copied ? t("meeting.copied") : t("meeting.copy")}
-          </button>
+          </Button>
           </Tooltip>
         )}
         <Menu
@@ -599,7 +597,7 @@ export default function MeetingPage() {
                     data-testid={`meeting-tab-${value}`}
                     aria-selected={tab === value}
                     onClick={() => setTab(value)}
-                    className={`h-6.5 rounded-sm px-3.5 text-sm ${
+                    className={`h-control-sm rounded-sm px-3.5 text-sm ${
                       tab === value
                         ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
                         : "text-secondary hover:bg-a-200 hover:text-primary"
@@ -629,15 +627,15 @@ export default function MeetingPage() {
                   className="mb-5 flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-sm"
                 >
                   <span className="text-secondary">{t("meeting.discardedShort")}</span>
-                  <button
-                    type="button"
+                  <Button
                     data-testid="keep-meeting"
-                    aria-busy={keep.isPending}
+                    busy={keep.isPending}
                     onClick={() => keep.mutate()}
-                    className="ms-auto rounded-sm bg-accent px-2.5 py-1 text-xs font-medium text-on-accent"
+                    variant="primary"
+                    className="ms-auto"
                   >
                     {t("meeting.keepAnyway")}
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -751,14 +749,14 @@ export default function MeetingPage() {
                       ))}
                     </details>
                   )}
-                  <button
-                    type="button"
+                  <Button
                     data-testid="retry-summarize"
                     onClick={() => summarize.mutate()}
-                    className="mt-2.5 h-7 rounded-md bg-raised px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200"
+                    variant="secondary"
+                    className="mt-2.5"
                   >
                     {t("meeting.summarize")}
-                  </button>
+                  </Button>
                 </div>
               )}
 

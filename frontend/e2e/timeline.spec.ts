@@ -186,6 +186,35 @@ test("recording_shows_a_live_waveform_on_every_page", async ({ page, seed }) => 
   await expect(page.getByTestId("recording-bar")).toHaveCount(0);
 });
 
+test("the_recording_bar_pauses_and_resumes", async ({ page, seed }) => {
+  await seed([]);
+  await gotoApp(page);
+  await page.getByTestId("start-recording").click();
+  await closeDetails(page);
+  const bar = page.getByTestId("recording-bar");
+  await expect(bar).toHaveAttribute("data-paused", "false");
+  await expect(bar.getByTestId("recording-bar-elapsed")).toHaveText(/^\d\d:\d\d$/);
+
+  const pause = bar.getByTestId("recording-bar-pause");
+  await expect(pause).toHaveText("Pause");
+  await pause.click();
+  await expect(bar).toHaveAttribute("data-paused", "true");
+  await expect(bar).toContainText("Paused");
+  await expect(pause).toHaveText("Resume");
+
+  await pause.click();
+  await expect(bar).toHaveAttribute("data-paused", "false");
+  await expect(pause).toHaveText("Pause");
+
+  // Paused is still recording to every other control, and Stop while paused ends it.
+  await pause.click();
+  await expect(bar).toHaveAttribute("data-paused", "true");
+  await expect(page.getByTestId("stop-recording")).toBeVisible();
+  await bar.getByTestId("recording-bar-stop").click();
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+  await expect(page.getByTestId("start-recording")).toBeEnabled();
+});
+
 test("a_dead_backend_says_so_instead_of_something_went_wrong", async ({ page }) => {
   await gotoApp(page);
   // What a crashed application looks like from the page: requests stop being answered.

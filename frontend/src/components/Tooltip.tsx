@@ -116,7 +116,7 @@ export default function Tooltip({
             data-testid="tooltip"
             data-open=""
             className={`ma-tip pointer-events-none fixed z-[90] rounded-xs px-2 py-1 text-xs leading-4 ${
-              hint ? "max-w-[260px]" : "whitespace-nowrap"
+              hint ? "max-w-65" : "whitespace-nowrap"
             }`}
             style={{ left: place?.left ?? -9999, top: place?.top ?? -9999 }}
           >

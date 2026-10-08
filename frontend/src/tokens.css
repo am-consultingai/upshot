@@ -54,6 +54,10 @@
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 
   /* 14px body, as Linear, Raycast and Notion Calendar all independently land on. */
+  /* Below the reading sizes, for marks rather than text: a keycap, a count, an axis
+     label (10px), and the initials inside a 20-22px avatar (9px). */
+  --text-4xs: 0.5625rem;
+  --text-3xs: 0.625rem;
   --text-2xs: 0.6875rem;
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
@@ -87,6 +91,7 @@
    * height, Vercel 6px), a list row 6px, a card 9-12px, a panel 14-20px. The
    * uniform-8px habit is itself a dated tell.
    */
+  --radius-2xs: 3px; /* a keycap */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -97,6 +102,16 @@
   --height-control-sm: 24px;
   --height-control: 32px;
   --height-control-lg: 40px;
+
+  /* --- Layout ----------------------------------------------------------- */
+
+  /* The right-hand rail beside a meeting or the action inbox (`w-rail`). */
+  --container-rail: 19rem;
+  /*
+   * The reading measure: 672px, inside the range every app in the category lands on
+   * (Granola 640, Reflect 672, Obsidian 700), past which prose stops being comfortable.
+   */
+  --container-measure: 42rem;
 
   /* --- Motion ----------------------------------------------------------- */
 

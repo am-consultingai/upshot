@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CalendarEvent, type Meeting } from "../api";
 import { useI18n } from "../i18n";
+import { IconBadge } from "./Badge";
 import {
   allDayKeys,
   asGridItem,
@@ -100,7 +101,7 @@ export function OpenBalloon({ count, label }: { count: number | undefined; label
       data-testid="chip-open"
       data-count={count}
       aria-label={label.replace("{n}", String(count))}
-      className="grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-[10px] font-semibold leading-none text-canvas tabular-nums"
+      className="grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-3xs font-semibold leading-none text-canvas tabular-nums"
     >
       {count}
     </span>
@@ -108,26 +109,15 @@ export function OpenBalloon({ count, label }: { count: number | undefined; label
   );
 }
 
-function Badge({ kind }: { kind: ChipKind }) {
-  if (kind === "live") {
-    return (
-      <span
-        aria-hidden="true"
-        className="grid size-[15px] shrink-0 place-items-center rounded-[4px] bg-danger"
-      >
-        <span className="ma-pulse size-1.5 rounded-full bg-on-solid" />
-      </span>
-    );
-  }
+/** The chip's flag: the shared IconBadge, with the glyph for what the chip is. */
+function ChipFlag({ kind }: { kind: ChipKind }) {
+  if (kind === "live") return <IconBadge live />;
   return (
-    <span
+    <IconBadge
       data-testid={kind === "scheduled" ? "calendar-event-flag" : "calendar-recorded-flag"}
-      aria-hidden="true"
-      className={`grid size-[15px] shrink-0 place-items-center rounded-[4px] bg-raised shadow-[var(--shadow-ring-subtle)] ${
-        kind === "failed" ? "text-danger" : "text-secondary"
-      }`}
+      tone={kind === "failed" ? "bad" : "neutral"}
     >
-      <svg viewBox="0 0 16 16" className="size-[9px] fill-none stroke-current" strokeLinecap="round">
+      <svg viewBox="0 0 16 16" className="size-2.25 fill-none stroke-current" strokeLinecap="round">
         {kind === "scheduled" ? (
           <g strokeWidth={1.8}>
             <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
@@ -139,7 +129,7 @@ function Badge({ kind }: { kind: ChipKind }) {
           <path d="M2 9.5 5 5l3 4 3-6 3 6.5" strokeWidth={2} />
         )}
       </svg>
-    </span>
+    </IconBadge>
   );
 }
 
@@ -318,8 +308,8 @@ export default function TimeGrid({
   }) => {
     const short = input.minutes < SHORT_MINUTES;
     return {
-      className: `absolute flex gap-[5px] overflow-hidden rounded-xs text-start ${CHIP[input.kind]} ${
-        short ? "items-center px-[5px] py-px" : "px-[5px] py-[3px]"
+      className: `absolute flex gap-1.25 overflow-hidden rounded-xs text-start ${CHIP[input.kind]} ${
+        short ? "items-center px-1.25 py-px" : "px-1.25 py-0.75"
       } ${input.past && input.kind !== "live" ? "opacity-90" : ""}`,
       style: {
         top: fold.y(input.startMinute),
@@ -331,7 +321,7 @@ export default function TimeGrid({
       },
       body: (
         <>
-          <Badge kind={input.kind} />
+          <ChipFlag kind={input.kind} />
           <span className="min-w-0 flex-1 leading-tight">
             <span
               className={`block truncate text-xs ${
@@ -347,7 +337,7 @@ export default function TimeGrid({
             {!short && (
               <span
                 data-testid="chip-when"
-                className="mt-px block truncate font-mono text-[10px] text-secondary"
+                className="mt-px block truncate font-mono text-3xs text-secondary"
               >
                 {chipWhen(input.kind, input.start, input.length, words)}
               </span>
@@ -380,7 +370,7 @@ export default function TimeGrid({
           <div className="grid border-b border-line-subtle" style={{ gridTemplateColumns: columns }}>
             <div
               data-testid="calendar-zone"
-              className="grid place-items-center font-mono text-[10px] text-tertiary"
+              className="grid place-items-center font-mono text-3xs text-tertiary"
             >
               {zoneLabel(new Date(), locale)}
             </div>
@@ -393,7 +383,7 @@ export default function TimeGrid({
                   data-testid="calendar-daycolumn"
                   data-day={dayKey(day)}
                   data-today={today ? "true" : undefined}
-                  className="pt-2 pb-[7px] text-center"
+                  className="pt-2 pb-1.75 text-center"
                 >
                   <div
                     className="text-2xs uppercase tracking-wide text-tertiary"
@@ -422,13 +412,13 @@ export default function TimeGrid({
            */}
           <div data-testid="calendar-allday-band" className="flex min-h-6.5 border-b border-line-subtle">
             <div
-              className="grid shrink-0 place-items-center text-[10px] text-tertiary"
+              className="grid shrink-0 place-items-center text-3xs text-tertiary"
               style={{ width: GUTTER }}
             >
               {t("timeline.allDay")}
             </div>
             <div
-              className="grid flex-1 gap-y-0.5 py-[3px]"
+              className="grid flex-1 gap-y-0.5 py-0.75"
               style={{
                 gridTemplateColumns: `repeat(${days.length}, minmax(6rem, 1fr))`,
                 gridAutoFlow: "row dense",
@@ -446,7 +436,7 @@ export default function TimeGrid({
                     data-event={event.event_id}
                     onClick={() => onEvent?.(event)}
                     title={event.title ?? t("calendar.untitled")}
-                    className="mx-[3px] block truncate rounded-xs bg-warning-quiet px-1.5 py-0.5 text-start text-2xs text-warning hover:brightness-95"
+                    className="mx-0.75 block truncate rounded-xs bg-warning-quiet px-1.5 py-0.5 text-start text-2xs text-warning hover:brightness-95"
                     style={{ gridColumn: `${from + 1} / span ${keys.length}` }}
                   >
                     {event.title ?? t("calendar.untitled")}
@@ -566,7 +556,7 @@ export default function TimeGrid({
                     style={{ top: fold.y(nowMinute) }}
                   >
                     <span
-                      className="absolute -top-[3px] size-[7px] rounded-full bg-accent"
+                      className="absolute -top-0.75 size-1.75 rounded-full bg-accent"
                       style={{ insetInlineStart: -3 }}
                     />
                   </div>

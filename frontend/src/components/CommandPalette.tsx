@@ -111,7 +111,7 @@ export default function CommandPalette() {
   });
   const { stop } = useRecordingControls();
 
-  const recording = status.data?.recorder.active ?? false;
+  const recording = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
 
   const commands = useMemo<Command[]>(() => {
     const go = (to: string) => () => navigate(to);
@@ -331,7 +331,7 @@ export default function CommandPalette() {
         role="dialog"
         aria-modal="true"
         aria-label={t("palette.title")}
-        className="flex w-full max-w-[640px] flex-col overflow-hidden rounded-xl bg-raised shadow-lg"
+        className="flex w-full max-w-160 flex-col overflow-hidden rounded-xl bg-raised shadow-lg"
         onKeyDown={onKeyDown}
       >
         <div className="flex items-center gap-3 border-b border-line-subtle px-5">
@@ -358,7 +358,7 @@ export default function CommandPalette() {
           ref={listRef}
           role="listbox"
           aria-label={t("palette.title")}
-          className="max-h-[400px] overflow-y-auto overscroll-contain p-2"
+          className="max-h-100 overflow-y-auto overscroll-contain p-2"
         >
           {results.length === 0 && !(searching && found.isFetching) && (
             <p data-testid="palette-empty" className="grid h-16 place-items-center text-sm text-tertiary">

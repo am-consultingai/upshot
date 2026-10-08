@@ -11,7 +11,7 @@ export default function SetupMark({ label, testid }: { label: string; testid?: s
       role="img"
       aria-label={label}
       title={label}
-      className="grid size-4 shrink-0 place-items-center rounded-full bg-warning text-[10px] leading-none font-bold text-on-solid"
+      className="grid size-4 shrink-0 place-items-center rounded-full bg-warning text-3xs leading-none font-bold text-on-solid"
     >
       !
     </span>
