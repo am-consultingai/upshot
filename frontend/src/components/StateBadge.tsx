@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import Badge, { type BadgeTone } from "./Badge";
 import type { MessageKey } from "../locales/en";
 
 /**
@@ -15,34 +16,28 @@ import type { MessageKey } from "../locales/en";
  * accent-style mixes, which move with the theme, and the dot carries the meaning
  * so the label is never the only signal.
  */
-const TONE: Record<string, string> = {
-  RECORDING: "bg-danger-quiet text-danger",
-  FAILED: "bg-danger-quiet text-danger",
-};
+const LOUD = new Set(["RECORDING", "FAILED"]);
 
-const DOT: Record<string, string> = {
-  RECORDING: "bg-danger",
-  FAILED: "bg-danger",
-  RENDERED: "bg-success",
-  DELIVERED: "bg-success",
+const TONE: Record<string, BadgeTone> = {
+  RECORDING: "bad",
+  FAILED: "bad",
+  RENDERED: "good",
+  DELIVERED: "good",
 };
 
 export default function StateBadge({ state }: { state: string }) {
   const { t } = useI18n();
   const key = `state.${state}` as MessageKey;
-  const tone = TONE[state];
-  const dot = DOT[state] ?? "bg-line-strong";
-
+  const loud = LOUD.has(state);
   return (
-    <span
+    <Badge
       data-testid="state-badge"
       data-state={state}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full text-xs ${
-        tone ? `${tone} px-2 py-0.5 font-medium` : "text-tertiary"
-      }`}
+      tone={TONE[state] ?? "neutral"}
+      quiet={!loud}
+      dot
     >
-      <span className={`size-1.5 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
       {t(key)}
-    </span>
+    </Badge>
   );
 }

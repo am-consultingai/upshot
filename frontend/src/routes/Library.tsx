@@ -20,6 +20,7 @@ import EventDetails from "../components/EventDetails";
 import Tooltip from "../components/Tooltip";
 import { greeting } from "../lib/greeting";
 import type { CalendarEvent } from "../api";
+import Button from "../components/Button";
 
 /** Explicit, so the message keys stay type-checked rather than cast away. */
 const SPAN_LABEL = {
@@ -180,9 +181,9 @@ export default function Library() {
                   aria-label={t("timeline.previous")}
                   title={t("timeline.previous")}
                   onClick={() => setAnchor(shift(span, anchor, -1))}
-                  className="grid size-6.5 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
+                  className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
                 >
-                  <svg viewBox="0 0 16 16" className="size-[15px] fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
+                  <svg viewBox="0 0 16 16" className="size-3.75 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
                     <path d="M10 3.5 5.5 8l4.5 4.5" />
                   </svg>
                 </button>
@@ -192,23 +193,23 @@ export default function Library() {
                   aria-label={t("timeline.next")}
                   title={t("timeline.next")}
                   onClick={() => setAnchor(shift(span, anchor, 1))}
-                  className="grid size-6.5 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
+                  className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
                 >
-                  <svg viewBox="0 0 16 16" className="size-[15px] fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
+                  <svg viewBox="0 0 16 16" className="size-3.75 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
                     <path d="m6 3.5 4.5 4.5L6 12.5" />
                   </svg>
                 </button>
               </div>
               <Tooltip label={t("timeline.jumpToday")} keys="T">
-                <button
-                  type="button"
+                <Button
                   data-testid="calendar-today"
                   aria-label={t("timeline.jumpToday")}
                   onClick={() => setAnchor(startOfDay(new Date()))}
-                  className="h-6.5 rounded-sm px-2.25 font-mono text-xs text-secondary shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary active:bg-a-300"
+                  variant="secondary"
+                  className="font-mono"
                 >
                   T
-                </button>
+                </Button>
               </Tooltip>
               {span !== "month" && span !== "list" && (
                 <Tooltip label={`W${isoWeek(anchor)}`} hint={t("help.weekNumber")}>
@@ -259,7 +260,7 @@ export default function Library() {
                     data-testid={`span-${option}`}
                     aria-pressed={span === option}
                     onClick={() => pickSpan(option)}
-                    className={`h-6 rounded-xs px-2.5 text-xs ${
+                    className={`h-control-sm rounded-xs px-2.5 text-xs ${
                       span === option
                         ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
                         : "text-secondary hover:bg-a-200 hover:text-primary active:bg-a-300"

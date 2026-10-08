@@ -4,6 +4,7 @@ import { api } from "../api";
 import { useI18n } from "../i18n";
 import { SELECT_CLASS } from "./SettingRow";
 import type { UploadOptions } from "../lib/transcriptions";
+import Button from "./Button";
 
 /**
  * Where files come in: dropped anywhere on the zone, or chosen with "Add files". Several
@@ -44,14 +45,14 @@ export default function TranscriptionDropzone({
         }`}
       >
         <p className="text-sm text-secondary">{t("transcriptions.drop")}</p>
-        <button
-          type="button"
+        <Button
           data-testid="transcription-add"
           onClick={() => input.current?.click()}
-          className="h-8 rounded-md bg-accent px-3 text-sm font-medium text-on-accent hover:bg-accent-hover"
+          variant="primary"
+          size="md"
         >
           {t("transcriptions.add")}
-        </button>
+        </Button>
         <input
           ref={input}
           data-testid="transcription-file"
@@ -94,7 +95,7 @@ export default function TranscriptionDropzone({
           />
           <span>{t("transcriptions.diarize")}</span>
         </label>
-        <label className="flex min-w-[16rem] flex-1 items-center gap-2">
+        <label className="flex min-w-64 flex-1 items-center gap-2">
           <span className="shrink-0 text-secondary">{t("transcriptions.prompt")}</span>
           <input
             data-testid="transcription-prompt"

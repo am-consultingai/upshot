@@ -52,7 +52,7 @@ export default function SettingRow({
   const pinnedBy = useContext(PinnedContext)[configKey ?? ""];
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg bg-raised px-4 py-3 shadow-sm">
-      <div className="min-w-[14rem] flex-1">
+      <div className="min-w-56 flex-1">
         {htmlFor ? (
           <label htmlFor={htmlFor} className="block text-sm font-medium">
             {label}
@@ -115,7 +115,7 @@ export function SettingGroup({ title, children }: { title?: string; children: Re
  * the theme, and `currentColor` does not reach a background image.
  */
 export const SELECT_CLASS = [
-  "h-8 min-w-[10rem] appearance-none rounded-md bg-surface-2 ps-2.5 pe-8 text-sm",
+  "h-8 min-w-40 appearance-none rounded-md bg-surface-2 ps-2.5 pe-8 text-sm",
   "bg-[length:14px] bg-no-repeat",
   "bg-[position:right_0.5rem_center] rtl:bg-[position:left_0.5rem_center]",
   "bg-[image:var(--chevron)] hover:bg-a-200 active:bg-a-300",

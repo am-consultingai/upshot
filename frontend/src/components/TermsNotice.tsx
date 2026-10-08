@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import { fill } from "../setup/ui";
+import Banner from "./Banner";
+import Button from "./Button";
 
 const DISMISSED = "upshot.terms.dismissed";
 
@@ -32,30 +34,23 @@ export default function TermsNotice() {
   const read = () =>
     navigate(notice.kind === "upcoming" ? `/terms?version=${encodeURIComponent(notice.version)}` : "/terms");
   return (
-    <div data-testid="terms-notice" role="status" className="border-b border-line bg-surface-2">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-2 text-sm">
-        <span>
-          {fill(t(notice.kind === "upcoming" ? "terms.noticeUpcoming" : "terms.noticeChanged"), {
-            date: notice.effective,
-          })}
-        </span>
-        <button type="button" className="underline" onClick={read} data-testid="terms-notice-read">
-          {t("terms.read")}
-        </button>
-        {notice.kind === "changed" ? (
-          <button
-            type="button"
-            className="ms-auto rounded-md px-2 py-1 hover:bg-a-200"
+    <Banner
+      data-testid="terms-notice"
+      role="status"
+      tone="notice"
+      actions={
+        notice.kind === "changed" ? (
+          <Button
+            variant="ghost"
             disabled={accept.isPending}
             onClick={() => accept.mutate(notice.version)}
             data-testid="terms-notice-ok"
           >
             {t("terms.ok")}
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className="ms-auto rounded-md px-2 py-1 hover:bg-a-200"
+          <Button
+            variant="ghost"
             onClick={() => {
               writeDismissed(key);
               setDismissed(key);
@@ -63,10 +58,19 @@ export default function TermsNotice() {
             aria-label={t("terms.dismiss")}
           >
             ×
-          </button>
-        )}
-      </div>
-    </div>
+          </Button>
+        )
+      }
+    >
+      <span>
+        {fill(t(notice.kind === "upcoming" ? "terms.noticeUpcoming" : "terms.noticeChanged"), {
+          date: notice.effective,
+        })}
+      </span>
+      <button type="button" className="underline" onClick={read} data-testid="terms-notice-read">
+        {t("terms.read")}
+      </button>
+    </Banner>
   );
 }
 

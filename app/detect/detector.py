@@ -727,6 +727,8 @@ class Detector:
                             (e.account_id, e.calendar_id, e.event_id, e.title or "")
                             for e in choices
                         ),
+                        score=wake.peak_score,
+                        evidence=tuple((item.code, item.detail) for item in wake.evidence),
                     ),
                     recording=self.recorder.committed,
                 )

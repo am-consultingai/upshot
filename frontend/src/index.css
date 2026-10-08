@@ -495,6 +495,24 @@ kbd {
 }
 
 /*
+ * A banner (components/Banner.tsx) arrives with a short fade and drop from the edge it
+ * hangs off, on the motion tokens. It leaves at once: it goes when the thing it was about
+ * has gone, and lingering would say that thing is still there.
+ */
+.ma-banner {
+  transition:
+    opacity var(--duration-slow) var(--ease-out-quad),
+    transform var(--duration-slow) var(--ease-out-quad);
+}
+
+@starting-style {
+  .ma-banner {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/*
  * A row's reserved slot. Controls are revealed into space the row already keeps,
  * never inserted into the flow — and every hover reveal has a focus twin, so the
  * keyboard reaches the same controls the pointer does.
@@ -592,6 +610,7 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .ma-toast,
   .ma-dialog,
+  .ma-banner,
   .ma-slot {
     transition: none;
   }

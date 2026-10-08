@@ -32,6 +32,8 @@ test("recording_asks_for_the_details_and_done_saves_them", async ({ page, seed }
   await end.fill("1025");
   await dialog.getByTestId("meeting-info-done").click();
   await expect(dialog).toHaveCount(0);
+  // The recording bar names what it is recording, once there is a name.
+  await expect(page.getByTestId("recording-bar-title")).toHaveText("Pricing review");
 
   // Stop, then the meeting carries what was typed.
   await page.getByTestId("stop-recording").click();

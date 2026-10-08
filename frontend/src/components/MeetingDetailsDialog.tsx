@@ -45,7 +45,7 @@ export default function MeetingDetailsDialog({
   return createPortal(
     <div
       data-testid="meeting-details-backdrop"
-      className="fixed inset-0 z-[55] flex items-start justify-center bg-scrim-soft px-4 pt-[12vh] backdrop-blur-[4px]"
+      className="fixed inset-0 z-[55] flex items-start justify-center bg-scrim-soft px-4 pt-[12vh] backdrop-blur-xs"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -55,7 +55,7 @@ export default function MeetingDetailsDialog({
         aria-modal="true"
         aria-labelledby="meeting-details-title"
         data-testid="meeting-details"
-        className="ma-dialog max-h-[70vh] w-full max-w-[480px] overflow-y-auto rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
+        className="ma-dialog max-h-[70vh] w-full max-w-120 overflow-y-auto rounded-xl bg-raised p-4 shadow-[var(--shadow-ring),var(--shadow-lg),var(--shadow-edge)]"
       >
         <div className="mb-2 flex items-center gap-2">
           <h2 id="meeting-details-title" className="text-md font-semibold tracking-snug">

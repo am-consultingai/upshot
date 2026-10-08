@@ -2,12 +2,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
-import BusyButton from "../components/BusyButton";
+import Button from "../components/Button";
 import MicMeter from "../components/MicMeter";
 import { SELECT_CLASS } from "../components/SettingRow";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import type { CaptureMode } from "./flow";
-import { Note, PRIMARY, QUIET, StepFrame } from "./ui";
+import { Note, StepFrame } from "./ui";
 import { CaptureScene, HeroFlow, SpeakerScene } from "./visuals";
 
 /** Record → transcript → summary, shown rather than said. */
@@ -19,9 +19,9 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
       title="firstRun.welcome.title"
       lead={<p>{t("firstRun.welcome.optional")}</p>}
       footer={
-        <button type="button" data-testid="setup-next" className={PRIMARY} onClick={onNext}>
+        <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
           {t("firstRun.welcome.start")}
-        </button>
+        </Button>
       }
     >
       <HeroFlow />
@@ -50,20 +50,20 @@ export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: ()
       lead={<p>{t("firstRun.reports.lead")}</p>}
       footer={
         <>
-          <button
-            type="button"
+          <Button
             data-testid="setup-next"
-            className={PRIMARY}
+            variant="primary"
+            size="md"
             onClick={() => {
               backend.setCrashReports(share);
               onNext();
             }}
           >
             {t("firstRun.continue")}
-          </button>
-          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+          </Button>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -167,12 +167,12 @@ export function AudioStep({
       title="firstRun.audio.title"
       footer={
         <>
-          <BusyButton data-testid="setup-finish" busy={finishing} className={PRIMARY} onClick={onFinish}>
+          <Button data-testid="setup-finish" busy={finishing} variant="primary" size="md" onClick={onFinish}>
             {t("firstRun.done.finish")}
-          </BusyButton>
-          <button type="button" data-testid="setup-back" className={QUIET} onClick={onBack}>
+          </Button>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -192,9 +192,9 @@ export function AudioStep({
                     : t("firstRun.audio.playing")}
               </Note>
               {(speakers.phase === "heard" || speakers.phase === "silent") && (
-                <button type="button" data-testid="speaker-again" className={`${QUIET} text-xs`} onClick={() => backend.testSpeakers()}>
+                <Button data-testid="speaker-again" variant="ghost" size="sm" onClick={() => backend.testSpeakers()}>
                   {t("firstRun.audio.again")}
-                </button>
+                </Button>
               )}
             </div>
           </div>
