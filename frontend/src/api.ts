@@ -303,6 +303,9 @@ export interface Prompt {
   process: string | null;
   /** Calendar meetings booked at the same time that nothing told apart: pick one (D89). */
   candidates?: { account_id?: string | null; calendar_id: string; event_id: string; title: string }[];
+  /** A detected call's score and the evidence behind it (app/detect/evidence.py codes). */
+  score?: number | null;
+  evidence?: { code: string; detail: string }[];
 }
 
 export interface Status {
@@ -325,6 +328,8 @@ export interface Status {
   disk_free_bytes: number;
   /** Everything under the data folder: recordings, transcripts, summaries. */
   storage_bytes?: number;
+  /** The data folder itself, as the server resolved it. */
+  data_folder?: string;
   fts: boolean;
   now: string;
   /** Which build answered (app/version.py). */
@@ -468,8 +473,31 @@ export interface Transcription {
   finished_at: string | null;
   position: number | null;
   waiting_reason: "recording" | "policy:when_idle" | "policy:scheduled" | "queue" | "retry" | null;
+  /** Seconds left at this run's pace; null until the server has measured enough to say. */
+  eta_s?: number | null;
   direction: "ltr" | "rtl";
   links: Record<string, string>;
+}
+
+/** One job running or waiting, meeting or file, from `/api/jobs/active`. */
+export interface ActiveJob {
+  kind: "meeting" | "file";
+  /** The meeting's id, or the file transcription's. */
+  id: string;
+  title: string | null;
+  client: "meeting" | "ui" | "api" | "mcp";
+  /** The meeting stage; null for a file. */
+  stage: string | null;
+  state: "pending" | "running";
+  position: number | null;
+  waiting_reason: string | null;
+  phase: string | null;
+  /** 0–1; null where there is no honest figure (a summary, a stage that has not said). */
+  progress: number | null;
+  eta_s: number | null;
+  queued_at: string;
+  started_at: string | null;
+  cancellable: boolean;
 }
 
 /** The stored result (`result.json`, version 1): the stable contract. */
@@ -737,6 +765,8 @@ export const api = {
     request<{ meeting_id: string; kept: boolean }>("/api/recording/keep", { method: "POST" }),
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
+  /** Pause, or resume a paused recording: the one endpoint toggles (the tray's Pause). */
+  togglePause: () => request<{ paused: boolean }>("/api/recording/pause", { method: "POST" }),
   settings: () => request<Settings>("/api/settings"),
   putSettings: (values: Record<string, unknown>) =>
     request<Settings>("/api/settings", {
@@ -926,6 +956,8 @@ export const api = {
     }>("/api/attention"),
   audioUrl: (id: string, track: string) =>
     `/api/meetings/${id}/audio?track=${track}`,
+  /** Everything running or waiting, meetings and files, in the order it will run. */
+  activeJobs: () => request<{ jobs: ActiveJob[] }>("/api/jobs/active"),
   transcriptions: () =>
     request<{ transcriptions: Transcription[] }>("/api/v1/transcriptions?limit=200"),
   transcriptionResult: (id: string) =>

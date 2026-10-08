@@ -2120,6 +2120,27 @@
         "summary": "Import Audio"
       }
     },
+    "/api/jobs/active": {
+      "get": {
+        "description": "Every transcription running or waiting, meetings and files together, in the order\nthe one worker will take them, with percent done and time left where known.",
+        "operationId": "active_jobs_api_jobs_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Active Jobs Api Jobs Active Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Active Jobs"
+      }
+    },
     "/api/languages": {
       "get": {
         "description": "Every language Whisper transcribes, for the hidden \"Transcribe again as…\" list.",

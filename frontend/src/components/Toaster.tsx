@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+import Button from "./Button";
 
 /**
  * Toasts: the one place something that happened *elsewhere* gets said.
@@ -80,7 +81,7 @@ export default function Toaster() {
       data-expanded={hovered ? "" : undefined}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
-      className="ma-toaster fixed bottom-6 z-[70] w-[356px]"
+      className="ma-toaster fixed bottom-6 z-[70] w-89"
       // The assistant floats at the other corner (inline start), so nothing to avoid here.
       style={{ insetInlineEnd: 24, height: 72 }}
     >
@@ -99,18 +100,18 @@ export default function Toaster() {
             {item.sub && <p className="mt-0.5 text-xs text-tertiary">{item.sub}</p>}
           </div>
           {item.action && (
-            <button
-              type="button"
+            <Button
               data-testid="toast-action"
               onClick={() => {
                 item.action?.run();
                 dismissToast(item.id);
               }}
-              className="absolute top-1/2 h-7 -translate-y-1/2 rounded-md px-2.5 text-xs font-medium text-primary shadow-[var(--shadow-ring)] hover:bg-a-200 active:bg-a-300"
+              variant="secondary"
+              className="absolute top-1/2 -translate-y-1/2"
               style={{ insetInlineEnd: 16 }}
             >
               {item.action.label}
-            </button>
+            </Button>
           )}
         </div>
       ))}

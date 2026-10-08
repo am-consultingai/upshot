@@ -4,7 +4,7 @@ import { api, type CalendarEvent } from "../api";
 import { useI18n } from "../i18n";
 import { accountsOf, isHappening } from "../lib/calendar";
 import { formatClock } from "../lib/format";
-import BusyButton from "./BusyButton";
+import Button from "./Button";
 import { AccountDot, useCalendarAccounts } from "./AccountDots";
 
 /**
@@ -83,14 +83,14 @@ export default function EventDetails({
             </Link>
           ) : (
             isHappening(event) && (
-              <BusyButton
+              <Button
                 data-testid="event-record"
                 busy={record.isPending}
                 onClick={() => record.mutate()}
-                className="rounded bg-danger px-2.5 py-1 text-sm text-on-solid"
+                variant="record"
               >
                 {t("calendar.recordThis")}
-              </BusyButton>
+              </Button>
             )
           )}
           {event.conference_url && (

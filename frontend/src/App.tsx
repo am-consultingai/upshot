@@ -11,6 +11,7 @@ import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
 import TranscriptionsPage from "./routes/Transcriptions";
 import { applyEvent, type TranscriptionEvent } from "./lib/transcriptions";
+import { applyFileEvent, applyJobProgress, type JobProgressEvent } from "./lib/activeJobs";
 import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
 import TermsPage from "./routes/Terms";
@@ -32,6 +33,7 @@ import AssistantPanel from "./components/assistant/AssistantPanel";
 import AssistantLauncher from "./components/assistant/AssistantLauncher";
 import Confetti from "./components/Confetti";
 import { useRecordingControls } from "./lib/recording";
+import { shortcutKey, typing } from "./lib/keys";
 
 /*
  * The first-run setup mock (Setup 0, z8tj1hb03a), for confirming the flow before it is
@@ -40,16 +42,6 @@ import { useRecordingControls } from "./lib/recording";
  */
 const SETUP_MOCK = import.meta.env.DEV || import.meta.env.VITE_SETUP_MOCK === "1";
 const MockSetup = SETUP_MOCK ? lazy(() => import("./setup/MockSetup")) : null;
-
-/** Typing into a field is not a shortcut. */
-function typing(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
-}
 
 /**
  * The keys the interface advertises, made true.
@@ -73,22 +65,22 @@ function useShortcuts(onRecord: () => void) {
       }
       if (event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
+      const key = shortcutKey(event);
       if (pendingG.current !== null) {
         window.clearTimeout(pendingG.current);
         pendingG.current = null;
-        const to = { l: "/", a: "/actions", t: "/transcriptions", s: "/search", ",": "/settings" }[
-          event.key.toLowerCase()
-        ];
+        const to = { l: "/", a: "/actions", t: "/transcriptions", s: "/search", ",": "/settings" }[key];
         if (to) {
           event.preventDefault();
           navigate(to);
         }
         return;
       }
-      if (event.key === "/") {
+      // Unless the page under it took it: on a meeting, / is find-in-transcript.
+      if (key === "/" && !event.defaultPrevented) {
         event.preventDefault();
         navigate("/search");
-      } else if (event.key.toLowerCase() === "g") {
+      } else if (key === "g") {
         pendingG.current = window.setTimeout(() => {
           pendingG.current = null;
         }, 1000);
@@ -237,7 +229,13 @@ export default function App() {
     const invalidate = () => {
       void queryClient.invalidateQueries();
     };
-    source.addEventListener("job", invalidate);
+    // A meeting's transcription reports progress every second, like a file's: it patches
+    // the list of running work and nothing else. A job starting or ending refetches all.
+    source.addEventListener("job", (event) => {
+      const data = JSON.parse((event as MessageEvent<string>).data) as { action?: string };
+      if (data.action === "progress") applyJobProgress(queryClient, data as JobProgressEvent);
+      else invalidate();
+    });
     source.addEventListener("recorder", invalidate);
     source.addEventListener("meeting", invalidate);
     // The connection finishes in another tab — Google's — so Settings learns of it here.
@@ -251,7 +249,9 @@ export default function App() {
     // File transcriptions (D86) report progress every second: they update their own list
     // and nothing else, or each one would refetch the whole app.
     source.addEventListener("transcription", (event) => {
-      applyEvent(queryClient, JSON.parse((event as MessageEvent<string>).data) as TranscriptionEvent);
+      const data = JSON.parse((event as MessageEvent<string>).data) as TranscriptionEvent;
+      applyEvent(queryClient, data);
+      applyFileEvent(queryClient, data);
     });
     // An update was found, is downloading, or is ready to install (D87).
     source.addEventListener("updates", invalidate);
@@ -264,7 +264,7 @@ export default function App() {
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 });
   // Ctrl+R starts a recording, and stops the one running: the same key both ways.
   const recording = useRecordingControls();
-  const active = status.data?.recorder.active ?? false;
+  const active = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
   const recordNow = useCallback(() => {
     if (active) recording.stop.mutate();
     else recording.start.mutate();

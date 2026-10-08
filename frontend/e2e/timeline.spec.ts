@@ -42,7 +42,7 @@ test("recording_card_live", async ({ page, seed }) => {
   expect(await card.getByTestId("elapsed").textContent()).not.toBe(first);
 });
 
-test("queue_card_shows_eta", async ({ page, seed }) => {
+test("queue_card_shows_real_percent", async ({ page, seed }) => {
   await seed([
     {
       id: "e2e-queued",
@@ -50,12 +50,30 @@ test("queue_card_shows_eta", async ({ page, seed }) => {
       state: "TRANSCRIBING",
       started_at: isoAt(0, 12),
       jobs: { transcribe: "running" },
+      // 60% of the transcription phase: 3% + 4% + 0.6 × 75% of the stage.
+      progress: 0.6,
+      phase: "transcribe",
+    },
+    {
+      id: "e2e-summarizing",
+      title: "Being summarized",
+      state: "SUMMARIZING",
+      started_at: isoAt(0, 10),
+      jobs: { summarize: "running" },
     },
   ]);
   await gotoApp(page);
   const card = page.getByTestId("meeting-card").filter({ hasText: "Being transcribed" });
   await expect(card.getByTestId("meeting-state")).toHaveText("transcribing");
-  await expect(card.getByTestId("eta")).not.toHaveText("");
+  await expect(card.getByTestId("meeting-progress")).toHaveText("52%");
+  // A summary has no honest percentage, and no made-up time either.
+  const summarizing = page.getByTestId("meeting-card").filter({ hasText: "Being summarized" });
+  await expect(summarizing.getByTestId("meeting-state")).toHaveText("summarizing");
+  await expect(summarizing.getByTestId("meeting-progress")).toHaveCount(0);
+  await expect(summarizing.getByTestId("eta")).toHaveCount(0);
+  // The meeting page's stage line says the same, with its phase.
+  await card.getByTestId("meeting-link").click();
+  await expect(page.getByTestId("stage-progress")).toHaveText("transcribing · 52%");
 });
 
 test("default_locale_is_english", async ({ page }) => {
@@ -166,6 +184,35 @@ test("recording_shows_a_live_waveform_on_every_page", async ({ page, seed }) => 
 
   await bar.getByTestId("recording-bar-stop").click();
   await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+});
+
+test("the_recording_bar_pauses_and_resumes", async ({ page, seed }) => {
+  await seed([]);
+  await gotoApp(page);
+  await page.getByTestId("start-recording").click();
+  await closeDetails(page);
+  const bar = page.getByTestId("recording-bar");
+  await expect(bar).toHaveAttribute("data-paused", "false");
+  await expect(bar.getByTestId("recording-bar-elapsed")).toHaveText(/^\d\d:\d\d$/);
+
+  const pause = bar.getByTestId("recording-bar-pause");
+  await expect(pause).toHaveText("Pause");
+  await pause.click();
+  await expect(bar).toHaveAttribute("data-paused", "true");
+  await expect(bar).toContainText("Paused");
+  await expect(pause).toHaveText("Resume");
+
+  await pause.click();
+  await expect(bar).toHaveAttribute("data-paused", "false");
+  await expect(pause).toHaveText("Pause");
+
+  // Paused is still recording to every other control, and Stop while paused ends it.
+  await pause.click();
+  await expect(bar).toHaveAttribute("data-paused", "true");
+  await expect(page.getByTestId("stop-recording")).toBeVisible();
+  await bar.getByTestId("recording-bar-stop").click();
+  await expect(page.getByTestId("recording-bar")).toHaveCount(0);
+  await expect(page.getByTestId("start-recording")).toBeEnabled();
 });
 
 test("a_dead_backend_says_so_instead_of_something_went_wrong", async ({ page }) => {

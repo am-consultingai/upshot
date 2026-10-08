@@ -361,6 +361,22 @@ def test_recording_start_stop_roundtrip(api, caplog) -> None:  # type: ignore[no
     assert any("Recording" in title for title in titles)
 
 
+def test_a_stop_while_paused_ends_the_recording(api) -> None:  # type: ignore[no-untyped-def]
+    """The recording bar offers Pause and Stop side by side: Stop pressed while paused
+    must leave nothing behind that still reads as a paused recording."""
+    client = api.client()
+    client.post("/api/recording/start", json={})
+    assert client.post("/api/recording/pause").json()["paused"] is True
+    api.emit(seconds=5)
+    client.post("/api/recording/stop").raise_for_status()
+    recorder = client.get("/api/status").json()["recorder"]
+    assert recorder["active"] is False and recorder["paused"] is False
+    # And the next recording starts recording, not paused.
+    client.post("/api/recording/start", json={}).raise_for_status()
+    assert client.get("/api/status").json()["recorder"]["active"] is True
+    client.post("/api/recording/stop")
+
+
 def test_import_creates_a_meeting(api, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     import wave
 

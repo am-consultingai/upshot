@@ -57,7 +57,7 @@ export default function MeetingRail({
     <aside
       data-testid="meeting-rail"
       data-tab={tab}
-      className="hidden w-[19rem] shrink-0 flex-col gap-6.5 overflow-y-auto border-s border-line-subtle px-5 pt-6.5 pb-10 xl:flex"
+      className="hidden w-rail shrink-0 flex-col gap-6.5 overflow-y-auto border-s border-line-subtle px-5 pt-6.5 pb-10 xl:flex"
     >
       {tab === "transcript" && (meeting.chapters?.length ?? 0) > 0 && (
         <Chapters chapters={meeting.chapters ?? []} onSeek={onSeek} />
@@ -82,7 +82,7 @@ export default function MeetingRail({
                 <li key={name} data-testid="rail-invitee" className="flex items-center gap-2 text-sm text-tertiary">
                   <span
                     aria-hidden="true"
-                    className="grid size-5.5 shrink-0 place-items-center rounded-full bg-surface-3 text-[9px] font-semibold"
+                    className="grid size-5.5 shrink-0 place-items-center rounded-full bg-surface-3 text-4xs font-semibold"
                   >
                     {name.slice(0, 2).toUpperCase()}
                   </span>
@@ -181,7 +181,7 @@ function SpeakerRow({ meeting, person }: { meeting: MeetingDetail; person: Speak
       <div className="flex items-center gap-2 text-sm">
         <span
           aria-hidden="true"
-          className="grid size-5.5 shrink-0 place-items-center rounded-full text-[9px] font-semibold text-on-speaker"
+          className="grid size-5.5 shrink-0 place-items-center rounded-full text-4xs font-semibold text-on-speaker"
           style={{ background: person.colour }}
         >
           {person.initials}
@@ -215,7 +215,7 @@ function SpeakerRow({ meeting, person }: { meeting: MeetingDetail; person: Speak
         )}
         <span className="font-mono text-2xs text-tertiary tabular-nums">{Math.round(person.share * 100)}%</span>
       </div>
-      <div className="mt-1.5 h-[3px] overflow-hidden rounded-sm bg-surface-3">
+      <div className="mt-1.5 h-0.75 overflow-hidden rounded-sm bg-surface-3">
         <i
           className="block h-full rounded-sm"
           style={{ width: `${person.share * 100}%`, background: person.colour, opacity: 0.75 }}
