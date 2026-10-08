@@ -1,7 +1,7 @@
 """The transcribe stage: the meeting's language, then one WAV per track → one segment list.
 
 The classifier (``app/asr/classify.py``) decides the language first; then exactly one
-large model transcribes both tracks (R3): ivrit-ai large-v3 for Hebrew, stock large-v3
+model transcribes both tracks (R3): the ivrit-ai turbo for Hebrew (D93), stock large-v3
 for everything else (D80).
 """
 

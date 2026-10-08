@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -339,13 +340,12 @@ def test_the_registry_holds_exactly_three_roles_each_pinned_to_a_revision() -> N
     assert ROLES == (CLASSIFIER, HEBREW, OTHER), "installation order: small one first"
     assert {m.repo for m in MODELS.values()} == {
         "Systran/faster-whisper-small",
-        "ivrit-ai/whisper-large-v3-ct2",
+        "ivrit-ai/whisper-large-v3-turbo-ct2",
         "Systran/faster-whisper-large-v3",
     }
     for model in MODELS.values():
         assert len(model.revision) == 40 and int(model.revision, 16) >= 0, model
-        assert "turbo" not in model.repo, "large-v3, never turbo (R6)"
-    assert 6_500_000_000 < TOTAL_BYTES < 6_800_000_000
+    assert 5_100_000_000 < TOTAL_BYTES < 5_300_000_000
 
 
 def test_files_are_fetched_at_the_pinned_revision_never_main(app_home: Path) -> None:
@@ -414,6 +414,29 @@ def test_the_model_path_override_is_for_the_hebrew_model_only(
     assert not resolve(config, OTHER).local and resolve(config, OTHER).reference != str(mine)
     assert not resolve(config, CLASSIFIER).local
     assert model_manager.overridden_roles(config) == frozenset({HEBREW})
+
+
+def test_a_model_path_that_is_not_the_pinned_model_is_said_once(
+    tmp_path: Path,
+    app_home: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A developer's large-v3 copy still loads after D93, but the log says what it is."""
+    # Sizes scaled down: a real 3 GB file is not sparse on Windows, and writing it held up
+    # the next test's downloads past their timeout.
+    monkeypatch.setitem(MODELS, HEBREW, replace(MODELS[HEBREW], size_bytes=1_620))
+    mine = tmp_path / "large-v3"
+    mine.mkdir()
+    (mine / "model.bin").write_bytes(b"x" * 3_087)  # large-v3 against the turbo, in kB
+    (mine / "config.json").write_bytes(b"{}")
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+    with caplog.at_level("WARNING"):
+        assert resolve(config, HEBREW).reference == str(mine)
+        resolve(config, HEBREW)
+    said = [r for r in caplog.records if MODELS[HEBREW].repo in r.getMessage()]
+    assert len(said) == 1
 
 
 def recording_downloader(order: list[str], fail: str = "") -> Any:

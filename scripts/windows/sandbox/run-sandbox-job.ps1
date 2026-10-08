@@ -22,7 +22,7 @@ param(
     # Keep a verified copy of the speech model here for install.wsb to map into the sandbox:
     # fetched once from Hugging Face (each LFS file checked against its SHA-256), reused after.
     [string]$ModelCache = '',
-    [string]$ModelRepo = 'ivrit-ai/whisper-large-v3-ct2'
+    [string]$ModelRepo = 'ivrit-ai/whisper-large-v3-turbo-ct2'
 )
 $ErrorActionPreference = 'Continue'
 $out = Join-Path $Work 'out'

@@ -277,7 +277,7 @@ end;
 procedure InitializeWizard;
 begin
   PreparePage := CreateOutputProgressPage('Getting {#AppName} ready to transcribe',
-    '{#AppName} transcribes on this computer, so it needs its speech models (about 6.7 GB). This is a one-time download.');
+    '{#AppName} transcribes on this computer, so it needs its speech models (about 5.2 GB). This is a one-time download.');
 end;
 
 function ReadValue(const Lines: TArrayOfString; const Key: String): String;
@@ -358,7 +358,7 @@ begin
   if State = 'cancelled' then
     PrepareNote := 'The speech model download was paused, so {#AppName} cannot transcribe yet. Run the installer again to continue it.'
   else if Code = 'no_space' then
-    PrepareNote := 'There was not enough free disk space for the speech models (about 7.7 GB with room to spare). Free some space, then run the installer again to finish.'
+    PrepareNote := 'There was not enough free disk space for the speech models (about 6.3 GB with room to spare). Free some space, then run the installer again to finish.'
   else if State = 'failed' then begin
     if Stage = 'gpu' then
       PrepareNote := 'The speech models are ready. The GPU libraries could not be downloaded, so {#AppName} transcribes on the processor for now.'
@@ -394,9 +394,9 @@ begin
   Home := ExpandConstant('{localappdata}\upshot');
   if not DirExists(Home + '\models') and not DirExists(Home + '\cuda') then
     Exit;
-  What := 'the speech models (about 6.7 GB)';
+  What := 'the speech models (about 5.2 GB)';
   if DirExists(Home + '\cuda') then
-    What := 'the speech models and the GPU libraries (about 9 GB)';
+    What := 'the speech models and the GPU libraries (about 7.5 GB)';
   if MsgBox('Also remove ' + What + '?' + #13#10#13#10 +
       'Your recordings, transcripts and settings are kept either way. Keep the model if you may reinstall {#AppName}.',
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then begin

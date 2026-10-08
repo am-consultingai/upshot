@@ -327,7 +327,7 @@ try {
     Step 'bootstrap' (Test-Path $home_) "app home exists=$(Test-Path $home_)"
     # The installer's download step (app/prepare.py): the model is in place and verified.
     if ($Mode -ne 'auto') {
-        $model = Join-Path $home_ 'models\asr\ivrit-ai__whisper-large-v3-ct2'
+        $model = Join-Path $home_ 'models\asr\ivrit-ai__whisper-large-v3-turbo-ct2'
         if ($ModelCache) {
             Doing "copying the speech model from $ModelCache"
             $t = Get-Date
