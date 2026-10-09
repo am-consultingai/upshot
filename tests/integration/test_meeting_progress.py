@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import wave
 from pathlib import Path
@@ -121,6 +122,39 @@ def test_the_worker_sends_progress_with_time_left_and_lets_go_after(api: ApiHarn
         if e.type == "job" and "action" not in e.payload and e.payload["stage"] == "transcribe"
     ]
     assert [e["state"] for e in ended] == ["running", "done"]
+
+
+@pytest.mark.parametrize("step", ["_mark_running", "_announce"])
+def test_a_run_that_fails_before_its_stage_leaves_no_progress_behind(
+    api: ApiHarness, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    """The entry starts before the worker marks the job running and says so; either of
+    those raising must not leave the meeting showing a run that is not happening."""
+    svc = api.services
+    meeting_id = recorded(api)
+    job = svc.queue.enqueue(meeting_id, JobStage.TRANSCRIBE)
+    claimed = svc.queue.claim(job.id)
+    assert claimed is not None and svc.worker is not None
+    started: list[str] = []
+    real_start = svc.progress.start
+
+    def start(mid: str, stage: str) -> None:
+        started.append(mid)
+        real_start(mid, stage)
+
+    def boom(*_: Any, **__: Any) -> None:
+        raise RuntimeError(f"{step} failed")
+
+    monkeypatch.setattr(svc.progress, "start", start)
+    monkeypatch.setattr(svc.worker, step, boom)
+    handlers = list(logging.getLogger().handlers)
+
+    with pytest.raises(RuntimeError, match=step):
+        svc.worker.execute(claimed)
+
+    assert started == [meeting_id], "the entry was started"
+    assert svc.progress.get(meeting_id) is None, "and ended with the run"
+    assert logging.getLogger().handlers == handlers, "the meeting's log handler is gone too"
 
 
 # ------------------------------------------------------------------ the list

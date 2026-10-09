@@ -186,51 +186,65 @@ class Worker:
         # others have no honest percentage, and the page labels them instead.
         tracker = getattr(self.services, "progress", None) if self.services else None
         if tracker is not None and job.stage == JobStage.TRANSCRIBE:
-            tracker.start(job.meeting_id, job.stage)
             context.report = functools.partial(tracker.report, job.meeting_id)
         else:
             tracker = None
-        handler = None
-        folder = Path(meeting.folder)
-        if folder.exists():
-            handler = meeting_log_handler(folder)
-            logging.getLogger().addHandler(handler)
-        with meeting_context(meeting.id):
-            self._mark_running(job)
-            self._announce(job)
-            try:
-                stage_fn(context)
-                if self.queue.deleting(job.meeting_id):
-                    raise Cancelled(f"{job.stage} finished, but the meeting is being deleted")
-            except Cancelled as exc:
-                log.info("%s", exc)  # the deletion itself is finished below
-                return
-            except Preempted:
-                self.queue.release(job)
-                self.stats.preempted += 1
-                log.info("stage %s preempted by the recorder", job.stage)
-                return
-            except Deferred as exc:
-                self._on_deferred(job, exc)
-                return
-            except PermanentError as exc:
-                self._on_failure(job, exc, permanent=True)
-                return
-            except Exception as exc:
-                self._on_failure(job, exc, permanent=False)
-                return
-            finally:
-                if tracker is not None:
-                    tracker.finish(job.meeting_id)
-                if handler is not None:
-                    logging.getLogger().removeHandler(handler)
-                    handler.close()
-                # However the stage ended: a meeting deleted meanwhile goes now.
-                self.finish_delete(job.meeting_id)
-                # Failed, deferred, preempted, deleted; a success is said below, once done.
-                self._announce(job, ended_only=True)
-            self._on_success(job, context)
-            self._announce(job)
+        handler: logging.Handler | None = None
+
+        def release() -> None:
+            """The progress entry and the meeting's log handler end with the run. Both
+            steps are idempotent, so it can run from either ``finally`` below."""
+            if tracker is not None:
+                tracker.finish(job.meeting_id)
+            if handler is not None:
+                logging.getLogger().removeHandler(handler)
+                handler.close()
+
+        # Everything from the progress entry's start is inside a ``try``: a log handler,
+        # ``_mark_running`` or ``_announce`` that raises must not leave the entry behind,
+        # showing a run that is no longer happening.
+        try:
+            if tracker is not None:
+                tracker.start(job.meeting_id, job.stage)
+            folder = Path(meeting.folder)
+            if folder.exists():
+                handler = meeting_log_handler(folder)
+                logging.getLogger().addHandler(handler)
+            with meeting_context(meeting.id):
+                self._mark_running(job)
+                self._announce(job)
+                try:
+                    stage_fn(context)
+                    if self.queue.deleting(job.meeting_id):
+                        raise Cancelled(f"{job.stage} finished, but the meeting is being deleted")
+                except Cancelled as exc:
+                    log.info("%s", exc)  # the deletion itself is finished below
+                    return
+                except Preempted:
+                    self.queue.release(job)
+                    self.stats.preempted += 1
+                    log.info("stage %s preempted by the recorder", job.stage)
+                    return
+                except Deferred as exc:
+                    self._on_deferred(job, exc)
+                    return
+                except PermanentError as exc:
+                    self._on_failure(job, exc, permanent=True)
+                    return
+                except Exception as exc:
+                    self._on_failure(job, exc, permanent=False)
+                    return
+                finally:
+                    release()
+                    # However the stage ended: a meeting deleted meanwhile goes now.
+                    self.finish_delete(job.meeting_id)
+                    # Failed, deferred, preempted, deleted; a success is said below, once done.
+                    self._announce(job, ended_only=True)
+                self._on_success(job, context)
+                self._announce(job)
+        except BaseException:
+            release()  # raised before the stage's own ``try`` was reached
+            raise
 
     def _announce(self, job: Job, *, ended_only: bool = False) -> None:
         """A ``job`` event as a stage starts and ends: the lists of what is running
