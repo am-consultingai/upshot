@@ -235,6 +235,53 @@ def test_progress_events_are_at_most_one_a_second(tmp_path: Path) -> None:
     assert store.require(job.id).progress == pytest.approx(0.6)
 
 
+@pytest.mark.parametrize("ends", ["retry", "preempted"])
+def test_a_run_sent_back_to_wait_leaves_nothing_for_the_next_one(tmp_path: Path, ends: str) -> None:
+    """A retry or a preemption ends one run without finishing the job. What that run kept
+    goes with it: a stale last-sent time held back the next run's first progress event."""
+    h = harness(tmp_path)
+    events = EventBus()
+    store = store_for(h, events)
+    job = add(store)
+    claimed = store.claim(job.id)
+    assert claimed is not None
+    store.progress(job.id, "transcribe", 0.3)
+    if ends == "retry":
+        store.fail(claimed, RuntimeError("the GPU fell over"))
+        h.clock.advance(10)
+    else:
+        store.release(claimed)
+    assert job.id not in store._last_event
+    assert job.id not in store._started
+    assert job.id not in store._time_left
+
+    assert store.claim(job.id) is not None
+    before = len(list(events.replay()))
+    store.progress(job.id, "transcribe", 0.1)  # less than a second after the last one
+    sent = [e for e in events.replay() if e.type == "transcription"][before:]
+    assert len(sent) == 1, "the new run's first progress is sent at once"
+
+
+def test_a_stale_read_after_the_run_ends_keeps_no_time_left(tmp_path: Path) -> None:
+    """The API reads a row, the worker finishes the job, then the API asks for its time
+    left with the row it read: the estimate is answered but not kept, since nothing
+    would ever remove it again."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    store.claim(job.id)
+    h.clock.advance(30)
+    store.progress(job.id, "transcribe", 0.5)
+    stale = store.require(job.id)
+    assert stale.state == RUNNING
+    assert store.eta_s(stale) is not None and job.id in store._time_left
+    store.complete(job.id, duration_s=1.0, language="en", language_conf=1.0, model={})
+    assert job.id not in store._time_left
+
+    store.eta_s(stale)
+    assert job.id not in store._time_left
+
+
 # ----------------------------------------------------------------------- one FIFO (R5)
 
 

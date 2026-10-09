@@ -768,7 +768,9 @@ export const api = {
   stopRecording: () =>
     request<{ meeting_id: string }>("/api/recording/stop", { method: "POST" }),
   /** Pause, or resume a paused recording: the one endpoint toggles (the tray's Pause). */
-  togglePause: () => request<{ paused: boolean }>("/api/recording/pause", { method: "POST" }),
+  /** Pause (true) or resume (false); asking for the state it is in already changes nothing. */
+  setPaused: (paused: boolean) =>
+    request<{ paused: boolean }>("/api/recording/pause", { method: "POST", body: JSON.stringify({ paused }) }),
   settings: () => request<Settings>("/api/settings"),
   putSettings: (values: Record<string, unknown>) =>
     request<Settings>("/api/settings", {

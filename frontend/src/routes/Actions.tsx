@@ -295,7 +295,7 @@ export default function ActionsPage() {
                 <SkeletonRows rows={5} lead="check" rowClassName="px-2.5 py-2.5" />
               </Loading>
             )}
-            {query.isError && (
+            {query.isError && !query.data && (
               <EmptyState
                 testid="actions-error"
                 tone="danger"
@@ -310,7 +310,7 @@ export default function ActionsPage() {
               />
             )}
 
-            {query.isSuccess && visible.length === 0 && actionsEmpty()}
+            {query.data && visible.length === 0 && actionsEmpty()}
 
             {groups.map(([bucket, rows]) => {
               const meta = BUCKETS.find((entry) => entry.id === bucket);

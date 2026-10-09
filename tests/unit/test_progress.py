@@ -62,7 +62,7 @@ def readings(
 
 
 def test_time_left_holds_while_a_long_chunk_is_decoded() -> None:
-    # As seen on machine B: 10% reached, then a long chunk with no callback for 50 s,
+    # As seen in testing: 10% reached, then a long chunk with no callback for 50 s,
     # polled every 2 s. The plain average climbed 195, 213, 250 ... 666; it must not.
     clock = FakeClock()
     started = iso(clock.now())
