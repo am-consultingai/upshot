@@ -790,16 +790,6 @@ def _proposed_refs(meeting: Meeting) -> list[dict[str, Any]]:
     ]
 
 
-def _stored_match(meeting: Meeting) -> dict[str, Any] | None:
-    """The stored match's state and who settled it, or None when nothing is stored."""
-    from app.meetings import calendar_payload
-
-    match = calendar_payload(meeting).get("match")
-    if not isinstance(match, dict):
-        return None
-    return {"state": match.get("state"), "source": match.get("source")}
-
-
 def _action_counts(pair: tuple[int, int] | None) -> dict[str, int]:
     total, still_open = pair or (0, 0)
     return {"actions_total": total, "actions_open": still_open}
@@ -940,9 +930,6 @@ def list_meetings(
                 # The events it may be, when the matcher only proposed: the calendar grid
                 # draws the recording inside one of these rather than beside it (D94).
                 "proposed": _proposed_refs(meeting),
-                # How its calendar meeting was settled, if at all: {state, source}, or
-                # null when nothing was ever stored on it.
-                "calendar_match": _stored_match(meeting),
                 **_action_counts(counts.get(meeting.id)),
                 "tags": tags.get(meeting.id, []),
                 # Every calendar account the meeting is on: the dots in the list.

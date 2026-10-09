@@ -220,6 +220,8 @@ export const es: Record<MessageKey, string> = {
   "calendar.merge": "Combinarlas",
   "calendar.isThisIt": "¿Es esta la grabación?",
   "calendar.link": "Vincular",
+  "calendar.linkFailed": "No se pudo vincular la grabación",
+  "calendar.mergedInto": "Combinada con la grabación anterior de esta reunión",
   "calendar.notThisRecording": "No es esta",
   "calendar.linkTo": "Vincular esta grabación a {title}",
   "calendar.recordingAt": "Grabación {time}",

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CalendarEvent, type Meeting } from "../api";
+import { api, reason, type CalendarEvent, type Meeting } from "../api";
+import { toast } from "./Toaster";
 import { useI18n } from "../i18n";
 import { IconBadge } from "./Badge";
 import {
@@ -183,6 +184,7 @@ function CombinedBlock({
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [menu, setMenu] = useState<MenuAnchor | null>(null);
   const [asking, setAsking] = useState(false);
   const askButton = useRef<HTMLButtonElement | null>(null);
@@ -193,12 +195,34 @@ function CombinedBlock({
         calendar_id: event.calendar_id,
         event_id: event.event_id,
       }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["meeting", meeting.id] });
-      void queryClient.invalidateQueries({ queryKey: ["meeting-calendar", meeting.id] });
-      void queryClient.invalidateQueries({ queryKey: ["meeting-invite", meeting.id] });
-      void queryClient.invalidateQueries({ queryKey: ["meetings"] });
-      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    onSuccess: async (result) => {
+      // Linked to a meeting another recording already had: the two were merged into the
+      // earlier one, which is the one left (D89). Said, with the way to it.
+      if (result.id && result.id !== meeting.id) {
+        toast({
+          title: t("calendar.mergedInto"),
+          action: { label: t("calendar.openRecording"), run: () => navigate(`/m/${result.id}`) },
+        });
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["meeting", meeting.id] }),
+        queryClient.invalidateQueries({ queryKey: ["meeting-calendar", meeting.id] }),
+        queryClient.invalidateQueries({ queryKey: ["meeting-invite", meeting.id] }),
+        queryClient.invalidateQueries({ queryKey: ["meetings"] }),
+        queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
+      ]);
+      // This block is gone now; the keyboard goes on from the matched block that replaced
+      // it, or from the grid, rather than falling to the page.
+      window.setTimeout(() => {
+        const selector = `[data-testid=calendar-gevent][data-event="${CSS.escape(event.event_id)}"]`;
+        const target =
+          document.querySelector<HTMLElement>(selector) ??
+          document.querySelector<HTMLElement>("[data-testid=calendar-timegrid]");
+        target?.focus();
+      }, 0);
+    },
+    onError: (error) => {
+      toast({ title: t("calendar.linkFailed"), sub: reason(error), tone: "danger" });
     },
   });
   // The recording's calendar, for the picker; fetched only once it is asked for.
@@ -214,6 +238,11 @@ function CombinedBlock({
   const short = minutes < SHORT_MINUTES;
   const roomy = minutes >= ROOMY_MINUTES;
   const linkLabel = t("calendar.linkTo").replace("{title}", title);
+  // The recording keeps its own state — a failed one still looks failed — and its page,
+  // where it can be opened and retried.
+  const kind = kindOf(meeting);
+  const words = { recording: t("timeline.recordingShort"), failed: t("timeline.failedShort") };
+  const recordingLabel = `${t("calendar.openRecording")} · ${range}`;
 
   const linkButton = (
     <button
@@ -222,7 +251,7 @@ function CombinedBlock({
       aria-label={linkLabel}
       disabled={link.isPending}
       onClick={() => link.mutate()}
-      className="h-4 shrink-0 rounded-xs bg-accent px-1.5 text-3xs font-medium leading-4 text-on-accent hover:brightness-110 disabled:opacity-60"
+      className="h-4 shrink-0 rounded-xs bg-accent px-1.5 text-3xs font-medium leading-4 text-on-accent hover:brightness-110 disabled:opacity-60 relative after:absolute after:-inset-1 after:content-['']"
     >
       {t("calendar.link")}
     </button>
@@ -232,7 +261,7 @@ function CombinedBlock({
       type="button"
       data-testid="calendar-combined-other"
       onClick={() => setAsking(true)}
-      className="h-4 shrink-0 rounded-xs bg-raised px-1.5 text-3xs leading-4 text-secondary shadow-[var(--shadow-ring-subtle)] hover:text-primary"
+      className="h-4 shrink-0 rounded-xs bg-raised px-1.5 text-3xs leading-4 text-secondary shadow-[var(--shadow-ring-subtle)] hover:text-primary relative after:absolute after:-inset-1 after:content-['']"
     >
       {t("calendar.notThisRecording")}
     </button>
@@ -251,7 +280,7 @@ function CombinedBlock({
           const rtl = document.documentElement.dir === "rtl";
           setMenu({ x: rtl ? box.left : box.right, y: box.bottom + 4, align: "end" });
         }}
-        className="grid size-4 shrink-0 place-items-center rounded-full bg-accent text-3xs font-semibold leading-none text-on-accent hover:brightness-110"
+        className="grid size-4 shrink-0 place-items-center rounded-full bg-accent text-3xs font-semibold leading-none text-on-accent hover:brightness-110 relative after:absolute after:-inset-1 after:content-['']"
       >
         ?
       </button>
@@ -292,17 +321,42 @@ function CombinedBlock({
       </button>
       {short ? (
         <span className="flex shrink-0 items-center gap-1" data-testid="calendar-combined-strip">
-          <ChipFlag kind="recorded" />
+          <Link
+            to={`/m/${meeting.id}`}
+            data-testid="calendar-combined-recording"
+            data-kind={kind}
+            aria-label={recordingLabel}
+            title={recordingLabel}
+            className="relative grid place-items-center after:absolute after:-inset-1 after:content-['']"
+          >
+            <ChipFlag kind={kind} />
+          </Link>
           {askChoices}
         </span>
       ) : (
         <div
           data-testid="calendar-combined-strip"
-          className="min-w-0 rounded-xs bg-accent-quiet px-1 py-0.5 shadow-[inset_2px_0_0_0_var(--accent)]"
+          data-kind={kind}
+          className={`min-w-0 rounded-xs px-1 py-0.5 ${
+            kind === "failed"
+              ? "bg-danger-quiet shadow-[inset_2px_0_0_0_var(--danger)]"
+              : "bg-accent-quiet shadow-[inset_2px_0_0_0_var(--accent)]"
+          }`}
         >
           <div className="flex min-w-0 items-center gap-1">
-            <ChipFlag kind="recorded" />
-            <bdi className="shrink-0 font-mono text-3xs text-secondary tabular-nums">{range}</bdi>
+            <Link
+              to={`/m/${meeting.id}`}
+              data-testid="calendar-combined-recording"
+              data-kind={kind}
+              aria-label={recordingLabel}
+              title={recordingLabel}
+              className="relative flex shrink-0 items-center gap-1 rounded-xs hover:underline after:absolute after:-inset-y-1 after:inset-x-0 after:content-['']"
+            >
+              <ChipFlag kind={kind} />
+              <bdi className={`font-mono text-3xs tabular-nums ${kind === "failed" ? "text-danger" : "text-secondary"}`}>
+                {kind === "failed" ? chipWhen(kind, meeting.started_at, recordedFor, words) : range}
+              </bdi>
+            </Link>
             <span className="min-w-0 flex-1 truncate text-3xs text-primary">{t("calendar.isThisIt")}</span>
             {!roomy && (
               <>
@@ -384,7 +438,7 @@ export default function TimeGrid({
   const recorded = recordedIds(events);
   const byId = new Map(meetings.map((meeting) => [meeting.id, meeting]));
   // An unmatched recording that overlaps an invitation is drawn inside it, asking (D94).
-  const pairs = pairRecordings(meetings, events);
+  const pairs = pairRecordings(meetings, events, new Set(days.map(dayKey)));
   const paired = new Set([...pairs.values()].map((pair) => pair.meeting.id));
   const buckets = bucketByDay(
     meetings.filter((meeting) => !recorded.has(meeting.id) && !paired.has(meeting.id)),
