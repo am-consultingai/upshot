@@ -12,6 +12,8 @@ import Menu, { useContextMenu, type MenuItem } from "./Menu";
 import Tooltip from "./Tooltip";
 import { toast } from "./Toaster";
 import { confirmDialog } from "./ConfirmDialog";
+import { Check, Clock } from "lucide-react";
+import { Icon } from "./Icon";
 
 type Patch = Parameters<typeof api.patchActionItem>[1];
 
@@ -225,9 +227,7 @@ export default function ActionItemRow({
               : "text-transparent shadow-[inset_0_0_0_1.5px_var(--border-strong)] peer-hover:shadow-[inset_0_0_0_1.5px_var(--text-tertiary)]"
           } peer-focus-visible:shadow-[0_0_0_2px_var(--surface-0),0_0_0_4px_var(--accent)]`}
         >
-          <svg viewBox="0 0 16 16" className="size-2.5 fill-none stroke-current stroke-[2.6]" strokeLinecap="round">
-            <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
-          </svg>
+          <Icon icon={Check} className="size-2.5" />
         </span>
       </span>
 
@@ -272,9 +272,7 @@ export default function ActionItemRow({
             onClick={() => snooze(tomorrow, t("actions.dueTomorrow"))}
             className="grid size-5.5 place-items-center rounded-xs text-tertiary hover:bg-a-200 hover:text-primary"
           >
-            <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5]">
-              <path d="M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM8 5v3.2l2 1.2" />
-            </svg>
+            <Icon icon={Clock} className="size-3.5" />
           </button>
           </Tooltip>
         )}

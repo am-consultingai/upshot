@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { Check, FileText, Mic, Search, TextAlignStart, TriangleAlert, type LucideIcon } from "lucide-react";
 import { buttonClass } from "./Button";
+import { Icon } from "./Icon";
 
 /**
  * What a screen says when it has nothing to show, or could not show it.
@@ -7,8 +9,8 @@ import { buttonClass } from "./Button";
  * A grey sentence used to do this everywhere, and a grey sentence answers "is it
  * broken?" and nothing else. Every empty state now carries the same three parts: a
  * mark, a line that names the situation, and a line that says what happens next —
- * with the one control that makes it happen, where there is one. The mark is drawn
- * on the same 16px grid as the navigation icons, at stroke 1.5.
+ * with the one control that makes it happen, where there is one. The mark is a
+ * Lucide glyph, like the navigation icons.
  */
 export default function EmptyState({
   testid,
@@ -21,8 +23,8 @@ export default function EmptyState({
   className = "",
 }: {
   testid?: string;
-  /** An SVG path on a 16px grid. */
-  icon: string;
+  /** One of `EMPTY_ICON`, or any other Lucide glyph. */
+  icon: LucideIcon;
   title: ReactNode;
   body?: ReactNode;
   /** The next step: a button or a link. */
@@ -44,14 +46,7 @@ export default function EmptyState({
           compact ? "size-8" : "size-10"
         } ${tone === "danger" ? "bg-danger-quiet text-danger" : "bg-surface-2 text-secondary"}`}
       >
-        <svg
-          viewBox="0 0 16 16"
-          className={`${compact ? "size-4" : "size-5"} fill-none stroke-current stroke-[1.5]`}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d={icon} />
-        </svg>
+        <Icon icon={icon} className={compact ? "size-4" : "size-5"} />
       </span>
       <p className={`font-semibold tracking-snug text-primary ${compact ? "text-sm" : "text-md"}`}>{title}</p>
       {body && (
@@ -62,21 +57,21 @@ export default function EmptyState({
   );
 }
 
-/** Icons for the empty states, on the navigation's 16px grid. */
+/** Icons for the empty states. */
 export const EMPTY_ICON = {
   /** A microphone: nothing recorded yet. */
-  record: "M8 2.5a2 2 0 0 1 2 2v3a2 2 0 1 1-4 0v-3a2 2 0 0 1 2-2ZM4 7.5a4 4 0 0 0 8 0M8 11.5v2",
+  record: Mic,
   /** A page with lines: no summary. */
-  page: "M4 2.5h5.5l2.5 2.5v8.5H4zM6 7h4M6 9.5h4M6 12h2.5",
+  page: FileText,
   /** A magnifier: nothing matched. */
-  search: "M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z",
+  search: Search,
   /** A tick: nothing to do. */
-  check: "M3 8.5 6.2 11.6 13 4.8",
+  check: Check,
   /** Speech lines: no transcript. */
-  transcript: "M2.5 4h11M2.5 7h8M2.5 10h11M2.5 13h6",
+  transcript: TextAlignStart,
   /** A warning triangle: could not load. */
-  error: "M8 2.5 14 13H2zM8 6.5v3M8 11.2v.3",
-} as const;
+  error: TriangleAlert,
+} satisfies Record<string, LucideIcon>;
 
 /** The quiet button an empty state offers, the same weight as the bar's secondary actions. */
 export const EMPTY_BUTTON = buttonClass("secondary");

@@ -42,6 +42,12 @@ def frontend_dir() -> Any:
     return paths.resource("frontend", "dist")
 
 
+#: The page shows model-written HTML (the summary), so script runs only from the app's own
+#: files: an inline script or handler that got past the summary's allowlist would not run.
+#: Styles, images and media are left alone; the summary's design is inline CSS.
+SHELL_CSP = "script-src 'self'; object-src 'none'; base-uri 'none'"
+
+
 def shell(path: Path) -> Response:
     """The SPA shell, explicitly not cached.
 
@@ -57,7 +63,13 @@ def shell(path: Path) -> Response:
     etag still answers most requests with a 304, it simply has to ask first.
     The assets themselves are content-hashed, so they stay cacheable forever.
     """
-    return FileResponse(path, headers={"Cache-Control": "no-cache, must-revalidate"})
+    return FileResponse(
+        path,
+        headers={
+            "Cache-Control": "no-cache, must-revalidate",
+            "Content-Security-Policy": SHELL_CSP,
+        },
+    )
 
 
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:

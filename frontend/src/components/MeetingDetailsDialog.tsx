@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import type { MeetingCalendar } from "../api";
 import { useI18n } from "../i18n";
 import MeetingCalendarCard from "./MeetingCalendarCard";
+import { X } from "lucide-react";
+import { Icon } from "./Icon";
 
 /**
  * The invitation behind a recording, and the way to say it is the wrong one.
@@ -76,9 +78,7 @@ export default function MeetingDetailsDialog({
             onClick={onClose}
             className="ms-auto grid size-7 place-items-center rounded-md text-tertiary hover:bg-a-200 hover:text-primary"
           >
-            <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.8]">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
+            <Icon icon={X} className="size-3.5" />
           </button>
         </div>
         {ask ? (
