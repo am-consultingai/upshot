@@ -25,7 +25,7 @@ import { confirmDialog } from "../components/ConfirmDialog";
 import { toast } from "../components/Toaster";
 import { speakers } from "../lib/speakers";
 import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
-import { leadFirst, withCitations } from "../lib/summary";
+import { citedSeconds, leadFirst, withCitations } from "../lib/summary";
 import { meetingDirections } from "../lib/direction";
 // What each stage is doing, in words. "summarize: running" told nobody anything.
 import { STAGE_LABEL, formatPercent, phaseLabel, timeLeft, useMeetingJob } from "../lib/activeJobs";
@@ -874,9 +874,9 @@ export default function MeetingPage() {
                      */
                     onClick={(event) => {
                       // A cited point's (00:12:34): the same seek as a chapter or an action item.
-                      const cite = (event.target as HTMLElement).closest<HTMLElement>("[data-cite]");
-                      if (cite) {
-                        seekTo(Number(cite.dataset.cite) / 1000);
+                      const at = citedSeconds(event.target);
+                      if (at !== null) {
+                        seekTo(at);
                         return;
                       }
                       const next = (event.target as HTMLElement).closest(".next");
