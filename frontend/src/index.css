@@ -573,6 +573,18 @@ kbd {
   }
 }
 
+/*
+ * The default size of every icon (components/Icon.tsx). In a layer, so a `size-3` on
+ * one icon still beats it; outside one it would beat every utility.
+ */
+@layer components {
+  .ma-icon {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+  }
+}
+
 @keyframes ma-shimmer {
   from {
     background-position: 100% 0;
