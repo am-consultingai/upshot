@@ -8,6 +8,8 @@ import { useI18n, type MessageKey } from "../../i18n";
 import Button, { Spinner } from "../Button";
 import { confirmDialog } from "../ConfirmDialog";
 import type { Citation } from "./Answer";
+import { ArrowRight, ChevronDown, X } from "lucide-react";
+import { Icon } from "../Icon";
 
 // The Markdown renderer is the heaviest thing in the panel; it loads with the first answer.
 const Answer = lazy(() => import("./Answer"));
@@ -130,9 +132,7 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
           onClick={onClose}
           className="grid size-7 place-items-center rounded-sm text-secondary hover:bg-a-200"
         >
-          <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5]" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
+          <Icon icon={X} className="size-3.5" />
         </button>
       </header>
       {view === "history" ? (
@@ -376,9 +376,7 @@ function Chat({
               variant="primary"
             >
               {t("assistant.send")}
-              <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100" aria-hidden="true">
-                <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" />
-              </svg>
+              <Icon icon={ArrowRight} mirror className="size-3.5" />
             </Button>
           )}
         </div>
@@ -625,9 +623,7 @@ function ToolStep({ name, input, output, state }: { name: string; input: unknown
         </span>
         <bdi className="min-w-0 truncate">{label}</bdi>
         {found && <span className="shrink-0">· {found}</span>}
-        <svg viewBox="0 0 16 16" className={`ms-auto size-3 shrink-0 fill-none stroke-current stroke-[1.5] ${open ? "rotate-180" : ""}`} aria-hidden="true">
-          <path d="M4 6.5 8 10.5l4-4" />
-        </svg>
+        <Icon icon={ChevronDown} className={`ms-auto size-3 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
         <dl className="mt-1 ms-5.5 space-y-0.5 text-2xs text-tertiary" data-testid="assistant-tool-details">
