@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ActiveJob, type Meeting } from "../src/api";
 import { en } from "../src/locales/en";
+import { de } from "../src/locales/de";
+import { es } from "../src/locales/es";
+import { fr } from "../src/locales/fr";
 import { he } from "../src/locales/he";
 import ActiveJobs from "../src/components/ActiveJobs";
 import MeetingCard from "../src/components/MeetingCard";
@@ -126,7 +129,7 @@ describe("the meeting card", () => {
     });
     await settle();
     expect(byTestId("meeting-progress")?.textContent).toBe("42%");
-    expect(byTestId("eta")?.textContent).toBe("~6 min left");
+    expect(byTestId("eta")?.textContent).toBe("about 6 min left");
   });
 
   it("invents no time for a stage that cannot say: the fake constant is gone", async () => {
@@ -173,7 +176,7 @@ describe("Settings: running and waiting", () => {
       "Transcribing · transcribing · 50%",
     );
     expect(first.querySelector('[data-testid="active-job-eta"]')?.textContent).toBe(
-      "~1 min left",
+      "about 2 min left",
     );
     expect(first.querySelector('[data-testid="active-job-link"]')?.getAttribute("href")).toBe("/m/m1");
     expect(first.querySelector('[data-testid="active-job-cancel"]')).toBeNull();
@@ -246,6 +249,30 @@ describe("the words", () => {
     expect(timeLeft(null, t)).toBeNull();
     expect(timeLeft(30, t)).toBe("under a minute left");
     expect(timeLeft(3600 + 600, (key) => he[key])).toContain("עוד כ־");
+  });
+
+  it("time left is rounded as the estimate it is", () => {
+    expect(timeLeft(undefined, t)).toBeNull();
+    expect(timeLeft(0, t)).toBe("under a minute left");
+    expect(timeLeft(59, t)).toBe("under a minute left");
+    expect(timeLeft(60, t)).toBe("about a minute left");
+    expect(timeLeft(89, t)).toBe("about a minute left");
+    expect(timeLeft(90, t)).toBe("about 2 min left");
+    expect(timeLeft(124, t)).toBe("about 2 min left");
+    expect(timeLeft(195, t)).toBe("about 3 min left");
+    expect(timeLeft(666, t)).toBe("about 11 min left");
+    expect(timeLeft(59 * 60 + 40, t)).toBe("about 1 h left");
+    expect(timeLeft(3600 + 22 * 60, t)).toBe("about 1 h 20 min left");
+    expect(timeLeft(2 * 3600 + 2 * 60, t)).toBe("about 2 h left");
+  });
+
+  it("every language says the short waits in its own words", () => {
+    for (const locale of [he, de, es, fr]) {
+      const say = (key: keyof typeof en) => locale[key];
+      expect(timeLeft(75, say)).toBe(locale["progress.leftAboutMinute"]);
+      expect(timeLeft(30, say)).toBe(locale["progress.leftUnderMinute"]);
+      expect(timeLeft(600, say)).not.toContain("{time}");
+    }
   });
 
   it("a summary is named, with no percentage", () => {

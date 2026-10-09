@@ -957,6 +957,7 @@ export const he: Record<MessageKey, string> = {
   "nav.transcriptions": "תמלולים",
   "help.transcriptions": "קובצי אודיו ווידאו שתומללו במחשב הזה, בנפרד מהפגישות שלך.",
   "progress.left": "עוד כ־{time}",
+  "progress.leftAboutMinute": "עוד כדקה",
   "progress.leftUnderMinute": "נותרה פחות מדקה",
   "progress.phase.prepare": "הכנת השמע",
   "activeJobs.title": "בעבודה ובהמתנה",

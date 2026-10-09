@@ -15,6 +15,7 @@ from app.pipeline.progress import (
     MIN_ETA_ELAPSED_S,
     MIN_ETA_PROGRESS,
     MeetingProgress,
+    TimeLeft,
     eta_seconds,
     eta_since,
     meeting_progress,
@@ -44,6 +45,89 @@ def test_time_left_since_a_stamp() -> None:
     started = iso(clock.now() - timedelta(seconds=120))
     assert eta_since(0.4, started, clock.now()) == 180
     assert eta_since(0.4, None, clock.now()) is None
+
+
+# ------------------------------------------------------------------ held while stuck (D94)
+
+
+def readings(
+    estimate: TimeLeft, clock: FakeClock, started: str, progress: float, seconds: int, every: int
+) -> list[int | None]:
+    """Poll ``estimate`` every ``every`` seconds for ``seconds``, progress standing still."""
+    out = []
+    for _ in range(seconds // every):
+        clock.advance(every)
+        out.append(estimate.at(progress, started, clock.now()))
+    return out
+
+
+def test_time_left_holds_while_a_long_chunk_is_decoded() -> None:
+    # As seen on machine B: 10% reached, then a long chunk with no callback for 50 s,
+    # polled every 2 s. The plain average climbed 195, 213, 250 ... 666; it must not.
+    clock = FakeClock()
+    started = iso(clock.now())
+    estimate = TimeLeft()
+    clock.advance(21.7)
+    first = estimate.at(0.10, started, clock.now())
+    assert first == 195
+
+    stuck = readings(estimate, clock, started, 0.10, seconds=50, every=2)
+    assert stuck == [195] * 25, "the estimate holds while progress stands still"
+    assert eta_since(0.10, started, clock.now()) == 645, "what the bare average said"
+
+    # The chunk lands: 38% at 71.7 s. The new figure is the whole run's average pace.
+    resumed = estimate.at(0.38, started, clock.now())
+    assert resumed == round(71.7 * 0.62 / 0.38) == 117
+
+
+def test_a_wait_longer_than_the_estimate_grows_it_no_faster_than_real_time() -> None:
+    clock = FakeClock()
+    started = iso(clock.now())
+    estimate = TimeLeft()
+    clock.advance(20)
+    assert estimate.at(0.5, started, clock.now()) == 20
+
+    stuck = readings(estimate, clock, started, 0.5, seconds=40, every=1)
+    assert stuck[:20] == [20] * 20, "held until the wait outlasts it"
+    steps = [after - before for before, after in pairwise([20, *stuck])]  # type: ignore[operator]
+    assert all(0 <= step <= 1 for step in steps), "never a jump, never faster than the clock"
+    assert stuck[-1] == 40
+
+
+def test_a_held_estimate_never_exceeds_the_plain_average() -> None:
+    # Far along, the average itself grows slower than real time: it caps the hold.
+    clock = FakeClock()
+    started = iso(clock.now())
+    estimate = TimeLeft()
+    clock.advance(90)
+    assert estimate.at(0.9, started, clock.now()) == 10
+    for reading in readings(estimate, clock, started, 0.9, seconds=60, every=5):
+        assert reading is not None
+        assert reading <= eta_since(0.9, started, clock.now())  # type: ignore[operator]
+
+
+def test_a_held_estimate_still_waits_for_enough_of_the_run() -> None:
+    clock = FakeClock()
+    started = iso(clock.now())
+    estimate = TimeLeft()
+    clock.advance(5)
+    assert estimate.at(0.5, started, clock.now()) is None, "too soon"
+    clock.advance(5)
+    assert estimate.at(MIN_ETA_PROGRESS - 0.01, started, clock.now()) is None, "too little"
+    clock.advance(MIN_ETA_ELAPSED_S)
+    assert estimate.at(MIN_ETA_PROGRESS - 0.01, started, clock.now()) is None, "still too little"
+    assert estimate.at(1.0, started, clock.now()) is None, "finished"
+
+
+def test_the_language_phase_does_not_climb_either() -> None:
+    # 5% with 297 -> 335 -> 374 in 4 s, as seen: now held at the first figure.
+    clock = FakeClock()
+    started = iso(clock.now())
+    estimate = TimeLeft()
+    clock.advance(15.6)
+    first = estimate.at(0.05, started, clock.now())
+    assert first == 296
+    assert readings(estimate, clock, started, 0.05, seconds=4, every=2) == [296, 296]
 
 
 # ------------------------------------------------------------------ the phases
@@ -105,6 +189,24 @@ def test_the_tracker_says_time_left_once_measured() -> None:
     assert state is not None
     progress = float(state["progress"])
     assert state["eta_s"] == round(120 * (1 - progress) / progress)
+
+
+def test_the_tracker_holds_time_left_while_progress_stands_still() -> None:
+    clock = FakeClock()
+    tracker = MeetingProgress(clock, EventBus())
+    tracker.start("m1", "transcribe")
+    tracker.report("m1", "transcribe", 0.2)
+    clock.advance(60)
+    first = tracker.get("m1")
+    assert first is not None and first["eta_s"] is not None
+    held = first["eta_s"]
+    for _ in range(10):
+        clock.advance(2)
+        state = tracker.get("m1")
+        assert state is not None and state["eta_s"] == held
+    tracker.report("m1", "transcribe", 0.8)
+    state = tracker.get("m1")
+    assert state is not None and state["eta_s"] is not None and state["eta_s"] < held
 
 
 def test_events_are_at_most_one_a_second_but_a_new_phase_is_said_at_once() -> None:

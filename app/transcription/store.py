@@ -30,7 +30,7 @@ from typing import Any
 from app.clock import Clock, SystemClock, iso, parse_iso
 from app.errors import Cancelled
 from app.log import get
-from app.pipeline.progress import eta_since
+from app.pipeline.progress import TimeLeft
 from app.pipeline.queue import MAX_ATTEMPTS, backoff_seconds
 from app.transcription.types import Options
 
@@ -152,6 +152,8 @@ class TranscriptionStore:
         self._last_event: dict[str, float] = {}
         #: When each running job was claimed, for its time left (``eta_s``) in events.
         self._started: dict[str, str] = {}
+        #: Each running job's time left, held while its progress stands still (D94).
+        self._time_left: dict[str, TimeLeft] = {}
         #: Claim, cancel and delete read a state and act on it: under one lock, so an API
         #: thread can't cancel or delete a job the worker claims in between (a cancelled
         #: job then finished as done, a deleted one took the worker down; the PR #1 review).
@@ -372,6 +374,7 @@ class TranscriptionStore:
         self._stopping.pop(transcription_id, None)
         self._last_event.pop(transcription_id, None)
         self._started.pop(transcription_id, None)
+        self._time_left.pop(transcription_id, None)
         if self.events is not None:
             self.events.publish("transcription", id=transcription_id, state="deleted")
 
@@ -501,6 +504,7 @@ class TranscriptionStore:
         job = self.require(transcription_id)
         self._last_event.pop(transcription_id, None)
         self._started.pop(transcription_id, None)
+        self._time_left.pop(transcription_id, None)
         self._publish(job)
         return job
 
@@ -508,7 +512,12 @@ class TranscriptionStore:
         """Seconds left for a running job, at this run's pace; ``None`` otherwise."""
         if job.state != RUNNING:
             return None
-        return eta_since(job.progress, job.started_at, self.clock.now())
+        return self._eta(job.id, job.progress, job.started_at)
+
+    def _eta(self, transcription_id: str, progress: float, started_at: str | None) -> int | None:
+        with self._lock:
+            estimate = self._time_left.setdefault(transcription_id, TimeLeft())
+            return estimate.at(progress, started_at, self.clock.now())
 
     def _publish(self, job: Transcription) -> None:
         started = job.started_at if job.state == RUNNING else None
@@ -529,7 +538,7 @@ class TranscriptionStore:
                 state=state,
                 phase=phase,
                 progress=round(progress, 4),
-                eta_s=eta_since(progress, started_at, self.clock.now())
+                eta_s=self._eta(transcription_id, progress, started_at)
                 if state == RUNNING
                 else None,
             )
