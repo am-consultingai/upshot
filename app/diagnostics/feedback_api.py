@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app import meta
 from app.diagnostics.feedback import Feedback, FeedbackError, FeedbackSender, transcript_size
+from app.pipeline.stages.render import read_summary
 
 router = APIRouter(prefix="/api/feedback")
 SCREENSHOT = "feedback_screenshot"
@@ -108,9 +109,7 @@ def _rating(request: Request, meeting_id: str, body: RatingPost) -> Feedback:
         transcript_size(len(transcript.read_text(encoding="utf-8"))) if transcript.exists() else ""
     )
     summary = folder / "summary.html"
-    included = (
-        summary.read_text(encoding="utf-8") if body.include_summary and summary.exists() else None
-    )
+    included = read_summary(summary) if body.include_summary and summary.exists() else None
     return Feedback(
         kind="summary_rating",
         message=body.comment,
