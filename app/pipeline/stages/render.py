@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import nh3
+
 from app import meta
 from app.asr import languages
 from app.asr.models import DEFAULT_LANGUAGE
@@ -42,15 +44,85 @@ class Rendered:
     email: str
 
 
-#: Model-authored HTML goes straight into a page the user opens, so the two things that
-#: turn a document into code come out first. Everything else — structure, styling,
-#: tables, inline CSS — is left exactly as written, because that is the whole point.
-_SCRIPT = re.compile(r"<script\b.*?</script\s*>", re.IGNORECASE | re.DOTALL)
-_HANDLER = re.compile(r"\son[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+#: Model-authored HTML goes straight into a page the user opens, and the model reads
+#: speech and invite text that outsiders write. So the document is cleaned by an
+#: allowlist: structure, text, tables and inline styling stay, because the free-form
+#: design is made of them; anything that runs code, frames another page or makes a
+#: request of its own (images included) goes. Links survive only as in-page anchors.
+_TAGS = frozenset(
+    {
+        *("h1", "h2", "h3", "h4", "h5", "h6", "p", "ul", "ol", "li", "br", "hr"),
+        *("strong", "em", "b", "i", "u", "s", "code", "pre", "blockquote"),
+        *("span", "div", "section", "article", "header", "footer"),
+        *("small", "sub", "sup", "mark", "abbr", "time", "figure", "figcaption"),
+        *("dl", "dt", "dd", "details", "summary", "a"),
+        *("table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption", "colgroup", "col"),
+    }
+)
+_ATTRIBUTES = {
+    "*": {"style", "class", "dir", "lang", "title"},
+    "a": {"href"},
+    "td": {"colspan", "rowspan"},
+    "th": {"colspan", "rowspan", "scope"},
+    "col": {"span"},
+    "colgroup": {"span"},
+    "time": {"datetime"},
+    "details": {"open"},
+}
+#: Gone with their content, not just their tags: text inside these is not the document's.
+_DROPPED_WITH_CONTENT = frozenset(
+    {
+        *("script", "style", "iframe", "frame", "frameset", "object", "embed", "applet"),
+        *("svg", "math", "noscript", "template", "textarea", "select", "title"),
+    }
+)
+#: Inline CSS that can make a request or run code. Comments are taken out before the
+#: check, and a backslash (a CSS escape can spell any of these) drops the declaration.
+_CSS_COMMENT = re.compile(r"/\*.*?(\*/|$)", re.DOTALL)
+_CSS_UNSAFE = re.compile(
+    r"\\|url\s*\(|image-set\s*\(|image\s*\(|cross-fade\s*\(|src\s*\(|expression\s*\("
+    r"|javascript:|@import|behavior|-moz-binding",
+    re.IGNORECASE,
+)
+
+
+def _clean_style(value: str) -> str | None:
+    kept = [
+        declaration.strip()
+        for declaration in _CSS_COMMENT.sub("", value).split(";")
+        if declaration.strip() and not _CSS_UNSAFE.search(declaration)
+    ]
+    return "; ".join(kept) or None
+
+
+def _attribute(element: str, attribute: str, value: str) -> str | None:
+    if attribute == "style":
+        return _clean_style(value)
+    if attribute == "href":
+        # In-page anchors only: an outside link is how a summary would phish.
+        return value if value.strip().startswith("#") else None
+    return value
 
 
 def sanitize(html: str) -> str:
-    return _HANDLER.sub("", _SCRIPT.sub("", html))
+    """The summary, reduced to the allowlist above. Run on render and again on read."""
+    return nh3.clean(
+        html,
+        tags=set(_TAGS),
+        clean_content_tags=set(_DROPPED_WITH_CONTENT),
+        attributes={tag: set(names) for tag, names in _ATTRIBUTES.items()},
+        attribute_filter=_attribute,
+        # A bullet cites its moment in the transcript as ``data-at-ms`` (see cite_moments).
+        generic_attribute_prefixes={"data-"},
+        url_schemes=set(),
+        link_rel=None,
+        strip_comments=True,
+    )
+
+
+def read_summary(path: Path) -> str:
+    """A rendered summary from disk, cleaned again: older files predate the allowlist."""
+    return sanitize(path.read_text(encoding="utf-8"))
 
 
 #: A point the summary took from one turn carries that turn's start (D94): the page shows

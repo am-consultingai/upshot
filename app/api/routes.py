@@ -1222,7 +1222,19 @@ def get_summary(request: Request, meeting_id: str) -> Response:
     path = meeting.path / "summary.html"
     if not path.exists():
         raise HTTPException(404, "not rendered yet")
-    return Response(path.read_text(encoding="utf-8"), media_type="text/html; charset=utf-8")
+    # Cleaned on the way out too: a summary rendered before the allowlist is still on disk.
+    from app.pipeline.stages.render import read_summary
+
+    # Fetched by the page, never meant to be opened as one: if it is, nothing in it runs.
+    return Response(
+        read_summary(path),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Security-Policy": SUMMARY_CSP},
+    )
+
+
+#: For the summary document itself, should anyone open its URL directly.
+SUMMARY_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
 
 
 def _parse_range(header: str, size: int) -> tuple[int, int]:

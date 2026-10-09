@@ -160,7 +160,7 @@ def test_free_form_lets_the_prompt_decide_everything(tmp_path: Path) -> None:
             from app.llm.client import LlmResult
 
             return LlmResult(
-                data={"summary_html": "<section class='card'><h9>Anything</h9></section>"},
+                data={"summary_html": "<section class='card'><h6>Anything</h6></section>"},
                 model="fake",
                 attempts=1,
             )
@@ -171,7 +171,7 @@ def test_free_form_lets_the_prompt_decide_everything(tmp_path: Path) -> None:
 
     render.run(h.context(meeting, JobStage.RENDER, services=Services()))
     html = (meeting.path / "summary.html").read_text(encoding="utf-8")
-    assert "<h9>Anything</h9>" in html, "passed through, not relaid out by the template"
+    assert "<h6>Anything</h6>" in html, "passed through, not relaid out by the template"
     assert "labels" not in html
 
 

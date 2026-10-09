@@ -9,6 +9,10 @@ transcription of each track — and it is pushed as a ``job`` event (``action:
 
 Time left is never a constant per state: it is this run's own pace, elapsed over
 progress, and only once there is enough of the run to measure (:func:`eta_seconds`).
+That pace is the whole run's average, and it is only re-measured when progress moves
+(:class:`TimeLeft`, D94): a long chunk sends no ``on_segment`` for a minute, and a pace
+recomputed while it is decoded falls toward zero, so the estimate climbed with the wait
+(10% held for 50 s took "time left" from 195 s to 666 s).
 Only the transcribe stage reports. Summarizing has no honest percentage: an LLM's time
 is not predictable, so that stage is labelled and left indeterminate.
 """
@@ -16,7 +20,7 @@ is not predictable, so that stage is labelled and left indeterminate.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -65,6 +69,34 @@ def eta_since(progress: float | None, started_at: str | None, now: datetime) -> 
     return eta_seconds(progress, (now - parse_iso(started_at)).total_seconds())
 
 
+@dataclass
+class TimeLeft:
+    """One run's time left, held while its progress stands still (D94).
+
+    The estimate is the whole run's average pace (:func:`eta_since`), measured when
+    progress moves. While it does not move, the last estimate holds: a pace that falls
+    only because no callback came is not news. Once the wait outlasts the held figure
+    it grows with the wait, never faster than real time and never by a jump, and never
+    past what the plain average would now say.
+    """
+
+    progress: float | None = None
+    since: datetime | None = None
+    held: int | None = None
+
+    def at(self, progress: float | None, started_at: str | None, now: datetime) -> int | None:
+        pace = eta_since(progress, started_at, now)
+        if pace is None or progress is None:
+            self.progress, self.since, self.held = None, None, None
+            return pace
+        moved = self.progress is None or round(progress, 4) != round(self.progress, 4)
+        if moved or self.held is None or self.since is None:
+            self.progress, self.since, self.held = progress, now, pace
+            return pace
+        waited = round((now - self.since).total_seconds())
+        return min(pace, max(self.held, waited))
+
+
 def meeting_progress(phase: str, fraction: float) -> float:
     """``fraction`` of ``phase`` as a fraction of the whole transcribe stage, 0–1."""
     done = 0.0
@@ -83,6 +115,7 @@ class _Run:
     phase: str | None = None
     progress: float = 0.0
     last_event: float | None = None
+    time_left: TimeLeft = field(default_factory=TimeLeft)
 
 
 class MeetingProgress:
@@ -141,6 +174,6 @@ class MeetingProgress:
             "stage": run.stage,
             "phase": run.phase,
             "progress": round(run.progress, 4),
-            "eta_s": eta_since(run.progress, run.started_at, self.clock.now()),
+            "eta_s": run.time_left.at(run.progress, run.started_at, self.clock.now()),
             "started_at": run.started_at,
         }
