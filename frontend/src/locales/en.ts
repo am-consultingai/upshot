@@ -964,7 +964,8 @@ export const en = {
   // File transcription (D86).
   "nav.transcriptions": "Transcriptions",
   "help.transcriptions": "Audio and video files transcribed on this computer, apart from your meetings.",
-  "progress.left": "~{time} left",
+  "progress.left": "about {time} left",
+  "progress.leftAboutMinute": "about a minute left",
   "progress.leftUnderMinute": "under a minute left",
   "progress.phase.prepare": "preparing the audio",
   "activeJobs.title": "Running and waiting",
