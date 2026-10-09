@@ -213,7 +213,7 @@ test("an_unmatched_recording_sits_inside_the_invite_and_link_matches_it", async 
   // One block, the invitation's, with the recording's strip inside it.
   const block = page.getByTestId("calendar-combined");
   await expect(block).toHaveCount(1);
-  await expect(block.getByTestId("calendar-combined-event")).toHaveText("Design review");
+  await expect(block.getByTestId("calendar-combined-title")).toHaveText("Design review");
   const strip = block.getByTestId("calendar-combined-strip");
   await expect(strip).toContainText("Is this the recording?");
   await expect(strip).toContainText("10:05 – 11:45");
@@ -251,7 +251,16 @@ test("not_this_one_opens_the_picker_and_none_settles_it", async ({ page, seedBod
 test("a_short_invite_asks_with_a_question_mark", async ({ page, seedBody }) => {
   await seedBody({
     meetings: [
-      { id: "e2e-short", title: "Recording", state: "RENDERED", started_at: isoAt(0, 10, 2), duration_s: 25 * 60 },
+      // Proposed, not matched: with nothing stored, the events endpoint would infer the
+      // match from the overlap by itself and the block would never ask.
+      {
+        id: "e2e-short",
+        title: "Recording",
+        state: "RENDERED",
+        started_at: isoAt(0, 10, 2),
+        duration_s: 25 * 60,
+        proposed: [{ event_id: "e2e-short-evt" }],
+      },
     ],
     calendar_events: [{ id: "e2e-short-evt", title: "Quick sync", start: isoAt(0, 10), end: isoAt(0, 10, 30) }],
   });
@@ -259,7 +268,7 @@ test("a_short_invite_asks_with_a_question_mark", async ({ page, seedBody }) => {
 
   const block = page.getByTestId("calendar-combined");
   await expect(block).toHaveAttribute("data-size", "short");
-  await expect(block.getByTestId("calendar-combined-event")).toHaveText("Quick sync");
+  await expect(block.getByTestId("calendar-combined-title")).toHaveText("Quick sync");
   await block.getByTestId("calendar-combined-ask").click();
   const menu = page.getByTestId("calendar-combined-menu");
   await expect(menu.getByRole("menuitem")).toHaveText(["Link", "Not this one"]);

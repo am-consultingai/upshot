@@ -280,7 +280,9 @@ function CombinedBlock({
       >
         <ChipFlag kind="scheduled" />
         <span className="min-w-0 flex-1 leading-tight">
-          <span className="block truncate text-xs font-normal text-secondary">{title}</span>
+          <span data-testid="calendar-combined-title" className="block truncate text-xs font-normal text-secondary">
+            {title}
+          </span>
           {roomy && minutes >= 90 && (
             <span data-testid="chip-when" className="mt-px block truncate font-mono text-3xs text-secondary">
               {timeRange(event.start, minutes)}
