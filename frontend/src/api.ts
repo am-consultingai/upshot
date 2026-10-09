@@ -36,8 +36,6 @@ export interface Meeting {
   needs_meeting?: boolean;
   /** The events it may be, when its match is only proposed (D89). */
   proposed?: EventRef[];
-  /** How its calendar meeting was settled: null when nothing was ever stored on it. */
-  calendar_match?: { state: string | null; source: string | null } | null;
 }
 
 /** A stretch of the conversation about one thing, as the summarizer divided it. */

@@ -216,6 +216,8 @@ export const he: Record<MessageKey, string> = {
   "calendar.merge": "איחוד ההקלטות",
   "calendar.isThisIt": "זו ההקלטה?",
   "calendar.link": "קישור",
+  "calendar.linkFailed": "לא הצלחנו לקשר את ההקלטה",
+  "calendar.mergedInto": "ההקלטה אוחדה עם ההקלטה הקודמת של הפגישה הזו",
   "calendar.notThisRecording": "לא זו",
   "calendar.linkTo": "קישור ההקלטה לפגישה {title}",
   "calendar.recordingAt": "הקלטה {time}",

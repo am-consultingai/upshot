@@ -377,20 +377,19 @@ export interface AskableMeeting {
   duration_s: number | null;
   needs_meeting?: boolean;
   proposed?: { calendar_id: string; event_id: string }[];
-  calendar_match?: { state: string | null; source: string | null } | null;
 }
 
 /**
- * Whether a recording's calendar meeting is still open to question (D94): not matched,
- * and not answered by the user ("not on my calendar" settles it for good). A recording
- * still running is not asked about until it ends.
+ * Whether a recording's calendar meeting is still open to question (D94).
+ *
+ * The backend's `needs_meeting` is the one answer (D89), so the week view, the month's
+ * dots and the sidebar agree: not matched, and not answered by the user ("not on my
+ * calendar" settles it for good). A recording with nothing stored is matched for display,
+ * not asked about, and one still running is not asked about until it ends.
  */
 export function asksForMeeting(meeting: AskableMeeting): boolean {
   if (meeting.state === "RECORDING" || meeting.state === "ARMED") return false;
-  if (meeting.needs_meeting) return true;
-  const match = meeting.calendar_match;
-  if (!match) return true;
-  return match.state !== "matched" && match.source !== "user";
+  return Boolean(meeting.needs_meeting);
 }
 
 /** Milliseconds two intervals share; zero when they do not meet. */
@@ -405,14 +404,25 @@ function overlapMs(aStart: number, aEnd: number, bStart: number, bEnd: number): 
  * to. Of the events a recording overlaps, one the backend proposed for it wins; otherwise
  * the one it shares the most time with. An event holds one recording: a second recording
  * of the same slot is drawn on its own, as before. Earlier recordings choose first.
+ *
+ * `drawn` is the day keys the grid shows. An event is drawn in the column of the day it
+ * starts, and the events endpoint also returns ones that only overlap the range — an
+ * invitation from 23:30 the night before is not on the grid, so a recording must not be
+ * put inside it, or it would vanish with it.
  */
 export function pairRecordings<M extends AskableMeeting, E extends GridEvent>(
   meetings: M[],
   events: E[],
+  drawn?: Set<string>,
 ): Map<string, { meeting: M; event: E }> {
   const matched = recordedIds(events);
   const pairs = new Map<string, { meeting: M; event: E }>();
-  const open = events.filter((event) => !event.all_day && !event.meeting_id);
+  const open = events.filter(
+    (event) =>
+      !event.all_day &&
+      !event.meeting_id &&
+      (!drawn || drawn.has(dayKey(new Date(event.start)))),
+  );
   const ordered = meetings
     .filter((meeting) => !matched.has(meeting.id) && asksForMeeting(meeting))
     .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
