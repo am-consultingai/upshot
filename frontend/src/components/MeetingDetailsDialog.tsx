@@ -20,10 +20,17 @@ export default function MeetingDetailsDialog({
   meetingId,
   calendar,
   onClose,
+  ask = null,
 }: {
   meetingId: string;
   calendar: MeetingCalendar | null | undefined;
   onClose: () => void;
+  /**
+   * Opened from the calendar grid's "Not this one" (D94): the recording is not settled,
+   * so the card asks which meeting it was, open at the list to pick from. The heading
+   * names the recording, since the dialog is not on its page.
+   */
+  ask?: { heading: string } | null;
 }) {
   const { t } = useI18n();
   const closeRef = useRef<HTMLButtonElement | null>(null);
@@ -61,7 +68,7 @@ export default function MeetingDetailsDialog({
       >
         <div className="mb-2 flex items-center gap-2">
           <h2 id="meeting-details-title" className="text-md font-semibold tracking-snug">
-            {t("calendar.meetingDetails")}
+            {ask ? ask.heading : t("calendar.meetingDetails")}
           </h2>
           <button
             ref={closeRef}
@@ -74,7 +81,9 @@ export default function MeetingDetailsDialog({
             <Icon icon={X} className="size-3.5" />
           </button>
         </div>
-        {calendar ? (
+        {ask ? (
+          <MeetingCalendarCard meetingId={meetingId} calendar={calendar} bare needsMeeting startPicking />
+        ) : calendar ? (
           <MeetingCalendarCard meetingId={meetingId} calendar={calendar} bare />
         ) : (
           <p className="text-sm text-secondary">{t("calendar.noMatch")}</p>
