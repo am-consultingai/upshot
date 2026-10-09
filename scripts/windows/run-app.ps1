@@ -172,6 +172,17 @@ foreach ($role in $speechModels.Keys) {
 if ($missingModels.Count -gt 0) {
     Write-Bad "The installed app's speech models are missing from ${modelsDir}:"
     foreach ($item in $missingModels) { Write-Bad "  - $item" }
+    # A model_path the installed build takes for the Hebrew model (a copy of the pinned
+    # size) makes the installer skip it, so reinstalling alone would never fix this.
+    $configFile = [System.IO.Path]::Combine($HomeDir, "app_config.json")
+    $standIn = $null
+    if (Test-Path -LiteralPath $configFile) {
+        try { $standIn = (Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json).asr.model_path } catch { }
+    }
+    if ($standIn) {
+        Write-Bad "app_config.json sets asr.model_path to $standIn. If the installer takes"
+        Write-Bad "that for the Hebrew model it never installs its own: remove the line first."
+    }
     Write-Bad "Run the Upshot installer again (or upshot.exe --prepare) to repair it."
     Read-Host "  Press Enter to close this window" | Out-Null
     return
@@ -362,7 +373,8 @@ try {
     if ($LASTEXITCODE -ne 0) { Write-Bad "uv sync failed"; return }
     Write-Good "ready"
 
-    # The app decides, exactly as the installed build does: each model verified at its
+    # The app decides, exactly as the installed build does (frozen, so its rules apply):
+    # each model verified at its
     # pinned revision, and the GPU libraries --prepare would use (its own copy, or a CUDA
     # Toolkit it found; none when transcription is set to the CPU or the card is too
     # small). A leftover asr.model_path or asr.cuda_dir in app_config.json counts for
@@ -372,13 +384,20 @@ try {
     Remove-Item Env:UP_ASR__MODEL_PATH, Env:UP_ASR__CUDA_DIR -ErrorAction SilentlyContinue
     $installCheck = @(& $uv run --frozen python -c @"
 import json
+from app import paths
 from app.config import Config
 from app.asr import cuda_libs
-from app.asr.model_manager import is_verified, target_for
+from app.asr.model_manager import is_verified, overridden_roles, target_for
 from app.asr.models import MODELS
+paths.is_frozen = lambda: True
 c = Config.load()
 missing = ['the %s speech model (%s at %s)' % (r, m.repo, m.revision[:12])
            for r, m in MODELS.items() if not is_verified(target_for(m.repo), m)]
+for role in overridden_roles(c):
+    if not is_verified(target_for(MODELS[role].repo), MODELS[role]):
+        missing.append('remove asr.model_path (%s) from app_config.json first: the '
+                       'installer takes it for the %s model and never installs its own'
+                       % (c.get('asr.model_path'), role))
 c.set('asr.cuda_dir', None)
 want, why = cuda_libs.wanted(c)
 gpu = ''
@@ -390,7 +409,9 @@ if want:
         missing.append('the GPU libraries (%s), in %s' % (why, cuda_libs.target_dir()))
 print(json.dumps({'missing': missing, 'gpu': gpu, 'why': why}))
 "@)
-    if ($LASTEXITCODE -ne 0) { Write-Bad "could not check the installed app's models"; return }
+    if ($LASTEXITCODE -ne 0 -or -not $installCheck) {
+        Write-Bad "could not check the installed app's models"; return
+    }
     $installed = $installCheck[-1] | ConvertFrom-Json
     if ($installed.missing.Count -gt 0) {
         Write-Bad "The installed app's files are missing or out of date in ${HomeDir}:"
