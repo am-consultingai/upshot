@@ -227,9 +227,13 @@ def run(
     # A model an earlier build used goes first (D93): nothing loads it any more, and its
     # 3 GB may be what the current models need to fit.
     from app.asr.model_manager import remove_retired
+    from app.asr.models import HEBREW, MODELS, overrides_pinned
 
     configured = config.get("asr.model_path")
-    remove_retired(keep=Path(str(configured)) if configured else None)
+    keep = Path(str(configured)).expanduser() if configured else None
+    if keep is not None and not overrides_pinned(keep, MODELS[HEBREW]):
+        keep = None  # an installed build replaces it with its own copy (z8tj1hfr6w)
+    remove_retired(keep=keep)
 
     speech = tr("prepare.speech", language)
     libraries = tr("prepare.gpu", language)

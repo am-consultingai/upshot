@@ -263,6 +263,23 @@ def test_a_retired_folder_that_is_the_developers_model_path_is_kept(
     assert retired.exists()
 
 
+def test_an_installed_build_removes_a_retired_model_path_it_no_longer_uses(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """z8tj1hfr6w: the installed build replaces it, so its 3 GB is freed for the turbo."""
+    from app import paths
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(asr__model_path=str(retired)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert not retired.exists()
+
+
 # -- the GPU libraries ---------------------------------------------------------------
 
 

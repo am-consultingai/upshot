@@ -61,6 +61,14 @@ def _has_cublas(directory: Path) -> bool:
 _said: set[str] = set()
 
 
+def _own_copy_ready(home: Path) -> bool:
+    """The app's own GPU libraries complete, at the pinned versions: cuBLAS alone, from a
+    half-replaced folder, must not displace a ``cuda_dir`` that works."""
+    from app.asr.cuda_libs import ready
+
+    return ready(home)
+
+
 def _say_once(message: str) -> None:
     if message not in _said:
         _said.add(message)
@@ -92,7 +100,7 @@ def cuda_library_dirs(
             candidate = package / bin_name
             if _has_cublas(candidate):
                 own.append(candidate)
-    if configured and own and paths.is_frozen():
+    if configured and own and paths.is_frozen() and _own_copy_ready(home):
         _say_once(f"asr.cuda_dir is set, but this installed build uses its own GPU libraries "
                   f"in {own[0]}")  # fmt: skip
         configured = None

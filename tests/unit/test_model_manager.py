@@ -547,29 +547,55 @@ def _large_v3_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return mine
 
 
-def test_an_installed_build_ignores_a_model_path_that_is_not_the_pinned_model(
+def test_an_installed_build_installs_its_own_model_over_an_unpinned_model_path(
     tmp_path: Path,
     app_home: Path,
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """z8tj1hfr6w: a developer session's large-v3 outlived an uninstall, and the installed
-    build ran on it and never fetched the turbo. It now resolves to its own copy."""
+    build ran on it and never fetched the turbo. It now fetches the turbo, transcribes on
+    the old copy until the turbo is there, and on the turbo after."""
     from app import paths
+    from app.asr.model_manager import VERIFIED
 
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
     mine = _large_v3_copy(tmp_path, monkeypatch)
     config = default_config()
     config.set("asr.model_path", str(mine))
-    with caplog.at_level("WARNING"):
-        choice = resolve(config, HEBREW)
-        resolve(config, HEBREW)
-    assert not choice.local and choice.reference == MODELS[HEBREW].repo
+
+    # what an installation needs: the turbo, whatever the override says
+    assert not resolve(config, HEBREW, installing=True).local
     assert model_manager.overridden_roles(config) == frozenset()
     assert not model_manager.model_set(config).skip, "--prepare must fetch the turbo"
-    said = [r for r in caplog.records if "installed build" in r.getMessage()]
-    assert len(said) == 1 and str(mine) in said[0].getMessage()
+
+    # until it is installed, the old copy still transcribes: a failed download costs nothing
+    with caplog.at_level("WARNING"):
+        assert resolve(config, HEBREW).reference == str(mine)
+        resolve(config, HEBREW)
+    meanwhile = [r for r in caplog.records if "until --prepare" in r.getMessage()]
+    assert len(meanwhile) == 1 and str(mine) in meanwhile[0].getMessage()
+
+    # once it is, the turbo wins
+    turbo = target_for(MODELS[HEBREW].repo)
+    turbo.mkdir(parents=True)
+    (turbo / "model.bin").write_bytes(b"x" * 1_620)
+    (turbo / "config.json").write_bytes(b"{}")
+    (turbo / VERIFIED).write_text(MODELS[HEBREW].marker, encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        assert resolve(config, HEBREW).reference == str(turbo)
+    assert any("uses its own copy" in r.getMessage() for r in caplog.records)
     assert config.get("asr.model_path") == str(mine), "the key stays for running from source"
+
+
+def test_an_installed_build_does_not_take_a_model_it_cannot_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.asr.models import is_pinned_size
+
+    missing = tmp_path / "nothing"
+    assert not is_pinned_size(missing, MODELS[HEBREW], unreadable=False)
+    assert is_pinned_size(missing, MODELS[HEBREW]), "the warning stays lenient"
 
 
 def test_an_installed_build_keeps_a_model_path_that_holds_the_pinned_model(
