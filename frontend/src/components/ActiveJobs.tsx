@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import { buttonClass } from "./Button";
+import Button from "./Button";
+import { confirmDialog } from "./ConfirmDialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type ActiveJob } from "../api";
 import { useI18n } from "../i18n";
@@ -65,15 +66,26 @@ function Row({ job }: { job: ActiveJob }) {
         )}
       </div>
       {job.cancellable && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           data-testid="active-job-cancel"
-          aria-busy={cancel.isPending}
-          onClick={() => cancel.mutate()}
-          className={buttonClass("ghost")}
+          busy={cancel.isPending}
+          onClick={() => {
+            // A waiting job has nothing to lose; a running one asks first.
+            if (job.state !== "running") {
+              cancel.mutate();
+              return;
+            }
+            void confirmDialog({
+              title: t("activeJobs.cancelTitle"),
+              body: t("activeJobs.cancelBody").replace("{title}", job.title ?? job.id),
+              confirm: t("activeJobs.cancelConfirm"),
+              cancel: t("activeJobs.keepRunning"),
+            }).then((yes) => yes && cancel.mutate());
+          }}
         >
           {t("transcriptions.cancel")}
-        </button>
+        </Button>
       )}
     </li>
   );

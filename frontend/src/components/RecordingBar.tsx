@@ -91,7 +91,7 @@ export default function RecordingBar() {
           <Button
             data-testid="recording-bar-pause"
             busy={pause.isPending}
-            onClick={() => pause.mutate()}
+            onClick={() => pause.mutate(!paused)}
           >
             {paused ? t("recording.resume") : t("recording.pause")}
           </Button>

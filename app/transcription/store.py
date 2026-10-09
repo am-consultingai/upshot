@@ -30,7 +30,7 @@ from typing import Any
 from app.clock import Clock, SystemClock, iso, parse_iso
 from app.errors import Cancelled
 from app.log import get
-from app.pipeline.progress import TimeLeft
+from app.pipeline.progress import TimeLeft, eta_since
 from app.pipeline.queue import MAX_ATTEMPTS, backoff_seconds
 from app.transcription.types import Options
 
@@ -244,7 +244,8 @@ class TranscriptionStore:
             return None
         claimed = _row(row)
         if claimed.started_at:
-            self._started[claimed.id] = claimed.started_at
+            with self._lock:
+                self._started[claimed.id] = claimed.started_at
         self._publish(claimed)
         return claimed
 
@@ -295,6 +296,7 @@ class TranscriptionStore:
             )
             return self._finished(job.id)
         delay = backoff_seconds(attempts, self.rng)
+        self._forget_run(job.id)
         self.conn.execute(
             "UPDATE transcriptions SET state='pending', attempts=?, last_error=?, phase=NULL, "
             "progress=0, not_before=?, started_at=NULL, updated_at=? WHERE id=?",
@@ -307,6 +309,7 @@ class TranscriptionStore:
     def release(self, job: Transcription) -> Transcription:
         """Preempted by a recording: back to pending, **no** attempt counted, same place
         in the queue. It starts again from the beginning."""
+        self._forget_run(job.id)
         self.conn.execute(
             "UPDATE transcriptions SET state='pending', phase=NULL, progress=0, "
             "started_at=NULL, updated_at=? WHERE id=?",
@@ -372,9 +375,7 @@ class TranscriptionStore:
         self.remove_folder(transcription_id)
         self.conn.execute("DELETE FROM transcriptions WHERE id=?", (transcription_id,))
         self._stopping.pop(transcription_id, None)
-        self._last_event.pop(transcription_id, None)
-        self._started.pop(transcription_id, None)
-        self._time_left.pop(transcription_id, None)
+        self._forget_run(transcription_id)
         if self.events is not None:
             self.events.publish("transcription", id=transcription_id, state="deleted")
 
@@ -502,22 +503,41 @@ class TranscriptionStore:
 
     def _finished(self, transcription_id: str) -> Transcription:
         job = self.require(transcription_id)
-        self._last_event.pop(transcription_id, None)
-        self._started.pop(transcription_id, None)
-        self._time_left.pop(transcription_id, None)
+        self._forget_run(transcription_id)
         self._publish(job)
         return job
 
+    def _forget_run(self, transcription_id: str) -> None:
+        """Drop what one run kept: when it last sent progress, when it started and its
+        time left. Called whenever a run ends, finished or sent back to wait, so the next
+        run starts clean: a stale last-sent time would hold back its first progress
+        event for up to a second."""
+        with self._lock:
+            self._last_event.pop(transcription_id, None)
+            self._started.pop(transcription_id, None)
+            self._time_left.pop(transcription_id, None)
+
     def eta_s(self, job: Transcription) -> int | None:
-        """Seconds left for a running job, at this run's pace; ``None`` otherwise."""
+        """Seconds left for a running job, at this run's pace; ``None`` otherwise.
+
+        ``job`` may be a row read before the run ended: an estimate made for it is
+        answered but does not bring back the held figure ``_finished`` dropped, which
+        nothing would remove again."""
         if job.state != RUNNING:
             return None
         return self._eta(job.id, job.progress, job.started_at)
 
     def _eta(self, transcription_id: str, progress: float, started_at: str | None) -> int | None:
+        now = self.clock.now()
         with self._lock:
-            estimate = self._time_left.setdefault(transcription_id, TimeLeft())
-            return estimate.at(progress, started_at, self.clock.now())
+            estimate = self._time_left.get(transcription_id)
+            if estimate is None:
+                # Kept only for a run in progress: ``_started`` holds it from the claim
+                # until the run ends, however it ends.
+                if transcription_id not in self._started:
+                    return eta_since(progress, started_at, now)
+                estimate = self._time_left[transcription_id] = TimeLeft()
+            return estimate.at(progress, started_at, now)
 
     def _publish(self, job: Transcription) -> None:
         started = job.started_at if job.state == RUNNING else None

@@ -10,6 +10,23 @@ interface Match {
   offset: number;
 }
 
+const SCROLL_KEYS = ["PageUp", "PageDown", "ArrowUp", "ArrowDown", "Home", "End"];
+
+/**
+ * Whether a key press is the reader scrolling the transcript themselves: a scrolling
+ * key, pressed in the transcript's own scroll box or with nothing focused (the page
+ * then scrolls). An arrow in the sidebar's list, a menu or a field elsewhere moves that
+ * instead, and must not stop the transcript following playback.
+ */
+export function scrollKeyTakesOver(key: string, target: EventTarget | null, box: Element | null): boolean {
+  if (!SCROLL_KEYS.includes(key)) return false;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return false;
+  if (target === null || target === document.body || target === document.documentElement || target === document) {
+    return true;
+  }
+  return box !== null && target instanceof Node && box.contains(target);
+}
+
 export function findMatches(segments: Segment[], needle: string): Match[] {
   const out: Match[] = [];
   if (!needle) return out;
@@ -105,8 +122,7 @@ const Transcript = forwardRef<
       if (event.target === box) taken();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-      if (["PageUp", "PageDown", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) taken();
+      if (scrollKeyTakesOver(event.key, event.target, scroller ?? list.current)) taken();
     };
     box.addEventListener("wheel", taken, { passive: true });
     box.addEventListener("touchmove", taken, { passive: true });

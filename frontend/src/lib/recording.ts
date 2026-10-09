@@ -34,9 +34,10 @@ export function useRecordingControls() {
     onSuccess: () => queryClient.invalidateQueries(),
     onError: failed("recording.stopFailed"),
   });
-  // Pause and Resume are one endpoint that toggles, as the tray's menu item is.
+  // Takes the state wanted, not a toggle: a press on a Pause the page drew before the
+  // tray resumed must pause, not resume.
   const pause = useMutation({
-    mutationFn: api.togglePause,
+    mutationFn: (paused: boolean) => api.setPaused(paused),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["status"] }),
     onError: failed("recording.pauseFailed"),
   });

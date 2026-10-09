@@ -218,7 +218,7 @@ export default function SearchPage() {
           <SkeletonRows rows={4} />
         </Loading>
       )}
-      {ready && results.isError && (
+      {ready && results.isError && !results.data && (
         <EmptyState
           testid="search-error"
           tone="danger"
@@ -236,7 +236,7 @@ export default function SearchPage() {
        * Nothing matched — or nothing matched *here*. A scope that hides hits found
        * elsewhere says so and offers the way back, instead of reading as "not found".
        */}
-      {ready && results.isSuccess && groups.length === 0 && (
+      {ready && results.data && groups.length === 0 && (
         <EmptyState
           testid="search-none"
           icon={EMPTY_ICON.search}

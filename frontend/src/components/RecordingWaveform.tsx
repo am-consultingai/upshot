@@ -26,7 +26,7 @@ const ALPHA_QUIET = 0.3;
 const ALPHA_PAUSED = 0.15;
 const ALPHA_AXIS = 0.25;
 
-interface Reading {
+export interface Reading {
   me: number;
   them: number;
   paused: boolean;
@@ -48,17 +48,19 @@ export function mixLevel(me: number, them: number): number {
 }
 
 /**
- * How many whole seconds the newest readings have been silent on both tracks, or 0 when
- * they have not been for long enough to say so. A paused stretch is not silence: nothing
- * is being recorded, and the bar already says Paused.
+ * The run of silent readings so far, with one more reading added: it grows while both
+ * tracks stay under the line and starts again at 0 on any sound. A paused stretch is
+ * not silence: nothing is being recorded, and the bar already says Paused.
+ *
+ * Kept as a count beside the drawing history rather than read back from it, because
+ * that history is capped and a count taken from it stopped growing at 75 s.
  */
-export function silentSeconds(readings: readonly Reading[]): number {
-  let run = 0;
-  for (let index = readings.length - 1; index >= 0; index -= 1) {
-    const reading = readings[index];
-    if (reading.paused || mixLevel(reading.me, reading.them) >= SILENT_BELOW) break;
-    run += 1;
-  }
+export function silentRun(run: number, reading: Reading): number {
+  return reading.paused || mixLevel(reading.me, reading.them) >= SILENT_BELOW ? 0 : run + 1;
+}
+
+/** Whole seconds of a silent run, or 0 while it is too short to say so. */
+export function silentSeconds(run: number): number {
   const seconds = Math.floor(run / READINGS_PER_S);
   return seconds >= SILENT_AFTER_S ? seconds : 0;
 }
@@ -79,6 +81,7 @@ export default function RecordingWaveform({ paused = false }: { paused?: boolean
   const { t } = useI18n();
   const canvas = useRef<HTMLCanvasElement | null>(null);
   const history = useRef<Reading[]>([]);
+  const run = useRef(0);
   const [silent, setSilent] = useState(0);
 
   useEffect(() => {
@@ -125,10 +128,11 @@ export default function RecordingWaveform({ paused = false }: { paused?: boolean
         source.close();
         return;
       }
+      run.current = silentRun(run.current, reading);
       history.current.push(reading);
       if (history.current.length > HISTORY) history.current.splice(0, history.current.length - HISTORY);
       // Re-rendered only when the whole number of seconds changes, not 20 times a second.
-      setSilent(silentSeconds(history.current));
+      setSilent(silentSeconds(run.current));
       draw();
     };
 
@@ -149,7 +153,7 @@ export default function RecordingWaveform({ paused = false }: { paused?: boolean
       data-testid="recording-waveform"
       data-silent={quiet}
     >
-      <canvas ref={canvas} className="block size-full" aria-label={t("recording.waveform")} />
+      <canvas ref={canvas} className="block size-full" role="img" aria-label={t("recording.waveform")} />
       {quiet && (
         <span
           data-testid="recording-silent"

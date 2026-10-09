@@ -142,6 +142,11 @@ class LauncherAction(BaseModel):
     joined: bool = False
 
 
+class PausePost(BaseModel):
+    #: The state wanted. Absent, the request toggles.
+    paused: bool | None = None
+
+
 class StartPost(BaseModel):
     title: str | None = None
     #: "Record this one" on an upcoming calendar event: the recording starts already
@@ -696,14 +701,19 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
 
 
 @router.post("/recording/pause")
-def recording_pause(request: Request) -> dict[str, Any]:
+def recording_pause(request: Request, body: PausePost | None = None) -> dict[str, Any]:
+    """Pause or resume. ``{"paused": true}`` pauses and ``{"paused": false}`` resumes,
+    and asking for the state it is already in changes nothing: a page showing a stale
+    Pause cannot resume a recording someone meant to pause. Without a body it toggles,
+    as it always did, for callers written before."""
     svc = services_of(request)
     if svc.recorder is None or not svc.recorder.committed:
         raise HTTPException(409, "not recording")
-    if svc.recorder.paused:
-        svc.recorder.resume()
-    else:
+    wanted = not svc.recorder.paused if body is None or body.paused is None else body.paused
+    if wanted and not svc.recorder.paused:
         svc.recorder.pause()
+    elif not wanted and svc.recorder.paused:
+        svc.recorder.resume()
     svc.events.publish("recorder", state="paused" if svc.recorder.paused else "recording")
     return {"paused": svc.recorder.paused}
 
