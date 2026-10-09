@@ -218,6 +218,8 @@ export const en = {
   "calendar.merge": "Merge them",
   "calendar.isThisIt": "Is this the recording?",
   "calendar.link": "Link",
+  "calendar.linkFailed": "The recording could not be linked",
+  "calendar.mergedInto": "Merged with the earlier recording of this meeting",
   "calendar.notThisRecording": "Not this one",
   "calendar.linkTo": "Link this recording to {title}",
   "calendar.recordingAt": "Recording {time}",

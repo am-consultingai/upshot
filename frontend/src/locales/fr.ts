@@ -220,6 +220,8 @@ export const fr: Record<MessageKey, string> = {
   "calendar.merge": "Les fusionner",
   "calendar.isThisIt": "Est-ce l’enregistrement ?",
   "calendar.link": "Associer",
+  "calendar.linkFailed": "Impossible d’associer l’enregistrement",
+  "calendar.mergedInto": "Fusionné avec l’enregistrement précédent de cette réunion",
   "calendar.notThisRecording": "Pas celui-ci",
   "calendar.linkTo": "Associer cet enregistrement à {title}",
   "calendar.recordingAt": "Enregistrement {time}",

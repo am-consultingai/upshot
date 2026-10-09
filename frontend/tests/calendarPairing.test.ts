@@ -38,24 +38,12 @@ describe("asksForMeeting", () => {
     expect(asksForMeeting(recording())).toBe(true);
   });
 
-  it("does not ask once the user said it was on no calendar", () => {
-    expect(
-      asksForMeeting(
-        recording({ needs_meeting: false, calendar_match: { state: "none", source: "user" } }),
-      ),
-    ).toBe(false);
+  it("does not ask once the backend says it is settled (matched, or none by the user)", () => {
+    expect(asksForMeeting(recording({ needs_meeting: false }))).toBe(false);
   });
 
-  it("does not ask about a matched recording", () => {
-    expect(
-      asksForMeeting(
-        recording({ needs_meeting: false, calendar_match: { state: "matched", source: "auto" } }),
-      ),
-    ).toBe(false);
-  });
-
-  it("asks about a recording nothing was ever stored on", () => {
-    expect(asksForMeeting(recording({ needs_meeting: false, calendar_match: null }))).toBe(true);
+  it("does not ask about a recording nothing was ever stored on: it is matched for display", () => {
+    expect(asksForMeeting(recording({ needs_meeting: undefined }))).toBe(false);
   });
 
   it("never asks about one still recording", () => {
@@ -99,8 +87,19 @@ describe("pairRecordings", () => {
 
   it("does not pair a matched or settled recording", () => {
     const review = event("review", at(10), at(11));
-    const settled = recording({ needs_meeting: false, calendar_match: { state: "none", source: "user" } });
+    const settled = recording({ needs_meeting: false });
     expect(pairRecordings([settled], [review]).size).toBe(0);
+  });
+
+  it("never pairs with an invitation that starts before the days drawn", () => {
+    // Day view for the 7th: the invitation from 23:30 the night before overlaps the range
+    // and is returned, but it is drawn on the 6th, not here.
+    const lateNight = event("late", new Date(2026, 9, 6, 23, 30).toISOString(), at(0, 30));
+    const early = recording({ started_at: at(0, 5), duration_s: 40 * 60 });
+    const drawn = new Set(["2026-10-07"]);
+    expect(pairRecordings([early], [lateNight], drawn).size).toBe(0);
+    // Shown with the 6th too, it pairs as usual.
+    expect(pairRecordings([early], [lateNight], new Set(["2026-10-06", "2026-10-07"])).size).toBe(1);
   });
 
   it("gives an event to one recording only, the earlier one", () => {
