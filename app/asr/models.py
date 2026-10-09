@@ -135,18 +135,40 @@ def looks_like_model_dir(path: Path) -> bool:
 _warned: set[Path] = set()
 
 
+def model_size(path: Path) -> int | None:
+    try:
+        return (path / "model.bin").stat().st_size
+    except OSError:
+        return None
+
+
+def is_pinned_size(path: Path, model: SpeechModel) -> bool:
+    """Whether ``path`` plausibly holds ``model``: its weights within 10 % of the pinned
+    size. Unreadable counts as pinned, so a folder is never refused for a failed stat."""
+    size = model_size(path)
+    return size is None or abs(size - model.size_bytes) <= model.size_bytes // 10
+
+
 def warn_if_not_pinned(path: Path, model: SpeechModel) -> None:
     """Say so, once, when ``asr.model_path`` is plainly another model: a developer's copy
     of ivrit-ai large-v3 (3 GB) still loads after D93, reported as the turbo (1.6 GB)."""
-    try:
-        size = (path / "model.bin").stat().st_size
-    except OSError:
+    if is_pinned_size(path, model) or path in _warned:
         return
-    if abs(size - model.size_bytes) > model.size_bytes // 10 and path not in _warned:
-        _warned.add(path)
-        log.warning("asr.model_path %s holds a %.1f GB model, not %s (%.1f GB): "
-                    "transcription runs on it, but it is not the model this build is tuned for",
-                    path, size / 1e9, model.repo, model.size_bytes / 1e9)  # fmt: skip
+    _warned.add(path)
+    size = model_size(path) or 0
+    log.warning("asr.model_path %s holds a %.1f GB model, not %s (%.1f GB): "
+                "transcription runs on it, but it is not the model this build is tuned for",
+                path, size / 1e9, model.repo, model.size_bytes / 1e9)  # fmt: skip
+
+
+def _ignore_unpinned(path: Path, model: SpeechModel) -> None:
+    if path in _warned:
+        return
+    _warned.add(path)
+    size = model_size(path) or 0
+    log.warning("asr.model_path %s holds a %.1f GB model, not %s (%.1f GB): an installed "
+                "build uses and installs its own copy instead (z8tj1hfr6w)",
+                path, size / 1e9, model.repo, model.size_bytes / 1e9)  # fmt: skip
 
 
 def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
@@ -155,16 +177,24 @@ def resolve(config: Config, role: str = HEBREW) -> ModelChoice:
     ``asr.model_path`` is a developer's override for the Hebrew model only (a copy of it
     kept elsewhere); nothing a user sets reaches the other two. A model that is not on
     disk comes back with ``local=False``: the caller decides what that means.
+
+    An installed build takes the override only when it holds the pinned model. A config
+    from a developer session outlives an uninstall, and its old large-v3 kept an installed
+    copy off the model it is tuned for, which ``--prepare`` then never fetched
+    (z8tj1hfr6w). The key is left in the file: running from source still honours it.
     """
     model = MODELS[role]
     if role == HEBREW:
         configured = config.get("asr.model_path")
         if configured:
             path = Path(str(configured)).expanduser()
-            if looks_like_model_dir(path):
+            if not looks_like_model_dir(path):
+                log.warning("asr.model_path %s is not a CTranslate2 model directory", path)
+            elif paths.is_frozen() and not is_pinned_size(path, model):
+                _ignore_unpinned(path, model)
+            else:
                 warn_if_not_pinned(path, model)
                 return ModelChoice(str(path), local=True, repo_id=model.repo)
-            log.warning("asr.model_path %s is not a CTranslate2 model directory", path)
     from app.asr.model_manager import is_verified, target_for
 
     managed = target_for(model.repo)

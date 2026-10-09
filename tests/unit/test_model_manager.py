@@ -535,3 +535,68 @@ def test_a_stopped_set_resumes_where_it_stopped(app_home: Path) -> None:
     models.start()
     assert models.wait(10).state == "ready"
     assert order == [HEBREW, OTHER], "the classifier is not fetched again"
+
+
+def _large_v3_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A developer's ivrit large-v3 next to the pinned turbo, sizes scaled down to kB."""
+    monkeypatch.setitem(MODELS, HEBREW, replace(MODELS[HEBREW], size_bytes=1_620))
+    mine = tmp_path / "large-v3"
+    mine.mkdir()
+    (mine / "model.bin").write_bytes(b"x" * 3_087)
+    (mine / "config.json").write_bytes(b"{}")
+    return mine
+
+
+def test_an_installed_build_ignores_a_model_path_that_is_not_the_pinned_model(
+    tmp_path: Path,
+    app_home: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """z8tj1hfr6w: a developer session's large-v3 outlived an uninstall, and the installed
+    build ran on it and never fetched the turbo. It now resolves to its own copy."""
+    from app import paths
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    mine = _large_v3_copy(tmp_path, monkeypatch)
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+    with caplog.at_level("WARNING"):
+        choice = resolve(config, HEBREW)
+        resolve(config, HEBREW)
+    assert not choice.local and choice.reference == MODELS[HEBREW].repo
+    assert model_manager.overridden_roles(config) == frozenset()
+    assert not model_manager.model_set(config).skip, "--prepare must fetch the turbo"
+    said = [r for r in caplog.records if "installed build" in r.getMessage()]
+    assert len(said) == 1 and str(mine) in said[0].getMessage()
+    assert config.get("asr.model_path") == str(mine), "the key stays for running from source"
+
+
+def test_an_installed_build_keeps_a_model_path_that_holds_the_pinned_model(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy of the turbo kept elsewhere (a Hugging Face snapshot) is still taken."""
+    from app import paths
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    monkeypatch.setitem(MODELS, HEBREW, replace(MODELS[HEBREW], size_bytes=1_620))
+    turbo = tmp_path / "turbo"
+    turbo.mkdir()
+    (turbo / "model.bin").write_bytes(b"x" * 1_620)
+    (turbo / "config.json").write_bytes(b"{}")
+    config = default_config()
+    config.set("asr.model_path", str(turbo))
+    assert resolve(config, HEBREW).reference == str(turbo)
+    assert model_manager.overridden_roles(config) == frozenset({HEBREW})
+
+
+def test_running_from_source_still_honours_any_model_path(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import paths
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    mine = _large_v3_copy(tmp_path, monkeypatch)
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+    assert resolve(config, HEBREW).reference == str(mine)
