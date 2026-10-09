@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CalendarEvent, type Meeting } from "../api";
 import { useI18n } from "../i18n";
 import { IconBadge } from "./Badge";
@@ -12,6 +12,7 @@ import {
   eventKey,
   foldNights,
   isToday,
+  pairRecordings,
   placement,
   recordedIds,
   startOfDay,
@@ -23,6 +24,8 @@ import { formatClock } from "../lib/format";
 import { timelineLayout } from "../lib/timeline";
 import Tooltip from "./Tooltip";
 import AccountDots from "./AccountDots";
+import { MenuSurface, type MenuAnchor } from "./Menu";
+import MeetingDetailsDialog from "./MeetingDetailsDialog";
 
 /** 48px an hour: a 30-minute meeting holds a title and a time, and a working day fits. */
 const PX_PER_MINUTE = 0.8;
@@ -156,6 +159,199 @@ export function chipWhen(
   return timeRange(start, minutes);
 }
 
+/** Under this a combined block has room for one line of the strip, not two. */
+const ROOMY_MINUTES = 75;
+
+/**
+ * An unmatched recording, inside the invitation it overlaps (D94).
+ *
+ * Drawn side by side, the two were a grey "scheduled" chip and an accent "recorded" chip,
+ * both truncated, with nothing saying they were one meeting. The invitation stays the
+ * block — its title, its slot, its look — and the recording is a strip inside it that
+ * asks, quietly, whether it is this meeting: **Link** settles it; **Not this one** opens
+ * the same "which meeting was this?" picker the meeting page uses. Too short a block for
+ * the question gets the waveform and a "?" that offers the same two choices.
+ */
+function CombinedBlock({
+  event,
+  meeting,
+  minutes,
+  style,
+  onEvent,
+}: {
+  event: CalendarEvent;
+  meeting: Meeting;
+  /** The event's drawn length, which decides how much of the strip fits. */
+  minutes: number;
+  style: React.CSSProperties;
+  onEvent?: (event: CalendarEvent) => void;
+}) {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const [menu, setMenu] = useState<MenuAnchor | null>(null);
+  const [asking, setAsking] = useState(false);
+  const askButton = useRef<HTMLButtonElement | null>(null);
+  const link = useMutation({
+    mutationFn: () =>
+      api.chooseMeetingEvent(meeting.id, {
+        account_id: event.account_id,
+        calendar_id: event.calendar_id,
+        event_id: event.event_id,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["meeting", meeting.id] });
+      void queryClient.invalidateQueries({ queryKey: ["meeting-calendar", meeting.id] });
+      void queryClient.invalidateQueries({ queryKey: ["meeting-invite", meeting.id] });
+      void queryClient.invalidateQueries({ queryKey: ["meetings"] });
+      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
+  });
+  // The recording's calendar, for the picker; fetched only once it is asked for.
+  const calendar = useQuery({
+    queryKey: ["meeting-calendar", meeting.id],
+    queryFn: () => api.meetingCalendar(meeting.id),
+    enabled: asking,
+  });
+
+  const title = event.title ?? t("calendar.untitled");
+  const recordedFor = meeting.duration_s ? meeting.duration_s / 60 : null;
+  const range = timeRange(meeting.started_at, recordedFor);
+  const short = minutes < SHORT_MINUTES;
+  const roomy = minutes >= ROOMY_MINUTES;
+  const linkLabel = t("calendar.linkTo").replace("{title}", title);
+
+  const linkButton = (
+    <button
+      type="button"
+      data-testid="calendar-combined-link"
+      aria-label={linkLabel}
+      disabled={link.isPending}
+      onClick={() => link.mutate()}
+      className="h-4 shrink-0 rounded-xs bg-accent px-1.5 text-3xs font-medium leading-4 text-on-accent hover:brightness-110 disabled:opacity-60"
+    >
+      {t("calendar.link")}
+    </button>
+  );
+  const otherButton = (
+    <button
+      type="button"
+      data-testid="calendar-combined-other"
+      onClick={() => setAsking(true)}
+      className="h-4 shrink-0 rounded-xs bg-raised px-1.5 text-3xs leading-4 text-secondary shadow-[var(--shadow-ring-subtle)] hover:text-primary"
+    >
+      {t("calendar.notThisRecording")}
+    </button>
+  );
+  const askChoices = (
+    <Tooltip label={`${t("calendar.isThisIt")} ${range}`}>
+      <button
+        ref={askButton}
+        type="button"
+        data-testid="calendar-combined-ask"
+        aria-label={t("calendar.askChoices")}
+        aria-haspopup="menu"
+        aria-expanded={menu !== null}
+        onClick={(click) => {
+          const box = click.currentTarget.getBoundingClientRect();
+          const rtl = document.documentElement.dir === "rtl";
+          setMenu({ x: rtl ? box.left : box.right, y: box.bottom + 4, align: "end" });
+        }}
+        className="grid size-4 shrink-0 place-items-center rounded-full bg-accent text-3xs font-semibold leading-none text-on-accent hover:brightness-110"
+      >
+        ?
+      </button>
+    </Tooltip>
+  );
+
+  return (
+    <div
+      data-testid="calendar-combined"
+      data-event={event.event_id}
+      data-meeting={meeting.id}
+      data-size={short ? "short" : roomy ? "roomy" : "medium"}
+      role="group"
+      aria-label={`${title} · ${t("calendar.isThisIt")}`}
+      className={`@container absolute flex overflow-hidden rounded-xs ${CHIP.scheduled} ${
+        short ? "items-center gap-1.25 px-1.25 py-px" : "flex-col gap-0.5 px-1.25 py-0.75"
+      }`}
+      style={style}
+    >
+      <button
+        type="button"
+        data-testid="calendar-combined-event"
+        title={title}
+        onClick={() => onEvent?.(event)}
+        className={`flex min-w-0 items-start gap-1.25 text-start ${short ? "flex-1" : "w-full"}`}
+      >
+        <ChipFlag kind="scheduled" />
+        <span className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate text-xs font-normal text-secondary">{title}</span>
+          {roomy && minutes >= 90 && (
+            <span data-testid="chip-when" className="mt-px block truncate font-mono text-3xs text-secondary">
+              {timeRange(event.start, minutes)}
+            </span>
+          )}
+        </span>
+      </button>
+      {short ? (
+        <span className="flex shrink-0 items-center gap-1" data-testid="calendar-combined-strip">
+          <ChipFlag kind="recorded" />
+          {askChoices}
+        </span>
+      ) : (
+        <div
+          data-testid="calendar-combined-strip"
+          className="min-w-0 rounded-xs bg-accent-quiet px-1 py-0.5 shadow-[inset_2px_0_0_0_var(--accent)]"
+        >
+          <div className="flex min-w-0 items-center gap-1">
+            <ChipFlag kind="recorded" />
+            <bdi className="shrink-0 font-mono text-3xs text-secondary tabular-nums">{range}</bdi>
+            <span className="min-w-0 flex-1 truncate text-3xs text-primary">{t("calendar.isThisIt")}</span>
+            {!roomy && (
+              <>
+                <span className="hidden shrink-0 gap-1 @min-[16rem]:flex">
+                  {linkButton}
+                  {otherButton}
+                </span>
+                <span className="@min-[16rem]:hidden">{askChoices}</span>
+              </>
+            )}
+          </div>
+          {roomy && (
+            <div className="mt-0.5 flex flex-wrap gap-1">
+              {linkButton}
+              {otherButton}
+            </div>
+          )}
+        </div>
+      )}
+      <AccountDots item={event} className="absolute end-1 top-1" />
+      {menu && (
+        <MenuSurface
+          testid="calendar-combined-menu"
+          at={menu}
+          items={[
+            { id: "link", label: t("calendar.link"), run: () => link.mutate() },
+            { id: "other", label: t("calendar.notThisRecording"), run: () => setAsking(true) },
+          ]}
+          onClose={(refocus) => {
+            setMenu(null);
+            if (refocus) askButton.current?.focus();
+          }}
+        />
+      )}
+      {asking && (
+        <MeetingDetailsDialog
+          meetingId={meeting.id}
+          calendar={calendar.data?.calendar}
+          ask={{ heading: t("calendar.recordingAt").replace("{time}", range) }}
+          onClose={() => setAsking(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function kindOf(meeting: Pick<Meeting, "state"> | undefined): ChipKind {
   if (!meeting) return "recorded";
   if (meeting.state === "RECORDING") return "live";
@@ -190,7 +386,12 @@ export default function TimeGrid({
   // recording with no event of its own still draws as itself.
   const recorded = recordedIds(events);
   const byId = new Map(meetings.map((meeting) => [meeting.id, meeting]));
-  const buckets = bucketByDay(meetings.filter((meeting) => !recorded.has(meeting.id)));
+  // An unmatched recording that overlaps an invitation is drawn inside it, asking (D94).
+  const pairs = pairRecordings(meetings, events);
+  const paired = new Set([...pairs.values()].map((pair) => pair.meeting.id));
+  const buckets = bucketByDay(
+    meetings.filter((meeting) => !recorded.has(meeting.id) && !paired.has(meeting.id)),
+  );
   const shown = timedEvents(events);
   const eventBuckets = bucketByDay(shown.map((event) => ({ ...event, started_at: event.start })));
   const allDay = events.filter((item) => item.all_day);
@@ -569,6 +770,24 @@ export default function TimeGrid({
                       day,
                     );
                     const past = new Date(event.end).getTime() < Date.now();
+                    const pair = pairs.get(slot.id);
+                    if (pair) {
+                      return (
+                        <CombinedBlock
+                          key={slot.id}
+                          event={event}
+                          meeting={pair.meeting}
+                          minutes={minutes}
+                          onEvent={onEvent}
+                          style={{
+                            top: fold.y(startMinute),
+                            height: Math.max(16, fold.y(startMinute + minutes) - fold.y(startMinute)),
+                            insetInlineStart: `calc(${(slot.column / slot.columns) * 100}% + 3px)`,
+                            width: `calc(${(1 / slot.columns) * 100}% - 7px)`,
+                          }}
+                        />
+                      );
+                    }
                     const wasRecorded = Boolean(event.meeting_id);
                     const kind = wasRecorded
                       ? kindOf(byId.get(event.meeting_id as string))

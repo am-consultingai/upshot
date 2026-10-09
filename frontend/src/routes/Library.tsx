@@ -277,7 +277,17 @@ export default function Library() {
               <div className="min-w-0 flex-1 overflow-hidden">
                 {span === "month" ? (
                   <div className="h-full overflow-y-auto p-4">
-                    <MonthGrid days={days} anchor={anchor} meetings={windowed} events={events} />
+                    <MonthGrid
+                      days={days}
+                      anchor={anchor}
+                      meetings={windowed}
+                      events={events}
+                      onDay={(day) => {
+                        // Opens that day without making "day" the remembered view.
+                        setAnchor(startOfDay(day));
+                        setOverride((current) => ({ ...current, span: "day" }));
+                      }}
+                    />
                   </div>
                 ) : span === "list" ? (
                   <AgendaList days={days} meetings={windowed} events={events} onEvent={setOpenEvent} />
