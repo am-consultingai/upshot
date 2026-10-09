@@ -9,6 +9,8 @@ import { formatClock, formatDurationShort } from "../lib/format";
 import type { MessageKey } from "../locales/en";
 import { Loading, Skeleton, SkeletonRows } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
+import { Clock, Search } from "lucide-react";
+import { Icon } from "../components/Icon";
 
 type Scope = "all" | SearchHit["kind"];
 
@@ -101,9 +103,7 @@ export default function SearchPage() {
         data-testid="search-field"
         className="flex h-10 items-center gap-2.5 rounded-lg bg-surface-1 px-3 shadow-[var(--shadow-ring-subtle)] focus-within:shadow-[0_0_0_1px_var(--accent)]"
       >
-        <svg viewBox="0 0 16 16" className="size-4 shrink-0 fill-none stroke-current stroke-[1.5] text-tertiary">
-          <path d="M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-        </svg>
+        <Icon icon={Search} className="text-tertiary" />
         <input
           ref={input}
           data-testid="search-input"
@@ -180,9 +180,7 @@ export default function SearchPage() {
                       onClick={() => setTerm(recent)}
                       className="-mx-2 flex h-8 w-[calc(100%+1rem)] items-center gap-2 rounded-md px-2 text-start text-sm text-secondary hover:bg-a-200 hover:text-primary"
                     >
-                      <svg viewBox="0 0 16 16" className="size-3.5 shrink-0 fill-none stroke-current stroke-[1.5] text-tertiary">
-                        <path d="M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM8 5v3.2l2 1.2" />
-                      </svg>
+                      <Icon icon={Clock} className="size-3.5 text-tertiary" />
                       <span className="truncate">{recent}</span>
                     </button>
                   </li>

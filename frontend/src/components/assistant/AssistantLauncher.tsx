@@ -1,5 +1,7 @@
 import { useI18n } from "../../i18n";
 import Tooltip from "../Tooltip";
+import { Bot, X } from "lucide-react";
+import { Icon } from "../Icon";
 
 /**
  * The assistant's way in: a round button in the lower corner of the window, over the
@@ -21,19 +23,9 @@ export default function AssistantLauncher({ open, onToggle }: { open: boolean; o
           className="grid size-14 place-items-center rounded-full bg-accent text-on-accent shadow-lg transition-transform hover:scale-105 hover:bg-accent-hover active:scale-95"
         >
           {open ? (
-            <svg viewBox="0 0 24 24" className="size-6 fill-none stroke-current stroke-2" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
-            </svg>
+            <Icon icon={X} className="size-6" />
           ) : (
-            <svg viewBox="0 0 24 24" className="size-7 fill-none stroke-current" aria-hidden="true" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-              {/* A robot: antenna, head, eyes, mouth, ears. */}
-              <path d="M12 3.5v2.5" />
-              <circle cx="12" cy="3" r="1" fill="currentColor" stroke="none" />
-              <rect x="5" y="6.5" width="14" height="11" rx="3.5" />
-              <circle cx="9.3" cy="11.5" r="1.3" fill="currentColor" stroke="none" />
-              <circle cx="14.7" cy="11.5" r="1.3" fill="currentColor" stroke="none" />
-              <path d="M9.5 14.8h5M3 10.5v3M21 10.5v3M8.5 17.5v2.5M15.5 17.5v2.5" />
-            </svg>
+            <Icon icon={Bot} className="size-7" />
           )}
         </button>
       </Tooltip>

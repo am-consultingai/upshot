@@ -21,6 +21,8 @@ import { Loading, Skeleton, SkeletonRows } from "./Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "./EmptyState";
 import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
+import { Calendar, Check, ChevronDown, FileChartColumn, Search, Settings, type LucideIcon } from "lucide-react";
+import { Icon } from "./Icon";
 
 /**
  * The sidebar: navigation and the library, in one 240px column.
@@ -37,36 +39,36 @@ import type { MessageKey } from "../locales/en";
  * Folding them together costs 88px less, gives every destination a name, and leaves
  * the detail pane wide enough to carry a rail of its own.
  */
-const NAV: { to: string; key: MessageKey; hint: MessageKey; testid: string; path: string; end?: boolean }[] = [
+const NAV: { to: string; key: MessageKey; hint: MessageKey; testid: string; icon: LucideIcon; end?: boolean }[] = [
   {
     to: "/",
     key: "nav.timeline",
     hint: "help.library",
     testid: "nav-timeline",
     end: true,
-    path: "M2.5 4.5h11v9h-11zM2.5 7h11M5.5 2.5v2M10.5 2.5v2",
+    icon: Calendar,
   },
-  { to: "/actions", key: "nav.actions", hint: "help.actions", testid: "nav-actions", path: "M3 8.5 6.2 11.6 13 4.8" },
+  { to: "/actions", key: "nav.actions", hint: "help.actions", testid: "nav-actions", icon: Check },
   {
     to: "/transcriptions",
     key: "nav.transcriptions",
     hint: "help.transcriptions",
     testid: "nav-transcriptions",
-    path: "M5.5 2.5h5l3 3v8h-8zM10.5 2.5v3h3M7.5 8.5v3M9.5 7.5v4M11.5 9v1.5",
+    icon: FileChartColumn,
   },
   {
     to: "/search",
     key: "nav.search",
     hint: "help.search",
     testid: "nav-search",
-    path: "M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z",
+    icon: Search,
   },
   {
     to: "/settings",
     key: "nav.settings",
     hint: "help.settings",
     testid: "nav-settings",
-    path: "M8 10.2A2.2 2.2 0 1 0 8 5.8a2.2 2.2 0 0 0 0 4.4ZM8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.4 3.6l-1 1M4.6 11.4l-1 1M12.4 12.4l-1-1M4.6 4.6l-1-1",
+    icon: Settings,
   },
 ];
 
@@ -217,13 +219,7 @@ export default function Sidebar() {
             <Logo className="w-3.5" />
           </span>
           <span className="truncate text-sm font-semibold tracking-snug">{t("app.title")}</span>
-          <svg
-            data-testid="workspace-chevron"
-            viewBox="0 0 16 16"
-            className="size-3 shrink-0 fill-none stroke-current stroke-[1.5] text-tertiary"
-          >
-            <path d="M4 6.5 8 10.5l4-4" />
-          </svg>
+          <Icon icon={ChevronDown} data-testid="workspace-chevron" className="size-3 text-tertiary" />
         </button>
         </Tooltip>
         {workspace && (
@@ -277,9 +273,7 @@ export default function Sidebar() {
             onClick={openPalette}
             className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
           >
-            <svg viewBox="0 0 16 16" className="size-4 fill-none stroke-current stroke-[1.5]">
-              <path d="M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-            </svg>
+            <Icon icon={Search} />
           </button>
         </Tooltip>
       </div>
@@ -329,9 +323,7 @@ export default function Sidebar() {
               }`
             }
           >
-            <svg viewBox="0 0 16 16" className="size-4 shrink-0 fill-none stroke-current stroke-[1.5]">
-              <path d={item.path} />
-            </svg>
+            <Icon icon={item.icon} />
             <span className="truncate">{t(item.key)}</span>
             {item.to === "/actions" && (openItems.data?.open ?? 0) > 0 && (
               <span className="ms-auto font-mono text-2xs text-tertiary tabular-nums">

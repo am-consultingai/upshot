@@ -14,40 +14,65 @@ import { splitSnippet } from "../routes/Search";
 import { rememberSearch } from "../lib/recents";
 import { meetingKey, type MeetingKey } from "../lib/meetingKeys";
 import { DETECTION_MODES } from "../lib/detection";
+import {
+  ArrowRight,
+  Calendar,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleDot,
+  Clock,
+  FileChartColumn,
+  ListFilter,
+  MessageSquare,
+  Monitor,
+  Moon,
+  Play,
+  Radio,
+  Search,
+  Settings,
+  Square,
+  Sun,
+  type LucideIcon,
+} from "lucide-react";
+import { Icon } from "./Icon";
 
 /*
  * One glyph per command, so the list can be scanned by shape rather than read line
- * by line. The sidebar's own icons where it has one — the same 16px grid and 1.5
- * stroke — so a destination looks the same in both places.
+ * by line. The sidebar's own icons where it has one, so a destination looks the same
+ * in both places.
  */
 const ICONS = {
-  calendar: "M2.5 4.5h11v9h-11zM2.5 7h11M5.5 2.5v2M10.5 2.5v2",
-  check: "M3 8.5 6.2 11.6 13 4.8",
-  file: "M5.5 2.5h5l3 3v8h-8zM10.5 2.5v3h3M7.5 8.5v3M9.5 7.5v4M11.5 9v1.5",
-  search: "M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z",
-  gear: "M8 10.2A2.2 2.2 0 1 0 8 5.8a2.2 2.2 0 0 0 0 4.4ZM8 1.8v1.4M8 12.8v1.4M14.2 8h-1.4M3.2 8H1.8M12.4 3.6l-1 1M4.6 11.4l-1 1M12.4 12.4l-1-1M4.6 4.6l-1-1",
-  chat: "M2.5 3.5h11v7.5h-6l-3 2.5V11h-2z",
-  send: "M3 8h9M8.5 4.5 12 8l-3.5 3.5",
-  record: "M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM9.8 8a1.8 1.8 0 1 1-3.6 0 1.8 1.8 0 0 1 3.6 0Z",
-  stop: "M4.5 4.5h7v7h-7z",
-  sun: "M8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM8 1.5V3M8 13v1.5M14.5 8H13M3 8H1.5M12.6 3.4l-1 1M4.4 11.6l-1 1M12.6 12.6l-1-1M4.4 4.4l-1-1",
-  moon: "M13 9.8A5.5 5.5 0 1 1 6.2 3a4.5 4.5 0 0 0 6.8 6.8Z",
-  screen: "M2.5 3.5h11v7.5h-11zM6 13.5h4M8 11v2.5",
-  radar: "M9.5 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM4.8 11.2a4.5 4.5 0 0 1 0-6.4M11.2 4.8a4.5 4.5 0 0 1 0 6.4M2.7 13.3a7.5 7.5 0 0 1 0-10.6M13.3 2.7a7.5 7.5 0 0 1 0 10.6",
-  meeting: "M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM8 5v3.2l2 1.2",
-  lines: "M2.5 4h11M4.5 8h7M6.5 12h3",
-  play: "M5 3.5v9l7-4.5z",
-  down: "M4 6.5 8 10.5l4-4",
-  up: "M4 9.5 8 5.5l4 4",
-} as const;
+  calendar: Calendar,
+  check: Check,
+  file: FileChartColumn,
+  search: Search,
+  gear: Settings,
+  chat: MessageSquare,
+  send: ArrowRight,
+  record: CircleDot,
+  stop: Square,
+  sun: Sun,
+  moon: Moon,
+  screen: Monitor,
+  radar: Radio,
+  meeting: Clock,
+  lines: ListFilter,
+  play: Play,
+  down: ChevronDown,
+  up: ChevronUp,
+} satisfies Record<string, LucideIcon>;
 
-type Icon = keyof typeof ICONS;
+type IconName = keyof typeof ICONS;
+
+/** The glyphs that point along the reading line, and so turn round in Hebrew. */
+const MIRRORED: ReadonlySet<IconName> = new Set<IconName>(["send"]);
 
 interface Command {
   id: string;
   group: MessageKey;
   label: string;
-  icon: Icon;
+  icon: IconName;
   /** Other words for it, matched as well as the label: "theme" finds Dark. */
   aliases?: string[];
   /** The alias that matched, when it matched better than the label did. */
@@ -528,9 +553,7 @@ export default function CommandPalette() {
         onKeyDown={onKeyDown}
       >
         <div className="flex items-center gap-3 border-b border-line-subtle px-5">
-          <svg viewBox="0 0 16 16" className="size-4 shrink-0 fill-none stroke-current stroke-[1.5] text-tertiary">
-            <path d="M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-          </svg>
+          <Icon icon={Search} className="text-tertiary" />
           <input
             ref={inputRef}
             data-testid="palette-input"
@@ -584,17 +607,13 @@ export default function CommandPalette() {
                       command.snippet ? "min-h-11 py-1.5" : "h-10"
                     } ${index === active ? "bg-surface-2 text-primary" : "text-secondary"}`}
                   >
-                    <svg
-                      viewBox="0 0 16 16"
-                      aria-hidden="true"
+                    <Icon
+                      icon={ICONS[command.icon]}
+                      mirror={MIRRORED.has(command.icon)}
                       data-testid="palette-icon"
                       data-icon={command.icon}
-                      className={`size-4 shrink-0 fill-none stroke-current stroke-[1.5] ${
-                        index === active ? "text-secondary" : "text-tertiary"
-                      }`}
-                    >
-                      <path d={ICONS[command.icon]} />
-                    </svg>
+                      className={index === active ? "text-secondary" : "text-tertiary"}
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">
                         {command.snippet
