@@ -25,7 +25,7 @@ import { confirmDialog } from "../components/ConfirmDialog";
 import { toast } from "../components/Toaster";
 import { speakers } from "../lib/speakers";
 import { markdownFilename, summaryToMarkdown } from "../lib/markdown";
-import { leadFirst } from "../lib/summary";
+import { leadFirst, withCitations } from "../lib/summary";
 import { meetingDirections } from "../lib/direction";
 // What each stage is doing, in words. "summarize: running" told nobody anything.
 import { STAGE_LABEL, formatPercent, phaseLabel, timeLeft, useMeetingJob } from "../lib/activeJobs";
@@ -416,6 +416,15 @@ export default function MeetingPage() {
 
   // Which way the notes and the transcript run, as the API says for their languages.
   const directions = useMemo(() => meetingDirections(meeting.data), [meeting.data]);
+  // Parsed once per summary, not on every playhead tick: the page re-renders as it plays.
+  const summaryTitle = meeting.data?.title ?? null;
+  const summaryPage = useMemo(
+    () =>
+      summary.data
+        ? withCitations(leadFirst(summary.data, summaryTitle), (time) => t("meeting.playFrom").replace("{time}", time))
+        : "",
+    [summary.data, summaryTitle, t],
+  );
   const dir = directions.summary;
 
   /*
@@ -845,6 +854,12 @@ export default function MeetingPage() {
                      * from being on the list.
                      */
                     onClick={(event) => {
+                      // A cited point's (00:12:34): the same seek as a chapter or an action item.
+                      const cite = (event.target as HTMLElement).closest<HTMLElement>("[data-cite]");
+                      if (cite) {
+                        seekTo(Number(cite.dataset.cite) / 1000);
+                        return;
+                      }
                       const next = (event.target as HTMLElement).closest(".next");
                       if (!next) return;
                       setAddRequest({ text: next.textContent?.trim() ?? "", at: Date.now() });
@@ -853,7 +868,7 @@ export default function MeetingPage() {
                         0,
                       );
                     }}
-                    dangerouslySetInnerHTML={{ __html: leadFirst(summary.data, meeting.data.title) }}
+                    dangerouslySetInnerHTML={{ __html: summaryPage }}
                   />
                 ) : summary.isLoading ? (
                   <Loading testid="summary-loading" className="mb-12">

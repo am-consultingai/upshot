@@ -248,3 +248,11 @@ def test_fake_llm_answers_from_the_best_matching_line() -> None:
     }
     none = fake.complete_json(system_blocks=[], user="Question: why?", schema=ASK_SCHEMA).data
     assert none["citations"] == []
+
+
+def test_the_prompt_asks_for_each_point_to_cite_its_turn_as_data_at_ms() -> None:
+    """D94: the exact attribute the renderer checks and the page turns into a control."""
+    text = load_prompt("system").text
+    assert 'data-at-ms="<start of that turn in milliseconds>"' in text
+    assert "write no timestamp in the text itself" in text
+    assert "gets no attribute" in text
