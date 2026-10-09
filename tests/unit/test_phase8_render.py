@@ -109,6 +109,14 @@ def test_css_that_lifts_a_box_out_of_the_page_is_dropped() -> None:
         assert sanitize(dirty) == '<div style="inset:0; z-index:9999; color:red">x</div>'
     kept = '<div style="position:relative; top:2px">x</div>'
     assert sanitize(kept) == kept
+    assert (
+        sanitize('<div style="position: Static">x</div>') == '<div style="position: Static">x</div>'
+    )
+    # A variable could carry ``fixed`` past the check: custom properties and var() go.
+    dirty = '<div style="--p:fixed; position:var(--p); inset:0; z-index:9999">x</div>'
+    assert sanitize(dirty) == '<div style="inset:0; z-index:9999">x</div>'
+    assert sanitize('<p style="color: VAR ( --c ); margin:0">x</p>') == '<p style="margin:0">x</p>'
+    assert sanitize('<p style="position:/**/fixed">x</p>') == "<p>x</p>"
 
 
 def test_only_the_citation_survives_of_the_data_attributes() -> None:
@@ -197,6 +205,23 @@ def test_a_citation_past_the_last_turn_lands_on_the_last_turn() -> None:
 def test_a_citation_that_is_not_a_whole_number_is_dropped() -> None:
     for value in ("soon", "12:34", "61.5", "", "1e5"):
         assert cited(f'<li data-at-ms="{value}">x</li>') == "<li>x</li>"
+
+
+def test_a_huge_citation_is_dropped_not_kept_as_written() -> None:
+    """``int()`` refuses past 4300 digits; nh3 would keep the value if the filter raised."""
+    for digits in (10, 5000):
+        assert cited(f'<li data-at-ms="{"9" * digits}">x</li>') == "<li>x</li>"
+        assert sanitize(f'<li data-at-ms="{"9" * digits}">x</li>') == "<li>x</li>"
+
+
+def test_an_attribute_the_filter_cannot_check_is_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.pipeline.stages import render
+
+    def broken(value: str) -> str | None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(render, "_clean_style", broken)
+    assert sanitize('<p style="color:red" title="t">x</p>') == '<p title="t">x</p>'
 
 
 def test_a_negative_citation_is_dropped() -> None:
