@@ -2,6 +2,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import type WaveSurfer from "wavesurfer.js";
 import { useI18n } from "../i18n";
 import Tooltip from "./Tooltip";
+import { Pause, Play, RotateCcw, RotateCw } from "lucide-react";
+import { Icon } from "./Icon";
 
 export interface AudioPlayerHandle {
   seek: (seconds: number) => void;
@@ -180,10 +182,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
         aria-label={t("meeting.back15")}
         className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
       >
-        <svg viewBox="0 0 16 16" className="size-4 fill-none stroke-current stroke-[1.5]">
-          <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9" />
-          <path d="M4 1.5v3.2h3.2" />
-        </svg>
+        <Icon icon={RotateCcw} />
       </button>
       </Tooltip>
 
@@ -201,9 +200,9 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
         className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-on-accent shadow-[var(--shadow-sm),var(--shadow-edge)] hover:brightness-110 active:translate-y-px"
       >
         {playing ? (
-          <svg viewBox="0 0 12 12" className="size-3 fill-current"><path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" /></svg>
+          <Icon icon={Pause} className="size-3 fill-current" />
         ) : (
-          <svg viewBox="0 0 12 12" className="ms-0.5 size-3 fill-current"><path d="M3 1.5v9l7-4.5z" /></svg>
+          <Icon icon={Play} className="ms-0.5 size-3 fill-current" />
         )}
       </button>
       </Tooltip>
@@ -216,10 +215,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
         aria-label={t("meeting.forward15")}
         className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
       >
-        <svg viewBox="0 0 16 16" className="size-4 fill-none stroke-current stroke-[1.5]">
-          <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
-          <path d="M12 1.5v3.2H8.8" />
-        </svg>
+        <Icon icon={RotateCw} />
       </button>
       </Tooltip>
 

@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import { addDays, dayKey, startOfWeek } from "../lib/calendar";
 import Button from "./Button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Icon } from "./Icon";
 
 /**
  * A due-date popover: a month, a today mark, the chosen day in accent.
@@ -121,9 +123,7 @@ export default function DatePicker({
           onClick={() => shiftMonth(-1)}
           className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary"
         >
-          <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
-            <path d="M10 3.5 5.5 8l4.5 4.5" />
-          </svg>
+          <Icon icon={ChevronLeft} mirror className="size-3.5" />
         </button>
         <button
           type="button"
@@ -132,9 +132,7 @@ export default function DatePicker({
           onClick={() => shiftMonth(1)}
           className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary"
         >
-          <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
-            <path d="m6 3.5 4.5 4.5L6 12.5" />
-          </svg>
+          <Icon icon={ChevronRight} mirror className="size-3.5" />
         </button>
       </div>
       <div role="grid" className="grid grid-cols-7 gap-y-0.5 text-center">

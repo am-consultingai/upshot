@@ -7,6 +7,8 @@ import { stamp } from "../lib/speakers";
 import { Spinner } from "./Button";
 import Menu from "./Menu";
 import Tooltip from "./Tooltip";
+import { ArrowUp, ChevronDown } from "lucide-react";
+import { Icon } from "./Icon";
 
 interface Turn {
   question: string;
@@ -139,9 +141,7 @@ export default function AskMeeting({
             onClick={submit}
             className="ms-auto grid size-6.5 place-items-center rounded-full bg-accent text-on-accent hover:brightness-110 active:translate-y-px disabled:opacity-40"
           >
-            <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.8]" strokeLinecap="round">
-              <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
-            </svg>
+            <Icon icon={ArrowUp} className="size-3.5" />
           </button>
         </div>
       </div>
@@ -167,9 +167,7 @@ function ScopeChip({
         trigger={
           <>
             {scope === "meeting" ? t("ask.scopeMeeting") : t("ask.scopeRelated")}
-            <svg viewBox="0 0 16 16" className="size-2.5 fill-none stroke-current stroke-[1.8]">
-              <path d="M4 6.5 8 10.5l4-4" />
-            </svg>
+            <Icon icon={ChevronDown} className="size-2.5" />
           </>
         }
         items={[

@@ -33,6 +33,8 @@ import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 import { shortcutKey, typing } from "../lib/keys";
 import { onMeetingKey, type MeetingKey } from "../lib/meetingKeys";
+import { Download } from "lucide-react";
+import { Icon } from "../components/Icon";
 
 /**
  * What a failed stage says in the user's terms.
@@ -518,15 +520,7 @@ export default function MeetingPage() {
             onClick={() => exportMarkdown(summary.data as string)}
             variant="secondary"
           >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 16 16"
-              className="size-3.5 fill-none stroke-current stroke-[1.5]"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M8 2.5v7.5M5 7l3 3 3-3M3 12.5v1h10v-1" />
-            </svg>
+            <Icon icon={Download} className="size-3.5" />
             {t("meeting.export")}
           </Button>
           </Tooltip>
