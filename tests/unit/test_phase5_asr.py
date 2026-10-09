@@ -672,13 +672,16 @@ def _cuda_folder(path: Path) -> Path:
 def test_an_installed_build_prefers_its_own_gpu_libraries_to_a_configured_cuda_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """z8tj1hfr6w: once the app's own copy is there, a leftover ``cuda_dir`` is not loaded
-    beside it; until then it is still used."""
+    """z8tj1hfr6w: once the app's own copy is complete, a leftover ``cuda_dir`` is not
+    loaded beside it; until then it is still used."""
+    import json
+
     from app import paths
+    from app.asr import cuda_libs
 
     configured = _cuda_folder(tmp_path / "Scripts")
     home = tmp_path / "home"
-    bin_name = "bin" if sys.platform == "win32" else "lib"
+    monkeypatch.setattr(sys, "platform", "win32")  # the layout cuda_libs installs
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
 
     def dirs() -> list[Path]:
@@ -687,7 +690,11 @@ def test_an_installed_build_prefers_its_own_gpu_libraries_to_a_configured_cuda_d
         )
 
     assert dirs() == [configured], "no own copy yet: the configured folder still serves"
-    own = _cuda_folder(home / "cuda" / "nvidia" / "cu12" / bin_name)
+    own = _cuda_folder(cuda_libs.target_dir(home))
+    assert dirs() == [configured, own], "an own copy without its marker is not complete"
+    (own / cuda_libs.MARKER).write_text(
+        json.dumps({wheel.name: wheel.version for wheel in cuda_libs.WHEELS}), encoding="utf-8"
+    )
     assert dirs() == [own]
     monkeypatch.setattr(paths, "is_frozen", lambda: False)
     assert dirs() == [configured, own], "from source the configured folder still comes first"
