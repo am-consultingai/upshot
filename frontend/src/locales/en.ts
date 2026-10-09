@@ -505,6 +505,7 @@ export const en = {
   "palette.nextTurn": "Next line",
   "palette.previousTurn": "Previous line",
   "palette.current": "current",
+  "palette.detectionFailed": "Could not change how meetings are detected",
   // Other words each command answers to, comma-separated: shown as "Dark (theme)".
   "palette.aliasPlay": "pause, listen, audio",
   "palette.aliasTurn": "skip, line, turn",
@@ -987,6 +988,10 @@ export const en = {
   "progress.phase.prepare": "preparing the audio",
   "activeJobs.title": "Running and waiting",
   "activeJobs.empty": "Nothing is being transcribed.",
+  "activeJobs.cancelTitle": "Cancel this job?",
+  "activeJobs.cancelBody": "“{title}” stops part-way through.",
+  "activeJobs.cancelConfirm": "Cancel job",
+  "activeJobs.keepRunning": "Keep running",
   "activeJobs.client.meeting": "Meeting",
   "transcriptions.title": "Transcriptions",
   "transcriptions.intro": "Transcribe audio and video files on this computer, with the same models as your meetings. They stay here, apart from your meetings.",

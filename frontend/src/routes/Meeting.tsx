@@ -149,6 +149,18 @@ export default function MeetingPage() {
     setPendingSeek(seconds);
     setPlayhead(seconds);
   };
+  /*
+   * The page is not remounted when another meeting opens, so a seek asked for on the
+   * last one (and where its playhead stood) must not carry over to this one.
+   */
+  const shownId = useRef(id);
+  useEffect(() => {
+    if (shownId.current === id) return;
+    shownId.current = id;
+    seeked.current = null;
+    setPendingSeek(null);
+    setPlayhead(0);
+  }, [id]);
   useEffect(() => {
     if (!at || seeked.current === at || !transcript.data) return;
     const seconds = Number(at) / 1000;
@@ -318,7 +330,7 @@ export default function MeetingPage() {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typing(event.target)) return;
       if (document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")) return;
       // The sidebar's list has its own J and K, for moving between meetings.
-      if (event.target instanceof HTMLElement && event.target.closest("[role=listbox]")) return;
+      if (event.target instanceof HTMLElement && event.target.closest("[data-testid=meeting-list]")) return;
       const key = shortcutKey(event);
       const action: MeetingKey | null =
         key === " " ? "play" : key === "j" ? "next" : key === "k" ? "previous" : key === "/" ? "find" : null;
@@ -752,14 +764,21 @@ export default function MeetingPage() {
                   data-testid="stage-running"
                   data-stage={current?.stage ?? ""}
                   data-state={current?.state ?? ""}
-                  role="status"
                 >
                   <Spinner className="text-accent" />
-                  {current?.state === "running"
-                    ? `${t(STAGE_LABEL[current.stage] ?? "meeting.stageWorking")}…`
-                    : `${t("meeting.stageWaiting")}: ${t(
-                        STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
-                      )}`}
+                  {/*
+                   * Only the stage is announced. The percent, elapsed time and time left
+                   * beside it change about once a second, and a live region around them
+                   * read each tick out; the progress bar carries the value for anyone
+                   * who asks for it.
+                   */}
+                  <span role="status">
+                    {current?.state === "running"
+                      ? `${t(STAGE_LABEL[current.stage] ?? "meeting.stageWorking")}…`
+                      : `${t("meeting.stageWaiting")}: ${t(
+                          STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
+                        )}`}
+                  </span>
                   {progress !== null && (
                     <span className="tabular-nums" data-testid="stage-progress">
                       {[phaseLabel(measured?.phase, t), formatPercent(progress, locale)]

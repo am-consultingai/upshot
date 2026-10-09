@@ -530,6 +530,23 @@
         "title": "OpenPost",
         "type": "object"
       },
+      "PausePost": {
+        "properties": {
+          "paused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused"
+          }
+        },
+        "title": "PausePost",
+        "type": "object"
+      },
       "ProviderPost": {
         "properties": {
           "background": {
@@ -3873,7 +3890,25 @@
     },
     "/api/recording/pause": {
       "post": {
+        "description": "Pause or resume. ``{\"paused\": true}`` pauses and ``{\"paused\": false}`` resumes,\nand asking for the state it is already in changes nothing: a page showing a stale\nPause cannot resume a recording someone meant to pause. Without a body it toggles,\nas it always did, for callers written before.",
         "operationId": "recording_pause_api_recording_pause_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PausePost"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -3886,6 +3921,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Recording Pause"

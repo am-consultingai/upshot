@@ -3,7 +3,8 @@ import { openFeedback } from "./FeedbackDialog";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
-import { api, type SearchHit } from "../api";
+import { api, reason, type SearchHit } from "../api";
+import { toast } from "./Toaster";
 import { useI18n } from "../i18n";
 import { hitSpeaker } from "../lib/speakers";
 import { boost, score } from "../lib/score";
@@ -174,6 +175,17 @@ export default function CommandPalette() {
     onSuccess: () => queryClient.invalidateQueries(),
   });
   const { stop } = useRecordingControls();
+  // A failed save says so: choosing Off and having it not take would leave meetings
+  // being recorded with nothing on screen to show it.
+  const setDetection = useMutation({
+    mutationFn: (mode: string) => api.putSettings({ "detection.mode": mode }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+      void queryClient.invalidateQueries({ queryKey: ["status"] });
+    },
+    onError: (error) => toast({ title: t("palette.detectionFailed"), sub: reason(error), tone: "danger" }),
+  });
+  const changeDetection = setDetection.mutate;
 
   const recording = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
 
@@ -337,12 +349,7 @@ export default function CommandPalette() {
         aliases: aka("palette.aliasDetection"),
         hint: t("settings.detection"),
         sub: detection === mode.value ? t("palette.current") : undefined,
-        run: () => {
-          void api.putSettings({ "detection.mode": mode.value }).then(() => {
-            void queryClient.invalidateQueries({ queryKey: ["settings"] });
-            void queryClient.invalidateQueries({ queryKey: ["status"] });
-          });
-        },
+        run: () => changeDetection(mode.value),
       });
     }
 
@@ -381,7 +388,7 @@ export default function CommandPalette() {
       });
     }
     return list;
-  }, [t, navigate, recording, meetings.data, start, stop, setTheme, locale, onMeeting, detection, queryClient]);
+  }, [t, navigate, recording, meetings.data, start, stop, setTheme, locale, onMeeting, detection, changeDetection]);
 
   /** Server hits for what was typed: action items and transcript lines. */
   const hits = useMemo<Command[]>(() => {
