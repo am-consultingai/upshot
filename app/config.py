@@ -461,8 +461,9 @@ def _set(node: dict[str, Any], dotted: str, value: Any) -> None:
 
 #: Defaults that have since changed, as they were. ``save`` writes the whole merged
 #: config, so a file saved under an old default holds that default as if it were chosen —
-#: and would pin it forever. None of these keys is exposed in Settings, so a file value
-#: equal to the old default is taken to be the old default, and dropped on load.
+#: and would pin it forever. A file value equal to the old default is taken to be the old
+#: default and dropped, once per key: ``migrations.forgotten_defaults`` in the file lists
+#: the keys already done, so the same value chosen afterwards is a choice and stays.
 _OLD_DEFAULTS: dict[str, Any] = {
     "llm.window_tokens": 6000,
     "detection.sustain_s": 10,
@@ -480,8 +481,31 @@ _OLD_DEFAULTS: dict[str, Any] = {
 }
 
 
+#: Where a saved file records which of ``_OLD_DEFAULTS`` it has already been through.
+#: Not a setting: no control shows it, and every save writes the full list (it is in
+#: ``DEFAULTS``), so a file is migrated by the first load that reads it and never again.
+FORGOTTEN_DEFAULTS_KEY = "migrations.forgotten_defaults"
+_set(DEFAULTS, FORGOTTEN_DEFAULTS_KEY, sorted(_OLD_DEFAULTS))
+
+
 def _forget_old_defaults(file_layer: dict[str, Any]) -> None:
+    """Drop each old default from a file not yet migrated for it, then mark it done.
+
+    Without the mark the drop ran on every load, so a 30 chosen in Settings after D92
+    was read back as the old default and silently lost at the next start.
+    """
+    try:
+        done = _get(file_layer, FORGOTTEN_DEFAULTS_KEY)
+    except KeyError:
+        done = []
+    if not isinstance(done, list):
+        done = []
+    # The file's own list goes; the merge supplies the full one from DEFAULTS, and the
+    # next save writes it.
+    _unset(file_layer, FORGOTTEN_DEFAULTS_KEY)
     for dotted, old in _OLD_DEFAULTS.items():
+        if dotted in done:
+            continue
         try:
             value = _get(file_layer, dotted)
         except KeyError:
