@@ -7,6 +7,8 @@ summarised into English produces an LTR document.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -51,9 +53,54 @@ def sanitize(html: str) -> str:
     return _HANDLER.sub("", _SCRIPT.sub("", html))
 
 
-def render_free(notes: dict[str, Any], *, language: str) -> Rendered:
+#: A point the summary took from one turn carries that turn's start (D94): the page shows
+#: it as a control that plays the recording from there.
+CITE_ATTR = "data-at-ms"
+_TAG = re.compile(r"<[a-zA-Z][^>]*>")
+_CITE = re.compile(r"\s" + CITE_ATTR + r"\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
+_INTEGER = re.compile(r"\d+")
+
+
+def cite_moments(html: str, *, starts: Sequence[int] | None, duration_ms: int | None) -> str:
+    """Every ``data-at-ms`` the model wrote, checked against the recording it cites.
+
+    A citation that is not a whole number of milliseconds, or points outside the
+    recording, is removed: a wrong moment costs the reader more trust than none. One that
+    stands is moved back to the start of the turn it falls in (the latest turn at or
+    before it), so a click lands on a line the transcript actually shows. ``starts`` are
+    the turns' starts in ms, ascending; ``None`` when there is no transcript to snap to.
+    """
+
+    def checked(match: re.Match[str]) -> str:
+        raw = match.group(1).strip("\"'").strip()
+        if not _INTEGER.fullmatch(raw):
+            return ""
+        value = int(raw)
+        if duration_ms is not None and value > duration_ms:
+            return ""
+        if starts:
+            # Before the first turn there is nothing earlier to land on: the first line.
+            value = starts[max(0, bisect_right(starts, value) - 1)]
+        return f' {CITE_ATTR}="{value}"'
+
+    def tag(match: re.Match[str]) -> str:
+        return _CITE.sub(checked, match.group(0))
+
+    if CITE_ATTR not in html.lower():
+        return html
+    return _TAG.sub(tag, html)
+
+
+def render_free(
+    notes: dict[str, Any],
+    *,
+    language: str,
+    starts: Sequence[int] | None = None,
+    duration_ms: int | None = None,
+) -> Rendered:
     """Free-form: the prompt wrote the document, so nothing here relays it out."""
     body = sanitize(str(notes.get("summary_html", "")))
+    body = cite_moments(body, starts=starts, duration_ms=duration_ms)
     direction = direction_for(language)
     page = f'<div dir="{direction}" lang="{language}" class="ma-free">{body}</div>'
     return Rendered(ui=page, email=page)
@@ -79,6 +126,24 @@ def plaintext(notes: dict[str, Any], language: str) -> str:
     return "\n".join(line for line in lines if line) + "\n"
 
 
+def turn_starts(folder: Path) -> list[int] | None:
+    """Where each line of the transcript begins, in ms: what a citation snaps to."""
+    from app.pipeline.stages.assemble import load_turns, transcript_paths
+
+    if not transcript_paths(folder)[0].exists():
+        return None
+    try:
+        return sorted({turn.at_ms for turn in load_turns(folder)})
+    except (OSError, ValueError) as exc:
+        log.warning("could not read the transcript to check the summary's citations: %s", exc)
+        return None
+
+
+def duration_ms(ctx: StageContext) -> int | None:
+    seconds = ctx.meeting.duration_s
+    return int(seconds * 1000) if seconds else None
+
+
 def run(ctx: StageContext) -> None:
     folder = ctx.folder
     source = notes_path(folder)
@@ -93,7 +158,9 @@ def run(ctx: StageContext) -> None:
     language = ctx.meeting.summary_language or ctx.config.summary_language
     if language == "auto":
         language = ctx.meeting.language or DEFAULT_LANGUAGE
-    rendered = render_free(notes, language=language)
+    rendered = render_free(
+        notes, language=language, starts=turn_starts(folder), duration_ms=duration_ms(ctx)
+    )
     ui_path.write_text(rendered.ui, encoding="utf-8")
     email_path.write_text(rendered.email, encoding="utf-8")
     # The searchable copy (D61): search and the assistant read the summary from here.
