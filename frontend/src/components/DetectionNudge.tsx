@@ -113,10 +113,14 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
         <span className="font-medium text-warning" data-testid="detection-nudge-text">
           {text}
         </span>
+        {/*
+         * The line is read as it stands, with what it is said first for a screen reader
+         * only: an aria-label on a plain span is ignored, so it was never heard.
+         */}
+        {why && <span className="sr-only">{`${t("detector.why")}: `}</span>}
         {why && (
           <span
             data-testid="detection-nudge-why"
-            aria-label={`${t("detector.why")}: ${why}`}
             title={why}
             className="min-w-0 max-w-full truncate text-xs text-secondary"
           >

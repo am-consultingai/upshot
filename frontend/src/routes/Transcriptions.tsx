@@ -98,7 +98,7 @@ export default function TranscriptionsPage() {
           ))}
         </Loading>
       )}
-      {list.isError && (
+      {list.isError && !list.data && (
         <EmptyState
           testid="transcriptions-error"
           tone="danger"
@@ -112,7 +112,7 @@ export default function TranscriptionsPage() {
           }
         />
       )}
-      {list.isSuccess && !jobs.length && !uploading.length && (
+      {list.data && !jobs.length && !uploading.length && (
         <EmptyState
           testid="transcriptions-empty"
           icon={EMPTY_ICON.transcript}
