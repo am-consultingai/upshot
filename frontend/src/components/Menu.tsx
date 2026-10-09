@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Ellipsis } from "lucide-react";
+import { Icon } from "./Icon";
 
 /**
  * Overflow and context menus, in CSS.
@@ -212,11 +214,7 @@ export default function Menu({
         }
       >
         {trigger ?? (
-          <svg viewBox="0 0 16 16" className={`${small ? "size-3.5" : "size-4"} fill-current`}>
-            <circle cx="3.5" cy="8" r="1.3" />
-            <circle cx="8" cy="8" r="1.3" />
-            <circle cx="12.5" cy="8" r="1.3" />
-          </svg>
+          <Icon icon={Ellipsis} className={small ? "size-3.5" : "size-4"} />
         )}
       </button>
       {at && (

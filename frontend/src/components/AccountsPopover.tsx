@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { accountColour } from "../lib/calendar";
+import { ChevronDown } from "lucide-react";
+import { Icon } from "./Icon";
 
 export interface AccountChoice {
   id: string;
@@ -141,9 +143,7 @@ export function AccountsTrigger({
         }`}
       >
         {label}
-        <svg viewBox="0 0 16 16" className="size-3" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-          <path d="M4 6.5 8 10.5l4-4" />
-        </svg>
+        <Icon icon={ChevronDown} className="size-3" />
       </button>
       {open && button.current && children(button.current, () => setOpen(false))}
     </>
