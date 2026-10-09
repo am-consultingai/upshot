@@ -53,16 +53,19 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $root
 
-# The installed app's own speech models and GPU libraries, shared with this run: the folder
-# names app/asr/model_manager.py (target_for) and app/asr/cuda_libs.py (target_dir) use.
-# tests/unit/test_run_app_script.py keeps them in step with app/asr/models.py.
+# The installed app's own speech models, shared with this run: the folder names
+# app/asr/model_manager.py (target_for) uses. tests/unit/test_run_app_script.py keeps them
+# in step with app/asr/models.py. Checked twice: here, before anything is touched, that
+# they are there; after the dependencies, by the app itself, that each is the pinned
+# revision, and which GPU libraries it would use.
 $speechModels = [ordered]@{
     classifier = "Systran__faster-whisper-small"
     hebrew     = "ivrit-ai__whisper-large-v3-turbo-ct2"
     other      = "Systran__faster-whisper-large-v3"
 }
-$modelsDir = Join-Path $HomeDir "models\asr"
-$cudaDir   = Join-Path $HomeDir "cuda\nvidia\cu12\bin"
+# [System.IO.Path]::Combine, not Join-Path: Join-Path resolves the drive, and a -HomeDir on
+# a drive this machine does not have would end the run with DriveNotFound.
+$modelsDir = [System.IO.Path]::Combine($HomeDir, "models", "asr")
 
 function Write-Step { param([string] $Text) Write-Host "`n=== $Text" -ForegroundColor Cyan }
 function Write-Good { param([string] $Text) Write-Host "  $Text" -ForegroundColor Green }
@@ -156,6 +159,25 @@ function Get-ClaudeInstall {
     ) + @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Anthropic.ClaudeCode*\claude.exe" -ErrorAction SilentlyContinue |
         ForEach-Object { $_.FullName })
     return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
+# Before anything is asked, stopped or installed: the installed app's speech models. No
+# other copy is ever used; a missing one is an installation to repair, not something to
+# paper over with a model from elsewhere.
+$missingModels = @()
+foreach ($role in $speechModels.Keys) {
+    $marker = [System.IO.Path]::Combine($modelsDir, $speechModels[$role], ".upshot-verified")
+    if (-not (Test-Path -LiteralPath $marker)) { $missingModels += "the $role speech model ($($speechModels[$role]))" }
+}
+if ($missingModels.Count -gt 0) {
+    Write-Bad "The installed app's speech models are missing from ${modelsDir}:"
+    foreach ($item in $missingModels) { Write-Bad "  - $item" }
+    Write-Bad "Run the Upshot installer again (or upshot.exe --prepare) to repair it."
+    Read-Host "  Press Enter to close this window" | Out-Null
+    return
+}
+if (Test-Path -LiteralPath (Join-Path $PSScriptRoot "run-app.local.psd1")) {
+    Write-Warn "run-app.local.psd1 is no longer read: this run uses the installed app's models."
 }
 
 if (-not $KeepClaude) {
@@ -261,15 +283,6 @@ try {
         $plan += "Python and the dependencies (~400 MB, one time, into $WorkDir)"
     }
 
-    # The installed app's models, verified at their pinned revision (the marker the model
-    # manager writes). No other copy is ever used: a missing one is an installation to
-    # repair, not something to paper over with a model from elsewhere.
-    $missing = @()
-    foreach ($role in $speechModels.Keys) {
-        $marker = Join-Path (Join-Path $modelsDir $speechModels[$role]) ".upshot-verified"
-        if (-not (Test-Path -LiteralPath $marker)) { $missing += "the $role speech model ($($speechModels[$role]))" }
-    }
-
     $needUi = -not (Test-Path "frontend\dist\index.html")
     $haveNpm = [bool] (Get-Command npm -ErrorAction SilentlyContinue)
     if ($needUi -and $haveNpm) { $plan += "the web UI's build packages (~200 MB, one time)" }
@@ -305,20 +318,6 @@ try {
         Write-Warn "$gpuName has ${gpuMemMB} MB - under the ${gpuMinMB} MB the model needs,"
         Write-Warn "so transcription will run on the CPU and CUDA is not offered."
     }
-    # A GPU that can hold the model needs the installed app's own GPU libraries; one that
-    # cannot runs on the CPU and needs none.
-    if ($haveNvidia -and -not (Test-Path -LiteralPath (Join-Path $cudaDir ".upshot-cuda"))) {
-        $missing += "the GPU libraries for $gpuName ($cudaDir)"
-    }
-    if ($missing.Count -gt 0) {
-        Write-Bad "The installed app's files are missing from ${HomeDir}:"
-        foreach ($item in $missing) { Write-Bad "  - $item" }
-        Write-Bad "Run the Upshot installer again (or upshot.exe --prepare) to repair it."
-        return
-    }
-    Write-Good "speech models: $modelsDir"
-    if ($haveNvidia) { Write-Good "GPU libraries: $cudaDir" }
-
     if ($plan.Count -eq 0) {
         Write-Good "nothing to download"
     } else {
@@ -362,6 +361,46 @@ try {
     & $uv sync --frozen
     if ($LASTEXITCODE -ne 0) { Write-Bad "uv sync failed"; return }
     Write-Good "ready"
+
+    # The app decides, exactly as the installed build does: each model verified at its
+    # pinned revision, and the GPU libraries --prepare would use (its own copy, or a CUDA
+    # Toolkit it found; none when transcription is set to the CPU or the card is too
+    # small). A leftover asr.model_path or asr.cuda_dir in app_config.json counts for
+    # nothing. Single quotes only: Windows PowerShell mangles double quotes in arguments.
+    Write-Step "Checking the installed app's models and GPU libraries"
+    $env:UP_HOME = $HomeDir
+    Remove-Item Env:UP_ASR__MODEL_PATH, Env:UP_ASR__CUDA_DIR -ErrorAction SilentlyContinue
+    $installCheck = @(& $uv run --frozen python -c @"
+import json
+from app.config import Config
+from app.asr import cuda_libs
+from app.asr.model_manager import is_verified, target_for
+from app.asr.models import MODELS
+c = Config.load()
+missing = ['the %s speech model (%s at %s)' % (r, m.repo, m.revision[:12])
+           for r, m in MODELS.items() if not is_verified(target_for(m.repo), m)]
+c.set('asr.cuda_dir', None)
+want, why = cuda_libs.wanted(c)
+gpu = ''
+if want:
+    found = cuda_libs.target_dir() if cuda_libs.ready() else cuda_libs.usable_elsewhere(c)
+    if found:
+        gpu = str(found)
+    else:
+        missing.append('the GPU libraries (%s), in %s' % (why, cuda_libs.target_dir()))
+print(json.dumps({'missing': missing, 'gpu': gpu, 'why': why}))
+"@)
+    if ($LASTEXITCODE -ne 0) { Write-Bad "could not check the installed app's models"; return }
+    $installed = $installCheck[-1] | ConvertFrom-Json
+    if ($installed.missing.Count -gt 0) {
+        Write-Bad "The installed app's files are missing or out of date in ${HomeDir}:"
+        foreach ($item in $installed.missing) { Write-Bad "  - $item" }
+        Write-Bad "Run the Upshot installer again (or upshot.exe --prepare) to repair it."
+        return
+    }
+    Write-Good "speech models: $modelsDir"
+    if ($installed.gpu) { Write-Good "GPU libraries: $($installed.gpu)" }
+    else { Write-Good "no GPU libraries: $($installed.why)" }
 
     if ($needUi) {
         # The only step that must write into the source tree: npm insists on a
@@ -433,16 +472,13 @@ try {
     $env:UP_JOB_POLICY           = '"asap"'      # transcribe as soon as you press Stop
     # Named explicitly, not left to the app: from source the app still honours an
     # asr.model_path or asr.cuda_dir an old session left in app_config.json, and this run
-    # must use the installed app's copies. Exported values are never saved to the file.
-    $hebrewModel = Join-Path $modelsDir $speechModels["hebrew"]
+    # must use what the check above found. null clears a leftover cuda_dir. Exported
+    # values are never saved to the file. The compute type is the app's own choice (int8
+    # on Pascal, float16 where the card has it).
+    $hebrewModel = [System.IO.Path]::Combine($modelsDir, $speechModels["hebrew"])
     $env:UP_ASR__MODEL_PATH = '"' + ($hebrewModel -replace '\\', '\\') + '"'
-    if ($haveNvidia) {
-        $env:UP_ASR__CUDA_DIR = '"' + ($cudaDir -replace '\\', '\\') + '"'
-        # A GTX 1080 is Pascal: it has no fast float16, so int8 is the right compute type
-        # (DESIGN.md section 20.5). Remove this line on newer hardware.
-        $env:UP_ASR__COMPUTE_TYPE = '"int8"'
-        Write-Good "GPU: $gpuName (int8, suits Pascal)"
-    }
+    if ($installed.gpu) { $env:UP_ASR__CUDA_DIR = '"' + ($installed.gpu -replace '\\', '\\') + '"' }
+    else { $env:UP_ASR__CUDA_DIR = 'null' }
 
     switch ($Provider) {
         "anthropic" { if (-not $env:ANTHROPIC_API_KEY) { Write-Warn "ANTHROPIC_API_KEY is not set" } }
