@@ -644,6 +644,7 @@ export const he: Record<MessageKey, string> = {
   "meeting.doneOf": "{done} מתוך {total} בוצעו",
   "meeting.export": "ייצוא",
   "meeting.jumpTo": "מעבר אל",
+  "meeting.playFrom": "ניגון מ־{time}",
   "meeting.matchOf": "{n} מתוך {total}",
   "meeting.noMatches": "אין התאמות",
   "meeting.nextMatch": "ההתאמה הבאה",
