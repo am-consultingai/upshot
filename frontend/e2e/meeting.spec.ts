@@ -471,3 +471,62 @@ test("the_transport_replaces_the_native_player", async ({ page, seed }) => {
     })
     .toBeGreaterThan(0);
 });
+
+/**
+ * Every point the summary took from one turn cites it (D94): a quiet `(00:00:02)` after
+ * the point plays the recording from that turn, on the transcript, with the line marked.
+ */
+test("a_cited_summary_point_plays_its_moment_in_the_transcript", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-cite",
+      title: "Cited",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: [
+        { speaker: "ME", at_ms: 0, text: "opening remark" },
+        { speaker: "THEM", at_ms: 2000, text: "pricing moves to Q3" },
+      ],
+      audio_seconds: 4,
+      summary_html: `<p>Pricing moved.</p><ul>
+<li data-at-ms="2000">Pricing moves to Q3</li>
+<li>The whole team agreed</li></ul>`,
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-cite");
+  const cite = page.getByTestId("summary-cite");
+  await expect(cite).toHaveCount(1);
+  await expect(cite).toHaveText("(00:00:02)");
+  await expect(cite).toHaveAccessibleName("Play from 00:00:02");
+  // Only the cited point: the uncited one says nothing about time.
+  await expect(page.getByTestId("summary-html").locator("li").nth(1)).toHaveText("The whole team agreed");
+
+  await cite.click();
+  await expect(page.getByTestId("transcript-turn").nth(1)).toHaveAttribute("data-speaking", "true");
+  await expect(page.getByTestId("transcript-turn").nth(0)).not.toHaveAttribute("data-speaking", "true");
+});
+
+test("a_cited_point_in_hebrew_ends_with_its_moment", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-cite-he",
+      title: "מצוטט",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      language: "he",
+      turns: [{ speaker: "ME", at_ms: 0, text: "שלום" }],
+      audio_seconds: 2,
+      summary_html: `<div dir="rtl" lang="he" class="ma-free"><p>הוחלט.</p><ul><li data-at-ms="0">עוברים ל-Kubernetes</li></ul></div>`,
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-cite-he");
+  const cite = page.getByTestId("summary-cite");
+  await expect(cite).toHaveText("(00:00:00)");
+  // At the logical end of the line: in a right-to-left line, to the left of the words.
+  const [textLeft, citeRight] = await cite.evaluate((button) => {
+    const range = document.createRange();
+    range.selectNodeContents(button.parentElement!.firstChild!);
+    return [range.getBoundingClientRect().left, button.getBoundingClientRect().right];
+  });
+  expect(citeRight).toBeLessThanOrEqual(textLeft + 1);
+});

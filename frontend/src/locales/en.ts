@@ -665,6 +665,7 @@ export const en = {
   "meeting.doneOf": "{done} of {total} done",
   "meeting.export": "Export",
   "meeting.jumpTo": "Jump to",
+  "meeting.playFrom": "Play from {time}",
   "meeting.matchOf": "{n} of {total}",
   "meeting.noMatches": "no matches",
   "meeting.nextMatch": "Next match",

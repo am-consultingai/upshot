@@ -612,6 +612,7 @@ export const es: Record<MessageKey, string> = {
   "meeting.doneOf": "{done} de {total} hechas",
   "meeting.export": "Exportar",
   "meeting.jumpTo": "Ir a",
+  "meeting.playFrom": "Reproducir desde {time}",
   "meeting.matchOf": "{n} de {total}",
   "meeting.noMatches": "sin coincidencias",
   "meeting.nextMatch": "Siguiente coincidencia",
