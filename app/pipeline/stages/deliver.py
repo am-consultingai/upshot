@@ -11,7 +11,7 @@ from app.log import get
 from app.mail import Mailer, Outgoing
 from app.pipeline.context import StageContext
 from app.pipeline.stages.assemble import transcript_paths
-from app.pipeline.stages.render import output_paths, plaintext
+from app.pipeline.stages.render import output_paths, plaintext, read_summary
 from app.pipeline.stages.summarize import load_notes
 
 log = get(__name__)
@@ -88,7 +88,7 @@ def run(ctx: StageContext) -> None:
         subject=record["subject"],
         to=recipients,
         text=plaintext(notes, language),
-        html=email_path.read_text(encoding="utf-8"),
+        html=read_summary(email_path),
         from_addr=mailer.from_addr,
         attachments=attachments,
     )
