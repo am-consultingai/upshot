@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,6 +62,9 @@ _TAGS = frozenset(
 _ATTRIBUTES = {
     "*": {"style", "class", "dir", "lang", "title"},
     "a": {"href"},
+    # A point the summary took from one turn cites it (D94): see _cite.
+    "li": {"data-at-ms"},
+    "p": {"data-at-ms"},
     "td": {"colspan", "rowspan"},
     "th": {"colspan", "rowspan", "scope"},
     "col": {"span"},
@@ -86,34 +89,89 @@ _CSS_UNSAFE = re.compile(
 )
 
 
+#: Taken out of the page's flow, a summary could lay fake controls over the whole app.
+_POSITION_OUT_OF_FLOW = re.compile(r"fixed|sticky|absolute", re.IGNORECASE)
+
+
+def _declaration_kept(declaration: str) -> bool:
+    if _CSS_UNSAFE.search(declaration):
+        return False
+    name, _, value = declaration.partition(":")
+    return not (
+        name.strip().lower() == "position" and _POSITION_OUT_OF_FLOW.search(value) is not None
+    )
+
+
 def _clean_style(value: str) -> str | None:
     kept = [
         declaration.strip()
         for declaration in _CSS_COMMENT.sub("", value).split(";")
-        if declaration.strip() and not _CSS_UNSAFE.search(declaration)
+        if declaration.strip() and _declaration_kept(declaration)
     ]
     return "; ".join(kept) or None
 
 
-def _attribute(element: str, attribute: str, value: str) -> str | None:
-    if attribute == "style":
-        return _clean_style(value)
-    if attribute == "href":
-        # In-page anchors only: an outside link is how a summary would phish.
-        return value if value.strip().startswith("#") else None
-    return value
+#: A point the summary took from one turn carries that turn's start (D94): the page shows
+#: it as a control that plays the recording from there.
+CITE_ATTR = "data-at-ms"
+_INTEGER = re.compile(r"\d+")
+#: The model reads each turn as ``[mm:ss]``, the start floored to the second
+#: (``assemble.timestamp``), so the moment it cites can be up to this far before the turn.
+_DISPLAYED_SECOND_MS = 999
 
 
-def sanitize(html: str) -> str:
-    """The summary, reduced to the allowlist above. Run on render and again on read."""
+def _cite(raw: str, starts: Sequence[int] | None, duration_ms: int | None) -> str | None:
+    """A citation checked against the recording it cites, or ``None`` to drop it.
+
+    One that is not a whole number of milliseconds, or points past the end of the
+    recording, goes: a wrong moment costs the reader more trust than none. One that stands
+    moves to the latest turn that starts within the second it names, so a click lands on
+    the line the model read. ``starts`` are the turns' starts in ms, ascending; ``None``
+    when there is no transcript to snap to (a citation already on disk is kept as is).
+    """
+    raw = raw.strip()
+    if not _INTEGER.fullmatch(raw):
+        return None
+    value = int(raw)
+    if duration_ms is not None and value > duration_ms:
+        return None
+    if starts:
+        # Before the first turn there is nothing earlier to land on: the first line.
+        at = bisect_right(starts, value + _DISPLAYED_SECOND_MS) - 1
+        value = starts[max(0, at)]
+    return str(value)
+
+
+def _attribute_filter(
+    starts: Sequence[int] | None, duration_ms: int | None
+) -> Callable[[str, str, str], str | None]:
+    def attribute(element: str, attribute: str, value: str) -> str | None:
+        if attribute == "style":
+            return _clean_style(value)
+        if attribute == "href":
+            # In-page anchors only: an outside link is how a summary would phish.
+            return value if value.strip().startswith("#") else None
+        if attribute == CITE_ATTR:
+            return _cite(value, starts, duration_ms)
+        return value
+
+    return attribute
+
+
+def sanitize(
+    html: str, *, starts: Sequence[int] | None = None, duration_ms: int | None = None
+) -> str:
+    """The summary, reduced to the allowlist above. Run on render and again on read.
+
+    Citations are checked here, inside the cleaner, against the turns' starts and the
+    recording's length when render knows them; never by a pass over the HTML afterwards.
+    """
     return nh3.clean(
         html,
         tags=set(_TAGS),
         clean_content_tags=set(_DROPPED_WITH_CONTENT),
         attributes={tag: set(names) for tag, names in _ATTRIBUTES.items()},
-        attribute_filter=_attribute,
-        # A bullet cites its moment in the transcript as ``data-at-ms`` (see cite_moments).
-        generic_attribute_prefixes={"data-"},
+        attribute_filter=_attribute_filter(starts, duration_ms),
         url_schemes=set(),
         link_rel=None,
         strip_comments=True,
@@ -125,44 +183,6 @@ def read_summary(path: Path) -> str:
     return sanitize(path.read_text(encoding="utf-8"))
 
 
-#: A point the summary took from one turn carries that turn's start (D94): the page shows
-#: it as a control that plays the recording from there.
-CITE_ATTR = "data-at-ms"
-_TAG = re.compile(r"<[a-zA-Z][^>]*>")
-_CITE = re.compile(r"\s" + CITE_ATTR + r"\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE)
-_INTEGER = re.compile(r"\d+")
-
-
-def cite_moments(html: str, *, starts: Sequence[int] | None, duration_ms: int | None) -> str:
-    """Every ``data-at-ms`` the model wrote, checked against the recording it cites.
-
-    A citation that is not a whole number of milliseconds, or points outside the
-    recording, is removed: a wrong moment costs the reader more trust than none. One that
-    stands is moved back to the start of the turn it falls in (the latest turn at or
-    before it), so a click lands on a line the transcript actually shows. ``starts`` are
-    the turns' starts in ms, ascending; ``None`` when there is no transcript to snap to.
-    """
-
-    def checked(match: re.Match[str]) -> str:
-        raw = match.group(1).strip("\"'").strip()
-        if not _INTEGER.fullmatch(raw):
-            return ""
-        value = int(raw)
-        if duration_ms is not None and value > duration_ms:
-            return ""
-        if starts:
-            # Before the first turn there is nothing earlier to land on: the first line.
-            value = starts[max(0, bisect_right(starts, value) - 1)]
-        return f' {CITE_ATTR}="{value}"'
-
-    def tag(match: re.Match[str]) -> str:
-        return _CITE.sub(checked, match.group(0))
-
-    if CITE_ATTR not in html.lower():
-        return html
-    return _TAG.sub(tag, html)
-
-
 def render_free(
     notes: dict[str, Any],
     *,
@@ -171,8 +191,7 @@ def render_free(
     duration_ms: int | None = None,
 ) -> Rendered:
     """Free-form: the prompt wrote the document, so nothing here relays it out."""
-    body = sanitize(str(notes.get("summary_html", "")))
-    body = cite_moments(body, starts=starts, duration_ms=duration_ms)
+    body = sanitize(str(notes.get("summary_html", "")), starts=starts, duration_ms=duration_ms)
     direction = direction_for(language)
     page = f'<div dir="{direction}" lang="{language}" class="ma-free">{body}</div>'
     return Rendered(ui=page, email=page)

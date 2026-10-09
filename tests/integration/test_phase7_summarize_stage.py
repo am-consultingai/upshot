@@ -197,7 +197,8 @@ def test_rendering_snaps_each_citation_to_a_line_of_this_transcript(tmp_path: Pa
     h, meeting = prepared(tmp_path, duration_s=200)
     starts = [turn.at_ms for turn in assemble.load_turns(meeting.path)]
     assert len(starts) >= 2
-    inside = starts[1] + 1
+    # What the model writes for a turn it read as [mm:ss]: the start floored to the second.
+    inside = starts[1] // 1000 * 1000
     (meeting.path / "notes.json").write_text(
         json.dumps(
             {

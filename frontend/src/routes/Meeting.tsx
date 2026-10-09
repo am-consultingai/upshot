@@ -855,9 +855,11 @@ export default function MeetingPage() {
                      */
                     onClick={(event) => {
                       // A cited point's (00:12:34): the same seek as a chapter or an action item.
-                      const cite = (event.target as HTMLElement).closest<HTMLElement>("[data-cite]");
+                      // Only the controls withCitations made, and only a whole number of ms.
+                      const cite = (event.target as HTMLElement).closest<HTMLElement>("button.summary-cite[data-cite]");
                       if (cite) {
-                        seekTo(Number(cite.dataset.cite) / 1000);
+                        const ms = cite.dataset.cite ?? "";
+                        if (/^\d+$/.test(ms)) seekTo(Number(ms) / 1000);
                         return;
                       }
                       const next = (event.target as HTMLElement).closest(".next");
