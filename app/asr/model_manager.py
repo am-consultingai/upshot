@@ -445,12 +445,13 @@ def manager_for(model: SpeechModel, home: Path | None = None) -> ModelManager:
 
 def overridden_roles(config: Any) -> frozenset[str]:
     """Roles whose model a developer keeps outside the managed folder (``asr.model_path``):
-    nothing to fetch for them."""
+    nothing to fetch for them. An installed build's stand-in for a model it has not yet
+    installed is not one (z8tj1hfr6w)."""
     from app.asr.models import resolve
 
     roles = set()
     for role in ROLES:
-        choice = resolve(config, role)
+        choice = resolve(config, role, installing=True)
         if choice.local and Path(choice.reference) != target_for(MODELS[role].repo):
             roles.add(role)
     return frozenset(roles)

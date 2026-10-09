@@ -58,6 +58,23 @@ def _has_cublas(directory: Path) -> bool:
     return any(next(directory.glob(pattern), None) is not None for pattern in CUBLAS_GLOBS)
 
 
+_said: set[str] = set()
+
+
+def _own_copy_ready(home: Path) -> bool:
+    """The app's own GPU libraries complete, at the pinned versions: cuBLAS alone, from a
+    half-replaced folder, must not displace a ``cuda_dir`` that works."""
+    from app.asr.cuda_libs import ready
+
+    return ready(home)
+
+
+def _say_once(message: str) -> None:
+    if message not in _said:
+        _said.add(message)
+        log.info(message)
+
+
 def cuda_library_dirs(
     *,
     configured: Sequence[str] | str | None = None,
@@ -68,9 +85,25 @@ def cuda_library_dirs(
     """Every directory holding a cuBLAS the runtime could load.
 
     A configured ``asr.cuda_dir`` wins: it is the user saying "the libraries are here",
-    which is the whole point of being able to adopt an existing install.
+    which is the whole point of being able to adopt an existing install. In an installed
+    build the app's own copy, once there, wins over it instead: a ``cuda_dir`` left by a
+    developer session survives an uninstall, and two cuDNN builds must not both be on the
+    DLL path (z8tj1hfr6w).
     """
     found: list[Path] = []
+    home = app_home if app_home is not None else paths.app_home()
+    bin_name = "bin" if sys.platform == "win32" else "lib"
+    own: list[Path] = []
+    nvidia_root = home / "cuda" / "nvidia"
+    if nvidia_root.is_dir():
+        for package in sorted(nvidia_root.iterdir()):
+            candidate = package / bin_name
+            if _has_cublas(candidate):
+                own.append(candidate)
+    if configured and own and paths.is_frozen() and _own_copy_ready(home):
+        _say_once(f"asr.cuda_dir is set, but this installed build uses its own GPU libraries "
+                  f"in {own[0]}")  # fmt: skip
+        configured = None
     if configured:
         entries = [configured] if isinstance(configured, str) else list(configured)
         for entry in entries:
@@ -79,14 +112,7 @@ def cuda_library_dirs(
                 found.append(candidate)
             else:
                 log.warning("asr.cuda_dir has no cuBLAS in it: %s", candidate)
-    home = app_home if app_home is not None else paths.app_home()
-    bin_name = "bin" if sys.platform == "win32" else "lib"
-    nvidia_root = home / "cuda" / "nvidia"
-    if nvidia_root.is_dir():
-        for package in sorted(nvidia_root.iterdir()):
-            candidate = package / bin_name
-            if _has_cublas(candidate):
-                found.append(candidate)
+    found.extend(own)
     for raw in system_dirs:
         candidate = Path(raw)
         if _has_cublas(candidate):
