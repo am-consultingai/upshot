@@ -227,9 +227,15 @@ def run(
     # A model an earlier build used goes first (D93): nothing loads it any more, and its
     # 3 GB may be what the current models need to fit.
     from app.asr.model_manager import remove_retired
+    from app.asr.models import HEBREW, MODELS, overrides_pinned
 
     configured = config.get("asr.model_path")
-    remove_retired(keep=Path(str(configured)) if configured else None)
+    keep = Path(str(configured)).expanduser() if configured else None
+    remove_retired(keep=keep)
+    # An installed build replaces an unpinned model_path with its own copy, but the old
+    # one transcribes until then: a retired folder it names goes only once the turbo is
+    # in place, so a failed download leaves what worked (z8tj1hfr6w).
+    replaced = keep is not None and not overrides_pinned(keep, MODELS[HEBREW])
 
     speech = tr("prepare.speech", language)
     libraries = tr("prepare.gpu", language)
@@ -249,6 +255,8 @@ def run(
         code = follow("model", speech, model, progress, cancelled, poll=poll, language=language)
         if code != EXIT_OK:
             return code
+    if replaced:
+        remove_retired()
     code = fetch_speaker_models(config, progress, cancelled, language=language)
     if code != EXIT_OK:
         return code

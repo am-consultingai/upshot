@@ -660,3 +660,41 @@ def test_an_imported_texts_language_is_read_from_its_script(text: str, language:
     """Imported text has no audio to classify: its script decides, and other Latin-script
     languages fall back to English."""
     assert spoken_language([text]).language == language
+
+
+def _cuda_folder(path: Path) -> Path:
+    path.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll"):
+        (path / name).touch()
+    return path
+
+
+def test_an_installed_build_prefers_its_own_gpu_libraries_to_a_configured_cuda_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """z8tj1hfr6w: once the app's own copy is complete, a leftover ``cuda_dir`` is not
+    loaded beside it; until then it is still used."""
+    import json
+
+    from app import paths
+    from app.asr import cuda_libs
+
+    configured = _cuda_folder(tmp_path / "Scripts")
+    home = tmp_path / "home"
+    monkeypatch.setattr(sys, "platform", "win32")  # the layout cuda_libs installs
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+
+    def dirs() -> list[Path]:
+        return cuda_library_dirs(
+            configured=str(configured), app_home=home, search_path=[], system_dirs=()
+        )
+
+    assert dirs() == [configured], "no own copy yet: the configured folder still serves"
+    own = _cuda_folder(cuda_libs.target_dir(home))
+    assert dirs() == [configured, own], "an own copy without its marker is not complete"
+    (own / cuda_libs.MARKER).write_text(
+        json.dumps({wheel.name: wheel.version for wheel in cuda_libs.WHEELS}), encoding="utf-8"
+    )
+    assert dirs() == [own]
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    assert dirs() == [configured, own], "from source the configured folder still comes first"

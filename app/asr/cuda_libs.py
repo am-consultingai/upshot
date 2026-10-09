@@ -109,11 +109,15 @@ def usable_elsewhere(
 ) -> Path | None:
     """A folder the app already loads cuBLAS *and* cuDNN from, outside this app's own copy:
     ``asr.cuda_dir``, NVIDIA's CUDA Toolkit, or wheels on the path. Then there is nothing to
-    download (a developer's machine would otherwise get a second 1.2 GB copy)."""
+    download (a developer's machine would otherwise get a second 1.2 GB copy).
+
+    An installed build does not count ``asr.cuda_dir``: a developer session's folder
+    survives an uninstall, and the installed copy would depend on it for good (z8tj1hfr6w).
+    """
     from app.asr.local import SYSTEM_CUDA_DIRS, cuda_library_dirs
 
     dirs = cuda_library_dirs(
-        configured=config.get("asr.cuda_dir"),
+        configured=None if paths.is_frozen() else config.get("asr.cuda_dir"),
         app_home=Path("/nonexistent-app-home"),  # this app's own copy is ready(), not this
         search_path=search_path,
         system_dirs=SYSTEM_CUDA_DIRS if system_dirs is None else system_dirs,

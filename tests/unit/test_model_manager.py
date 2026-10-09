@@ -535,3 +535,94 @@ def test_a_stopped_set_resumes_where_it_stopped(app_home: Path) -> None:
     models.start()
     assert models.wait(10).state == "ready"
     assert order == [HEBREW, OTHER], "the classifier is not fetched again"
+
+
+def _large_v3_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A developer's ivrit large-v3 next to the pinned turbo, sizes scaled down to kB."""
+    monkeypatch.setitem(MODELS, HEBREW, replace(MODELS[HEBREW], size_bytes=1_620))
+    mine = tmp_path / "large-v3"
+    mine.mkdir()
+    (mine / "model.bin").write_bytes(b"x" * 3_087)
+    (mine / "config.json").write_bytes(b"{}")
+    return mine
+
+
+def test_an_installed_build_installs_its_own_model_over_an_unpinned_model_path(
+    tmp_path: Path,
+    app_home: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """z8tj1hfr6w: a developer session's large-v3 outlived an uninstall, and the installed
+    build ran on it and never fetched the turbo. It now fetches the turbo, transcribes on
+    the old copy until the turbo is there, and on the turbo after."""
+    from app import paths
+    from app.asr.model_manager import VERIFIED
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    mine = _large_v3_copy(tmp_path, monkeypatch)
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+
+    # what an installation needs: the turbo, whatever the override says
+    assert not resolve(config, HEBREW, installing=True).local
+    assert model_manager.overridden_roles(config) == frozenset()
+    assert not model_manager.model_set(config).skip, "--prepare must fetch the turbo"
+
+    # until it is installed, the old copy still transcribes: a failed download costs nothing
+    with caplog.at_level("WARNING"):
+        assert resolve(config, HEBREW).reference == str(mine)
+        resolve(config, HEBREW)
+    meanwhile = [r for r in caplog.records if "until --prepare" in r.getMessage()]
+    assert len(meanwhile) == 1 and str(mine) in meanwhile[0].getMessage()
+
+    # once it is, the turbo wins
+    turbo = target_for(MODELS[HEBREW].repo)
+    turbo.mkdir(parents=True)
+    (turbo / "model.bin").write_bytes(b"x" * 1_620)
+    (turbo / "config.json").write_bytes(b"{}")
+    (turbo / VERIFIED).write_text(MODELS[HEBREW].marker, encoding="utf-8")
+    with caplog.at_level("WARNING"):
+        assert resolve(config, HEBREW).reference == str(turbo)
+    assert any("uses its own copy" in r.getMessage() for r in caplog.records)
+    assert config.get("asr.model_path") == str(mine), "the key stays for running from source"
+
+
+def test_an_installed_build_does_not_take_a_model_it_cannot_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.asr.models import is_pinned_size
+
+    missing = tmp_path / "nothing"
+    assert not is_pinned_size(missing, MODELS[HEBREW], unreadable=False)
+    assert is_pinned_size(missing, MODELS[HEBREW]), "the warning stays lenient"
+
+
+def test_an_installed_build_keeps_a_model_path_that_holds_the_pinned_model(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy of the turbo kept elsewhere (a Hugging Face snapshot) is still taken."""
+    from app import paths
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    monkeypatch.setitem(MODELS, HEBREW, replace(MODELS[HEBREW], size_bytes=1_620))
+    turbo = tmp_path / "turbo"
+    turbo.mkdir()
+    (turbo / "model.bin").write_bytes(b"x" * 1_620)
+    (turbo / "config.json").write_bytes(b"{}")
+    config = default_config()
+    config.set("asr.model_path", str(turbo))
+    assert resolve(config, HEBREW).reference == str(turbo)
+    assert model_manager.overridden_roles(config) == frozenset({HEBREW})
+
+
+def test_running_from_source_still_honours_any_model_path(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import paths
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    mine = _large_v3_copy(tmp_path, monkeypatch)
+    config = default_config()
+    config.set("asr.model_path", str(mine))
+    assert resolve(config, HEBREW).reference == str(mine)

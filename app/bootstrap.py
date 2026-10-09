@@ -197,8 +197,8 @@ def run(
             Step(
                 "model",
                 False,
-                f"no local ASR model and downloads are disabled — set asr.model_path to an "
-                f"existing CTranslate2 directory, or allow the {model} download",
+                f"no local ASR model and downloads are disabled — run the installer to install "
+                f"{model}, or, from source, set asr.model_path to a CTranslate2 directory",
             )
         )
     else:
