@@ -174,6 +174,36 @@ test("j_and_k_step_between_lines_and_typing_is_not_a_shortcut", async ({ page, s
   await expect(turns.nth(0)).toHaveAttribute("data-speaking", "true");
 });
 
+test("j_in_the_sidebar_moves_between_meetings_and_leaves_the_audio_alone", async ({ page, seed }) => {
+  // Two meetings with audio: J in the sidebar's list opens the next one, and the
+  // meeting page does not take the same key to seek or start playback.
+  await seed([
+    { ...THREE_LINES, id: "e2e-keys-new", title: "Newer", started_at: isoAt(0, 11) },
+    { ...THREE_LINES, id: "e2e-keys-old", title: "Older", started_at: isoAt(0, 9) },
+  ]);
+  await gotoApp(page, "/m/e2e-keys-new");
+  await expect(page.getByTestId("meeting-tab-summary")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("meeting-list").focus();
+  const playing = () =>
+    page.evaluate(() => {
+      const audio = document.querySelector<HTMLAudioElement>("[data-testid=audio]");
+      return audio !== null && !audio.paused;
+    });
+
+  await page.keyboard.press("j");
+  await expect(page).toHaveURL(/\/m\/e2e-keys-old$/);
+  // Still on the summary: the page's own J would have opened the transcript and played.
+  await expect(page.getByTestId("meeting-tab-summary")).toHaveAttribute("aria-selected", "true");
+  await page.waitForTimeout(300);
+  expect(await playing()).toBe(false);
+
+  await page.keyboard.press("k");
+  await expect(page).toHaveURL(/\/m\/e2e-keys-new$/);
+  await expect(page.getByTestId("meeting-tab-summary")).toHaveAttribute("aria-selected", "true");
+  await page.waitForTimeout(300);
+  expect(await playing()).toBe(false);
+});
+
 test("slash_finds_in_the_transcript_on_a_meeting", async ({ page, seed }) => {
   await seed([THREE_LINES]);
   await gotoApp(page, "/m/e2e-keys");

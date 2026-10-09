@@ -174,7 +174,8 @@ export default function Sidebar() {
     navigate(`/m/${items[next].id}`, { replace: at !== -1 });
   };
   const onListKeyDown = (event: React.KeyboardEvent) => {
-    if (event.target instanceof HTMLInputElement) return;
+    // Taken already (by a page's own capture-phase keys): one press does one thing.
+    if (event.defaultPrevented || event.target instanceof HTMLInputElement) return;
     const key = shortcutKey(event.nativeEvent);
     if (key === "j" || key === "ArrowDown") {
       event.preventDefault();
