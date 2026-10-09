@@ -377,6 +377,23 @@ def test_a_stop_while_paused_ends_the_recording(api) -> None:  # type: ignore[no
     client.post("/api/recording/stop")
 
 
+def test_pause_takes_the_state_wanted_and_asking_twice_changes_nothing(api) -> None:  # type: ignore[no-untyped-def]
+    """A page drawn before the tray resumed still shows Pause: pressing it must pause,
+    not toggle back. Without a body it still toggles, for callers written before."""
+    client = api.client()
+    client.post("/api/recording/start", json={}).raise_for_status()
+    assert client.post("/api/recording/pause", json={"paused": True}).json()["paused"] is True
+    assert client.post("/api/recording/pause", json={"paused": True}).json()["paused"] is True
+    assert api.services.recorder.paused is True
+    assert client.post("/api/recording/pause", json={"paused": False}).json()["paused"] is False
+    assert client.post("/api/recording/pause", json={"paused": False}).json()["paused"] is False
+    assert api.services.recorder.paused is False
+    # The old body-less call toggles.
+    assert client.post("/api/recording/pause").json()["paused"] is True
+    assert client.post("/api/recording/pause").json()["paused"] is False
+    client.post("/api/recording/stop")
+
+
 def test_import_creates_a_meeting(api, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     import wave
 
