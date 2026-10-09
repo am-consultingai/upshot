@@ -107,9 +107,12 @@ test("a_recorded_chip_carries_a_balloon_of_open_items_and_answers_the_pointer", 
   await scheduled.hover();
   await expect.poll(() => scheduled.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe(before);
 
-  // The month view carries the same balloon.
+  // The month view is dots now (D94): the recording is one, in the recording's colour.
   await page.getByTestId("span-month").click();
-  await expect(page.locator("[data-testid=calendar-monthgrid] [data-testid=chip-open]").first()).toBeVisible();
+  await expect(
+    page.locator("[data-testid=calendar-monthgrid] [data-testid=calendar-dot][data-state=recorded]").first(),
+  ).toBeVisible();
+  await page.getByTestId("span-week").click(); // leave the default as it was
 });
 
 test("the_list_view_is_the_month_as_an_agenda", async ({ page }) => {

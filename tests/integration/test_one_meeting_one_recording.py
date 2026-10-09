@@ -463,7 +463,11 @@ def proposed_recording(api: Any) -> str:
 def test_an_unsettled_recording_is_marked_and_asked_about(api) -> None:  # type: ignore[no-untyped-def]
     meeting_id = proposed_recording(api)
     listed = api.client().get("/api/meetings").json()["meetings"]
-    assert next(m for m in listed if m["id"] == meeting_id)["needs_meeting"] is True
+    row = next(m for m in listed if m["id"] == meeting_id)
+    assert row["needs_meeting"] is True
+    # The events it may be travel with the row, so the calendar grid can draw it inside one.
+    assert sorted(ref["event_id"] for ref in row["proposed"]) == ["ev-a", "ev-b"]
+    assert row["calendar_match"]["state"] == "proposed"
     assert api.client().get(f"/api/meetings/{meeting_id}").json()["needs_meeting"] is True
     asked = [t for t in api.services.notifier.shown if t.title == "Which meeting was this?"]
     assert len(asked) == 1
