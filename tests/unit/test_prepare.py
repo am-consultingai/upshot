@@ -576,3 +576,22 @@ def test_the_progress_file_is_utf8_with_a_mark_and_a_first_line_nobody_reads(
     assert found["stage"] == "model"
     assert found["text"] == "מודלי דיבור: בהורדה"
     assert found["tick"] == "1"
+
+
+def test_an_installed_build_does_not_count_a_configured_cuda_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """z8tj1hfr6w: a developer's ``cuda_dir`` outlived an uninstall, so ``--prepare`` never
+    fetched the installed copy's own libraries and its GPU depended on that folder."""
+    from app import paths
+
+    folder = tmp_path / "Scripts"
+    folder.mkdir()
+    for name in ("cublas64_12.dll", "cudnn64_9.dll"):
+        (folder / name).write_bytes(b"x")
+    config = default_config()
+    config.set("asr.cuda_dir", str(folder))
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) is None
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) == folder
