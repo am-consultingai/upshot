@@ -14,14 +14,16 @@ import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
 import { Loading, Skeleton, SkeletonRows } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
+import { Calendar, CalendarPlus, CircleAlert, CircleDashed, Clock, ListFilter, type LucideIcon } from "lucide-react";
+import { Icon } from "../components/Icon";
 
 type Tab = "mine" | "everyone" | "done";
 
-const BUCKETS: { id: DueBucket; key: MessageKey; icon: string; tone: string }[] = [
-  { id: "overdue", key: "actions.groupOverdue", icon: "M8 4.5v4M8 11v.5M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0Z", tone: "text-danger" },
-  { id: "week", key: "actions.groupWeek", icon: "M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v2M10.5 2v2", tone: "text-accent" },
-  { id: "later", key: "actions.groupLater", icon: "M2.5 3.5h11v10h-11zM2.5 6.5h11M6.5 9.5h3M8 8v3", tone: "text-secondary" },
-  { id: "none", key: "actions.groupNone", icon: "M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0Z", tone: "text-tertiary" },
+const BUCKETS: { id: DueBucket; key: MessageKey; icon: LucideIcon; tone: string }[] = [
+  { id: "overdue", key: "actions.groupOverdue", icon: CircleAlert, tone: "text-danger" },
+  { id: "week", key: "actions.groupWeek", icon: Calendar, tone: "text-accent" },
+  { id: "later", key: "actions.groupLater", icon: CalendarPlus, tone: "text-secondary" },
+  { id: "none", key: "actions.groupNone", icon: CircleDashed, tone: "text-tertiary" },
 ];
 
 /** Typing into a field is not a shortcut. */
@@ -271,9 +273,7 @@ export default function ActionsPage() {
 
             {filter !== null && (
               <div className="mb-5 flex h-8 items-center gap-2 rounded-md bg-surface-1 px-2.5 shadow-[var(--shadow-ring-subtle)] focus-within:shadow-[0_0_0_1px_var(--accent)]">
-                <svg viewBox="0 0 16 16" className="size-3.5 shrink-0 fill-none stroke-current stroke-[1.6] text-tertiary">
-                  <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
-                </svg>
+                <Icon icon={ListFilter} className="size-3.5 text-tertiary" />
                 <input
                   ref={filterRef}
                   data-testid="actions-filter"
@@ -319,9 +319,7 @@ export default function ActionsPage() {
                   {/* Things 3's header: a small coloured glyph, a neutral label, a count,
                       and a hairline. Not uppercase, not a tinted band, not sticky. */}
                   <h2 className="flex items-center gap-2 border-b border-line-subtle pb-2 text-sm font-semibold">
-                    <svg viewBox="0 0 16 16" className={`size-3.5 fill-none stroke-current stroke-[1.6] ${meta?.tone ?? ""}`} strokeDasharray={bucket === "none" ? "2 2" : undefined}>
-                      <path d={meta?.icon ?? ""} />
-                    </svg>
+                    <Icon icon={meta?.icon ?? CircleDashed} className={`size-3.5 ${meta?.tone ?? ""}`} />
                     {meta ? t(meta.key) : bucket}
                     <span className="font-mono text-2xs font-normal text-tertiary tabular-nums">{rows.length}</span>
                     {bucket === "overdue" && (
@@ -349,9 +347,7 @@ export default function ActionsPage() {
                   aria-expanded={showSnoozed}
                   className="flex w-full items-center gap-2 border-b border-line-subtle pb-2 text-start text-sm font-semibold text-tertiary hover:text-primary"
                 >
-                  <svg viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current stroke-[1.6]">
-                    <path d="M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM8 5v3.2l2 1.2" />
-                  </svg>
+                  <Icon icon={Clock} className="size-3.5" />
                   {t("actions.groupSnoozed")}
                   <span className="font-mono text-2xs font-normal tabular-nums">{snoozed.length}</span>
                 </button>

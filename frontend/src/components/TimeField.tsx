@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Icon } from "./Icon";
 
 export type TimeOption = { value: string; at: Date; label?: string };
 
@@ -113,9 +115,7 @@ export default function TimeField({
         }}
         className="absolute inset-y-0 end-0 grid w-7 place-items-center text-tertiary hover:text-primary"
       >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M4 6.5 8 10.5l4-4" />
-        </svg>
+        <Icon icon={ChevronDown} className="size-3.5" />
       </button>
       {open && options.length > 0 && (
         <ul

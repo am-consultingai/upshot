@@ -23,6 +23,8 @@ import { formatClock } from "../lib/format";
 import { timelineLayout } from "../lib/timeline";
 import Tooltip from "./Tooltip";
 import AccountDots from "./AccountDots";
+import { AudioWaveform, Calendar, CircleAlert } from "lucide-react";
+import { Icon } from "./Icon";
 
 /** 48px an hour: a 30-minute meeting holds a title and a time, and a working day fits. */
 const PX_PER_MINUTE = 0.8;
@@ -117,18 +119,11 @@ function ChipFlag({ kind }: { kind: ChipKind }) {
       data-testid={kind === "scheduled" ? "calendar-event-flag" : "calendar-recorded-flag"}
       tone={kind === "failed" ? "bad" : "neutral"}
     >
-      <svg viewBox="0 0 16 16" className="size-2.25 fill-none stroke-current" strokeLinecap="round">
-        {kind === "scheduled" ? (
-          <g strokeWidth={1.8}>
-            <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
-            <path d="M2.5 6.5h11M5.5 2v2M10.5 2v2" />
-          </g>
-        ) : kind === "failed" ? (
-          <path d="M8 4v5M8 11.5v.5" strokeWidth={2.2} />
-        ) : (
-          <path d="M2 9.5 5 5l3 4 3-6 3 6.5" strokeWidth={2} />
-        )}
-      </svg>
+      <Icon
+        icon={kind === "scheduled" ? Calendar : kind === "failed" ? CircleAlert : AudioWaveform}
+        className="size-2.5"
+        strokeWidth={1.25}
+      />
     </IconBadge>
   );
 }

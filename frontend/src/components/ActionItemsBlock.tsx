@@ -5,6 +5,8 @@ import { useI18n } from "../i18n";
 import ActionItemRow from "./ActionItemRow";
 import Tooltip from "./Tooltip";
 import Button from "./Button";
+import { ChevronDown } from "lucide-react";
+import { Icon } from "./Icon";
 
 const COLLAPSED_KEY = "ma.meeting.actionsCollapsed";
 
@@ -115,12 +117,10 @@ export default function ActionItemsBlock({
           onClick={toggleCollapsed}
           className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary"
         >
-          <svg
-            viewBox="0 0 16 16"
-            className={`size-3 fill-none stroke-current stroke-[1.6] transition-transform ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
-          >
-            <path d="M4 6.5 8 10.5l4-4" />
-          </svg>
+          <Icon
+            icon={ChevronDown}
+            className={`size-3 transition-transform ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
+          />
         </button>
       </h2>
       {!collapsed && (
