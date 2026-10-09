@@ -177,7 +177,7 @@ if ($missingModels.Count -gt 0) {
     $configFile = [System.IO.Path]::Combine($HomeDir, "app_config.json")
     $standIn = $null
     if (Test-Path -LiteralPath $configFile) {
-        try { $standIn = (Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json).asr.model_path } catch { }
+        try { $standIn = (Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json).asr.model_path } catch { }
     }
     if ($standIn) {
         Write-Bad "app_config.json sets asr.model_path to $standIn. If the installer takes"
