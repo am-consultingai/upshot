@@ -78,6 +78,14 @@ def _imports(args: argparse.Namespace) -> list[Check]:
         checks.append(Check("sherpa_onnx", True, "diarization runtime imports"))
     except Exception as exc:
         checks.append(Check("sherpa_onnx", False, f"diarization runtime: {exc}"))
+    # The summary's HTML allowlist is a native extension (nh3): prove the freeze runs it.
+    try:
+        from app.pipeline.stages.render import sanitize
+
+        cleaned = sanitize("<p>kept</p><img/src=x/onerror=alert(1)>")
+        checks.append(Check("html_sanitizer", cleaned == "<p>kept</p>", cleaned))
+    except Exception as exc:
+        checks.append(Check("html_sanitizer", False, f"summary sanitizer: {exc}"))
     return checks
 
 
