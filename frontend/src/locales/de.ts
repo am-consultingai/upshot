@@ -1041,6 +1041,7 @@ export const de: Record<MessageKey, string> = {
   "palette.aliasDetection": "erkennung, automatisch aufnehmen, benachrichtigen",
   "palette.aliasTheme": "design, dunkelmodus, hellmodus",
   "progress.left": "noch ca. {time}",
+  "progress.leftAboutMinute": "noch ca. eine Minute",
   "progress.leftUnderMinute": "noch weniger als eine Minute",
   "progress.phase.prepare": "Audio wird vorbereitet",
   "activeJobs.title": "Läuft und wartet",
