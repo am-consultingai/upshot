@@ -231,9 +231,11 @@ def run(
 
     configured = config.get("asr.model_path")
     keep = Path(str(configured)).expanduser() if configured else None
-    if keep is not None and not overrides_pinned(keep, MODELS[HEBREW]):
-        keep = None  # an installed build replaces it with its own copy (z8tj1hfr6w)
     remove_retired(keep=keep)
+    # An installed build replaces an unpinned model_path with its own copy, but the old
+    # one transcribes until then: a retired folder it names goes only once the turbo is
+    # in place, so a failed download leaves what worked (z8tj1hfr6w).
+    replaced = keep is not None and not overrides_pinned(keep, MODELS[HEBREW])
 
     speech = tr("prepare.speech", language)
     libraries = tr("prepare.gpu", language)
@@ -253,6 +255,8 @@ def run(
         code = follow("model", speech, model, progress, cancelled, poll=poll, language=language)
         if code != EXIT_OK:
             return code
+    if replaced:
+        remove_retired()
     code = fetch_speaker_models(config, progress, cancelled, language=language)
     if code != EXIT_OK:
         return code
