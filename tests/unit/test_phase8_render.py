@@ -11,7 +11,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.pipeline.stages.render import direction_for, plaintext, render_free, sanitize
+from app.pipeline.stages.render import (
+    cite_moments,
+    direction_for,
+    plaintext,
+    render_free,
+    sanitize,
+)
 
 DESIGNED: dict[str, Any] = {
     "title": "סטטוס שבועי",
@@ -60,3 +66,55 @@ def test_ui_and_email_are_the_same_document() -> None:
     """There is no separate drafted email any more — the summary is the email."""
     rendered = render_free(DESIGNED, language="he")
     assert rendered.ui == rendered.email
+
+
+STARTS = [0, 4_200, 61_500, 125_000]
+
+
+def cited(html: str, *, duration_ms: int | None = 180_000) -> str:
+    return cite_moments(html, starts=STARTS, duration_ms=duration_ms)
+
+
+def test_a_citation_snaps_back_to_the_start_of_the_turn_it_falls_in() -> None:
+    assert cited('<li data-at-ms="62000">x</li>') == '<li data-at-ms="61500">x</li>'
+    assert cited("<li data-at-ms='125000'>x</li>") == '<li data-at-ms="125000">x</li>'
+    assert cited('<p class="a" data-at-ms=4300>x</p>') == '<p class="a" data-at-ms="4200">x</p>'
+
+
+def test_a_citation_past_the_last_turn_lands_on_the_last_turn() -> None:
+    assert cited('<li data-at-ms="170000">x</li>') == '<li data-at-ms="125000">x</li>'
+
+
+def test_a_citation_that_is_not_a_whole_number_is_dropped() -> None:
+    for value in ("soon", "12:34", "61.5", "", "1e5"):
+        assert cited(f'<li data-at-ms="{value}">x</li>') == "<li>x</li>"
+
+
+def test_a_negative_citation_is_dropped() -> None:
+    assert cited('<li data-at-ms="-1">x</li>') == "<li>x</li>"
+
+
+def test_a_citation_beyond_the_end_of_the_meeting_is_dropped() -> None:
+    assert cited('<li data-at-ms="180001">x</li>') == "<li>x</li>"
+    assert cited('<li data-at-ms="180000">x</li>') == '<li data-at-ms="125000">x</li>'
+
+
+def test_without_a_transcript_a_valid_citation_is_kept_as_written() -> None:
+    html = '<li data-at-ms="62000">x</li>'
+    assert cite_moments(html, starts=None, duration_ms=None) == html
+
+
+def test_a_summary_without_citations_renders_exactly_as_before() -> None:
+    plain = render_free(DESIGNED, language="he").ui
+    assert render_free(DESIGNED, language="he", starts=STARTS, duration_ms=1000).ui == plain
+
+
+def test_text_that_mentions_the_attribute_is_left_alone() -> None:
+    html = "<p>we discussed data-at-ms=5 in the markup</p>"
+    assert cited(html) == html
+
+
+def test_render_checks_every_citation_in_the_page() -> None:
+    notes = {"summary_html": '<ul><li data-at-ms="62000">a</li><li data-at-ms="x">b</li></ul>'}
+    page = render_free(notes, language="en", starts=STARTS, duration_ms=180_000).ui
+    assert '<li data-at-ms="61500">a</li><li>b</li>' in page

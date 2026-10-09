@@ -190,6 +190,28 @@ def test_rendering_makes_the_summary_searchable(tmp_path: Path) -> None:
     assert [hit.meeting_id for hit in hits] == [meeting.id]
 
 
+def test_rendering_snaps_each_citation_to_a_line_of_this_transcript(tmp_path: Path) -> None:
+    """D94: a cited moment lands on a turn the transcript shows; one past the end is gone."""
+    from app.pipeline.stages import render
+
+    h, meeting = prepared(tmp_path, duration_s=200)
+    starts = [turn.at_ms for turn in assemble.load_turns(meeting.path)]
+    assert len(starts) >= 2
+    inside = starts[1] + 1
+    (meeting.path / "notes.json").write_text(
+        json.dumps(
+            {
+                "summary_html": f'<ul><li data-at-ms="{inside}">a</li>'
+                '<li data-at-ms="200001">b</li><li>c</li></ul>'
+            }
+        ),
+        encoding="utf-8",
+    )
+    render.run(h.context(meeting, JobStage.RENDER, services=Services()))
+    html = (meeting.path / "summary.html").read_text(encoding="utf-8")
+    assert f'<li data-at-ms="{starts[1]}">a</li><li>b</li><li>c</li>' in html
+
+
 def test_a_hosted_model_is_not_split_into_windows(tmp_path: Path) -> None:
     """A 25 kB transcript went out as two windows and a merge: three calls where one
     would do, each 1.5 to 2 minutes through Claude Code. Null sizes it to the provider."""
