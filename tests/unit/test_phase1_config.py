@@ -235,6 +235,96 @@ def test_an_old_default_saved_to_disk_does_not_pin_it(tmp_path) -> None:  # type
     assert Config.load(file=path, environ={}).get("llm.window_tokens") == 8000
 
 
+RETENTION_KEYS = ("retention.audio_days", "transcription.keep_days")
+
+
+def _write(path: Path, data: dict[str, object]) -> None:
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+@pytest.mark.parametrize("dotted", RETENTION_KEYS)
+def test_a_30_saved_before_d92_is_forgotten_once_and_a_30_chosen_after_stays(
+    tmp_path: Path, dotted: str
+) -> None:
+    """30 in a pre-D92 file is the old default, written by `save`, and is dropped. Once
+    that file has been migrated and saved, a 30 the user picks is a choice: it used to be
+    dropped on every load, so a 30 set in Settings was gone after the next restart."""
+    section, key = dotted.split(".")
+    path = tmp_path / "app_config.json"
+    _write(path, {section: {key: 30}, "setup": {"done": True}})
+
+    cfg = Config.load(file=path, environ={})
+    assert cfg.get(dotted) is None, "the old default is forgotten"
+    cfg.save()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved[section][key] is None
+    assert dotted in saved["migrations"]["forgotten_defaults"], "and the file says so"
+
+    cfg = Config.load(file=path, environ={})
+    cfg.set(dotted, 30)
+    cfg.save()
+    for _ in range(2):
+        cfg = Config.load(file=path, environ={})
+        assert cfg.get(dotted) == 30, "a deliberate 30 survives load, save, load"
+        cfg.save()
+    assert json.loads(path.read_text(encoding="utf-8"))[section][key] == 30
+
+
+@pytest.mark.parametrize("dotted", RETENTION_KEYS)
+def test_a_retention_period_other_than_30_is_always_kept(tmp_path: Path, dotted: str) -> None:
+    section, key = dotted.split(".")
+    path = tmp_path / "app_config.json"
+    _write(path, {section: {key: 14}})
+    cfg = Config.load(file=path, environ={})
+    assert cfg.get(dotted) == 14, "before the migration"
+    cfg.save()
+    assert Config.load(file=path, environ={}).get(dotted) == 14, "and after it"
+
+
+def test_a_30_chosen_on_a_fresh_install_is_kept(tmp_path: Path) -> None:
+    """A fresh install writes the marker with its first save, so it is never migrated."""
+    path = tmp_path / "app_config.json"
+    cfg = Config.load(file=path, environ={})
+    assert cfg.get("retention.audio_days") is None
+    cfg.set("retention.audio_days", 30)
+    cfg.set("transcription.keep_days", 30.0)
+    cfg.save()
+    cfg = Config.load(file=path, environ={})
+    assert cfg.get("retention.audio_days") == 30
+    assert cfg.get("transcription.keep_days") == 30.0
+
+
+def test_a_later_old_default_is_migrated_in_a_file_marked_for_the_earlier_ones(
+    tmp_path: Path,
+) -> None:
+    """The marker lists keys, not a version: an entry added to the old defaults later
+    still runs once in a file already migrated for the others."""
+    path = tmp_path / "app_config.json"
+    _write(
+        path,
+        {
+            "llm": {"window_tokens": 6000},
+            "retention": {"audio_days": 30},
+            "migrations": {"forgotten_defaults": ["llm.window_tokens"]},
+        },
+    )
+    cfg = Config.load(file=path, environ={})
+    assert cfg.get("llm.window_tokens") == 6000, "already migrated: a choice"
+    assert cfg.get("retention.audio_days") is None, "not yet migrated: the old default"
+
+
+def test_the_migration_marker_survives_save_and_the_redacted_dump(tmp_path: Path) -> None:
+    path = tmp_path / "app_config.json"
+    cfg = Config.load(file=path, environ={})
+    cfg.save()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert (
+        sorted(saved["migrations"]["forgotten_defaults"])
+        == saved["migrations"]["forgotten_defaults"]
+    )
+    assert "retention.audio_days" in cfg.redacted_dump()["migrations"]["forgotten_defaults"]
+
+
 def test_detection_ships_as_watch_and_log() -> None:
     """A fresh install watches and writes down what it saw; it does not record by itself.
 
