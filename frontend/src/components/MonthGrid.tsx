@@ -1,55 +1,202 @@
-import { Link } from "react-router-dom";
+import { useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CalendarEvent, Meeting } from "../api";
-import { useI18n } from "../i18n";
+import { useI18n, type MessageKey } from "../i18n";
 import {
-  allDayKeys,
-  bucketByDay,
+  dayItems,
   dayKey,
-  eventKey,
   isSameMonth,
   isToday,
-  recordedIds,
-  timedEvents,
   weekdayLabels,
+  type DayItem,
+  type DotState,
 } from "../lib/calendar";
 import { formatClock } from "../lib/format";
-import { OpenBalloon } from "./TimeGrid";
-import AccountDots from "./AccountDots";
 
-/** Beyond this a cell stops being readable, so the rest collapse into a count. */
-const MAX_CHIPS = 3;
+/** Beyond this a cell's dots stop being countable at a glance; the rest are "+N". */
+export const MAX_DOTS = 8;
 
 /**
- * The month view: a whole month at a glance, each day listing its recordings. This is
- * the view for finding something from weeks ago, which is why it favours density over
- * showing duration.
+ * A dot's colour is its state, the same channel the week view spends on it: accent for a
+ * recording, red for one that failed or is recording now (pulsing, unless motion is
+ * reduced), the warning colour for one still asking which meeting it was, grey for an
+ * event nobody recorded.
+ */
+const DOT: Record<DotState, string> = {
+  recorded: "bg-accent",
+  failed: "bg-danger",
+  live: "bg-danger ma-pulse ma-dot-live",
+  needs: "bg-warning",
+  scheduled: "bg-line",
+};
+
+const STATE_LABEL: Record<DotState, MessageKey> = {
+  recorded: "calendar.stateRecorded",
+  failed: "calendar.stateFailed",
+  live: "calendar.stateLive",
+  needs: "calendar.needsMeeting",
+  scheduled: "calendar.stateScheduled",
+};
+
+/** The day's list, shown while a cell is hovered or focused. */
+function DayPeek({
+  id,
+  anchor,
+  items,
+}: {
+  id: string;
+  anchor: DOMRect;
+  items: DayItem[];
+}) {
+  const { t } = useI18n();
+  const bubble = useRef<HTMLDivElement | null>(null);
+  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const node = bubble.current;
+    if (!node) return;
+    const { offsetWidth: width, offsetHeight: height } = node;
+    let left = anchor.left + anchor.width / 2 - width / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+    let top = anchor.bottom + 6;
+    if (top + height > window.innerHeight - 8) top = Math.max(8, anchor.top - height - 6);
+    setPlace({ left, top });
+  }, [anchor]);
+  return createPortal(
+    <div
+      ref={bubble}
+      id={id}
+      role="tooltip"
+      data-testid="calendar-daypeek"
+      className="pointer-events-none fixed z-[90] w-64 rounded-md bg-raised p-2 text-xs shadow-[var(--shadow-ring),var(--shadow-md),var(--shadow-edge)]"
+      style={{ left: place?.left ?? -9999, top: place?.top ?? -9999 }}
+    >
+      {items.length === 0 ? (
+        <p className="text-tertiary">{t("calendar.dayEmpty")}</p>
+      ) : (
+        <ul className="space-y-1">
+          {items.map((item) => (
+            <li
+              key={item.key}
+              data-testid="calendar-daypeek-item"
+              data-state={item.state}
+              className="flex items-baseline gap-1.5"
+            >
+              <span aria-hidden="true" className={`size-1.5 shrink-0 self-center rounded-full ${DOT[item.state]}`} />
+              <bdi className="w-11 shrink-0 font-mono text-3xs text-tertiary tabular-nums">
+                {item.allDay ? t("timeline.allDay") : formatClock(item.start)}
+              </bdi>
+              <span className="min-w-0 flex-1 truncate text-primary">
+                {item.title ?? (item.key.startsWith("meeting:") ? t("timeline.recording") : t("calendar.untitled"))}
+              </span>
+              <span className="shrink-0 text-3xs text-secondary">{t(STATE_LABEL[item.state])}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
+/** One day of the month: its number and a dot per thing on it. Opens the day. */
+function DayCell({
+  day,
+  items,
+  outside,
+  onDay,
+}: {
+  day: Date;
+  items: DayItem[];
+  outside: boolean;
+  onDay?: (day: Date) => void;
+}) {
+  const { t, locale } = useI18n();
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const peekId = useId();
+  const extra = Math.max(0, items.length - MAX_DOTS);
+  const date = new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(day);
+  const count =
+    items.length === 0
+      ? t("calendar.dayEmpty")
+      : items.length === 1
+        ? t("calendar.dayItemsOne")
+        : t("calendar.dayItemsMany").replace("{n}", String(items.length));
+  const show = (target: HTMLElement) => setAnchor(target.getBoundingClientRect());
+  const hide = () => setAnchor(null);
+
+  return (
+    <button
+      type="button"
+      data-testid="calendar-daycell"
+      data-day={dayKey(day)}
+      data-count={items.length}
+      data-today={isToday(day) ? "true" : undefined}
+      aria-label={`${date}, ${count}`}
+      aria-describedby={anchor && items.length > 0 ? peekId : undefined}
+      title={t("calendar.openDay").replace("{date}", date)}
+      onClick={() => onDay?.(day)}
+      onMouseEnter={(event) => show(event.currentTarget)}
+      onMouseLeave={hide}
+      onFocus={(event) => show(event.currentTarget)}
+      onBlur={hide}
+      className={`flex min-h-24 flex-col items-start rounded-lg p-1.5 text-start outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--accent)] ${
+        outside ? "text-tertiary opacity-50 hover:bg-a-100" : "bg-surface-1 hover:bg-surface-2"
+      }`}
+    >
+      <span
+        className={`mb-1 text-xs ${
+          isToday(day) ? "inline-block rounded-full bg-accent px-1.5 text-on-accent" : "text-tertiary"
+        }`}
+      >
+        {day.getDate()}
+      </span>
+      {items.length > 0 && (
+        <span data-testid="calendar-dots" aria-hidden="true" className="flex flex-wrap items-center gap-1">
+          {items.slice(0, MAX_DOTS).map((item) => (
+            <span
+              key={item.key}
+              data-testid="calendar-dot"
+              data-state={item.state}
+              className={`size-2 rounded-full ${DOT[item.state]}`}
+            />
+          ))}
+          {extra > 0 && (
+            <span data-testid="calendar-more" className="text-2xs leading-none text-tertiary tabular-nums">
+              +{extra}
+            </span>
+          )}
+        </span>
+      )}
+      {anchor && <DayPeek id={peekId} anchor={anchor} items={items} />}
+    </button>
+  );
+}
+
+/**
+ * The month view: a whole month at a glance, a dot for everything on each day.
+ *
+ * Titled chips used to fill each cell: three truncated recordings, three matched events,
+ * and a "+N" that counted only the recordings. At a month's cell width a title is ten
+ * characters, which is not enough to recognise a meeting by and is enough to crowd out
+ * everything else. Dots say how busy a day was and what state it is in; hovering or
+ * focusing a day lists it, and pressing it opens that day.
  */
 export default function MonthGrid({
   days,
   anchor,
   meetings,
   events = [],
+  onDay,
 }: {
   days: Date[];
   anchor: Date;
   meetings: Meeting[];
-  /** Calendar events add density — a dot each — while recordings keep the chips. */
+  /** Calendar events: a grey dot each, or the recording's colour once one is matched. */
   events?: CalendarEvent[];
+  /** Opens a day in the day view. */
+  onDay?: (day: Date) => void;
 }) {
-  const { t, locale } = useI18n();
-  // As in the time grid: an event that was recorded stays the event, and the recording
-  // does not draw a second chip beside it.
-  const recorded = recordedIds(events);
-  const buckets = bucketByDay(meetings.filter((meeting) => !recorded.has(meeting.id)));
-  const eventsByDay = bucketByDay(timedEvents(events).map((e) => ({ ...e, started_at: e.start })));
-  const eventCount = new Map<string, number>();
-  for (const event of timedEvents(events)) {
-    const key = dayKey(new Date(event.start));
-    eventCount.set(key, (eventCount.get(key) ?? 0) + 1);
-  }
-  for (const event of events.filter((item) => item.all_day)) {
-    for (const key of allDayKeys(event)) eventCount.set(key, (eventCount.get(key) ?? 0) + 1);
-  }
+  const { locale } = useI18n();
 
   return (
     <div data-testid="calendar-monthgrid">
@@ -61,92 +208,15 @@ export default function MonthGrid({
         ))}
       </div>
       <div className="grid grid-cols-7 gap-1.5">
-        {days.map((day) => {
-          const items = buckets.get(dayKey(day)) ?? [];
-          const outside = !isSameMonth(day, anchor);
-          return (
-            <div
-              key={dayKey(day)}
-              data-testid="calendar-daycell"
-              data-day={dayKey(day)}
-              data-count={items.length}
-              className={`min-h-24 rounded-lg p-1.5 ${
-                outside ? "text-tertiary opacity-50" : "bg-surface-1"
-              }`}
-            >
-              <div
-                className={`mb-1 text-xs ${
-                  isToday(day)
-                    ? "inline-block rounded-full bg-accent px-1.5 text-on-accent"
-                    : "text-tertiary"
-                }`}
-              >
-                {day.getDate()}
-              </div>
-              {items.slice(0, MAX_CHIPS).map((meeting) => (
-                <Link
-                  key={meeting.id}
-                  to={`/m/${meeting.id}`}
-                  data-testid="calendar-event"
-                  data-meeting={meeting.id}
-                  title={meeting.title ?? meeting.id}
-                  className={`mb-0.5 flex items-center gap-1 rounded-xs px-1.5 py-0.5 text-xs ${
-                    meeting.state === "RECORDING"
-                      ? "bg-[color-mix(in_oklab,var(--base),var(--danger)_12%)] hover:bg-[color-mix(in_oklab,var(--base),var(--danger)_18%)]"
-                      : meeting.state === "FAILED"
-                        ? "bg-danger-quiet hover:bg-[color-mix(in_oklab,var(--base),var(--danger)_14%)]"
-                        : "bg-accent-quiet hover:bg-[color-mix(in_oklab,var(--base),var(--accent)_18%)]"
-                  }`}
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    {formatClock(meeting.started_at)} {meeting.title ?? t("timeline.recording")}
-                  </span>
-                  <OpenBalloon count={meeting.actions_open} label={t("timeline.actionsOpen")} />
-                </Link>
-              ))}
-              {(eventsByDay.get(dayKey(day)) ?? [])
-                .filter((event) => event.meeting_id)
-                .slice(0, MAX_CHIPS)
-                .map((event) => (
-                  <Link
-                    key={eventKey(event)}
-                    to={`/m/${event.meeting_id}`}
-                    data-testid="calendar-event"
-                    data-recorded="true"
-                    data-meeting={event.meeting_id}
-                    title={`${event.title ?? ""} — ${t("calendar.recorded")}`}
-                    className="mb-0.5 flex items-center gap-1 rounded-xs bg-accent-quiet px-1.5 py-0.5 text-xs shadow-[inset_2px_0_0_0_var(--accent)] hover:bg-[color-mix(in_oklab,var(--base),var(--accent)_18%)]"
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {formatClock(event.start)} {event.title ?? t("calendar.untitled")}
-                    </span>
-                    <AccountDots item={event} />
-                    <OpenBalloon
-                      count={meetings.find((meeting) => meeting.id === event.meeting_id)?.actions_open}
-                      label={t("timeline.actionsOpen")}
-                    />
-                  </Link>
-                ))}
-              {(eventCount.get(dayKey(day)) ?? 0) > 0 && (
-                <div
-                  data-testid="calendar-gevent-dots"
-                  data-count={eventCount.get(dayKey(day))}
-                  title={t("calendar.eventsThisDay")}
-                  className="mb-0.5 flex flex-wrap gap-0.5"
-                >
-                  {Array.from({ length: Math.min(6, eventCount.get(dayKey(day)) ?? 0) }, (_, i) => (
-                    <span key={i} className="size-1.5 rounded-full bg-line" />
-                  ))}
-                </div>
-              )}
-              {items.length > MAX_CHIPS && (
-                <span data-testid="calendar-more" className="text-xs text-tertiary">
-                  +{items.length - MAX_CHIPS}
-                </span>
-              )}
-            </div>
-          );
-        })}
+        {days.map((day) => (
+          <DayCell
+            key={dayKey(day)}
+            day={day}
+            items={dayItems(day, meetings, events)}
+            outside={!isSameMonth(day, anchor)}
+            onDay={onDay}
+          />
+        ))}
       </div>
     </div>
   );

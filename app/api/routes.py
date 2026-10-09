@@ -772,6 +772,24 @@ def _calendar_of(
     return calendar_payload(meeting) or _inferred_calendar(svc, meeting, events)
 
 
+def _proposed_refs(meeting: Meeting) -> list[dict[str, Any]]:
+    """The events a recording may be, as references, when its match is only proposed."""
+    from app.meetings import calendar_payload
+
+    payload = calendar_payload(meeting)
+    if (payload.get("match") or {}).get("state") != "proposed":
+        return []
+    return [
+        {
+            "account_id": item.get("account_id"),
+            "calendar_id": item.get("calendar_id"),
+            "event_id": item.get("event_id"),
+        }
+        for item in payload.get("candidates") or []
+        if isinstance(item, dict) and item.get("event_id")
+    ]
+
+
 def _action_counts(pair: tuple[int, int] | None) -> dict[str, int]:
     total, still_open = pair or (0, 0)
     return {"actions_total": total, "actions_open": still_open}
@@ -909,6 +927,9 @@ def list_meetings(
                 **meeting.as_dict(),
                 # The calendar meeting is not settled: the library marks it (D89).
                 "needs_meeting": svc.meetings.needs_meeting(meeting, calendar_connected=connected),
+                # The events it may be, when the matcher only proposed: the calendar grid
+                # draws the recording inside one of these rather than beside it (D94).
+                "proposed": _proposed_refs(meeting),
                 **_action_counts(counts.get(meeting.id)),
                 "tags": tags.get(meeting.id, []),
                 # Every calendar account the meeting is on: the dots in the list.

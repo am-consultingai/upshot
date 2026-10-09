@@ -187,3 +187,133 @@ test("the_meeting_page_carries_the_event_and_its_link", async ({ page, seedBody 
   const join = page.getByTestId("meeting-join-bar");
   await expect(join).toHaveAttribute("href", "https://meet.google.com/seed");
 });
+
+/**
+ * D94: a recording that is not matched, overlapping an invitation, is drawn inside the
+ * invitation as a strip that asks — not as a second block beside it.
+ */
+const ASKING = {
+  meetings: [
+    {
+      id: "e2e-ask",
+      title: "Recording",
+      state: "RENDERED",
+      started_at: isoAt(0, 10, 5),
+      duration_s: 100 * 60,
+      proposed: [{ event_id: "e2e-ask-evt" }],
+    },
+  ],
+  calendar_events: [{ id: "e2e-ask-evt", title: "Design review", start: isoAt(0, 10), end: isoAt(0, 12) }],
+};
+
+test("an_unmatched_recording_sits_inside_the_invite_and_link_matches_it", async ({ page, seedBody }) => {
+  await seedBody(ASKING);
+  await calendarView(page, "day");
+
+  // One block, the invitation's, with the recording's strip inside it.
+  const block = page.getByTestId("calendar-combined");
+  await expect(block).toHaveCount(1);
+  await expect(block.getByTestId("calendar-combined-title")).toHaveText("Design review");
+  const strip = block.getByTestId("calendar-combined-strip");
+  await expect(strip).toContainText("Is this the recording?");
+  await expect(strip).toContainText("10:05 – 11:45");
+  await expect(page.getByTestId("calendar-event")).toHaveCount(0);
+
+  await block.getByTestId("calendar-combined-link").click();
+  await expect(page.getByTestId("calendar-combined")).toHaveCount(0);
+  const matched = page.getByTestId("calendar-gevent").filter({ hasText: "Design review" });
+  await expect(matched).toHaveAttribute("data-recorded", "true");
+  await expect(matched).toHaveAttribute("data-meeting", "e2e-ask");
+  await expect(page.getByTestId("calendar-event")).toHaveCount(0);
+});
+
+test("not_this_one_opens_the_picker_and_none_settles_it", async ({ page, seedBody }) => {
+  await seedBody(ASKING);
+  await calendarView(page, "day");
+
+  await page.getByTestId("calendar-combined-other").click();
+  const dialog = page.getByTestId("meeting-details");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId("meeting-calendar-options")).toBeVisible();
+  // Until it is answered, the block stays.
+  await expect(page.getByTestId("calendar-combined")).toHaveCount(1);
+
+  await dialog.getByTestId("meeting-calendar-none-button").click();
+  await expect(page.getByTestId("meeting-details")).toHaveCount(0);
+  await expect(page.getByTestId("calendar-combined")).toHaveCount(0);
+  // Settled as on no calendar: the recording draws by itself beside the invitation again.
+  await expect(page.locator("[data-testid=calendar-event][data-meeting=e2e-ask]")).toHaveCount(1);
+  await expect(
+    page.getByTestId("calendar-gevent").filter({ hasText: "Design review" }),
+  ).toHaveAttribute("data-recorded", "false");
+});
+
+test("a_short_invite_asks_with_a_question_mark", async ({ page, seedBody }) => {
+  await seedBody({
+    meetings: [
+      // Proposed, not matched: with nothing stored, the events endpoint would infer the
+      // match from the overlap by itself and the block would never ask.
+      {
+        id: "e2e-short",
+        title: "Recording",
+        state: "RENDERED",
+        started_at: isoAt(0, 10, 2),
+        duration_s: 25 * 60,
+        proposed: [{ event_id: "e2e-short-evt" }],
+      },
+    ],
+    calendar_events: [{ id: "e2e-short-evt", title: "Quick sync", start: isoAt(0, 10), end: isoAt(0, 10, 30) }],
+  });
+  await calendarView(page, "day");
+
+  const block = page.getByTestId("calendar-combined");
+  await expect(block).toHaveAttribute("data-size", "short");
+  await expect(block.getByTestId("calendar-combined-title")).toHaveText("Quick sync");
+  await block.getByTestId("calendar-combined-ask").click();
+  const menu = page.getByTestId("calendar-combined-menu");
+  await expect(menu.getByRole("menuitem")).toHaveText(["Link", "Not this one"]);
+  await menu.getByRole("menuitem", { name: "Link" }).click();
+  await expect(page.getByTestId("calendar-combined")).toHaveCount(0);
+  await expect(
+    page.getByTestId("calendar-gevent").filter({ hasText: "Quick sync" }),
+  ).toHaveAttribute("data-recorded", "true");
+});
+
+test("the_month_is_dots_and_a_day_lists_what_is_on_it", async ({ page, seedBody }) => {
+  await seedBody({
+    meetings: [
+      {
+        id: "e2e-month-rec",
+        title: "Hallway chat",
+        state: "RENDERED",
+        started_at: isoAt(0, 16),
+        duration_s: 20 * 60,
+      },
+    ],
+    calendar_events: [{ id: "e2e-month-evt", title: "Budget review", start: isoAt(0, 9), end: isoAt(0, 10) }],
+  });
+  await gotoApp(page, "/");
+  await page.getByTestId("span-month").click();
+  const grid = page.getByTestId("calendar-monthgrid");
+  await expect(grid).toBeVisible();
+
+  // No titled chips: a dot each, coloured by state.
+  await expect(grid.getByTestId("calendar-event")).toHaveCount(0);
+  await expect(grid).not.toContainText("Budget review");
+  const today = grid.locator("[data-testid=calendar-daycell][data-today=true]");
+  await expect(today.getByTestId("calendar-dot")).toHaveCount(2);
+  await expect(today.locator("[data-testid=calendar-dot][data-state=scheduled]")).toHaveCount(1);
+
+  // Hovering the day lists it, in time order.
+  await today.hover();
+  const peek = page.getByTestId("calendar-daypeek");
+  await expect(peek.getByTestId("calendar-daypeek-item")).toHaveCount(2);
+  await expect(peek.getByTestId("calendar-daypeek-item").first()).toContainText("09:00");
+  await expect(peek.getByTestId("calendar-daypeek-item").first()).toContainText("Budget review");
+  await expect(peek.getByTestId("calendar-daypeek-item").last()).toContainText("Hallway chat");
+
+  // Pressing it opens that day.
+  await today.click();
+  await expect(page.getByTestId("calendar-daycolumn")).toHaveCount(1);
+  await page.getByTestId("span-week").click(); // leave the default as it was
+});

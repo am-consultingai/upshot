@@ -368,3 +368,156 @@ export function foldNights(
   };
   return { early, late, y, height: y(24 * 60) };
 }
+
+/** What the grids need of a recording to decide whether it is still a question. */
+export interface AskableMeeting {
+  id: string;
+  state: string;
+  started_at: string;
+  duration_s: number | null;
+  needs_meeting?: boolean;
+  proposed?: { calendar_id: string; event_id: string }[];
+}
+
+/**
+ * Whether a recording's calendar meeting is still open to question (D94).
+ *
+ * The backend's `needs_meeting` is the one answer (D89), so the week view, the month's
+ * dots and the sidebar agree: not matched, and not answered by the user ("not on my
+ * calendar" settles it for good). A recording with nothing stored is matched for display,
+ * not asked about, and one still running is not asked about until it ends.
+ */
+export function asksForMeeting(meeting: AskableMeeting): boolean {
+  if (meeting.state === "RECORDING" || meeting.state === "ARMED") return false;
+  return Boolean(meeting.needs_meeting);
+}
+
+/** Milliseconds two intervals share; zero when they do not meet. */
+function overlapMs(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+}
+
+/**
+ * Which calendar event each unmatched recording sits inside (D94), by event key.
+ *
+ * Only recordings still open to question, and only timed events no recording is matched
+ * to. Of the events a recording overlaps, one the backend proposed for it wins; otherwise
+ * the one it shares the most time with. An event holds one recording: a second recording
+ * of the same slot is drawn on its own, as before. Earlier recordings choose first.
+ *
+ * `drawn` is the day keys the grid shows. An event is drawn in the column of the day it
+ * starts, and the events endpoint also returns ones that only overlap the range — an
+ * invitation from 23:30 the night before is not on the grid, so a recording must not be
+ * put inside it, or it would vanish with it.
+ */
+export function pairRecordings<M extends AskableMeeting, E extends GridEvent>(
+  meetings: M[],
+  events: E[],
+  drawn?: Set<string>,
+): Map<string, { meeting: M; event: E }> {
+  const matched = recordedIds(events);
+  const pairs = new Map<string, { meeting: M; event: E }>();
+  const open = events.filter(
+    (event) =>
+      !event.all_day &&
+      !event.meeting_id &&
+      (!drawn || drawn.has(dayKey(new Date(event.start)))),
+  );
+  const ordered = meetings
+    .filter((meeting) => !matched.has(meeting.id) && asksForMeeting(meeting))
+    .sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+  for (const meeting of ordered) {
+    const start = new Date(meeting.started_at).getTime();
+    const end = start + (meeting.duration_s ?? DEFAULT_DURATION_S) * 1000;
+    const proposed = new Set(
+      (meeting.proposed ?? []).map((ref) => `${ref.calendar_id}:${ref.event_id}`),
+    );
+    let best: { event: E; proposed: boolean; shared: number } | null = null;
+    for (const event of open) {
+      if (pairs.has(eventKey(event))) continue;
+      const shared = overlapMs(
+        start,
+        end,
+        new Date(event.start).getTime(),
+        new Date(event.end).getTime(),
+      );
+      if (shared <= 0) continue;
+      const isProposed = proposed.has(`${event.calendar_id}:${event.event_id}`);
+      if (
+        !best ||
+        (isProposed && !best.proposed) ||
+        (isProposed === best.proposed && shared > best.shared)
+      ) {
+        best = { event, proposed: isProposed, shared };
+      }
+    }
+    if (best) pairs.set(eventKey(best.event), { meeting, event: best.event });
+  }
+  return pairs;
+}
+
+/** A month cell's dot: what state a thing on that day is in. */
+export type DotState = "recorded" | "failed" | "live" | "needs" | "scheduled";
+
+/** The dot for a recording: live and failed first, then whether it still asks. */
+export function recordingDot(meeting: Pick<AskableMeeting, "state" | "needs_meeting">): DotState {
+  if (meeting.state === "RECORDING") return "live";
+  if (meeting.state === "FAILED") return "failed";
+  if (meeting.needs_meeting) return "needs";
+  return "recorded";
+}
+
+/** One thing on a day of the month view: a dot, and a line in the day's list. */
+export interface DayItem {
+  key: string;
+  /** For the list's time; empty for an all-day event, which comes first. */
+  start: string;
+  title: string | null;
+  state: DotState;
+  allDay: boolean;
+}
+
+/**
+ * Everything on one day of the month, in time order: recordings drawn by themselves,
+ * calendar events (a matched one in its recording's state), then all-day events first.
+ */
+export function dayItems<
+  M extends AskableMeeting & { title: string | null },
+  E extends GridEvent & { title: string | null },
+>(day: Date, meetings: M[], events: E[]): DayItem[] {
+  const key = dayKey(day);
+  const matched = recordedIds(events);
+  const byId = new Map(meetings.map((meeting) => [meeting.id, meeting]));
+  const items: DayItem[] = [];
+  for (const event of events) {
+    if (event.all_day) {
+      if (allDayKeys(event).includes(key)) {
+        items.push({ key: eventKey(event), start: "", title: event.title, state: "scheduled", allDay: true });
+      }
+      continue;
+    }
+    if (dayKey(new Date(event.start)) !== key) continue;
+    const meeting = event.meeting_id ? byId.get(event.meeting_id) : undefined;
+    items.push({
+      key: eventKey(event),
+      start: event.start,
+      title: event.title,
+      state: event.meeting_id ? (meeting ? recordingDot(meeting) : "recorded") : "scheduled",
+      allDay: false,
+    });
+  }
+  for (const meeting of meetings) {
+    if (matched.has(meeting.id) || dayKey(new Date(meeting.started_at)) !== key) continue;
+    items.push({
+      key: `meeting:${meeting.id}`,
+      start: meeting.started_at,
+      title: meeting.title,
+      state: recordingDot(meeting),
+      allDay: false,
+    });
+  }
+  return items.sort((a, b) => {
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return new Date(a.start || 0).getTime() - new Date(b.start || 0).getTime();
+  });
+}

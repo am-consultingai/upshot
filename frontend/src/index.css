@@ -555,6 +555,13 @@ kbd {
   animation: ma-pulse 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
+/* A live day in the month view: red alone says it, without the pulse, when motion is reduced. */
+@media (prefers-reduced-motion: reduce) {
+  .ma-dot-live {
+    animation: none;
+  }
+}
+
 /*
  * Skeletons: a bar shaped like what is coming. One alpha step on whatever surface it
  * sits on, so it is right in both themes without a colour of its own.

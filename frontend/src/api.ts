@@ -34,6 +34,8 @@ export interface Meeting {
   calendar_accounts?: string[];
   /** Its calendar meeting is not settled: the user is asked which it was (D89). */
   needs_meeting?: boolean;
+  /** The events it may be, when its match is only proposed (D89). */
+  proposed?: EventRef[];
 }
 
 /** A stretch of the conversation about one thing, as the summarizer divided it. */
