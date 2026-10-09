@@ -539,3 +539,20 @@ def test_a_restart_recovers_a_running_file_job(tmp_path: Path) -> None:
     store.claim(job.id)
     worker_for(h, store)
     assert store.require(job.id).state == PENDING
+
+
+def test_a_file_jobs_time_left_holds_while_its_progress_stands_still(tmp_path: Path) -> None:
+    # D94: polled every 2 s while a long chunk is decoded, the time left must not climb.
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = store.claim(add(store).id)
+    assert job is not None
+    h.clock.advance(21.7)
+    store.progress(job.id, "transcribe", 0.10)
+    first = store.eta_s(store.require(job.id))
+    assert first == 195
+    for _ in range(25):
+        h.clock.advance(2)
+        assert store.eta_s(store.require(job.id)) == first
+    store.progress(job.id, "transcribe", 0.38)
+    assert store.eta_s(store.require(job.id)) == 117
