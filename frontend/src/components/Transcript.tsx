@@ -1,6 +1,8 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { isMicSlot, stamp, type Segment, type Speaker } from "../lib/speakers";
+import { ChevronDown, ChevronUp, Search } from "lucide-react";
+import { Icon } from "./Icon";
 
 /** Where each match is: which segment, and where in its text. */
 interface Match {
@@ -131,9 +133,7 @@ const Transcript = forwardRef<
         data-testid="transcript-find"
         className="sticky top-0 z-10 -mx-1 mb-5 flex h-8 items-center gap-2 rounded-md bg-surface-1 px-2.5 shadow-[var(--shadow-ring-subtle)] focus-within:shadow-[0_0_0_1px_var(--accent)]"
       >
-        <svg viewBox="0 0 16 16" className="size-3.5 shrink-0 fill-none stroke-current stroke-[1.6] text-tertiary">
-          <path d="M10.5 10.5 14 14M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
-        </svg>
+        <Icon icon={Search} className="size-3.5 text-tertiary" />
         <input
           ref={findRef}
           data-testid="transcript-find-input"
@@ -165,9 +165,7 @@ const Transcript = forwardRef<
               onClick={() => step(-1)}
               className="grid size-5 place-items-center rounded-xs text-tertiary hover:bg-a-200 hover:text-primary"
             >
-              <svg viewBox="0 0 16 16" className="size-3 fill-none stroke-current stroke-[1.6]">
-                <path d="M4 9.5 8 5.5l4 4" />
-              </svg>
+              <Icon icon={ChevronUp} className="size-3" />
             </button>
             <button
               type="button"
@@ -176,9 +174,7 @@ const Transcript = forwardRef<
               onClick={() => step(1)}
               className="grid size-5 place-items-center rounded-xs text-tertiary hover:bg-a-200 hover:text-primary"
             >
-              <svg viewBox="0 0 16 16" className="size-3 fill-none stroke-current stroke-[1.6]">
-                <path d="M4 6.5 8 10.5l4-4" />
-              </svg>
+              <Icon icon={ChevronDown} className="size-3" />
             </button>
           </span>
         )}

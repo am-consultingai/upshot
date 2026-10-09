@@ -4,6 +4,8 @@ import { api, type MeetingDetail } from "../api";
 import { useI18n } from "../i18n";
 import { formatClock, formatDurationShort, formatShortDate } from "../lib/format";
 import Tooltip from "./Tooltip";
+import { Calendar, Clock, Users, X, type LucideIcon } from "lucide-react";
+import { Icon } from "./Icon";
 
 /**
  * The meeting's facts, as a row of outlined chips under its title: when, how long,
@@ -75,12 +77,12 @@ export default function MeetingChips({
 
   return (
     <div data-testid="meeting-chips" className="mb-5 flex flex-wrap items-center gap-1.5">
-      <Chip icon={CALENDAR} testid="chip-when" title={`${formatShortDate(when, locale)} · ${formatClock(when.toISOString())}`}>
+      <Chip icon={Calendar} testid="chip-when" title={`${formatShortDate(when, locale)} · ${formatClock(when.toISOString())}`}>
         <bdi>{formatShortDate(when, locale)}</bdi>
       </Chip>
 
       {length && (
-        <Chip icon={CLOCK} testid="chip-duration">
+        <Chip icon={Clock} testid="chip-duration">
           {length}
         </Chip>
       )}
@@ -88,7 +90,7 @@ export default function MeetingChips({
       {count > 0 && (
         <Tooltip label={t(count === 1 ? "meeting.personOne" : "meeting.people").replace("{n}", String(count))} hint={t("help.people")}>
         <Chip
-          icon={PEOPLE}
+          icon={Users}
           testid="chip-people"
           onClick={onPeople}
         >
@@ -114,9 +116,7 @@ export default function MeetingChips({
             onClick={() => save.mutate(tags.filter((existing) => existing !== tag))}
             className="grid size-4 place-items-center rounded-full text-tertiary opacity-0 transition-opacity group-hover:opacity-100 hover:bg-a-200 hover:text-primary focus-visible:opacity-100"
           >
-            <svg viewBox="0 0 16 16" className="size-2.5 fill-none stroke-current stroke-[2]">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
+            <Icon icon={X} className="size-2.5" />
           </button>
         </span>
       ))}
@@ -200,7 +200,7 @@ function Chip({
   onClick,
   ...rest
 }: {
-  icon: string;
+  icon: LucideIcon;
   children: React.ReactNode;
   testid?: string;
   title?: string;
@@ -210,9 +210,7 @@ function Chip({
     "inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs text-secondary shadow-[var(--shadow-ring)]";
   const body = (
     <>
-      <svg viewBox="0 0 16 16" className="size-3 shrink-0 fill-none stroke-current stroke-[1.6] text-tertiary">
-        <path d={icon} />
-      </svg>
+      <Icon icon={icon} className="size-3 text-tertiary" />
       {children}
     </>
   );
@@ -237,7 +235,3 @@ function Chip({
   );
 }
 
-const CALENDAR = "M2.5 3.5h11v10h-11zM2.5 6.5h11M5.5 2v2M10.5 2v2";
-const CLOCK = "M13.5 8a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0ZM8 5v3.2l2 1.2";
-const PEOPLE =
-  "M8.4 6a2.4 2.4 0 1 1-4.8 0 2.4 2.4 0 0 1 4.8 0ZM1.8 13c.4-2.2 2.1-3.4 4.2-3.4s3.8 1.2 4.2 3.4M11 4.2a2.2 2.2 0 0 1 0 4M12 9.8c1.4.4 2.3 1.5 2.5 3.2";

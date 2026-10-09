@@ -22,6 +22,8 @@ import { greeting } from "../lib/greeting";
 import { shortcutKey } from "../lib/keys";
 import type { CalendarEvent } from "../api";
 import Button from "../components/Button";
+import { ChevronLeft, ChevronRight, FoldVertical } from "lucide-react";
+import { Icon } from "../components/Icon";
 
 /** Explicit, so the message keys stay type-checked rather than cast away. */
 const SPAN_LABEL = {
@@ -184,9 +186,7 @@ export default function Library() {
                   onClick={() => setAnchor(shift(span, anchor, -1))}
                   className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
                 >
-                  <svg viewBox="0 0 16 16" className="size-3.75 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
-                    <path d="M10 3.5 5.5 8l4.5 4.5" />
-                  </svg>
+                  <Icon icon={ChevronLeft} mirror className="size-3.75" />
                 </button>
                 <button
                   type="button"
@@ -196,9 +196,7 @@ export default function Library() {
                   onClick={() => setAnchor(shift(span, anchor, 1))}
                   className="grid size-6 place-items-center rounded-sm text-tertiary hover:bg-a-200 hover:text-primary active:bg-a-300"
                 >
-                  <svg viewBox="0 0 16 16" className="size-3.75 fill-none stroke-current stroke-[1.5] rtl:-scale-x-100">
-                    <path d="m6 3.5 4.5 4.5L6 12.5" />
-                  </svg>
+                  <Icon icon={ChevronRight} mirror className="size-3.75" />
                 </button>
               </div>
               <Tooltip label={t("timeline.jumpToday")} keys="T">
@@ -239,9 +237,7 @@ export default function Library() {
                     }`}
                   >
                     {/* Two rules drawn together: the hours above and below pressed in. */}
-                    <svg viewBox="0 0 16 16" className="size-[15px] fill-none stroke-current stroke-[1.5]" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2.5 6.5h11M2.5 9.5h11M8 1.5v3M6.5 3 8 4.5 9.5 3M8 14.5v-3M6.5 13 8 11.5 9.5 13" />
-                    </svg>
+                    <Icon icon={FoldVertical} className="size-[15px]" />
                   </button>
                 </Tooltip>
               )}

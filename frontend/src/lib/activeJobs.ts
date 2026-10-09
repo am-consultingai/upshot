@@ -134,11 +134,20 @@ export function formatPercent(progress: number, locale: string): string {
   );
 }
 
-/** "~6 min left"; nothing until the server has measured enough of the run to say. */
+/**
+ * "about 6 min left"; nothing until the server has measured enough of the run to say.
+ * An estimate, so it is said as one (D94): whole minutes to the nearest, five-minute
+ * steps past an hour, and below 90 s only "about a minute" or "under a minute". The one
+ * formatter for the meeting card, the meeting page, the Transcriptions rows and
+ * Settings, so they never disagree.
+ */
 export function timeLeft(etaS: number | null | undefined, t: Translate): string | null {
-  if (etaS === null || etaS === undefined) return null;
+  if (etaS === null || etaS === undefined || !Number.isFinite(etaS)) return null;
   if (etaS < 60) return t("progress.leftUnderMinute");
-  return t("progress.left").replace("{time}", formatDuration(etaS, t));
+  if (etaS < 90) return t("progress.leftAboutMinute");
+  const step = etaS >= 3600 ? 5 : 1;
+  const minutes = Math.max(2, Math.round(etaS / 60 / step) * step);
+  return t("progress.left").replace("{time}", formatDuration(minutes * 60, t));
 }
 
 export function clientName(job: ActiveJob, t: Translate): string {
