@@ -89,17 +89,20 @@ _CSS_UNSAFE = re.compile(
 )
 
 
-#: Taken out of the page's flow, a summary could lay fake controls over the whole app.
-_POSITION_OUT_OF_FLOW = re.compile(r"fixed|sticky|absolute", re.IGNORECASE)
+#: Taken out of the page's flow, a summary could lay fake controls over the whole app, so
+#: ``position`` is kept only in flow. Custom properties and ``var()`` go too: a variable
+#: could carry a value past this check (``--p:fixed; position:var(--p)``).
+_POSITION_IN_FLOW = frozenset({"static", "relative"})
 
 
 def _declaration_kept(declaration: str) -> bool:
     if _CSS_UNSAFE.search(declaration):
         return False
     name, _, value = declaration.partition(":")
-    return not (
-        name.strip().lower() == "position" and _POSITION_OUT_OF_FLOW.search(value) is not None
-    )
+    name, value = name.strip().lower(), value.strip().lower()
+    if name.startswith("--") or "var(" in value.replace(" ", ""):
+        return False
+    return name != "position" or value in _POSITION_IN_FLOW
 
 
 def _clean_style(value: str) -> str | None:
@@ -114,7 +117,9 @@ def _clean_style(value: str) -> str | None:
 #: A point the summary took from one turn carries that turn's start (D94): the page shows
 #: it as a control that plays the recording from there.
 CITE_ATTR = "data-at-ms"
-_INTEGER = re.compile(r"\d+")
+#: Nine digits is over 11 days of ms; a longer number is not a moment (and ``int()``
+#: refuses past 4300 digits).
+_INTEGER = re.compile(r"\d{1,9}")
 #: The model reads each turn as ``[mm:ss]``, the start floored to the second
 #: (``assemble.timestamp``), so the moment it cites can be up to this far before the turn.
 _DISPLAYED_SECOND_MS = 999
@@ -145,7 +150,7 @@ def _cite(raw: str, starts: Sequence[int] | None, duration_ms: int | None) -> st
 def _attribute_filter(
     starts: Sequence[int] | None, duration_ms: int | None
 ) -> Callable[[str, str, str], str | None]:
-    def attribute(element: str, attribute: str, value: str) -> str | None:
+    def checked(attribute: str, value: str) -> str | None:
         if attribute == "style":
             return _clean_style(value)
         if attribute == "href":
@@ -154,6 +159,14 @@ def _attribute_filter(
         if attribute == CITE_ATTR:
             return _cite(value, starts, duration_ms)
         return value
+
+    def attribute(element: str, attribute: str, value: str) -> str | None:
+        # nh3 keeps the original value when the filter raises: fail closed instead.
+        try:
+            return checked(attribute, value)
+        except Exception as exc:
+            log.warning("dropped a summary attribute the cleaner could not check: %s", exc)
+            return None
 
     return attribute
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leadFirst, withCitations } from "../src/lib/summary";
+import { citedSeconds, leadFirst, withCitations } from "../src/lib/summary";
 
 describe("leadFirst", () => {
   it("drops a generic first heading so the paragraph under it leads", () => {
@@ -64,5 +64,37 @@ describe("withCitations", () => {
   it("puts the moment before a nested list, with the point's own words", () => {
     const [button] = cites('<ul><li data-at-ms="5000">Parent<ul><li>child</li></ul></li></ul>');
     expect(button.nextElementSibling?.tagName).toBe("UL");
+  });
+});
+
+describe("citedSeconds", () => {
+  const box = (html: string) => {
+    const div = document.createElement("div");
+    div.innerHTML = html;
+    return div;
+  };
+
+  it("reads the moment off a control withCitations made, from the button or inside it", () => {
+    const div = box(withCitations('<ul><li data-at-ms="61500">a</li></ul>', (time) => time));
+    const button = div.querySelector("button")!;
+    expect(citedSeconds(button)).toBe(61.5);
+    button.innerHTML = "<span>(01:01)</span>";
+    expect(citedSeconds(button.querySelector("span"))).toBe(61.5);
+  });
+
+  it("ignores data-cite on anything the summary wrote itself", () => {
+    expect(citedSeconds(box('<span data-cite="5000">x</span>').firstElementChild)).toBeNull();
+    expect(citedSeconds(box('<button data-cite="5000">x</button>').firstElementChild)).toBeNull();
+  });
+
+  it("never seeks to a value that is not a whole number of ms", () => {
+    for (const value of ["abc", "", "1e5", "-1", "61.5", "9".repeat(20)]) {
+      const button = box(`<button class="summary-cite" data-cite="${value}">x</button>`).firstElementChild;
+      expect(citedSeconds(button)).toBeNull();
+    }
+  });
+
+  it("ignores a click that hit no element", () => {
+    expect(citedSeconds(null)).toBeNull();
   });
 });

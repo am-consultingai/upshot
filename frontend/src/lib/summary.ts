@@ -71,3 +71,15 @@ export function withCitations(html: string, label: (time: string) => string): st
   }
   return changed ? doc.body.innerHTML : html;
 }
+
+/**
+ * The moment a click in the summary asks to play, in seconds, or `null`. Only a control
+ * withCitations made counts (a `button.summary-cite`), and only a whole number of ms: the
+ * summary's own markup can't steer the player, and a bad value never seeks to NaN.
+ */
+export function citedSeconds(target: EventTarget | null): number | null {
+  if (!(target instanceof Element)) return null;
+  const cite = target.closest<HTMLElement>("button.summary-cite[data-cite]");
+  const ms = cite?.dataset.cite ?? "";
+  return /^\d{1,9}$/.test(ms) ? Number(ms) / 1000 : null;
+}
