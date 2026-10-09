@@ -212,8 +212,11 @@ function CombinedBlock({
         queryClient.invalidateQueries({ queryKey: ["calendar-events"] }),
       ]);
       // This block is gone now; the keyboard goes on from the matched block that replaced
-      // it, or from the grid, rather than falling to the page.
+      // it, or from the grid, rather than falling to the page. Only if it did fall: a user who
+      // has moved on (typing in search, another block's menu) keeps their focus.
       window.setTimeout(() => {
+        const active = document.activeElement;
+        if (active && active !== document.body) return;
         const selector = `[data-testid=calendar-gevent][data-event="${CSS.escape(event.event_id)}"]`;
         const target =
           document.querySelector<HTMLElement>(selector) ??
