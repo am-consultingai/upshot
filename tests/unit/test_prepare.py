@@ -263,6 +263,42 @@ def test_a_retired_folder_that_is_the_developers_model_path_is_kept(
     assert retired.exists()
 
 
+def test_an_installed_build_removes_a_retired_model_path_it_no_longer_uses(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """z8tj1hfr6w: the installed build replaces it, so its 3 GB is freed for the turbo."""
+    from app import paths
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(asr__model_path=str(retired)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home), gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert not retired.exists()
+
+
+def test_an_installed_build_keeps_its_retired_stand_in_when_the_download_fails(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The old model transcribes until the turbo is in place: a failed download must not
+    have removed it first (review of #16)."""
+    from app import paths
+    from app.asr.model_manager import target_for
+    from app.asr.models import RETIRED_REPOS
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    retired = target_for(RETIRED_REPOS[0])
+    retired.mkdir(parents=True)
+    code = run(default_config(asr__model_path=str(retired)), ProgressFile(tmp_path / "p.txt"),
+               model=model_manager(app_home, fail="hebrew"),
+               gpu_wanted=(False, "x"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_FAILED
+    assert retired.exists()
+
+
 # -- the GPU libraries ---------------------------------------------------------------
 
 
@@ -576,3 +612,22 @@ def test_the_progress_file_is_utf8_with_a_mark_and_a_first_line_nobody_reads(
     assert found["stage"] == "model"
     assert found["text"] == "מודלי דיבור: בהורדה"
     assert found["tick"] == "1"
+
+
+def test_an_installed_build_does_not_count_a_configured_cuda_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """z8tj1hfr6w: a developer's ``cuda_dir`` outlived an uninstall, so ``--prepare`` never
+    fetched the installed copy's own libraries and its GPU depended on that folder."""
+    from app import paths
+
+    folder = tmp_path / "Scripts"
+    folder.mkdir()
+    for name in ("cublas64_12.dll", "cudnn64_9.dll"):
+        (folder / name).write_bytes(b"x")
+    config = default_config()
+    config.set("asr.cuda_dir", str(folder))
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) is None
+    monkeypatch.setattr(paths, "is_frozen", lambda: False)
+    assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) == folder
