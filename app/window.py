@@ -123,7 +123,8 @@ def _allow_any_foreground() -> None:  # pragma: no cover - Windows only
     """Let any process take the foreground once. pywin32 does not wrap this call."""
     import ctypes
 
-    ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)  # type: ignore[attr-defined,unused-ignore]
+    if not ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY):  # type: ignore[attr-defined,unused-ignore]
+        log.info("Windows refused to pass on the foreground (error %d)", ctypes.GetLastError())  # type: ignore[attr-defined,unused-ignore]
 
 
 @contextlib.contextmanager
@@ -135,7 +136,8 @@ def _foreground_shared() -> Iterator[None]:
     Attached to the foreground window's thread, this background process counts as the
     program the user is in, which is what ``AllowSetForegroundWindow`` asks of its
     caller. An Alt press, the usual trick, brought the browser forward in 2 of 4 tries
-    on machine A, against 7 of 7 for this (z8tj1hfdwz).
+    on machine A, against 7 of 7 for this (z8tj1hfdwz). The attachment lasts until the
+    link is open: let go before it, the browser came forward in 4 of 5.
     """
     try:
         import win32api
@@ -145,15 +147,16 @@ def _foreground_shared() -> Iterator[None]:
         yield
         return
     mine = win32api.GetCurrentThreadId()
-    front = win32gui.GetForegroundWindow()
-    theirs = win32process.GetWindowThreadProcessId(front)[0] if front else 0
+    theirs = 0
     attached = False
-    if theirs and theirs != mine:
-        try:
+    try:
+        front = win32gui.GetForegroundWindow()
+        theirs = win32process.GetWindowThreadProcessId(front)[0] if front else 0
+        if theirs and theirs != mine:
             win32process.AttachThreadInput(mine, theirs, True)
             attached = True
-        except Exception as exc:  # pywintypes.error: Windows refused it
-            log.info("could not share the foreground window's input: %s", exc)
+    except Exception as exc:  # pywintypes.error: the window closed, or Windows refused
+        log.info("could not share the foreground window's input: %s", exc)
     try:
         _allow_any_foreground()
         yield
