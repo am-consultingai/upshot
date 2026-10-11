@@ -6,7 +6,9 @@ exercised end to end), and prints ``stream-json`` shaped like a real run's (capt
 from Claude Code 2.1.282 on 2026-09-25).
 
 Behaviour by what the question contains:
-- ``SIGNED-OUT``  prints the CLI's not-signed-in message and exits 1.
+- ``SIGNED-OUT``  prints the CLI's not-signed-in message and exits 1; with ``LATE`` a
+  child keeps stderr open for half a second after the exit, so the app reads the exit
+  code before the message.
 - ``SLOW``        waits between words, so Stop can be tested.
 - ``NOTOOL``      answers without calling a tool; with ``SUGGEST`` it offers follow-ups.
 - ``ECHO:`` text  answers with the text itself, as a fooled model would.
@@ -127,6 +129,18 @@ def main() -> int:
     question = sys.stdin.read()
     if "SIGNED-OUT" in question:
         sys.stderr.write("Invalid API key · Please run /login\n")
+        sys.stderr.flush()
+        if "LATE" in question:
+            import subprocess
+
+            subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(0.5)"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=sys.stderr,
+                # no console window flashing up when the tests run on a Windows desktop
+                creationflags=0x08000000 if sys.platform == "win32" else 0,  # CREATE_NO_WINDOW
+            )
         return 1
     resumed = arg(argv, "--resume")
     if resumed.startswith("gone-"):
