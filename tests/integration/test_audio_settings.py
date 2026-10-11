@@ -255,10 +255,14 @@ def test_the_meter_releases_the_device_when_the_client_goes_away(
     # release can be observed. A single combined `with` would tear both down at once.
     with serve(harness) as client:  # noqa: SIM117
         with client.stream("GET", "/api/audio/level") as response:
+            first = ""
             for line in response.iter_lines():
                 if line.startswith("data: "):
+                    first = line
                     break
-            assert meter.active() is not None, "the meter should hold the device while streaming"
+            assert meter.active() is not None, (
+                f"the meter should hold the device while streaming; first event: {first}"
+            )
     deadline = time.monotonic() + 5
     while meter.active() is not None and time.monotonic() < deadline:
         time.sleep(0.05)
