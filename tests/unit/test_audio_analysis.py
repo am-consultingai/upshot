@@ -33,7 +33,7 @@ def _speechlike(seconds: float, seed: int = 0) -> np.ndarray:
 
 
 def _enhanced(signal: np.ndarray) -> np.ndarray:
-    """What machine B's Waves chain did to loopback: EQ, a phase shift and compression."""
+    """What the test machine's Waves chain did to loopback: EQ, a phase shift and compression."""
     spectrum = np.fft.rfft(signal)
     freqs = np.fft.rfftfreq(len(signal), 1 / RATE)
     gain = np.where(freqs < 200, 4.5, 1.0) * np.where((freqs > 1600) & (freqs < 6400), 3.0, 1.0)

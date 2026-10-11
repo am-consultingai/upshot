@@ -378,7 +378,7 @@ class CalendarAccounts:
         self._pending: _Pending | None = None
         #: Google's redirect has arrived and the code is being exchanged. Still
         #: "connecting" until that ends: between the two the status read "disconnected"
-        #: with no error, and first-run setup took that for a cancel (machine B, 2026-09-30).
+        #: with no error, and first-run setup took that for a cancel (the test machine, 2026-09-30).
         self._finishing = False
         self._error: str | None = None
         #: Called with an account id when it is hidden or removed (the invitation cache).
@@ -736,7 +736,7 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         ok, message = auth.complete(pending, query)
         # No link back: Upshot brings its own window forward (on_complete). A link to the
         # app opened it as a tab here, and an upshot: link made Chrome ask "Open Upshot?"
-        # (machine B, 2026-09-30). The page tries to close itself; Chrome allows that
+        # (the test machine, 2026-09-30). The page tries to close itself; Chrome allows that
         # only for some tabs, so it also says the tab can be closed.
         page = PAGE.format(
             title="Connected" if ok else "Not connected",

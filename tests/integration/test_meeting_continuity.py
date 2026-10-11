@@ -1,4 +1,4 @@
-"""One call, one meeting: machine B's first real meeting (2026-10-06, Zoom).
+"""One call, one meeting: the test machine's first real meeting (2026-10-06, Zoom).
 
 Three symptoms, all seen in the same 40 minutes:
 

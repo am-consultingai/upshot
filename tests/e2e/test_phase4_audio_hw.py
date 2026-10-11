@@ -209,7 +209,7 @@ def test_soak_two_hours(tmp_path: Path) -> None:
     """Reports clock drift between the two hardware clocks; fails past 1 s/hour.
 
     Opt-in with ``UP_SOAK_HOURS`` (2 is the §4.3 run): a default gate that sleeps for two
-    hours looks exactly like a hang, which is what it did on machine B.
+    hours looks exactly like a hang, which is what it did on the test machine.
     """
     setting = os.environ.get("UP_SOAK_HOURS")
     if not setting:

@@ -179,7 +179,7 @@ def test_only_the_installed_app_sends_toasts_under_its_own_identity(
 def test_a_start_that_cannot_record_says_why_and_leaves_nothing(
     tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No microphone (machine B over Remote Desktop, D72): a 409 with a reason, no
+    """No microphone (the test machine over Remote Desktop, D72): a 409 with a reason, no
     meeting left behind, and from a notification, a notification saying why."""
     from app.audio.devices import NoDeviceError
 
@@ -209,7 +209,7 @@ def test_a_start_that_cannot_record_says_why_and_leaves_nothing(
 def test_stop_ends_a_meeting_left_recording_by_an_earlier_run(
     tmp_path: Path, app_home: Path
 ) -> None:
-    """Machine B, D76: a meeting stuck at "recording 615:48" whose Stop answered 409."""
+    """The test machine, D76: a meeting stuck at "recording 615:48" whose Stop answered 409."""
     harness = build_harness(tmp_path)
     services = harness.services
     ghost = services.meetings.create(source="manual")
@@ -253,7 +253,7 @@ def test_the_calendar_test_hook_is_off_unless_the_machine_turns_it_on(
 def test_a_start_that_names_no_meeting_records_the_one_on_offer(
     tmp_path: Path, app_home: Path
 ) -> None:
-    """Machine B: a call started from its toast was filed as "meeting"."""
+    """The test machine: a call started from its toast was filed as "meeting"."""
     from datetime import UTC, datetime
 
     from app.prompts import Prompt
@@ -274,7 +274,7 @@ def test_a_start_that_names_no_meeting_records_the_one_on_offer(
 
 
 def test_the_log_tells_join_and_record_from_start_recording() -> None:
-    """Machine B: both logged as "recording.start (meeting -)", so a Join and record
+    """The test machine: both logged as "recording.start (meeting -)", so a Join and record
     press was read as a plain Start."""
     join = actions.parse(
         "upshot:recording.start?calendar=primary&event=e1&join=https://meet.google.com/abc-defg"

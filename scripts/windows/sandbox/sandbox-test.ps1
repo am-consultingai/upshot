@@ -1,6 +1,6 @@
 # Install, check and uninstall Upshot inside Windows Sandbox. Runs INSIDE the sandbox.
 #
-#   -Mode auto   unattended, for machine B's runner: silent install, every check, silent
+#   -Mode auto   unattended, for the test machine's runner: silent install, every check, silent
 #                uninstall, then the sandbox shuts itself down.
 #   -Mode show   the same, visibly and still hands-off: the installer's own progress window
 #                (no questions), the app opened in a visible Edge for -HoldSeconds, its log

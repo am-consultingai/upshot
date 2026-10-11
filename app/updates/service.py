@@ -147,7 +147,7 @@ class UpdateService:
         data = client.get(url).raise_for_status().content
         signature = client.get(url.copy_with(path=url.path + ".sig")).raise_for_status().content
         verify(data, signature, self.public_keys)
-        # A test server (the machine B run) may stand in for GitHub Releases. The manifest
+        # A test server (the test machine run) may stand in for GitHub Releases. The manifest
         # still has to verify against the built-in keys, so this widens nothing.
         prefix = str(self.config.get("updates.download_prefix") or self.download_prefix)
         return parse(data, channel=channel, download_prefix=prefix)
@@ -213,7 +213,7 @@ class UpdateService:
             for path in (final, partial):
                 path.unlink(missing_ok=True)
             self.last_error = f"refused: {problem}"
-            # Nothing of it is kept, so nothing of it is "downloaded" (seen on machine B).
+            # Nothing of it is kept, so nothing of it is "downloaded" (seen on the test machine).
             self.progress = None
             log.warning("update %s refused: %s", manifest.version, problem)
             self._set_phase("failed")

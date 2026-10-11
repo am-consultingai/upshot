@@ -2,7 +2,7 @@
 
 The scenarios of the 2026-10-06 review: one meeting on, meetings booked at the same time,
 back to back, joined from Upshot or from elsewhere, and what the user is told and asked.
-Machine B's own case is replayed: two meetings at 14:00, Chrome's window naming one.
+The test machine's own case is replayed: two meetings at 14:00, Chrome's window naming one.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def test_one_meeting_whose_link_is_for_another_app_is_only_proposed() -> None:
     assert found.candidates == (DESIGN,)
 
 
-def test_machine_b_the_window_title_names_the_meeting() -> None:
+def test_seen_in_testing_the_window_title_names_the_meeting() -> None:
     """B, 14:00:30: Chrome held the microphone in "Meet - Design review…"."""
     found = assign(
         [TRAINING, DESIGN],
@@ -77,7 +77,7 @@ def test_machine_b_the_window_title_names_the_meeting() -> None:
     assert found.certain and found.event is DESIGN
 
 
-def test_machine_b_a_zoom_call_is_not_the_meet_meeting() -> None:
+def test_seen_in_testing_a_zoom_call_is_not_the_meet_meeting() -> None:
     """B, 14:06: Zoom took the microphone. Design review is a Meet: the call is the other."""
     found = assign([DESIGN, TRAINING], process=r"C:\Users\x\AppData\Roaming\Zoom\bin\Zoom.exe")
     assert found.certain and found.event is TRAINING
@@ -424,7 +424,7 @@ def test_a_candidates_button_on_the_notification_records_that_meeting(api) -> No
 def test_a_second_app_taking_the_mic_keeps_the_offer_that_names_the_meeting(
     tmp_path: Path,
 ) -> None:
-    """Machine B, 2026-10-08 (z8tj1hfdwy): Meet in Chrome was offered as the only meeting
+    """The test machine, 2026-10-08 (z8tj1hfdwy): Meet in Chrome was offered as the only meeting
     on; 11 s later OBS took the microphone too, and its weaker wake replaced that offer
     with a one-choice "Which meeting is it?"."""
     from app.detect.sources import MicHolder

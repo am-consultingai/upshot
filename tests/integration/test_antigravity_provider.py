@@ -192,7 +192,7 @@ def test_selecting_antigravity_without_it_is_refused(api) -> None:  # type: igno
 
 
 def test_sign_out_opens_agy_where_logout_is_typed(api) -> None:  # type: ignore[no-untyped-def]
-    """/logout is refused headless and ignored as ``-i /logout`` (machine B, 2026-09-28):
+    """/logout is refused headless and ignored as ``-i /logout`` (the test machine, 2026-09-28):
     the window runs agy and says what to type."""
     body = api.client().post("/api/llm/signout", json={"provider": PROVIDER}).json()
     assert body["signed_out"] is False, "not yet: that happens in the window"

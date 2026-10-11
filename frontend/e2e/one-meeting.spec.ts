@@ -1,7 +1,7 @@
 /**
  * One calendar meeting, one recording; the user settles what the app cannot (D89).
  *
- * Machine B, 2026-10-06: two meetings booked at 14:00, a call that could have been either,
+ * The test machine, 2026-10-06: two meetings booked at 14:00, a call that could have been either,
  * and seven recordings of it in the library. Here: the banner asks which meeting a call
  * is, an unsettled recording is marked and asked about, and two recordings of one
  * meeting are merged into the earlier.

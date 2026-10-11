@@ -1,6 +1,6 @@
 """The them track must keep flowing while nothing plays.
 
-WASAPI loopback delivers no packets while its endpoint is silent: machine B's
+WASAPI loopback delivers no packets while its endpoint is silent: the test machine's
 ``test_dual_stream_concurrent`` counted 0 loopback frames in 60 s. The capture therefore
 plays silence to the endpoint it listens to. PortAudio cannot run here, so a fake
 ``pyaudiowpatch`` records what was opened.

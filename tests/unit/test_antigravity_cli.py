@@ -1,7 +1,7 @@
 """The Antigravity provider (D79), driven through an injected runner — no subprocess.
 
 The outputs replayed here are the real ones, recorded from ``agy`` 1.2.8 and 1.2.12 on
-2026-09-28 (this machine, and machine B signed out and then signed in).
+2026-09-28 (this machine, and the test machine signed out and then signed in).
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ SIGNED_OUT_MODELS = (
     "Error: Please sign in to view available models. Launch the CLI without arguments to "
     "sign in.\n"
 )
-#: What a signed-out headless run printed on machine B, after its 60 s wait.
+#: What a signed-out headless run printed on the test machine, after its 60 s wait.
 SIGNED_OUT_RUN = (
     '{"event":"result","result":{"conversation_id":"","status":"ERROR","response":"",'
     '"error":"authentication failed or timed out","duration_seconds":0,"num_turns":0}}\n'

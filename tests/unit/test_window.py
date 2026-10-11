@@ -1,5 +1,5 @@
 """Upshot's window on Windows, against stand-in win32 modules (the real ones are
-Windows-only). The case that matters: a start right after a quit (machine B,
+Windows-only). The case that matters: a start right after a quit (the test machine,
 2026-09-30), when the old window is still closing."""
 
 from __future__ import annotations
@@ -130,7 +130,7 @@ def test_a_live_window_is_focused(desktop: FakeDesktop) -> None:
 def test_a_start_after_a_quit_opens_a_window(
     desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine B report: started from the Start menu, it sat in the tray."""
+    """The test machine report: started from the Start menu, it sat in the tray."""
     launched: list[list[str]] = []
     monkeypatch.setattr(window, "app_browser", lambda: "msedge.exe")
     monkeypatch.setattr(window.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))

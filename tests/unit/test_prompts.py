@@ -60,7 +60,7 @@ def test_nothing_is_offered_while_recording() -> None:
 
 
 def test_a_recording_withdraws_the_offer() -> None:
-    """Machine B: the banner said "not being recorded" while it was."""
+    """The test machine: the banner said "not being recorded" while it was."""
     prompts = Prompts()
     assert prompts.offer(meeting(), recording=False)
     prompts.tick(NOW, recording=True, holders=[])
@@ -68,7 +68,7 @@ def test_a_recording_withdraws_the_offer() -> None:
 
 
 def test_the_offer_lapses_when_the_meeting_is_over() -> None:
-    """Machine B: the banner outlived the meeting."""
+    """The test machine: the banner outlived the meeting."""
     prompts = Prompts()
     prompts.offer(meeting(), recording=False)
     prompts.tick(NOW + timedelta(minutes=29), recording=False, holders=[])

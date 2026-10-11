@@ -351,7 +351,7 @@ class MeetingService:
         A recording of the same calendar event whose transcription has not begun, while
         the event is on and until ``detection.continue_within_s`` after the later of its
         end and the recording's. The event is ``payload`` (a snapshot, when the start
-        named one), else the one the calendar matches now. On machine B one call became
+        named one), else the one the calendar matches now. On the test machine one call became
         seven meetings: each restart of the recording, whatever caused it, made a new one.
         """
         if payload is None:
@@ -417,7 +417,7 @@ class MeetingService:
         self.dao.update_meeting(meeting_id, ended_at=iso(ended), duration_s=seconds)
         # The minimum catches a recording the detector started by accident. One the user
         # started (Start, a notification's button, a file imported) is one they chose,
-        # however short: a 99-second test call vanished on machine B (D76), and a
+        # however short: a 99-second test call vanished on the test machine (D76), and a
         # 41-second clip after "imported".
         if seconds < minimum and meeting.source == "detected":
             log.info("meeting %s is %ss (< %ss) — discarding", meeting_id, seconds, minimum)
@@ -590,7 +590,7 @@ class MeetingService:
     def discard(self, meeting_id: str) -> Meeting:
         meeting = self.dao.set_state(meeting_id, MeetingState.DISCARDED)
         # A committed folder keeps its audio; its meta.json must not still say RECORDING
-        # (machine B, job 014). One never committed gets no folder made for it here.
+        # (the test machine, job 014). One never committed gets no folder made for it here.
         if meta.path_for(meeting.path).exists():
             meta.mirror(meeting)
         return meeting

@@ -202,7 +202,7 @@ def give_focus_back() -> str | None:
     """After a notification button: focus the window the user was in. Its title, or None.
 
     Clicking a toast takes the foreground, and when the toast closes Windows hands it to
-    nobody, so the call the user was in stops taking keystrokes (machine B, D72). This
+    nobody, so the call the user was in stops taking keystrokes (the test machine, D72). This
     process was started by that click, which lets it set the foreground: it gives it to
     the topmost ordinary window, which is the one the toast was shown over.
     """
@@ -309,10 +309,10 @@ def close_all(*, wait_s: float = CLOSE_WAIT_S) -> int:
     The window is a browser window, so it outlives the app: quitting (the tray, or the
     installer stopping the app for an upgrade) left a dead page behind, and the next start
     found that window and focused it instead of opening one, which showed nothing on
-    machine B (D74). Posting WM_CLOSE alone was not enough: the close is asynchronous, so
+    the test machine (D74). Posting WM_CLOSE alone was not enough: the close is asynchronous, so
     the start that followed still found the closing window, failed to bring it forward
     ("Invalid window handle") and counted that as shown — the app sat in the tray with
-    no window and no taskbar button (machine B, 2026-09-30).
+    no window and no taskbar button (the test machine, 2026-09-30).
     """
     if sys.platform != "win32":
         return 0

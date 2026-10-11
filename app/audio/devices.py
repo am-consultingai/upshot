@@ -32,7 +32,7 @@ PORTAUDIO_LOCK = threading.RLock()
 # opened on any other thread while that host is alive fails with -9999 ("Unanticipated
 # host error"). Pa_Initialize is reference-counted, so the thread that happens to create
 # the *first* PyAudio instance decides — a Settings device listing on one server thread
-# and a level meter on another was enough (found on machine B, job 012: both setup
+# and a level meter on another was enough (found on the test machine, job 012: both setup
 # meters failed, then recording opened the same devices fine). So every host is created,
 # every input opened and every host terminated on this one thread. Output streams and
 # device enumeration work from any thread and stay with their callers.
@@ -138,7 +138,7 @@ def _wasapi_devices(host: Any) -> Iterator[DeviceInfo]:
     PortAudio lists each device once per host API. The MME copies came first, with names
     cut to 31 characters, next to "Microsoft Sound Mapper" and "Primary Sound Capture
     Driver"; keeping the first of each name kept those, and none of them was the index
-    WASAPI calls the default, so nothing in the list was marked default (machine B, job
+    WASAPI calls the default, so nothing in the list was marked default (the test machine, job
     013).
     """
     wasapi = int(_wasapi_info(host)["index"])
