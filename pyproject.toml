@@ -95,6 +95,7 @@ module = [
     "bs4.*", "aiosmtpd.*", "win32com.*", "pythoncom.*", "win32file.*",
     "ctranslate2.*", "huggingface_hub.*", "jsonschema.*", "openai.*",
     "winerror.*", "win32event.*", "win32ui.*", "pystray.*", "sherpa_onnx.*",
+    "win32process.*",
 ]
 ignore_missing_imports = true
 
