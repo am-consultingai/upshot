@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { refetchAllSoon } from "./refetchAll";
 import { useCalendarAccounts } from "../components/AccountDots";
 
 /**
@@ -26,7 +27,7 @@ export function useCalendarFilter() {
     onSettled: (_data, _error, { id, visible }) => {
       // A later click on the same box is still on its way: leave its entry alone.
       setPending(({ [id]: held, ...rest }) => (held === visible ? rest : { ...rest, [id]: held }));
-      void queryClient.invalidateQueries();
+      refetchAllSoon(queryClient);
     },
   });
   const visible = (id: string, server: boolean) => pending[id] ?? server;
