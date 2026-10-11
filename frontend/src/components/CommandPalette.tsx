@@ -498,14 +498,17 @@ export default function CommandPalette() {
     };
   }, []);
 
+  /*
+   * The query is emptied on the way out, not on the way in, and the input takes focus
+   * as it mounts. Both used to happen in an effect after the first render, so whatever
+   * was typed straight after Ctrl+K was wiped and the list fell back to recent meetings
+   * (seen in CI, typed 13 ms in).
+   */
   useEffect(() => {
-    if (open) {
-      setQuery("");
-      setActive(0);
-      inputRef.current?.focus();
-    } else if (restoreTo.current instanceof HTMLElement) {
-      restoreTo.current.focus();
-    }
+    if (open) return;
+    setQuery("");
+    setActive(0);
+    if (restoreTo.current instanceof HTMLElement) restoreTo.current.focus();
   }, [open]);
 
   useEffect(() => setActive(0), [query]);
@@ -563,6 +566,7 @@ export default function CommandPalette() {
           <Icon icon={Search} className="text-tertiary" />
           <input
             ref={inputRef}
+            autoFocus
             data-testid="palette-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
