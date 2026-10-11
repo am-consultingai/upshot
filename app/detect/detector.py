@@ -686,7 +686,9 @@ class Detector:
             self.fresh.discard(wake.process)
             found = self.assignment(wake.process)
             event = found.event
-            choices = () if event is not None else found.candidates[:3]
+            # A choice of one is no question (z8tj1hfdwy): the only meeting on, whose link
+            # is for another app, is likely another call, offered as that.
+            choices = () if event is not None or len(found.candidates) < 2 else found.candidates[:3]
             log.info(
                 "the call is %s (%s)",
                 repr(event.title) if event is not None else "no one calendar meeting",

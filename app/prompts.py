@@ -84,6 +84,20 @@ class Prompt:
         }
 
 
+def _settled_elsewhere(current: Prompt | None, new: Prompt) -> bool:
+    """A detected call already named as a calendar meeting stays the offer while its app
+    holds the microphone (``tick`` withdraws it once it lets go). Another app taking the
+    microphone meanwhile, OBS beside a Meet call on machine B (z8tj1hfdwy), is not a
+    second call to offer: it replaced the settled offer with a weaker one."""
+    return (
+        current is not None
+        and current.kind == "detected"
+        and current.calendar_id is not None
+        and new.kind == "detected"
+        and new.process != current.process
+    )
+
+
 class Prompts:
     def __init__(self, events: Any = None) -> None:
         self.events = events
@@ -97,7 +111,7 @@ class Prompts:
         if recording or prompt.key in self.dismissed:
             return False
         with self._lock:
-            if self.current == prompt:
+            if self.current == prompt or _settled_elsewhere(self.current, prompt):
                 return False
             self.current = prompt
         log.info("offering to record %r (%s)", prompt.title, prompt.kind)

@@ -419,3 +419,42 @@ def test_a_candidates_button_on_the_notification_records_that_meeting(api) -> No
     )
     snap = started_snapshot(api, response)
     assert snap["event"]["event_id"] == "design" and snap["match"]["source"] == "user"
+
+
+def test_a_second_app_taking_the_mic_keeps_the_offer_that_names_the_meeting(
+    tmp_path: Path,
+) -> None:
+    """Machine B, 2026-10-08 (z8tj1hfdwy): Meet in Chrome was offered as the only meeting
+    on; 11 s later OBS took the microphone too, and its weaker wake replaced that offer
+    with a one-choice "Which meeting is it?"."""
+    from app.detect.sources import MicHolder
+
+    h = detector_with(tmp_path, DESIGN)
+    meet = "Meet - Design review: onboarding and settings - Google Chrome"
+    a_call(h, "chrome.exe", meet)
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "design"
+
+    h.mic.holders = [MicHolder(process="chrome.exe"), MicHolder(process="obs64.exe")]
+    h.titles.window_titles = [meet, "jazz - YouTube - Google Chrome"]
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "design" and offer.candidates == ()
+    assert offer.process == "chrome.exe", "the offer belongs to the call's app, not OBS"
+    started = [t for t in h.notifier.shown if t.title.startswith("Meeting started")]
+    assert len(started) == 1, [t.body for t in started]
+
+
+def test_one_meeting_whose_link_is_for_another_app_is_not_offered_as_a_choice(
+    tmp_path: Path,
+) -> None:
+    """A one-option question is no question (z8tj1hfdwy): a Zoom call while the only
+    meeting on is a Meet is offered as a call, not as "Which meeting is it?"."""
+    h = detector_with(tmp_path, DESIGN)
+    a_call(h, "Zoom.exe")
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.calendar_id is None
+    assert offer.candidates == ()
+    assert all("Which meeting" not in t.body for t in h.notifier.shown)
