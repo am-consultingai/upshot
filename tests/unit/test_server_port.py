@@ -108,3 +108,31 @@ def test_a_taken_default_falls_back_into_the_new_range() -> None:
         holder.listen()
         chosen = server.choose_port("127.0.0.1", DEFAULT_PORT)
     assert chosen in range(43218, 43248)
+
+
+def test_another_instance_saving_never_writes_the_port(tmp_path: Path) -> None:
+    """Setup and the first start load a config of their own and save it: the port is
+    left out of the file there too, not written as the default."""
+    path = tmp_path / "app_config.json"
+    running = Config.load(file=path, environ={})
+    running.use_port(43219)
+    other = Config.load(file=path, environ={})
+    other.set("setup.done", True)
+    other.save()
+    assert "port" not in _saved(path)["server"]  # type: ignore[operator]
+    running.save()
+    assert "port" not in _saved(path)["server"]  # type: ignore[operator]
+
+
+def test_a_port_from_the_launcher_does_not_bring_back_a_migrated_old_one(
+    tmp_path: Path,
+) -> None:
+    """The developer launcher exports UP_SERVER__PORT; the file still holds 8000."""
+    path = tmp_path / "app_config.json"
+    _write(path, {"server": {"port": 8000}})
+    cfg = Config.load(file=path, environ={"UP_SERVER__PORT": "43220"})
+    assert cfg.server_port == 43220
+    cfg.use_port(cfg.server_port)
+    cfg.save()
+    assert "port" not in _saved(path)["server"]  # type: ignore[operator]
+    assert Config.load(file=path, environ={}).server_port == DEFAULT_PORT

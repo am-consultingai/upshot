@@ -31,6 +31,9 @@ log = get(__name__)
 #: helpers also take: below Windows' dynamic range (49152 on), clear of the usual
 #: development ports, and unassigned at IANA with the 30 after it (D95).
 DEFAULT_PORT = 43217
+#: Saved only when set deliberately (``Config.set``): every other save, from any
+#: instance, writes what the file held, so the port a run listens on never lands there.
+RUN_ONLY_KEYS = ("server.port",)
 #: What Upshot listened on before: 8000, else the first free port of 8010-8040.
 OLD_PORTS = frozenset({8000, *range(8010, 8041)})
 
@@ -732,11 +735,9 @@ class Config:
         self._explicit: set[str] = set()
         #: Things the loader changed on the user's behalf, said once in ``warnings``.
         self._notices: list[str] = []
-        #: Values for this run only (``use_port``). ``save`` writes the file's own value
-        #: back, as it was read, or nothing.
-        self._for_run: set[str] = set()
-        #: The file as loaded, after ``_forget_old_defaults``: the value a key for this
-        #: run is saved as. Not the file on disk, which still holds what was forgotten.
+        #: The file as loaded, after ``_forget_old_defaults``: what ``save`` writes for
+        #: a key of ``RUN_ONLY_KEYS``. Not the file on disk, which still holds what was
+        #: forgotten until the first save.
         self._file_layer: dict[str, Any] = {}
 
     # -- construction
@@ -812,7 +813,6 @@ class Config:
     def set(self, dotted: str, value: Any) -> None:
         _set(self._data, dotted, value)
         self._explicit.add(dotted)
-        self._for_run.discard(dotted)
 
     def use_port(self, port: int) -> None:
         """The port this run listens on, which ``save`` never writes.
@@ -823,7 +823,6 @@ class Config:
         """
         _set(self._data, "server.port", port)
         self._explicit.discard("server.port")
-        self._for_run.add("server.port")
 
     def as_dict(self) -> dict[str, Any]:
         return copy.deepcopy(self._data)
@@ -864,7 +863,9 @@ class Config:
                 _unset(payload, dotted)  # nothing on disk: let the default apply again
             else:
                 _set(payload, dotted, previous)
-        for dotted in self._for_run:
+        for dotted in RUN_ONLY_KEYS:
+            if dotted in self._explicit:
+                continue
             try:
                 _set(payload, dotted, copy.deepcopy(_get(self._file_layer, dotted)))
             except KeyError:
