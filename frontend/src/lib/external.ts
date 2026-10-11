@@ -26,7 +26,12 @@ export function isExternal(href: string, origin = window.location.origin): boole
   }
 }
 
-/** Route every click on an external link through `openExternal`. Installed once. */
+/**
+ * Route every click on an external link through `openExternal`. Installed once, in the
+ * capture phase: a panel that stops a click's propagation (EventDetails, menus, popovers)
+ * would otherwise keep it from this listener, and the app window would follow the link
+ * itself, in its own profile (z8tj1hfdww). A component's own handler still runs after.
+ */
 export function interceptExternalLinks(root: Document = document): () => void {
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0) return;
@@ -35,6 +40,6 @@ export function interceptExternalLinks(root: Document = document): () => void {
     event.preventDefault();
     void openExternal(anchor.href);
   };
-  root.addEventListener("click", onClick);
-  return () => root.removeEventListener("click", onClick);
+  root.addEventListener("click", onClick, true);
+  return () => root.removeEventListener("click", onClick, true);
 }
