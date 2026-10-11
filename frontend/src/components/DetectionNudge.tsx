@@ -52,8 +52,9 @@ export default function DetectionNudge({ prompt }: { prompt: Prompt | null }) {
   // Only a detection has any; a calendar meeting's start is the clock's. The line names
   // the app, so the sentence before it does not.
   const why = explainOffer(prompt, t);
-  // Meetings booked at the same time that nothing told apart (D89): pick which.
-  const choices = prompt.candidates ?? [];
+  // Meetings booked at the same time that nothing told apart (D89): pick which. One is
+  // no choice, and is never asked as one (z8tj1hfdwy).
+  const choices = (prompt.candidates?.length ?? 0) > 1 ? (prompt.candidates ?? []) : [];
   const text = choices.length
     ? t("detector.nudgeWhich")
     : prompt.title
