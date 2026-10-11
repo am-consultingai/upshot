@@ -310,7 +310,8 @@ def sweep(
 
     for item in decided.transcriptions:
         try:
-            transcriptions.purge(item.transcription_id)
+            if not transcriptions.purge_finished(item.transcription_id):
+                continue  # retried or deleted since it was chosen
         except Exception as exc:
             log.warning("retention could not delete %s: %s", item.transcription_id, exc)
             result.errors.append(f"{item.transcription_id}: {exc}")
