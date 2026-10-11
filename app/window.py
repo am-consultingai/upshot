@@ -27,7 +27,6 @@ import subprocess
 import sys
 import time
 import webbrowser
-from collections.abc import Iterator
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -90,11 +89,8 @@ def open_external(url: str) -> bool:
     http(s) link) and the page should open it itself.
 
     Only http and https: ``os.startfile`` would run anything else, a file path included.
-
-    Windows gives the foreground only to the program the user is in, which is Upshot's
-    window, not this server: a browser already running took the link into a window left
-    behind Upshot's, and "Join the meeting" looked as if it did nothing (z8tj1hfdwz).
-    ``_foreground_shared`` lets the browser come forward.
+    The browser is then put in front if it did not come forward by itself
+    (``browser_forward``).
     """
     from urllib.parse import urlparse
 
@@ -106,65 +102,128 @@ def open_external(url: str) -> bool:
     import os
 
     try:
-        with _foreground_shared():
-            os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
+        os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
     except OSError as exc:
         log.warning("could not open a link in the default browser: %s", exc)
         return False
-    log.info("opened a link to %s in the default browser", parsed.hostname)
+    log.info("opened a link to %s in the default browser (%s)", parsed.hostname, browser_forward())
     return True
 
 
-#: ``AllowSetForegroundWindow``'s "any process".
-ASFW_ANY = -1
+#: How long a browser has to take the foreground by itself once it has a link, and how
+#: long to wait for a window from one that was not running.
+BROWSER_OWN_S = 1.0
+BROWSER_WINDOW_S = 5.0
+POLL_S = 0.1
 
 
-def _allow_any_foreground() -> None:  # pragma: no cover - Windows only
-    """Let any process take the foreground once. pywin32 does not wrap this call."""
-    import ctypes
+def browser_forward(*, own_s: float = BROWSER_OWN_S, window_s: float = BROWSER_WINDOW_S) -> str:
+    """Put the default browser in front of Upshot's window after a link was opened.
+    What happened, for the log and the tests: "came forward", "brought forward",
+    "no browser window" or "could not bring it forward: ...".
 
-    user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
-    if not user32.AllowSetForegroundWindow(ASFW_ANY):
-        log.info("Windows refused to pass on the foreground (error %d)", ctypes.get_last_error())  # type: ignore[attr-defined,unused-ignore]
-
-
-@contextlib.contextmanager
-def _foreground_shared() -> Iterator[None]:
-    """Around a call, share the input state of the window the user is in, and pass on
-    the right to take the foreground to any process, so a program the call wakes may
-    come forward.
-
-    Attached to the foreground window's thread, this background process counts as the
-    program the user is in, which is what ``AllowSetForegroundWindow`` asks of its
-    caller. An Alt press, the usual trick, brought the browser forward in 2 of 4 tries
-    on machine A, against 7 of 7 for this (z8tj1hfdwz). The attachment lasts until the
-    link is open: let go before it, the browser came forward in 4 of 5.
+    Windows gives the foreground only to the program the user is in, which is Upshot's
+    window, not this server, so a browser already running often took the link into a
+    window left behind Upshot's, and "Join the meeting" looked as if it did nothing
+    (z8tj1hfdwz). Passing the right on is refused to this process (AllowSetForegroundWindow
+    fails with access denied), and whether the browser comes forward by itself varied
+    from try to try on machines A and B. So when Upshot's window is still in front once
+    the browser has had a moment, this process puts the browser's window in front itself,
+    as ``bring_to_front`` does for Upshot's: an Alt press around SetForegroundWindow.
+    Only while Upshot's window is in front: a window the user went to meanwhile stays.
     """
     try:
         import win32api
+        import win32con
         import win32gui
         import win32process
     except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
-        yield
-        return
-    mine = win32api.GetCurrentThreadId()
-    theirs = 0
-    attached = False
-    try:
+        return "no browser window"
+    ours = 0
+    for _ in range(max(1, round(own_s / POLL_S))):
         front = win32gui.GetForegroundWindow()
-        theirs = win32process.GetWindowThreadProcessId(front)[0] if front else 0
-        if theirs and theirs != mine:
-            win32process.AttachThreadInput(mine, theirs, True)
-            attached = True
-    except Exception as exc:  # pywintypes.error: the window closed, or Windows refused
-        log.info("could not share the foreground window's input: %s", exc)
+        if not _is_ours(win32gui, front):
+            return "came forward"
+        ours = front
+        time.sleep(POLL_S)
+    exe = _default_browser()
+    name = PureWindowsPath(exe).name.lower() if exe else ""
+    our_pid = win32process.GetWindowThreadProcessId(ours)[1]
+    target = None
+    for _ in range(max(1, round(window_s / POLL_S))):
+        target = _browser_window(win32gui, win32con, win32process, name, our_pid)
+        if target:
+            break
+        time.sleep(POLL_S)
+    if not target:
+        return "no browser window"
+    if not _is_ours(win32gui, win32gui.GetForegroundWindow()):
+        return "came forward"
     try:
-        _allow_any_foreground()
-        yield
+        if win32gui.IsIconic(target):
+            win32gui.ShowWindow(target, win32con.SW_RESTORE)
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        try:
+            win32gui.SetForegroundWindow(target)
+        finally:
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    except Exception as exc:  # pywintypes.error: Windows refused it, or the window went
+        return f"could not bring it forward: {exc}"
+    return "brought forward"
+
+
+def _browser_window(
+    win32gui: Any, win32con: Any, win32process: Any, exe_name: str, skip_pid: int
+) -> int | None:
+    """The browser's frontmost top-level window, which is the one it puts a link in: a
+    window of ``exe_name`` that is not Upshot's (``skip_pid``, the window's process)."""
+    if not exe_name:
+        return None
+    found: list[int] = []
+
+    def visit(hwnd: int, _: object) -> bool:
+        if found or not win32gui.IsWindowVisible(hwnd) or not win32gui.GetWindowText(hwnd):
+            return True
+        if win32gui.GetWindow(hwnd, win32con.GW_OWNER) or _cloaked(hwnd):
+            return True
+        if win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE) & win32con.WS_EX_TOOLWINDOW:
+            return True
+        pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+        if pid != skip_pid and _process_image(pid).lower() == exe_name:
+            found.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(visit, None)
+    return found[0] if found else None
+
+
+def _cloaked(hwnd: int) -> bool:  # pragma: no cover - Windows only
+    """On another virtual desktop, or otherwise hidden by the compositor."""
+    import ctypes
+
+    value = ctypes.c_int(0)
+    ctypes.windll.dwmapi.DwmGetWindowAttribute(  # type: ignore[attr-defined,unused-ignore]
+        hwnd, 14, ctypes.byref(value), ctypes.sizeof(value)
+    )
+    return value.value != 0
+
+
+def _process_image(pid: int) -> str:  # pragma: no cover - Windows only
+    """The file name of a process's executable ("chrome.exe"), or "" when unknown."""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        return ""
+    try:
+        buffer = ctypes.create_unicode_buffer(1024)
+        size = ctypes.c_ulong(len(buffer))
+        if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            return ""
+        return PureWindowsPath(buffer.value).name
     finally:
-        if attached:
-            with contextlib.suppress(Exception):
-                win32process.AttachThreadInput(mine, theirs, False)
+        kernel32.CloseHandle(handle)
 
 
 def _registry(
