@@ -1,4 +1,4 @@
-# Machine B, host side: run one Sandbox job start to finish, unattended, in one process.
+# The test machine, host side: run one Sandbox job start to finish, unattended, in one process.
 #
 #   powershell -ExecutionPolicy Bypass -File run-sandbox-job.ps1 -Work <work folder>\<job>
 #

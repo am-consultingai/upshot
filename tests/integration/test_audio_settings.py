@@ -136,7 +136,7 @@ def test_meters_on_one_device_share_one_stream(api) -> None:  # type: ignore[no-
     """Two tabs on the setup screen must not open two streams — nor close each other's.
 
     Each used to replace the other's stream as it opened its own, and each SSE client
-    then reopened when it found its stream gone: 477 opens in 22 s on machine B (job
+    then reopened when it found its stream gone: 477 opens in 22 s on the test machine (job
     013), and no level ever reached either meter.
     """
     from app.audio import monitor as meter

@@ -130,7 +130,7 @@ def test_tray_survives_worker_crash(tmp_path: Path, app_home: Path) -> None:
 
 
 def test_a_discarded_meeting_says_so_on_disk(tmp_path: Path, app_home: Path) -> None:
-    """Discarded: the folder's meta.json agrees with the database (machine B, job 014).
+    """Discarded: the folder's meta.json agrees with the database (the test machine, job 014).
 
     A recording the user started is kept however short (D76), so it is discarded here
     the way the user does it, with "Not a meeting"."""

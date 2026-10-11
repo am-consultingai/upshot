@@ -133,7 +133,7 @@ export interface SeedBody {
 //
 // It replaces the `browser` fixture itself, so nothing asks for Playwright's own
 // Chromium: a `context` override that took the stock context as a fallback launched it
-// anyway, and on machine B's Windows Node, which has none, 104 specs failed on
+// anyway, and on the test machine's Windows Node, which has none, 104 specs failed on
 // "Executable doesn't exist" (job 006). The stock `context` then comes from
 // `browser.newContext(contextOptions)`, so `baseURL` and the other options still apply.
 const endpoint = process.env.UP_E2E_CDP;

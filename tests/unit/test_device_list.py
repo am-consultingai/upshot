@@ -1,6 +1,6 @@
 """The device lists offer WASAPI endpoints only.
 
-PortAudio lists every device once per host API. On machine B (job 013) the MME copies
+PortAudio lists every device once per host API. On the test machine (job 013) the MME copies
 came first — names cut to 31 characters, plus "Microsoft Sound Mapper" and "Primary Sound
 Capture Driver" — and the name-based deduplication kept them, so the WASAPI default was
 never in the list and nothing was marked default.

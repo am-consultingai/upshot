@@ -343,7 +343,7 @@ def test_claudes_code_goes_to_the_waiting_signin(api, monkeypatch: pytest.Monkey
         "/api/llm/signin/code", json={"provider": "claude-subscription", "code": "abc#def"}
     )
     assert none.status_code == 409, "no sign-in is waiting for a code"
-    # Claude Code can finish by itself before the code is pasted (machine B, 2026-09-28):
+    # Claude Code can finish by itself before the code is pasted (the test machine, 2026-09-28):
     # a late code is "already signed in", never a failure over a sign-in that worked.
     signed["in"] = True
     late = client.post(

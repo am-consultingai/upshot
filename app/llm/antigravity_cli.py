@@ -88,7 +88,7 @@ STRIPPED_ENV = frozenset(
 
 # Matched against the result's error, stderr and stdout together, lower-cased.
 #: Signed out: a run without a credential waits 60 s for one and then says this; ``agy
-#: models`` says the "please sign in" line at once (both seen on machine B, 2026-09-28).
+#: models`` says the "please sign in" line at once (both seen on the test machine, 2026-09-28).
 NOT_SIGNED_IN = (
     "authentication failed or timed out",
     "authentication required",
@@ -194,7 +194,7 @@ def install_console(command: str, *, shown: str | None = None, sign_in: bool = T
 
     The installer runs in the foreground, for the reason ``claude_cli._console`` records:
     ``install.ps1`` sets ``$ErrorActionPreference = 'Stop'``, and ``agy install`` writes
-    its progress to stderr prefixed ``ERROR: logging before google.Init`` (machine B,
+    its progress to stderr prefixed ``ERROR: logging before google.Init`` (the test machine,
     2026-09-28), which a captured stream would turn into a terminating error.
     """
     if not sign_in:
@@ -252,7 +252,7 @@ def logout_console(path: str) -> list[str]:
     """Sign out, in a window running the interactive ``agy``, where ``/logout`` works.
 
     ``/logout`` is refused in print mode, and ``agy -i /logout`` starts a session without
-    running it (machine B, 2026-09-28: still signed in afterwards). Typed into the
+    running it (the test machine, 2026-09-28: still signed in afterwards). Typed into the
     interactive session it is Google's own sign-out, and it clears the credential the app
     never touches. So the window says what to type, and the row watches it close.
     """

@@ -15,7 +15,7 @@ Exactly one meeting fitting best is an assignment; so is, among meetings the clu
 not tell apart, the one that began last (back to back, the next meeting). Meetings booked
 at the same time that nothing tells apart are not: the user is offered them and picks.
 
-On machine B (2026-10-06) two meetings were on at 14:00 and the one that happened to
+On the test machine (2026-10-06) two meetings were on at 14:00 and the one that happened to
 sort last was offered, though Chrome's window named the other.
 """
 

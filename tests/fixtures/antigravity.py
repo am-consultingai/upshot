@@ -3,7 +3,7 @@
 A real script on disk rather than an injected runner, so the tests that use it cross the
 same boundary production does: ``PATH`` resolution, a subprocess, stdin, the schema file
 named on the command line, the environment the child inherits. It answers the commands
-the application sends the way ``agy`` 1.2.12 did on machine B (2026-09-28), and logs
+the application sends the way ``agy`` 1.2.12 did on the test machine (2026-09-28), and logs
 every invocation so a test can see what was sent.
 
 ``FAKE_AGY_MODE`` picks the behaviour: ``ok`` (default), ``quota`` or ``signed-out``.
