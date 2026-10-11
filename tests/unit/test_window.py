@@ -24,6 +24,10 @@ class FakeDesktop:
         self.foreground: list[int] = []
         self.refuse_foreground: set[int] = set()
         self.keys: list[tuple[int, int]] = []
+        #: The window the user is in, and what was done to share its input.
+        self.front = 0
+        self.events: list[str] = []
+        self.refuse_attach = False
 
     def add(self, hwnd: int, title: str = window.WINDOW_TITLE) -> None:
         self.windows[hwnd] = {"title": title, "closing": None}
@@ -65,6 +69,21 @@ class FakeDesktop:
     def keybd_event(self, key: int, scan: int, flags: int, extra: int) -> None:
         self.keys.append((key, flags))
 
+    def GetForegroundWindow(self) -> int:
+        return self.front
+
+    # -- win32process / win32api
+    def GetWindowThreadProcessId(self, hwnd: int) -> tuple[int, int]:
+        return (hwnd * 10, hwnd * 100)  # thread, process
+
+    def AttachThreadInput(self, mine: int, theirs: int, attach: bool) -> None:
+        if self.refuse_attach:
+            raise RuntimeError("(5, 'AttachThreadInput', 'Access is denied.')")
+        self.events.append(f"{'attach' if attach else 'detach'} {mine}->{theirs}")
+
+    def GetCurrentThreadId(self) -> int:
+        return 7
+
     def SetForegroundWindow(self, hwnd: int) -> None:
         if hwnd in self.refuse_foreground or hwnd not in self.windows:
             self.windows.pop(hwnd, None)
@@ -86,6 +105,14 @@ def desktop(monkeypatch: pytest.MonkeyPatch) -> FakeDesktop:
     con.KEYEVENTF_KEYUP = 2  # type: ignore[attr-defined]
     api = types.ModuleType("win32api")
     api.keybd_event = fake.keybd_event  # type: ignore[attr-defined]
+    api.GetCurrentThreadId = fake.GetCurrentThreadId  # type: ignore[attr-defined]
+    proc = types.ModuleType("win32process")
+    proc.GetWindowThreadProcessId = fake.GetWindowThreadProcessId  # type: ignore[attr-defined]
+    proc.AttachThreadInput = fake.AttachThreadInput  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "win32process", proc)
+    monkeypatch.setattr(
+        window, "_allow_any_foreground", lambda: fake.events.append("allow any"), raising=False
+    )
     monkeypatch.setitem(sys.modules, "win32gui", gui)
     monkeypatch.setitem(sys.modules, "win32con", con)
     monkeypatch.setitem(sys.modules, "win32api", api)
@@ -163,27 +190,56 @@ def test_setup_opens_maximized(desktop: FakeDesktop, monkeypatch: pytest.MonkeyP
     assert "--start-maximized" not in launched[1]
 
 
-def test_a_link_is_opened_with_alt_held_so_the_browser_can_come_forward(
+def test_a_link_is_opened_from_the_foreground_so_the_browser_can_come_forward(
     desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ "Join the meeting" opened the link in a browser window behind Upshot's
-    (z8tj1hfdwz): Windows lets only the program the user is in take the foreground."""
-    calls: list[str] = []
+    (z8tj1hfdwz): Windows lets only the program the user is in take the foreground. The
+    server shares the input of the window the user is in, passes the right on to any
+    process, opens the link, then lets go."""
+    desktop.front = 5  # Upshot's window, whose thread is 50
     monkeypatch.setattr(
-        os, "startfile", lambda url: calls.append(f"open {url} with keys {list(desktop.keys)}"),
-        raising=False,
-    )  # fmt: skip
+        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
+    )
     assert window.open_external("https://meet.google.com/abc-defg-hij") is True
-    assert calls == ["open https://meet.google.com/abc-defg-hij with keys [(18, 0)]"], "Alt down"
-    assert desktop.keys == [(0x12, 0), (0x12, 2)], "then up"
+    assert desktop.events == [
+        "attach 7->50",
+        "allow any",
+        "open https://meet.google.com/abc-defg-hij",
+        "detach 7->50",
+    ]
+    assert desktop.keys == [], "no synthetic key presses"
 
 
-def test_alt_is_let_go_even_when_the_link_cannot_be_opened(
+def test_the_input_is_let_go_even_when_the_link_cannot_be_opened(
     desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def refuse(url: str) -> None:
         raise OSError("no association")
 
+    desktop.front = 5
     monkeypatch.setattr(os, "startfile", refuse, raising=False)
     assert window.open_external("https://meet.google.com/abc-defg-hij") is False
-    assert desktop.keys == [(0x12, 0), (0x12, 2)]
+    assert desktop.events == ["attach 7->50", "allow any", "detach 7->50"]
+
+
+def test_a_link_still_opens_when_windows_refuses_to_share_the_input(
+    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    desktop.front = 5
+    desktop.refuse_attach = True
+    monkeypatch.setattr(
+        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
+    )
+    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
+    assert desktop.events == ["allow any", "open https://meet.google.com/abc-defg-hij"]
+
+
+def test_nothing_to_attach_to_when_no_window_is_in_front(
+    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
+    )
+    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
+    assert desktop.events == ["allow any", "open https://meet.google.com/abc-defg-hij"]

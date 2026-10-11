@@ -93,8 +93,8 @@ def open_external(url: str) -> bool:
 
     Windows gives the foreground only to the program the user is in, which is Upshot's
     window, not this server: a browser already running took the link into a window left
-    behind Upshot's, and "Join the meeting" looked as if it did nothing (z8tj1hfdwz). An
-    Alt press around the call, as in ``bring_to_front``, lets the browser come forward.
+    behind Upshot's, and "Join the meeting" looked as if it did nothing (z8tj1hfdwz).
+    ``_foreground_shared`` lets the browser come forward.
     """
     from urllib.parse import urlparse
 
@@ -106,7 +106,7 @@ def open_external(url: str) -> bool:
     import os
 
     try:
-        with _foreground_unlocked():
+        with _foreground_shared():
             os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
     except OSError as exc:
         log.warning("could not open a link in the default browser: %s", exc)
@@ -115,21 +115,52 @@ def open_external(url: str) -> bool:
     return True
 
 
+#: ``AllowSetForegroundWindow``'s "any process".
+ASFW_ANY = -1
+
+
+def _allow_any_foreground() -> None:  # pragma: no cover - Windows only
+    """Let any process take the foreground once. pywin32 does not wrap this call."""
+    import ctypes
+
+    ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY)  # type: ignore[attr-defined,unused-ignore]
+
+
 @contextlib.contextmanager
-def _foreground_unlocked() -> Iterator[None]:
-    """Hold Alt down around a call, which Windows takes as the user's own switch, so a
-    program that call starts or wakes may take the foreground."""
+def _foreground_shared() -> Iterator[None]:
+    """Around a call, share the input state of the window the user is in, and pass on
+    the right to take the foreground to any process, so a program the call wakes may
+    come forward.
+
+    Attached to the foreground window's thread, this background process counts as the
+    program the user is in, which is what ``AllowSetForegroundWindow`` asks of its
+    caller. An Alt press, the usual trick, brought the browser forward in 2 of 4 tries
+    on machine A, against 7 of 7 for this (z8tj1hfdwz).
+    """
     try:
         import win32api
-        import win32con
+        import win32gui
+        import win32process
     except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
         yield
         return
-    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+    mine = win32api.GetCurrentThreadId()
+    front = win32gui.GetForegroundWindow()
+    theirs = win32process.GetWindowThreadProcessId(front)[0] if front else 0
+    attached = False
+    if theirs and theirs != mine:
+        try:
+            win32process.AttachThreadInput(mine, theirs, True)
+            attached = True
+        except Exception as exc:  # pywintypes.error: Windows refused it
+            log.info("could not share the foreground window's input: %s", exc)
     try:
+        _allow_any_foreground()
         yield
     finally:
-        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+        if attached:
+            with contextlib.suppress(Exception):
+                win32process.AttachThreadInput(mine, theirs, False)
 
 
 def _registry(
