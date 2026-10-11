@@ -94,6 +94,15 @@ def test_signed_out_says_so_with_a_problem_code(api) -> None:  # type: ignore[no
     assert chunks[-2]["finishReason"] == "error"
 
 
+def test_signed_out_is_said_even_when_stderr_closes_after_the_exit(api) -> None:  # type: ignore[no-untyped-def]
+    """The stderr reader appends when the stream closes, which can be after the process
+    has exited: the message was read too early and came out as a bare "exited 1"."""
+    with serve(api) as client:
+        chunks = chunks_of(ask(client, "SIGNED-OUT LATE anything"))
+    error = next(c for c in chunks if c != "[DONE]" and c["type"] == "error")
+    assert "not signed in" in error["errorText"], error
+
+
 @pytest.mark.parametrize(
     ("provider", "code"),
     [
