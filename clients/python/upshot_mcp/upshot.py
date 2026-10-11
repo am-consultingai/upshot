@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 #: The app's preferred port, then the range it falls back to (``app/server.py``).
-PORTS = (8000, *range(8010, 8041))
+PORTS = (43217, *range(43218, 43248))
 CLIENT = "mcp"
 #: How long a port may take to answer the probe. A closed port is refused at once
 #: whatever this says, so it only bounds a port that is open: the one Upshot recorded

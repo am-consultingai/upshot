@@ -235,20 +235,28 @@ def test_discovery_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("UPSHOT_URL", raising=False)
     monkeypatch.setenv("UP_HOME", str(tmp_path))
     assert [b for b, _ in upshot.candidates()][:2] == [
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:8010",
+        "http://127.0.0.1:43217",
+        "http://127.0.0.1:43218",
     ]
-    (tmp_path / "server.port").write_text("8023", encoding="utf-8")
-    assert next(upshot.candidates()) == ("http://127.0.0.1:8023", upshot.RECORDED_TIMEOUT_S)
+    (tmp_path / "server.port").write_text("43223", encoding="utf-8")
+    assert next(upshot.candidates()) == ("http://127.0.0.1:43223", upshot.RECORDED_TIMEOUT_S)
     monkeypatch.setenv("UPSHOT_URL", "http://127.0.0.1:9999/")
     assert [b for b, _ in upshot.candidates()] == ["http://127.0.0.1:9999"]
     assert [b for b, _ in upshot.candidates("http://127.0.0.1:7777")] == ["http://127.0.0.1:7777"]
 
 
+def test_the_bridge_probes_the_ports_the_app_listens_on() -> None:
+    """Its own copy, since the bridge ships without the app's code (D95)."""
+    from app.config import DEFAULT_PORT
+    from app.server import FALLBACK_PORTS
+
+    assert (DEFAULT_PORT, *FALLBACK_PORTS) == upshot.PORTS
+
+
 def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) -> None:
     answers = {
-        "http://127.0.0.1:8000": {"app": "something-else"},
-        "http://127.0.0.1:8010": {"app": "upshot", "enabled": True},
+        "http://127.0.0.1:43217": {"app": "something-else"},
+        "http://127.0.0.1:43218": {"app": "upshot", "enabled": True},
     }
 
     def fake(url: str, timeout: float) -> dict:  # type: ignore[type-arg]
@@ -261,11 +269,11 @@ def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(
         upshot,
         "candidates",
-        lambda url=None: iter([("http://127.0.0.1:8000", 2.0), ("http://127.0.0.1:8010", 2.0)]),
+        lambda url=None: iter([("http://127.0.0.1:43217", 2.0), ("http://127.0.0.1:43218", 2.0)]),
     )
-    assert upshot.discover().base == "http://127.0.0.1:8010"
+    assert upshot.discover().base == "http://127.0.0.1:43218"
     monkeypatch.setattr(
-        upshot, "candidates", lambda url=None: iter([("http://127.0.0.1:8000", 2.0)])
+        upshot, "candidates", lambda url=None: iter([("http://127.0.0.1:43217", 2.0)])
     )
     with pytest.raises(upshot.NotRunning, match="Start Upshot"):
         upshot.discover()
