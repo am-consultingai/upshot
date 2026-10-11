@@ -554,7 +554,7 @@ def _transcription(args: argparse.Namespace) -> list[Check]:
         root = Path(tmp)
         cfg = Config.load()
         cfg.set("data_root", str(root / "meetings"))
-        cfg.set("server.port", free_port())
+        cfg.use_port(free_port())
         cfg.set("asr.backend", "fake")
         cfg.set("asr.diarization", "fake")
         cfg.set("delivery.notifier", "fake")
@@ -626,7 +626,7 @@ def _api(args: argparse.Namespace) -> list[Check]:
     with tempfile.TemporaryDirectory() as tmp:
         cfg = Config.load()
         cfg.set("data_root", str(Path(tmp) / "meetings"))
-        cfg.set("server.port", free_port())
+        cfg.use_port(free_port())
         cfg.set("delivery.notifier", "fake")
         services = build(cfg, with_worker=False, with_recorder=False)
         app = create_app(services)
@@ -1022,7 +1022,7 @@ def _capture_e2e(args: argparse.Namespace) -> list[Check]:
         cfg.set("delivery.notifier", "fake")
         cfg.set("job_policy", "asap")
         cfg.set("audio.min_meeting_s", 10)
-        cfg.set("server.port", _free_port())
+        cfg.use_port(_free_port())
         cfg.set("audio.capture", "wasapi" if hardware else "synthetic")
 
         conn = connect(root / "index.db")

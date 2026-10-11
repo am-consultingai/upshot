@@ -42,7 +42,7 @@ param(
     [string] $Provider = "",
     [string] $HomeDir = "$env:LOCALAPPDATA\upshot",
     [string] $WorkDir = "$env:LOCALAPPDATA\upshot-win",
-    [int]    $Port = 8000,
+    [int]    $Port = 43217,
     [switch] $CheckAudio,
     [switch] $Uninstall,
     [switch] $KeepClaude,
@@ -258,11 +258,11 @@ try {
     # would silently become 0 and the "nothing free" check could never fire.
     $wanted = $Port
     $chosen = 0
-    foreach ($candidate in @($wanted) + 8010..8040) {
+    foreach ($candidate in @($wanted) + 43218..43247) {
         if (Test-PortFree $candidate) { $chosen = $candidate; break }
     }
     if ($chosen -eq 0) {
-        Write-Bad "no free port between $wanted and 8040. Close something and re-run."
+        Write-Bad "no free port between $wanted and 43247. Close something and re-run."
         return
     }
     $Port = $chosen
