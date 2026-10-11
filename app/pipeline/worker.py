@@ -271,7 +271,6 @@ class Worker:
 
         store = self.transcriptions
         folder = store.folder(job.id)
-        folder.mkdir(parents=True, exist_ok=True)
 
         def stop_check() -> None:
             store.stop_check(job.id)
@@ -285,6 +284,9 @@ class Worker:
             store.progress(job.id, phase, overall_progress(phase, fraction))
 
         try:
+            # Inside the try: an error here escaped to run_forever's catch-all and left
+            # the job running until the next restart (the PR #1 review).
+            folder.mkdir(parents=True, exist_ok=True)
             result = transcribe_file(
                 Path(job.source_path),
                 folder,

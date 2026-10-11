@@ -369,6 +369,17 @@ class TranscriptionStore:
             self.purge(transcription_id)
             return True
 
+    def purge_finished(self, transcription_id: str) -> bool:
+        """Retention's delete: only a job still done, failed or cancelled. One retried
+        after retention chose it is waiting to run again, and is kept (the PR #1 review).
+        Under the lock ``claim`` takes, so it cannot start half-deleted."""
+        with self._lock:
+            job = self.get(transcription_id)
+            if job is None or job.state not in (DONE, FAILED, CANCELLED):
+                return False
+            self.purge(transcription_id)
+            return True
+
     def purge(self, transcription_id: str) -> None:
         """Folder first, then the row: a row deleted against a folder that survived would
         orphan the folder with nothing pointing at it."""
