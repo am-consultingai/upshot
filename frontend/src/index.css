@@ -212,6 +212,12 @@ kbd {
   font-size: 0.9375rem;
   line-height: 1.65;
   color: var(--text-primary);
+  /*
+   * Nothing a summary holds paints outside it. The allowlist keeps relative offsets and
+   * transforms, which could otherwise slide a box over the app's own controls
+   * (z8tj1hftg0); this also makes the summary its own stacking context for z-index.
+   */
+  contain: paint;
 }
 
 .summary-prose > :first-child {
