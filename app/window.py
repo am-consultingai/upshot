@@ -123,8 +123,9 @@ def _allow_any_foreground() -> None:  # pragma: no cover - Windows only
     """Let any process take the foreground once. pywin32 does not wrap this call."""
     import ctypes
 
-    if not ctypes.windll.user32.AllowSetForegroundWindow(ASFW_ANY):  # type: ignore[attr-defined,unused-ignore]
-        log.info("Windows refused to pass on the foreground (error %d)", ctypes.GetLastError())  # type: ignore[attr-defined,unused-ignore]
+    user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
+    if not user32.AllowSetForegroundWindow(ASFW_ANY):
+        log.info("Windows refused to pass on the foreground (error %d)", ctypes.get_last_error())  # type: ignore[attr-defined,unused-ignore]
 
 
 @contextlib.contextmanager
