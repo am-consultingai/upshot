@@ -34,6 +34,7 @@ import AssistantLauncher from "./components/assistant/AssistantLauncher";
 import Confetti from "./components/Confetti";
 import { useRecordingControls } from "./lib/recording";
 import { shortcutKey, typing } from "./lib/keys";
+import { refetchAllSoon } from "./lib/refetchAll";
 
 /*
  * The first-run setup mock (Setup 0, z8tj1hb03a), for confirming the flow before it is
@@ -239,7 +240,8 @@ export default function App() {
     source.addEventListener("recorder", invalidate);
     source.addEventListener("meeting", invalidate);
     // The connection finishes in another tab — Google's — so Settings learns of it here.
-    source.addEventListener("calendar", invalidate);
+    // Showing or hiding a calendar sends one per click: a burst of them refetches once.
+    source.addEventListener("calendar", () => refetchAllSoon(queryClient));
     // The offer to record lives on the server (app/prompts.py, D76) and arrives with the
     // status; these only say "look again now" so the banner comes and goes at once.
     source.addEventListener("detector", invalidate);
