@@ -166,7 +166,7 @@ test("a_local_model_is_said_up_front_before_anything_is_asked", async ({ page, s
 });
 
 test("a_short_answer_never_scrolls_the_panel_itself", async ({ page, seed, request }) => {
-  // Machine B, 2026-09-29: a question answered with one short line slid the whole panel
+  // The test machine, 2026-09-29: a question answered with one short line slid the whole panel
   // up — header gone, blank space below, nothing to scroll back with.
   await seed(BUDGET);
   await page.setViewportSize({ width: 1566, height: 758 });
@@ -178,7 +178,7 @@ test("a_short_answer_never_scrolls_the_panel_itself", async ({ page, seed, reque
     await expect(page.getByTestId("assistant-error")).toBeVisible();
     const panel = page.getByTestId("assistant-panel");
     // The panel itself cannot be scrolled, not even by a script and not even when its
-    // content is taller than it (as it was on machine B): only its log scrolls.
+    // content is taller than it (as it was on the test machine): only its log scrolls.
     const moved = await panel.evaluate((node) => {
       const tall = document.createElement("div");
       tall.style.height = "2000px";
@@ -197,7 +197,7 @@ test("a_short_answer_never_scrolls_the_panel_itself", async ({ page, seed, reque
 });
 
 test("working_spins_even_when_the_system_asks_for_reduced_motion", async ({ page, seed }) => {
-  // Windows reports "reduce" whenever its animation effects are off; on machine B the
+  // Windows reports "reduce" whenever its animation effects are off; on the test machine the
   // assistant's "Working…" ring stood still and read as stuck (2026-09-29).
   await page.emulateMedia({ reducedMotion: "reduce" });
   await seed(BUDGET);

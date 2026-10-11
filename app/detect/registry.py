@@ -23,7 +23,7 @@ WEBCAM_KEY = rf"{CONSENT_ROOT}\webcam"
 NON_PACKAGED = "NonPackaged"
 IN_USE = 0  # LastUsedTimeStop == 0 means "in use right now"
 # winnt.h; pywin32's win32con does not carry it, and the watcher thread died on the
-# AttributeError the moment it started (machine B, job 006).
+# AttributeError the moment it started (the test machine, job 006).
 REG_NOTIFY_CHANGE_LAST_SET = 0x00000004
 
 

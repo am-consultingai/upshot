@@ -1,7 +1,7 @@
 """The one "should Upshot offer to record?" state, shared by the banner and the toasts (D76).
 
 Before this the offer lived in three places that never heard of each other: a toast, a
-banner built from a one-off server event, and the recorder. On machine B (2026-09-28) the
+banner built from a one-off server event, and the recorder. On the test machine (2026-09-28) the
 banner kept saying "Test is under way and is not being recorded" while the meeting was
 being recorded, and after it had ended. Now the detector and the calendar reminders
 *offer*; the page shows whatever is on offer (``/api/status``); and the offer is withdrawn
@@ -87,7 +87,7 @@ class Prompt:
 def _settled_elsewhere(current: Prompt | None, new: Prompt) -> bool:
     """A detected call already named as a calendar meeting stays the offer while its app
     holds the microphone (``tick`` withdraws it once it lets go). Another app taking the
-    microphone meanwhile, OBS beside a Meet call on machine B (z8tj1hfdwy), is not a
+    microphone meanwhile, OBS beside a Meet call on the test machine (z8tj1hfdwy), is not a
     second call to offer: it replaced the settled offer with a weaker one."""
     return (
         current is not None

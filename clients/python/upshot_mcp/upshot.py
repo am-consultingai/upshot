@@ -18,7 +18,7 @@ PORTS = (8000, *range(8010, 8041))
 CLIENT = "mcp"
 #: How long a port may take to answer the probe. A closed port is refused at once
 #: whatever this says, so it only bounds a port that is open: the one Upshot recorded
-#: gets long enough for an Upshot busy transcribing on the CPU (machine B, 2026-10-05,
+#: gets long enough for an Upshot busy transcribing on the CPU (the test machine, 2026-10-05,
 #: where 0.5 s read as "not running"), the fallback range less.
 RECORDED_TIMEOUT_S = 10.0
 PROBE_TIMEOUT_S = 2.0

@@ -59,7 +59,7 @@ def own_executables() -> frozenset[str]:
     process, and Windows lists it like any other holder. Taken for a meeting app, it
     armed the recorder, which took the endpoints back from the meters, which reopened
     them, which woke the detector again: about twenty reopens a second, no level ever
-    shown, and a manual recording padded with a minute of pre-roll (machine B, job 013).
+    shown, and a manual recording padded with a minute of pre-roll (the test machine, job 013).
     Both paths count: under a venv, Windows reports the base interpreter, not the
     launcher in ``sys.executable``. And Windows reports the path with links resolved:
     uv's ``cpython-3.14-…`` folder is a junction to ``cpython-3.14.7-…`` (job 014).
@@ -397,7 +397,7 @@ class Detector:
         self._note_acquisitions(holders)
         if before is not None and self.state in (DetectorState.RECORDING, DetectorState.GRACE):
             # Said in the log while recording, when nothing else would say it: the
-            # microphone was the whole story of a missed hang-up on machine B (D78).
+            # microphone was the whole story of a missed hang-up on the test machine (D78).
             for process in sorted(names - before):
                 log.info("recording %s: %s took the microphone", self.meeting_id, process)
             for process in sorted(before - names):
@@ -445,7 +445,7 @@ class Detector:
         """A recording with no call app yet takes the first one that joins (D78).
 
         "Join and record" starts the recording and opens the meeting at once, so the call
-        app takes the microphone a moment *after* the recording began: on machine B two
+        app takes the microphone a moment *after* the recording began: on the test machine two
         seconds after, and the hang-up then went unnoticed. Only a known call app that
         newly takes the microphone counts, so a recording of an in-person meeting is not
         claimed by something that has held it all along.
@@ -506,7 +506,7 @@ class Detector:
 
         The recording's own meeting first: one started for a named calendar meeting is
         matched to it at once. Only without one is it whatever is on now, and "whatever
-        is on now" was wrong on machine B, where a real 10:00 meeting overlapped the one
+        is on now" was wrong on the test machine, where a real 10:00 meeting overlapped the one
         being recorded and its end was waited for instead (D76).
         """
         self.overrun_said = False

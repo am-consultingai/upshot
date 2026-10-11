@@ -98,7 +98,7 @@ class Worker:
         """``profile = "auto"`` resolved as at start-up (``bootstrap.choose_profile``): a GPU
         that will run the model transcribes during a meeting, a CPU after it (D60). Taken
         as is, a saved ``auto`` read as live, so a CPU-only machine transcribed under a
-        recording (machine B, 2026-10-05). Cached per device setting: the plan searches
+        recording (the test machine, 2026-10-05). Cached per device setting: the plan searches
         the disk for CUDA and asks the GPU for its memory."""
         configured = self.config.profile
         if configured != "auto":

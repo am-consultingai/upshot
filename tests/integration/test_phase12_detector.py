@@ -431,7 +431,7 @@ def test_waking_takes_the_endpoints_back_from_the_settings_meters(tmp_path: Path
 def test_upshot_holding_the_microphone_is_not_a_meeting(tmp_path: Path) -> None:
     """The meters and the armed recorder hold the microphone from Upshot's own process.
 
-    On machine B (job 013) the detector woke on its own python.exe, took the endpoints
+    On the test machine (job 013) the detector woke on its own python.exe, took the endpoints
     back from the meters, which reopened them and woke it again: 477 opens in 22 s, and
     a manual 3 s recording kept 13 s of pre-roll.
     """
@@ -743,7 +743,7 @@ def test_a_calendar_meeting_is_reminded_then_offered_once_each(tmp_path: Path) -
 
 
 def test_a_meeting_first_seen_after_its_start_is_still_offered(tmp_path: Path) -> None:
-    """Machine B, 2026-09-28: a meeting that had started five minutes earlier was
+    """The test machine, 2026-09-28: a meeting that had started five minutes earlier was
     synced and never announced."""
     h = build(tmp_path, detection__mode="shadow")
     calendar_meeting(h, starts_in_s=-300, minutes=30)
@@ -766,7 +766,7 @@ def test_a_recording_past_its_scheduled_end_asks_once(tmp_path: Path) -> None:
 
 
 def test_the_scheduled_end_is_the_recordings_own_meeting(tmp_path: Path) -> None:
-    """Machine B: a real meeting starting later overlapped the one being recorded, and
+    """The test machine: a real meeting starting later overlapped the one being recorded, and
     its end was waited for instead of the recorded meeting's."""
     from app.gcal.events import Attendee, CalendarEvent
     from app.gcal.source import snapshot
@@ -807,7 +807,7 @@ def in_a_call_recorded_by_hand(h: Harness, seconds: int = 30) -> str:
 
 
 def test_hanging_up_says_so_at_once_and_the_file_ends_there(tmp_path: Path) -> None:
-    """Machine B: nothing changed for the 60 s after hanging up, so it looked missed."""
+    """The test machine: nothing changed for the 60 s after hanging up, so it looked missed."""
     h = build(tmp_path, detection__mode="shadow")
     meeting_id = in_a_call_recorded_by_hand(h, 30)
     h.mic.release()
@@ -869,7 +869,7 @@ def test_stop_now_ends_where_the_call_ended(tmp_path: Path) -> None:
 
 
 def test_a_call_joined_after_the_recording_started_ends_it(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
-    """Machine B: "Join and record" started recording two seconds before Meet took the
+    """The test machine: "Join and record" started recording two seconds before Meet took the
     microphone; the recording was taken for an in-person one and the hang-up missed."""
     import logging
 

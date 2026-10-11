@@ -1,4 +1,4 @@
-# Machine B, the host side of a watched Sandbox run. Started by Run-Upshot-Sandbox.cmd, which
+# The test machine, the host side of a watched Sandbox run. Started by Run-Upshot-Sandbox.cmd, which
 # has just fetched this file, sandbox-test.ps1 and show.wsb from Drive.
 #
 #   1. Checks Windows Sandbox, and that no other sandbox is open.
@@ -76,7 +76,7 @@ try {
     }
 
     # 2 ---------------------------------------------------------------------------------
-    Title "Machine B's test runner"
+    Title "The test machine's test runner"
     if ((Wsl 'test -e ~/upshot-agent/STOP') -eq 0) {
         Good 'already paused (a STOP file exists); left as it is'
     } else {
@@ -189,7 +189,7 @@ try {
 } finally {
     if ($pausedRunner) {
         [void](Wsl 'rm -f ~/upshot-agent/STOP')
-        Good "machine B's test runner is running again"
+        Good "the test machine's test runner is running again"
     }
     Write-Host ''
     Read-Host '  Press Enter to close this window' | Out-Null

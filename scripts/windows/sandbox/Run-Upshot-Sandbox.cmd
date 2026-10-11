@@ -1,5 +1,5 @@
 @echo off
-rem Machine B: double-click to watch Upshot install, run and uninstall inside Windows Sandbox.
+rem The test machine: double-click to watch Upshot install, run and uninstall inside Windows Sandbox.
 rem Fetches the latest test scripts from Drive every time, then hands over to
 rem Start-UpshotSandbox.ps1. Nothing is installed on this machine.
 setlocal

@@ -194,7 +194,7 @@ test("settings_shows_both_meters", async ({ page }) => {
 });
 
 test("two_tabs_share_the_meters_instead_of_fighting_for_them", async ({ page, context }) => {
-  // Job 013 on machine B: three pages on the setup screen reopened the devices about
+  // Job 013 on the test machine: three pages on the setup screen reopened the devices about
   // twenty times a second, and neither meter ever showed a level.
   const second = await context.newPage();
   await gotoSettings(page, "audio");

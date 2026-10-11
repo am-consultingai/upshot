@@ -212,7 +212,7 @@ def winget_works() -> bool:
 #: The link ``claude auth login`` prints (and opens) when it runs with no window, as
 #: first-run setup runs it (D75): ``https://claude.com/cai/oauth/authorize?code=true&…``.
 #: The code the browser then shows is passed to the process's input, which it reads
-#: (checked on machine B, 2026-09-27: a wrong code there makes it exit 1).
+#: (checked on the test machine, 2026-09-27: a wrong code there makes it exit 1).
 LOGIN_URL = re.compile(r"https://claude\.(?:com|ai)/\S*/authorize\?\S+")
 
 
@@ -338,7 +338,7 @@ def _console(command: str, note: str = "", *, sign_in: bool = True) -> list[str]
     process at all: ``CreateProcess`` returned ``WinError 5``, which reached the settings
     page as "could not start the native install". Measured, not guessed — the same
     command line with the spinner removed starts normally on the machine that blocked it
-    (machine B, 2026-09).
+    (the test machine, 2026-09).
 
     So the progress note is static, and this script must stay a single flat command with
     no nested PowerShell in it. A future spinner belongs in the application's own UI,
