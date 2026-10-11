@@ -61,7 +61,8 @@ export default function SettingsNav({
                   : "text-secondary hover:bg-a-200 hover:text-primary active:bg-a-300"
               }`}
             >
-              <span className="min-w-0 flex-1 truncate">{t(section.label)}</span>
+              {/* Wraps rather than cuts: German and French section names run long. */}
+              <span className="min-w-0 flex-1">{t(section.label)}</span>
               {warnings[section.id] && (
                 <SetupMark testid={`settings-warning-${section.id}`} label={warnings[section.id]} />
               )}

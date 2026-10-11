@@ -2,7 +2,7 @@
 
 The scenarios of the 2026-10-06 review: one meeting on, meetings booked at the same time,
 back to back, joined from Upshot or from elsewhere, and what the user is told and asked.
-Machine B's own case is replayed: two meetings at 14:00, Chrome's window naming one.
+The test machine's own case is replayed: two meetings at 14:00, Chrome's window naming one.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def test_one_meeting_whose_link_is_for_another_app_is_only_proposed() -> None:
     assert found.candidates == (DESIGN,)
 
 
-def test_machine_b_the_window_title_names_the_meeting() -> None:
+def test_seen_in_testing_the_window_title_names_the_meeting() -> None:
     """B, 14:00:30: Chrome held the microphone in "Meet - Design review…"."""
     found = assign(
         [TRAINING, DESIGN],
@@ -77,7 +77,7 @@ def test_machine_b_the_window_title_names_the_meeting() -> None:
     assert found.certain and found.event is DESIGN
 
 
-def test_machine_b_a_zoom_call_is_not_the_meet_meeting() -> None:
+def test_seen_in_testing_a_zoom_call_is_not_the_meet_meeting() -> None:
     """B, 14:06: Zoom took the microphone. Design review is a Meet: the call is the other."""
     found = assign([DESIGN, TRAINING], process=r"C:\Users\x\AppData\Roaming\Zoom\bin\Zoom.exe")
     assert found.certain and found.event is TRAINING
@@ -419,3 +419,91 @@ def test_a_candidates_button_on_the_notification_records_that_meeting(api) -> No
     )
     snap = started_snapshot(api, response)
     assert snap["event"]["event_id"] == "design" and snap["match"]["source"] == "user"
+
+
+def test_a_second_app_taking_the_mic_keeps_the_offer_that_names_the_meeting(
+    tmp_path: Path,
+) -> None:
+    """The test machine, 2026-10-08 (z8tj1hfdwy): Meet in Chrome was offered as the only meeting
+    on; 11 s later OBS took the microphone too, and its weaker wake replaced that offer
+    with a one-choice "Which meeting is it?"."""
+    from app.detect.sources import MicHolder
+
+    h = detector_with(tmp_path, DESIGN)
+    meet = "Meet - Design review: onboarding and settings - Google Chrome"
+    a_call(h, "chrome.exe", meet)
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "design"
+
+    h.mic.holders = [MicHolder(process="chrome.exe"), MicHolder(process="obs64.exe")]
+    h.titles.window_titles = [meet, "jazz - YouTube - Google Chrome"]
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "design" and offer.candidates == ()
+    assert offer.process == "chrome.exe", "the offer belongs to the call's app, not OBS"
+    started = [t for t in h.notifier.shown if t.title.startswith("Meeting started")]
+    assert len(started) == 1, [t.body for t in started]
+
+
+def test_one_meeting_whose_link_is_for_another_app_is_not_offered_as_a_choice(
+    tmp_path: Path,
+) -> None:
+    """A one-option question is no question (z8tj1hfdwy): a Zoom call while the only
+    meeting on is a Meet is offered as a call, not as "Which meeting is it?"."""
+    h = detector_with(tmp_path, DESIGN)
+    a_call(h, "Zoom.exe")
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.calendar_id is None
+    assert offer.candidates == ()
+    assert all("Which meeting" not in t.body for t in h.notifier.shown)
+
+
+def test_the_next_meeting_joined_early_in_another_app_is_still_offered(tmp_path: Path) -> None:
+    """The settled offer is kept only against an app that names no meeting or the same
+    one (the PR #20 review): Zoom for the 11:00 joined at 10:58, while Chrome still holds
+    the 10:00 Meet call, is that meeting, and is offered."""
+    from app.detect.sources import MicHolder
+
+    pricing = event("pricing", "Pricing", start=T0 + timedelta(minutes=60), url=ZOOM)
+    h = detector_with(tmp_path, DESIGN, pricing)
+    meet = "Meet - Design review: onboarding and settings - Google Chrome"
+    a_call(h, "chrome.exe", meet)
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "design"
+
+    at(h, T0 + timedelta(minutes=58, seconds=30))
+    h.mic.holders = [MicHolder(process="chrome.exe"), MicHolder(process="Zoom.exe")]
+    h.titles.window_titles = [meet, "Zoom Meeting"]
+    h.seconds(12)
+    h.mic.holders = [MicHolder(process="Zoom.exe")]
+    h.titles.window_titles = ["Zoom Meeting"]
+    h.seconds(120)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "pricing"
+    assert any(t.title == "Meeting started: Pricing" for t in h.notifier.shown)
+
+
+def test_obs_is_not_taken_for_a_meeting_with_no_link_that_is_on(tmp_path: Path) -> None:
+    """The second review of PR #20: with a Zoom call offered over a "Focus time" block
+    with no link, OBS took the microphone, and OBS fits that block as well as anything (no
+    link to contradict it). It replaced the call's offer. Only clues may do that."""
+    from app.detect.sources import MicHolder
+
+    call = event("call", "Customer call", url=ZOOM)
+    focus = event("focus", "Focus time")  # booked over the call, no link
+    h = detector_with(tmp_path, call, focus)
+    a_call(h, "Zoom.exe")
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "call"
+
+    at(h, T0 + timedelta(minutes=15))
+    h.mic.holders = [MicHolder(process="Zoom.exe"), MicHolder(process="obs64.exe")]
+    h.titles.window_titles = ["Zoom Meeting", "jazz - YouTube - Google Chrome"]
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "call" and offer.process == "Zoom.exe"
+    assert not any(t.title == "Meeting started: Focus time" for t in h.notifier.shown)

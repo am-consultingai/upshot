@@ -563,7 +563,7 @@ class TestCalendar(BaseModel):
 def launcher_test_calendar(request: Request, body: TestCalendar) -> dict[str, Any]:
     """Test hook (D76): set the calendar meetings of the "upshot-test" calendar.
 
-    For machine B's scenario runs only: off unless ``testing.hooks`` is true in that
+    For the test machine's scenario runs only: off unless ``testing.hooks`` is true in that
     machine's own settings, and then only for the launcher key. The events go into the
     cache the way a sync leaves them, so reminders, matching and the scheduled end all see
     real calendar meetings. An empty list clears them.
@@ -1847,7 +1847,7 @@ def chosen_cli(body: ProviderPost | None) -> str:
 @router.put("/settings/secrets")
 def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
     """Write-only. A secret goes to the OS credential store and is never readable back."""
-    from app.config import SECRET_NAMES
+    from app.config import SECRET_NAMES, SecretStoreUnavailable
 
     svc = services_of(request)
     changed: list[str] = []
@@ -1855,7 +1855,10 @@ def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
         if name not in SECRET_NAMES:
             raise HTTPException(400, f"unknown secret {name!r}")
         if value:
-            svc.config.secrets.set(name, value)
+            try:
+                svc.config.secrets.set(name, value)
+            except SecretStoreUnavailable as exc:
+                raise HTTPException(503, str(exc)) from exc
         else:
             svc.config.secrets.delete(name)
         changed.append(name)
@@ -2667,7 +2670,7 @@ def llm_signin_code(request: Request, body: SigninCodePost) -> dict[str, Any]:
     """Pass the code the provider's page shows to the windowless sign-in (Claude, D75).
 
     Claude Code can finish by itself once the browser approves, before anyone pastes
-    the code the page also shows (machine B, 2026-09-28): a code that arrives after that
+    the code the page also shows (the test machine, 2026-09-28): a code that arrives after that
     is answered "already signed in", not refused. Refusing it marked a sign-in that had
     worked as failed, and the user signed in twice more.
     """

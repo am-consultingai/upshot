@@ -2,7 +2,7 @@
 
 D88 keeps a rejoin in the same recording while it can: while the first part is still
 waiting to be transcribed. Once its transcription has begun, or for recordings made
-before D88 (machine B's seven pieces of 2026-10-06), the parts are separate recordings of
+before D88 (the test machine's seven pieces of 2026-10-06), the parts are separate recordings of
 the same meeting, and this joins them.
 
 - The earlier recording is kept, under its own id. The later one's audio is appended to

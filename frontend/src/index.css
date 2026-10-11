@@ -114,7 +114,7 @@ body :dir(rtl) {
  *
  * The spinner is not: it is how "working" is said, and a still ring says
  * "stuck". Windows reports reduced motion whenever its animation effects are
- * off (performance settings, remote desktop, VMs), and on machine B the
+ * off (performance settings, remote desktop, VMs), and on the test machine the
  * assistant's "Working…" looked frozen (2026-09-29) — the call D67 made for
  * setup's scenes. A small ring turning in place is not the motion the setting
  * is about.
@@ -212,6 +212,18 @@ kbd {
   font-size: 0.9375rem;
   line-height: 1.65;
   color: var(--text-primary);
+  /*
+   * Nothing a summary holds paints outside it. The allowlist keeps relative offsets and
+   * transforms, which could otherwise slide a box over the app's own controls
+   * (z8tj1hftg0). Clipped, not contained: the margin leaves room for a focus ring
+   * (2px wide, 2px out) on a link at the summary's edge, and the isolation keeps a
+   * z-index inside from stacking against the app's own. flow-root keeps a floated box
+   * and the margins inside it, as contain: paint did; clip alone would cut a float off.
+   */
+  display: flow-root;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  isolation: isolate;
 }
 
 .summary-prose > :first-child {

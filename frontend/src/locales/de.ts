@@ -172,6 +172,8 @@ export const de: Record<MessageKey, string> = {
   "calendar.what": "Upshot kann Ihre Termine lesen, aber nie ändern. Die Anmeldung wird in der Windows-Anmeldeinformationsverwaltung auf diesem Computer gespeichert, in keiner Datei.",
   "calendar.workingHours": "Arbeitszeit",
   "calendar.workingHoursHint": "Der Kalender öffnet sich zu Beginn Ihres Arbeitstags und schattiert die Stunden außerhalb.",
+  "calendar.inviteToSummary": "Einladung mit dem Transkript senden",
+  "calendar.inviteToSummaryHint": "Wenn ein Meeting zusammengefasst wird, gehen Titel, Zeiten, Namen der Eingeladenen, Beschreibung und Namen der Anhänge mit dem Transkript an Ihre KI. E-Mail-Adressen nie.",
   "calendar.workFrom": "Von",
   "calendar.workTo": "Bis",
   "calendar.connect": "Verbinden",

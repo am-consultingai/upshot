@@ -179,6 +179,24 @@ test("the_filter_is_the_only_switch", async ({ page, seedBody }) => {
   await expect(page.getByTestId(`calendar-account-remove-${WORK.id}`)).toBeVisible();
 });
 
+test("the_invitation_can_be_kept_out_of_the_summary", async ({ page, seedBody, request }) => {
+  await twoAccounts(seedBody);
+  await gotoSettings(page, "calendar");
+  // On by default: the privacy policy promises the user can turn it off, here.
+  const invite = page.getByTestId("calendar-prompt-invite");
+  await expect(invite).toBeChecked();
+  await invite.uncheck();
+  await expect
+    .poll(async () => (await (await request.get("/api/settings")).json()).config.calendar.prompt_invite)
+    .toBe(false);
+  await page.reload();
+  await expect(page.getByTestId("calendar-prompt-invite")).not.toBeChecked();
+  await page.getByTestId("calendar-prompt-invite").check();
+  await expect
+    .poll(async () => (await (await request.get("/api/settings")).json()).config.calendar.prompt_invite)
+    .toBe(true);
+});
+
 test("a_calendar_hidden_in_the_filter_says_so_in_settings", async ({ page, seedBody }) => {
   await twoAccounts(seedBody);
   await gotoApp(page, "/");

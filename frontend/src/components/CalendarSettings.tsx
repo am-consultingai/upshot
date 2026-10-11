@@ -272,8 +272,52 @@ export default function CalendarSettings() {
         </SettingRow>
       )}
 
+      {accounts.length > 0 && <InviteToSummaryRow />}
       <WorkingHoursRow />
     </SettingGroup>
+  );
+}
+
+/**
+ * Whether a meeting's invitation goes to the AI with its transcript: the title, times,
+ * invitee names, description and attachment names, never an email address. The privacy
+ * policy and the Google scope justification both promise this switch.
+ */
+function InviteToSummaryRow() {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  // The click shows at once and holds until the save settles; a refusal shows the saved
+  // value again.
+  const [clicked, setClicked] = useState<boolean | null>(null);
+  const save = useMutation({
+    mutationFn: (on: boolean) => api.putSettings({ "calendar.prompt_invite": on }),
+    onSuccess: (next) => queryClient.setQueryData(["settings"], next),
+    onSettled: () => setClicked(null),
+  });
+  const saved = (settings.data?.config as { calendar?: { prompt_invite?: boolean } } | undefined)
+    ?.calendar?.prompt_invite;
+  return (
+    <SettingRow
+      label={t("calendar.inviteToSummary")}
+      htmlFor="calendar-prompt-invite"
+      configKey="calendar.prompt_invite"
+      description={t("calendar.inviteToSummaryHint")}
+    >
+      <input
+        id="calendar-prompt-invite"
+        data-testid="calendar-prompt-invite"
+        type="checkbox"
+        role="switch"
+        checked={clicked ?? saved !== false}
+        disabled={!settings.data}
+        onChange={(event) => {
+          setClicked(event.target.checked);
+          save.mutate(event.target.checked);
+        }}
+        className="size-4 accent-[var(--accent)]"
+      />
+    </SettingRow>
   );
 }
 

@@ -130,7 +130,20 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
             <button
               type="button"
               data-testid="transcription-cancel"
-              onClick={() => cancel.mutate()}
+              onClick={() => {
+                // As in Settings, Transcription: a waiting job has nothing to lose; a
+                // running one asks first (the PR #15 review).
+                if (job.state !== "running") {
+                  cancel.mutate();
+                  return;
+                }
+                void confirmDialog({
+                  title: t("activeJobs.cancelTitle"),
+                  body: t("activeJobs.cancelBody").replace("{title}", job.source_name),
+                  confirm: t("activeJobs.cancelConfirm"),
+                  cancel: t("activeJobs.keepRunning"),
+                }).then((yes) => yes && cancel.mutate());
+              }}
               className={buttonClass("ghost")}
             >
               {t("transcriptions.cancel")}

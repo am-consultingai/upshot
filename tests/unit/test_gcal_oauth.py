@@ -289,7 +289,7 @@ def test_a_name_kept_by_an_earlier_build_is_removed_on_connect(
 def test_a_poll_while_the_code_is_exchanged_still_says_connecting(
     auth: CalendarAccounts, google: FakeGoogle
 ) -> None:
-    """Machine B, 2026-09-30: first-run setup polled between Google's redirect and the
+    """The test machine, 2026-09-30: first-run setup polled between Google's redirect and the
     token, read "disconnected" with no error, and showed "Cancelled" for a connection that
     succeeded a moment later."""
     seen: list[str] = []
@@ -303,7 +303,7 @@ def test_upshot_comes_back_in_front_when_the_sign_in_ends(
     google: FakeGoogle, clock: Clock, tmp_path: Path
 ) -> None:
     """The sign-in runs in the user's browser; afterwards Upshot's window is brought
-    forward, connected or not, and the page has no link to follow (machine B, 2026-09-30:
+    forward, connected or not, and the page has no link to follow (the test machine, 2026-09-30:
     a link opened Upshot as a tab, an upshot: link made Chrome ask "Open Upshot?")."""
     ended: list[bool] = []
     calendar = make_accounts(google, clock, tmp_path, on_complete=ended.append)

@@ -27,7 +27,7 @@ def main() -> int:
     home.mkdir(parents=True, exist_ok=True)
     os.environ["UP_HOME"] = str(home)
     # The specs assume a build that can connect a calendar. The real client file is
-    # gitignored, so a fresh clone has none (job 007 on machine B): give every run the
+    # gitignored, so a fresh clone has none (job 007 on the test machine): give every run the
     # same stand-in, which no spec ever sends to Google.
     if not os.environ.get(CLIENT_ENV):
         stand_in = home / "e2e_google_oauth_client.json"

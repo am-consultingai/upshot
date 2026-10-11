@@ -48,7 +48,7 @@ def test_selftest_runs_as_a_module(tmp_path: Path) -> None:
 
 
 def test_selftest_prints_to_a_cp1252_console(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Machine B's pipe was cp1252: printing an arrow crashed the run after the report."""
+    """The test machine's pipe was cp1252: printing an arrow crashed the run after the report."""
     raw = io.BytesIO()
     console = io.TextIOWrapper(raw, encoding="cp1252")
     monkeypatch.setattr(sys, "stdout", console)

@@ -1,9 +1,10 @@
 """Upshot's window on Windows, against stand-in win32 modules (the real ones are
-Windows-only). The case that matters: a start right after a quit (machine B,
+Windows-only). The case that matters: a start right after a quit (the test machine,
 2026-09-30), when the old window is still closing."""
 
 from __future__ import annotations
 
+import os
 import sys
 import types
 from typing import Any
@@ -129,7 +130,7 @@ def test_a_live_window_is_focused(desktop: FakeDesktop) -> None:
 def test_a_start_after_a_quit_opens_a_window(
     desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The machine B report: started from the Start menu, it sat in the tray."""
+    """The test machine report: started from the Start menu, it sat in the tray."""
     launched: list[list[str]] = []
     monkeypatch.setattr(window, "app_browser", lambda: "msedge.exe")
     monkeypatch.setattr(window.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))
@@ -160,3 +161,29 @@ def test_setup_opens_maximized(desktop: FakeDesktop, monkeypatch: pytest.MonkeyP
     window.open_window("http://127.0.0.1:8078/")
     assert "--start-maximized" in launched[0]
     assert "--start-maximized" not in launched[1]
+
+
+def test_a_link_is_opened_with_alt_held_so_the_browser_can_come_forward(
+    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "Join the meeting" opened the link in a browser window behind Upshot's
+    (z8tj1hfdwz): Windows lets only the program the user is in take the foreground."""
+    calls: list[str] = []
+    monkeypatch.setattr(
+        os, "startfile", lambda url: calls.append(f"open {url} with keys {list(desktop.keys)}"),
+        raising=False,
+    )  # fmt: skip
+    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
+    assert calls == ["open https://meet.google.com/abc-defg-hij with keys [(18, 0)]"], "Alt down"
+    assert desktop.keys == [(0x12, 0), (0x12, 2)], "then up"
+
+
+def test_alt_is_let_go_even_when_the_link_cannot_be_opened(
+    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(url: str) -> None:
+        raise OSError("no association")
+
+    monkeypatch.setattr(os, "startfile", refuse, raising=False)
+    assert window.open_external("https://meet.google.com/abc-defg-hij") is False
+    assert desktop.keys == [(0x12, 0), (0x12, 2)]

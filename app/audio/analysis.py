@@ -79,7 +79,7 @@ def envelope_correlation(
     """Like :func:`cross_correlation`, on the loudness envelopes; the lag is in samples.
 
     Loopback returns the signal *after* the endpoint's effects. Vendor enhancement chains
-    (Waves MaxxAudio on Dell/Realtek laptops, measured on machine B) apply ±13 dB of EQ,
+    (Waves MaxxAudio on Dell/Realtek laptops, measured on the test machine) apply ±13 dB of EQ,
     compression and phase shifts, which take the waveform correlation of a perfect capture
     down to 0.3–0.5. When the sound comes and goes is untouched by all of that: the
     envelope correlation of the same capture was 0.91 on speech.
@@ -92,7 +92,7 @@ def envelope_correlation(
 
 
 #: Loopback carries the played signal when the waveforms match this well, or, through an
-#: enhancement chain, when the envelopes match :data:`ENVELOPE_THRESHOLD`. On machine B's
+#: enhancement chain, when the envelopes match :data:`ENVELOPE_THRESHOLD`. On the test machine's
 #: captures the envelopes of the right signal scored 0.70–0.87; noise and the wrong
 #: capture scored at most 0.14.
 WAVEFORM_THRESHOLD = 0.8
