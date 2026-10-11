@@ -156,12 +156,25 @@ export const test = browsers.extend<{
   /** Seed *without* clearing first: for asserting what a live event does to an open page. */
   seedMore: (body: SeedBody) => Promise<void>;
 }>({
-  context: async ({ context }, use) => {
+  context: async ({ context }, use, testInfo) => {
     await context.addCookies([
       { name: "up_session", value: SESSION, url: BASE_URL },
       { name: "up_csrf", value: CSRF, url: BASE_URL },
     ]);
+    /*
+     * V11: no spec passes with an error nobody caught, or one the app logged. The
+     * browser's own "Failed to load resource" line for an HTTP error is not one: the
+     * specs answer 404s, 409s and 500s on purpose, and the page handles each.
+     */
+    const errors: string[] = [];
+    context.on("weberror", (error) => errors.push(`uncaught: ${error.error().message}`));
+    context.on("console", (message) => {
+      if (message.type() === "error" && !message.text().startsWith("Failed to load resource"))
+        errors.push(`console.error: ${message.text()}`);
+    });
     await use(context);
+    if (testInfo.status === testInfo.expectedStatus)
+      expect(errors, "errors on the page during the spec").toEqual([]);
   },
   seed: async ({ request }, use) => {
     await use(async (meetings: SeedMeeting[]) => {
