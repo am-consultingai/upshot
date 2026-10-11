@@ -405,6 +405,9 @@ class ClaudeRoute:
                 yield chunk
             if not finished:
                 turn.failed = True
+                # The process has ended, but its stderr reader may not have appended yet:
+                # read too early, "not signed in" came out as a bare "exited 1".
+                await loop.run_in_executor(None, _wait_for, stderr)
                 text = self.classify(code, "".join(stderr), path)
                 problem = problem_code(text)
                 if problem:
