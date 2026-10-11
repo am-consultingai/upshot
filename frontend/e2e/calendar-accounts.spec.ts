@@ -115,7 +115,32 @@ test("unticking_a_calendar_in_the_filter_hides_it_everywhere", async ({ page, se
   await expect(page.getByTestId("meeting-card").filter({ hasText: "Dentist call" })).toHaveCount(1);
 });
 
-test("a_meeting_on_both_calendars_stays_while_one_is_hidden", async ({ page, seedBody }) => {
+test("quick_clicks_in_the_filter_refetch_the_page_once", async ({ page, seedBody }) => {
+  await twoAccounts(seedBody);
+  await gotoApp(page, "/");
+  await expect(page.getByTestId("meeting-card")).toHaveCount(3);
+  await page.getByTestId("library-filter").click();
+  const box = page.getByTestId(`library-filter-popover-${HOME.id}`).locator("input");
+
+  // Every click used to refetch every query on the page twice: after its request, and
+  // again on the server's calendar event. Ten clicks were 20 waves, and the filter
+  // slowed down (z8tj1hck4w). Now the burst refetches once, when it stops.
+  const lists: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/action-items") lists.push(request.url());
+  });
+  for (let click = 1; click <= 10; click++) {
+    await box.click();
+    await expect(box).toBeChecked({ checked: click % 2 === 0 });
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("meeting-card").filter({ hasText: "Dentist call" })).toHaveCount(1);
+  await expect.poll(() => lists.length).toBeGreaterThan(0);
+  await page.waitForTimeout(1000);
+  expect(lists.length).toBeLessThanOrEqual(2);
+});
+
+test("a_meeting_on_both_calendars_stays_while_one_is_hidden",async ({ page, seedBody }) => {
   await seedBody({
     reset: true,
     calendar_accounts: [WORK, HOME],
