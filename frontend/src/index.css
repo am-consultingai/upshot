@@ -215,9 +215,13 @@ kbd {
   /*
    * Nothing a summary holds paints outside it. The allowlist keeps relative offsets and
    * transforms, which could otherwise slide a box over the app's own controls
-   * (z8tj1hftg0); this also makes the summary its own stacking context for z-index.
+   * (z8tj1hftg0). Clipped, not contained: the margin leaves room for a focus ring
+   * (2px wide, 2px out) on a link at the summary's edge, and the isolation keeps a
+   * z-index inside from stacking against the app's own.
    */
-  contain: paint;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  isolation: isolate;
 }
 
 .summary-prose > :first-child {

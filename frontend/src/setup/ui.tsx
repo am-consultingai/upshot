@@ -47,7 +47,7 @@ export function StepFrame({
         {icon}
         {t(title)}
       </h1>
-      <div data-testid="setup-lead" className="mx-auto mb-4 min-h-12 max-w-2xl [@media(max-height:720px)]:mb-2 [@media(max-height:639px)]:empty:h-0 text-center text-base text-secondary">
+      <div data-testid="setup-lead" className="mx-auto mb-4 min-h-12 max-w-2xl [@media(max-height:720px)]:mb-2 [@media(max-height:639px)]:empty:h-0 [@media(max-height:639px)]:empty:min-h-0 text-center text-base text-secondary">
         {lead}
       </div>
       <div data-testid="setup-content">{children}</div>
