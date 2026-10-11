@@ -86,6 +86,20 @@ test("the_detection_mode_can_be_switched_from_the_palette", async ({ page }) => 
   await expect(page.getByTestId("palette-item").first()).toContainText("current");
 });
 
+test("what_is_typed_straight_after_opening_is_kept", async ({ page }) => {
+  await gotoApp(page, "/");
+  await page.keyboard.press("Control+k");
+  await page.getByTestId("palette-input").fill("theme");
+  await page.keyboard.press("Escape");
+
+  // No wait between the key and the typing: the reopened palette must neither show
+  // the old query nor wipe the new one once it has rendered.
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("detect and notify");
+  await expect(page.getByTestId("palette-input")).toHaveValue("detect and notify");
+  await expect(page.getByTestId("palette-item").first()).toContainText("Detect and notify");
+});
+
 test("the_list_shows_a_cut_off_row_to_say_there_is_more", async ({ page }) => {
   await gotoApp(page, "/");
   await page.keyboard.press("Control+k");
