@@ -27,6 +27,13 @@ from app.log import get
 
 log = get(__name__)
 
+#: Upshot's local server. Not 8000, which many development tools and Google sign-in
+#: helpers also take: below Windows' dynamic range (49152 on), clear of the usual
+#: development ports, and unassigned at IANA with the 30 after it (D95).
+DEFAULT_PORT = 43217
+#: What Upshot listened on before: 8000, else the first free port of 8010-8040.
+OLD_PORTS = frozenset({8000, *range(8010, 8041)})
+
 SERVICE_NAME = "upshot"
 
 #: Secret names in the credential store.
@@ -344,7 +351,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "db": {"fts": "auto"},  # auto|off
     "secrets": {"backend": "keyring"},  # keyring|memory
-    "server": {"host": "127.0.0.1", "port": 8000},
+    "server": {"host": "127.0.0.1", "port": DEFAULT_PORT},
     "schedule": {"hour": 2, "hours": 4},  # the window the `scheduled` job policy runs in
 }
 
@@ -478,6 +485,10 @@ _OLD_DEFAULTS: dict[str, Any] = {
     # saved file is the old default, not a choice. Nothing is deleted by default now (D92).
     "retention.audio_days": 30,
     "transcription.keep_days": 30,
+    # The port in use was saved with everything else, so a saved 8000, or a fallback
+    # taken once (8010-8040), is the old default, not a choice. Any of them moves to
+    # DEFAULT_PORT; a port set by hand outside them stays.
+    "server.port": OLD_PORTS,
 }
 
 
@@ -510,7 +521,9 @@ def _forget_old_defaults(file_layer: dict[str, Any]) -> None:
             value = _get(file_layer, dotted)
         except KeyError:
             continue
-        if value == old and not isinstance(value, bool):
+        if isinstance(value, bool):
+            continue
+        if value == old or (isinstance(old, frozenset) and isinstance(value, int) and value in old):
             _unset(file_layer, dotted)
 
 
@@ -719,6 +732,12 @@ class Config:
         self._explicit: set[str] = set()
         #: Things the loader changed on the user's behalf, said once in ``warnings``.
         self._notices: list[str] = []
+        #: Values for this run only (``use_port``). ``save`` writes the file's own value
+        #: back, as it was read, or nothing.
+        self._for_run: set[str] = set()
+        #: The file as loaded, after ``_forget_old_defaults``: the value a key for this
+        #: run is saved as. Not the file on disk, which still holds what was forgotten.
+        self._file_layer: dict[str, Any] = {}
 
     # -- construction
 
@@ -735,6 +754,7 @@ class Config:
         #: A file saved before first-run setup existed. ``save`` writes every key, so
         #: any file written since holds ``setup`` — its absence dates the file.
         predates_setup = False
+        file_layer: dict[str, Any] = {}
         if path.exists():
             try:
                 file_layer = json.loads(path.read_text(encoding="utf-8"))
@@ -759,6 +779,7 @@ class Config:
                 cfg_from_env.pop(dotted, None)  # an explicit override is not the env
         notices = _retire_providers(data) + _retire_remote_worker(data)
         cfg = cls(data, source_file=path, from_env=cfg_from_env)
+        cfg._file_layer = copy.deepcopy(file_layer)
         cfg._notices.extend(notices)
         if predates_setup and "setup.done" not in cfg_from_env:
             cfg._adopt_existing_install()
@@ -791,6 +812,18 @@ class Config:
     def set(self, dotted: str, value: Any) -> None:
         _set(self._data, dotted, value)
         self._explicit.add(dotted)
+        self._for_run.discard(dotted)
+
+    def use_port(self, port: int) -> None:
+        """The port this run listens on, which ``save`` never writes.
+
+        It was saved with everything else, so a fallback taken once, because something
+        else held the preferred port at that start, became the preferred port from then
+        on (D95). The running instance's port is in ``server.port`` in the app home.
+        """
+        _set(self._data, "server.port", port)
+        self._explicit.discard("server.port")
+        self._for_run.add("server.port")
 
     def as_dict(self) -> dict[str, Any]:
         return copy.deepcopy(self._data)
@@ -831,6 +864,11 @@ class Config:
                 _unset(payload, dotted)  # nothing on disk: let the default apply again
             else:
                 _set(payload, dotted, previous)
+        for dotted in self._for_run:
+            try:
+                _set(payload, dotted, copy.deepcopy(_get(self._file_layer, dotted)))
+            except KeyError:
+                _unset(payload, dotted)  # never chosen: the default applies again
         for dotted in SECRET_KEYS:
             parts = dotted.split(".")
             cur: Any = payload
@@ -923,7 +961,7 @@ class Config:
 
     @property
     def server_port(self) -> int:
-        return int(self.get("server.port", 8000))
+        return int(self.get("server.port", DEFAULT_PORT))
 
     # -- validation
 

@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.config import DEFAULT_PORT
 from app.log import get
 
 log = get(__name__)
@@ -133,7 +134,7 @@ class HostHeaderMiddleware:
     """The DNS-rebinding defense. Pure ASGI, so it runs before routing *and* does not
     buffer the SSE stream the way ``BaseHTTPMiddleware`` does."""
 
-    def __init__(self, app: ASGIApp, port: int = 8000) -> None:
+    def __init__(self, app: ASGIApp, port: int = DEFAULT_PORT) -> None:
         self.app = app
         self.allowed = allowed_hosts(port)
 
@@ -174,7 +175,7 @@ class AuthMiddleware:
         app: ASGIApp,
         auth: AuthState,
         exempt: frozenset[str] | None = None,
-        port: int = 8000,
+        port: int = DEFAULT_PORT,
     ) -> None:
         self.app = app
         self.auth = auth
@@ -254,7 +255,7 @@ class OriginGuardMiddleware:
     not the app's own.
     """
 
-    def __init__(self, app: ASGIApp, port: int = 8000) -> None:
+    def __init__(self, app: ASGIApp, port: int = DEFAULT_PORT) -> None:
         self.app = app
         self.own = frozenset({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
 
