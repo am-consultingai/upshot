@@ -82,7 +82,9 @@ class FakeDesktop:
         self.events.append(f"{'attach' if attach else 'detach'} {mine}->{theirs}")
 
     def GetCurrentThreadId(self) -> int:
-        return 7
+        return self.thread
+
+    thread = 7
 
     def SetForegroundWindow(self, hwnd: int) -> None:
         if hwnd in self.refuse_foreground or hwnd not in self.windows:
@@ -238,6 +240,18 @@ def test_a_link_still_opens_when_windows_refuses_to_share_the_input(
 def test_nothing_to_attach_to_when_no_window_is_in_front(
     desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(
+        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
+    )
+    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
+    assert desktop.events == ["allow any", "open https://meet.google.com/abc-defg-hij"]
+
+
+def test_no_attachment_when_the_window_in_front_is_on_this_thread(
+    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    desktop.front = 5
+    desktop.thread = 50  # GetWindowThreadProcessId(5) is thread 50
     monkeypatch.setattr(
         os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
     )
