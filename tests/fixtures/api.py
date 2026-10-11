@@ -21,7 +21,7 @@ from app.pipeline.stages import registry
 from app.pipeline.worker import Worker
 from app.services import Services
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:43217"
 
 
 def free_port() -> int:

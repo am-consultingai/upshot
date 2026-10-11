@@ -82,16 +82,16 @@ def test_a_free_port_is_kept() -> None:
 
 def test_no_free_port_is_an_error_that_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(server, "port_is_free", lambda host, port: False)
-    with pytest.raises(OSError, match="8000 and 8010-8040 are all in use"):
-        server.choose_port("127.0.0.1", 8000)
+    with pytest.raises(OSError, match="43217 and 43218-43247 are all in use"):
+        server.choose_port("127.0.0.1", 43217)
 
 
 def test_a_second_launch_opens_the_running_instance(tmp_path: Path) -> None:
     opened: list[str] = []
     assert not instance.show_running(tmp_path, opener=opened.append)  # nothing recorded
-    instance.record_port(8012, tmp_path)
+    instance.record_port(43219, tmp_path)
     assert instance.show_running(tmp_path, opener=opened.append)
-    assert opened == ["http://127.0.0.1:8012/"]
+    assert opened == ["http://127.0.0.1:43219/"]
 
 
 def test_a_damaged_port_file_is_ignored(tmp_path: Path) -> None:
@@ -160,9 +160,9 @@ def test_the_window_opens_in_a_chromium_browser_in_app_mode() -> None:
     assert not window.supports_app_mode(r"C:\Program Files\Mozilla Firefox\firefox.exe")
     assert not window.supports_app_mode(None)
     # Its own browser profile, never one of the user's (z8tj1hca86).
-    assert window.app_command("msedge.exe", "http://127.0.0.1:8010/?k=a", Path("H/browser")) == [
+    assert window.app_command("msedge.exe", "http://127.0.0.1:43217/?k=a", Path("H/browser")) == [
         "msedge.exe",
-        "--app=http://127.0.0.1:8010/?k=a",
+        "--app=http://127.0.0.1:43217/?k=a",
         f"--user-data-dir={Path('H/browser')}",
         "--no-first-run",
         "--no-default-browser-check",
