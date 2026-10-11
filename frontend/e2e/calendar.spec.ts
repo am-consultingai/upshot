@@ -186,6 +186,49 @@ test("the_meeting_page_carries_the_event_and_its_link", async ({ page, seedBody 
   // things you can do to this meeting. The link is still one click from the title.
   const join = page.getByTestId("meeting-join-bar");
   await expect(join).toHaveAttribute("href", "https://meet.google.com/seed");
+  // And clicking it hands the link to the server, which opens it in the user's own
+  // browser (z8tj1hfdwz): the specs never clicked it.
+  expect(await opensThroughTheServer(page, () => join.click())).toBe("https://meet.google.com/seed");
+});
+
+/**
+ * Clicks, and returns the link the server was asked to open. The server's answer is
+ * stubbed as opened, so a page that also opened the link itself shows as a popup.
+ */
+async function opensThroughTheServer(
+  page: import("@playwright/test").Page,
+  click: () => Promise<void>,
+): Promise<string> {
+  const asked: string[] = [];
+  await page.route("**/api/open", async (route) => {
+    asked.push((route.request().postDataJSON() as { url: string }).url);
+    await route.fulfill({ json: { opened: true } });
+  });
+  let popups = 0;
+  page.context().on("page", () => popups++);
+  await click();
+  await expect.poll(() => asked.length).toBe(1);
+  await page.waitForTimeout(300);
+  expect(popups, "the app window opened the link itself").toBe(0);
+  return asked[0];
+}
+
+test("an_events_meeting_link_opens_through_the_server", async ({ page, seedBody }) => {
+  // The details panel stops clicks from reaching the page, so the app window followed
+  // this link itself, in its own browser profile signed in to nothing (z8tj1hfdww).
+  const now = new Date();
+  const start = new Date(now.getTime() + 60 * 60_000).toISOString();
+  const end = new Date(now.getTime() + 90 * 60_000).toISOString();
+  await seedBody({
+    reset: true,
+    calendar_events: [
+      { id: "e2e-link", title: "Design review", start, end, conference_url: "https://meet.google.com/abc-defg-hij" },
+    ],
+  });
+  await calendarView(page, "day");
+  await page.getByTestId("calendar-gevent").filter({ hasText: "Design review" }).click();
+  const link = page.getByTestId("event-link");
+  expect(await opensThroughTheServer(page, () => link.click())).toBe("https://meet.google.com/abc-defg-hij");
 });
 
 /**
