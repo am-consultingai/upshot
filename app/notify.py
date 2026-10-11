@@ -310,7 +310,7 @@ class BaseNotifier:
         app = process.removesuffix(".exe") or self._t("toast.anApp")
         buttons = self._start_buttons(calendar_id, event_id, account_id)
         body = self._t("toast.notRecording")
-        if candidates and not event_id:
+        if len(candidates) > 1 and not event_id:
             untitled = self._t("toast.untitled")
             buttons = (
                 *(

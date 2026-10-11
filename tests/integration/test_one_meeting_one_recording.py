@@ -2,7 +2,7 @@
 
 - A second recording of a meeting whose first is already transcribed is merged into it:
   audio appended with the gap as silence, transcripts joined on one timeline, processed
-  again. Machine B's seven pieces of 2026-10-06 are replayed and end as one.
+  again. The test machine's seven pieces of 2026-10-06 are replayed and end as one.
 - A recording whose calendar meeting is not settled is marked and asked about.
 - Picking another calendar meeting summarizes again, or merges with that meeting's
   recording.
@@ -204,7 +204,7 @@ def test_recordings_with_no_settled_meeting_are_not_merged(api) -> None:  # type
     assert set(visible_ids(api)) == {first, second}
 
 
-def test_machine_b_seven_pieces_become_one(api) -> None:  # type: ignore[no-untyped-def]
+def test_seen_in_testing_seven_pieces_become_one(api) -> None:  # type: ignore[no-untyped-def]
     """B, 2026-10-06 14:06–14:43: seven recordings of one meeting, about 5 min each with
     10–270 s between. With the first already transcribed, every later one joins it once
     its own transcript is done."""

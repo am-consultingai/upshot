@@ -37,7 +37,7 @@ class TrackRuntime:
     ring: PreRollRing
     #: The latest audio, filled whether or not anything is being written. The pre-roll
     #: ring cannot serve: it is emptied at commit and stays empty while a recording runs,
-    #: so a silence check reading it ended every call five minutes in (machine B).
+    #: so a silence check reading it ended every call five minutes in (the test machine).
     recent: PreRollRing = field(default_factory=lambda: PreRollRing(RECENT_S))
     level: float = 0.0
     reopened: int = 0

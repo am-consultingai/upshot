@@ -1,5 +1,5 @@
 <Configuration>
-  <!-- Double-click on machine B to click through an Upshot install yourself (the wizard waits for you).
+  <!-- Double-click on the test machine to click through an Upshot install yourself (the wizard waits for you).
        <kit folder> must hold: this file, sandbox-test.ps1, and an in\ folder
        with Upshot-<ver>-installer.zip, its .sha256 and upshot-test-signing.cer.
        Results land in <kit folder>\out on the host. -->

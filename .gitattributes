@@ -4,3 +4,7 @@ app/legal/terms.md text eol=lf
 site/legal/terms.md text eol=lf
 site/legal/terms.json text eol=lf
 packaging/terms.txt -text
+# Batch files run under cmd.exe, which misreads labels and blocks in LF-only files: they
+# are kept with CRLF exactly as committed, never converted.
+*.cmd -text
+*.bat -text

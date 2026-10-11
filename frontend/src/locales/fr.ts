@@ -172,6 +172,8 @@ export const fr: Record<MessageKey, string> = {
   "calendar.what": "Upshot peut lire vos événements, jamais les modifier. La connexion est conservée dans le Gestionnaire d'identification Windows de cet ordinateur, dans aucun fichier.",
   "calendar.workingHours": "Heures de travail",
   "calendar.workingHoursHint": "Le calendrier s'ouvre au début de votre journée et grise les heures en dehors.",
+  "calendar.inviteToSummary": "Envoyer l'invitation avec la transcription",
+  "calendar.inviteToSummaryHint": "Quand une réunion est résumée, son titre, ses horaires, les noms des invités, sa description et les noms des pièces jointes sont envoyés à votre IA avec la transcription. Jamais les adresses e-mail.",
   "calendar.workFrom": "De",
   "calendar.workTo": "À",
   "calendar.connect": "Connecter",

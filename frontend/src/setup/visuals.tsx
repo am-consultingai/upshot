@@ -446,7 +446,7 @@ const SCENE: Record<
     allowButton: "firstRun.calendar.scene.continue",
     codeText: "firstRun.ai.scene.codexDone",
   },
-  // Google's consent page, then antigravity.google's page with the code (machine B,
+  // Google's consent page, then antigravity.google's page with the code (the test machine,
   // 2026-09-28).
   antigravity: {
     name: "firstRun.ai.antigravity.name",

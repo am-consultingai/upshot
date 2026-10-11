@@ -272,7 +272,7 @@ def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_a_slow_upshot_is_busy_not_gone() -> None:
-    """Machine B, 2026-10-05: under a CPU-bound transcription Upshot answered more slowly
+    """The test machine, 2026-10-05: under a CPU-bound transcription Upshot answered more slowly
     than the bridge waited, and Claude was told it was not running."""
     import socket
     import threading

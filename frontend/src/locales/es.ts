@@ -172,6 +172,8 @@ export const es: Record<MessageKey, string> = {
   "calendar.what": "Upshot puede leer sus eventos, pero nunca cambiarlos. El inicio de sesión se guarda en el Administrador de credenciales de Windows de este equipo, no en ningún archivo.",
   "calendar.workingHours": "Horario laboral",
   "calendar.workingHoursHint": "El calendario se abre al inicio de su jornada y sombrea las horas fuera de ella.",
+  "calendar.inviteToSummary": "Enviar la invitación con la transcripción",
+  "calendar.inviteToSummaryHint": "Al resumir una reunión, su título, horario, nombres de los invitados, descripción y nombres de los adjuntos se envían a su IA con la transcripción. Las direcciones de correo nunca.",
   "calendar.workFrom": "De",
   "calendar.workTo": "A",
   "calendar.connect": "Conectar",

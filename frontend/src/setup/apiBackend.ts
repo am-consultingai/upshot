@@ -213,7 +213,7 @@ export class ApiSetupBackend implements SetupBackend {
 
   signIn(id: CliId): void {
     // A second press while one is running would replace it — and cancel a sign-in the
-    // browser may be finishing (machine B, 2026-09-28: the first attempt was cut off
+    // browser may be finishing (the test machine, 2026-09-28: the first attempt was cut off
     // nine seconds in).
     if (this.state.cli[id].phase === "signing-in") return;
     this.setCli(id, { phase: "signing-in" });
@@ -222,7 +222,7 @@ export class ApiSetupBackend implements SetupBackend {
       .llmSignin(CLI_PROVIDER[id], true)
       .then((result) => {
         // The vendor's tool opens the browser itself: opening the link here too gave
-        // the user two sign-in pages (machine B, D75). It stays in reach as a link.
+        // the user two sign-in pages (the test machine, D75). It stays in reach as a link.
         if (result.url) this.setCli(id, { signinUrl: result.url });
         this.watch(id);
       })
@@ -234,7 +234,7 @@ export class ApiSetupBackend implements SetupBackend {
     // Claude Code may already have finished by itself when the code arrives; the watch
     // sees it signed in and moves the card on. So a refused code only counts as a
     // failure if the card is still waiting and the CLI is still signed out — never over
-    // a sign-in that worked (machine B, 2026-09-28).
+    // a sign-in that worked (the test machine, 2026-09-28).
     void api.llmSigninCode(CLI_PROVIDER[id], code).catch(async () => {
       const row = (await api.llmStatus().catch(() => null))?.providers.find((r) => r.id === CLI_PROVIDER[id]);
       if (this.state.cli[id].phase === "signing-in" && row?.signed_in !== true) {

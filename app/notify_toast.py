@@ -41,7 +41,7 @@ def show(payload: dict[str, Any]) -> None:
     # The installed app's own identity (D72): the installer registers "Upshot.App" on the
     # Start-menu shortcut, so the toast is headed "Upshot" with its icon, and Windows
     # carries out its link buttons. Under the fallback identity (Command Prompt's, all a
-    # source run has) Windows shows the buttons but ignores every press (machine B).
+    # source run has) Windows shows the buttons but ignores every press (the test machine).
     aumid = payload.get("aumid")
     # WindowsToaster drops actions with a warning, so anything with buttons has to go
     # through the interactable one (DETECTION.md §6: the buttons are the mechanism).

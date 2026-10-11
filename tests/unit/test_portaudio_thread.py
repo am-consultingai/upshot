@@ -2,7 +2,7 @@
 
 PortAudio's WASAPI host binds to the thread that initialised it, and Pa_Initialize is
 reference-counted: while any PyAudio instance is alive, an input stream opened on another
-thread fails with -9999 ("Unanticipated host error"). On machine B (job 012) the setup
+thread fails with -9999 ("Unanticipated host error"). On the test machine (job 012) the setup
 screen's two meters and its device listing ran on different server threads, so both
 meters failed, and recording opened the same devices fine minutes later. Reproduced on
 machine A with the real library. The fake below enforces the same rule.

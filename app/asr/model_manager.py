@@ -3,7 +3,7 @@
 Before this, a machine with no model downloaded 3 GB inside the first meeting's
 transcription, through faster-whisper, into the Hugging Face user cache: minutes of what
 looked like a hang, no progress, no cancel, no space check, and files the uninstaller
-never saw (job 007 on machine B). Here the download is its own step, which the installer
+never saw (job 007 on the test machine). Here the download is its own step, which the installer
 (``--prepare``) and first-run setup start and show, and which transcription never does:
 
 - into ``<home>/models/asr/<repo>``, where ``models.resolve`` looks and the app owns it;

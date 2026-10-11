@@ -25,7 +25,7 @@ rather than skipping it silently.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -310,7 +310,13 @@ def sweep(
 
     for item in decided.transcriptions:
         try:
-            transcriptions.purge(item.transcription_id)
+            cutoff = (
+                now - timedelta(days=decided.transcription_days)
+                if decided.transcription_days is not None
+                else None
+            )
+            if not transcriptions.purge_finished(item.transcription_id, before=cutoff):
+                continue  # retried, or deleted, since it was chosen
         except Exception as exc:
             log.warning("retention could not delete %s: %s", item.transcription_id, exc)
             result.errors.append(f"{item.transcription_id}: {exc}")

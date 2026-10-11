@@ -168,6 +168,8 @@ export const he: Record<MessageKey, string> = {
   "calendar.what": "Upshot יכול לקרוא את האירועים שלך, אבל אף פעם לא לשנות אותם. פרטי הכניסה נשמרים במנהל האישורים של Windows במחשב הזה, לא בקובץ.",
   "calendar.workingHours": "שעות עבודה",
   "calendar.workingHoursHint": "לוח השנה נפתח בתחילת היום שלכם ומצלל את השעות שמחוץ לו.",
+  "calendar.inviteToSummary": "שליחת ההזמנה יחד עם התמליל",
+  "calendar.inviteToSummaryHint": "כשפגישה מסוכמת, הכותרת, השעות, שמות המוזמנים, התיאור ושמות הקבצים המצורפים נשלחים לבינה המלאכותית שלכם יחד עם התמליל. כתובות דוא״ל לעולם לא נשלחות.",
   "calendar.workFrom": "מ-",
   "calendar.workTo": "עד",
   "calendar.connect": "חיבור",

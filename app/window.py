@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from collections.abc import Iterator
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -89,21 +90,46 @@ def open_external(url: str) -> bool:
     http(s) link) and the page should open it itself.
 
     Only http and https: ``os.startfile`` would run anything else, a file path included.
+
+    Windows gives the foreground only to the program the user is in, which is Upshot's
+    window, not this server: a browser already running took the link into a window left
+    behind Upshot's, and "Join the meeting" looked as if it did nothing (z8tj1hfdwz). An
+    Alt press around the call, as in ``bring_to_front``, lets the browser come forward.
     """
     from urllib.parse import urlparse
 
-    if urlparse(url).scheme not in ("http", "https"):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
         raise ValueError("only http and https links are opened")
     if sys.platform != "win32":
         return False
-    try:
-        import os
+    import os
 
-        os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
+    try:
+        with _foreground_unlocked():
+            os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
     except OSError as exc:
         log.warning("could not open a link in the default browser: %s", exc)
         return False
+    log.info("opened a link to %s in the default browser", parsed.hostname)
     return True
+
+
+@contextlib.contextmanager
+def _foreground_unlocked() -> Iterator[None]:
+    """Hold Alt down around a call, which Windows takes as the user's own switch, so a
+    program that call starts or wakes may take the foreground."""
+    try:
+        import win32api
+        import win32con
+    except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
+        yield
+        return
+    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+    try:
+        yield
+    finally:
+        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
 
 
 def _registry(
@@ -176,7 +202,7 @@ def give_focus_back() -> str | None:
     """After a notification button: focus the window the user was in. Its title, or None.
 
     Clicking a toast takes the foreground, and when the toast closes Windows hands it to
-    nobody, so the call the user was in stops taking keystrokes (machine B, D72). This
+    nobody, so the call the user was in stops taking keystrokes (the test machine, D72). This
     process was started by that click, which lets it set the foreground: it gives it to
     the topmost ordinary window, which is the one the toast was shown over.
     """
@@ -283,10 +309,10 @@ def close_all(*, wait_s: float = CLOSE_WAIT_S) -> int:
     The window is a browser window, so it outlives the app: quitting (the tray, or the
     installer stopping the app for an upgrade) left a dead page behind, and the next start
     found that window and focused it instead of opening one, which showed nothing on
-    machine B (D74). Posting WM_CLOSE alone was not enough: the close is asynchronous, so
+    the test machine (D74). Posting WM_CLOSE alone was not enough: the close is asynchronous, so
     the start that followed still found the closing window, failed to bring it forward
     ("Invalid window handle") and counted that as shown — the app sat in the tray with
-    no window and no taskbar button (machine B, 2026-09-30).
+    no window and no taskbar button (the test machine, 2026-09-30).
     """
     if sys.platform != "win32":
         return 0

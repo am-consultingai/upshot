@@ -14,7 +14,7 @@ behind. It never touches the app the user is running — different port, differe
 `UP_HOME`, and deliberately not `run-app.ps1`, which stops every `app.main` it finds.
 
 WSL's default NAT networking has no shared loopback: this side cannot reach the app at
-all (machine B). There the harness stays on the Windows side for everything that talks
+all (the test machine). There the harness stays on the Windows side for everything that talks
 to the app — the probes go through PowerShell and Playwright runs on Windows' own Node —
 which needs the checkout on a Windows drive (`/mnt/c/...`) with `npm ci` run there.
 """
@@ -264,7 +264,7 @@ OURS = ("python", "upshot", "node", "chrome", "msedge", "uv.exe")
 def our_faults(lines: list[str]) -> list[str]:
     """The faults that are the run's own.
 
-    Any crash on the machine used to fail the run. On machine B an Intel thermal-driver
+    Any crash on the machine used to fail the run. On the test machine an Intel thermal-driver
     helper (`dptf_helper.exe`) crashed during job 008 with every spec green, and the run
     reported failure for it. Those are still printed, but only ours count.
     """

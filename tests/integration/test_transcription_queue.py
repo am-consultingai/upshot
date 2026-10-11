@@ -603,3 +603,20 @@ def test_a_file_jobs_time_left_holds_while_its_progress_stands_still(tmp_path: P
         assert store.eta_s(store.require(job.id)) == first
     store.progress(job.id, "transcribe", 0.38)
     assert store.eta_s(store.require(job.id)) == 117
+
+
+def test_a_job_whose_folder_cannot_be_made_is_failed_not_left_running(tmp_path: Path) -> None:
+    """The PR #1 review: an error before the engine started (the folder's mkdir) escaped
+    to the worker's catch-all and left the job running until the next restart."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(tmp_path / "clip.wav"))
+    blocked = store.folder(job.id)
+    blocked.parent.mkdir(parents=True, exist_ok=True)
+    blocked.write_text("a file where the job's folder goes", encoding="utf-8")
+
+    worker_for(h, store).run_once()
+
+    after = store.require(job.id)
+    assert after.state != RUNNING
+    assert after.attempts == 1 and "FileExistsError" in (after.last_error or "")
