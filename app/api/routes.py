@@ -1847,7 +1847,7 @@ def chosen_cli(body: ProviderPost | None) -> str:
 @router.put("/settings/secrets")
 def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
     """Write-only. A secret goes to the OS credential store and is never readable back."""
-    from app.config import SECRET_NAMES
+    from app.config import SECRET_NAMES, SecretStoreUnavailable
 
     svc = services_of(request)
     changed: list[str] = []
@@ -1855,7 +1855,10 @@ def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
         if name not in SECRET_NAMES:
             raise HTTPException(400, f"unknown secret {name!r}")
         if value:
-            svc.config.secrets.set(name, value)
+            try:
+                svc.config.secrets.set(name, value)
+            except SecretStoreUnavailable as exc:
+                raise HTTPException(503, str(exc)) from exc
         else:
             svc.config.secrets.delete(name)
         changed.append(name)
