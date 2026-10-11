@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from app import retention
 from app.clock import iso
@@ -97,3 +100,30 @@ def test_an_update_waits_for_a_file_job(app_home: Path) -> None:
         assert installer.jobs_busy() is False
     finally:
         services.conn.close()
+
+
+def test_a_job_retried_while_retention_runs_is_not_deleted(
+    tmp_path: Path, app_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The PR #1 review: retention chose an old failed job, the user pressed Retry, and
+    the purge went ahead on a job that was waiting to run again."""
+    h = build_harness(tmp_path, retention__audio_days=None, transcription__keep_days=30)
+    svc = h.services
+    store = svc.transcriptions
+    job = add(svc, "failed")
+    store.folder(job.id).mkdir(parents=True)
+    long_ago = iso(svc.clock.now() - timedelta(days=31))
+    store.conn.execute("UPDATE transcriptions SET finished_at=? WHERE id=?", (long_ago, job.id))
+
+    chosen = store.expired
+
+    def retried_meanwhile(days: int, now: Any) -> Any:
+        doomed = chosen(days, now)
+        store.retry(job.id)  # between retention's choice and its purge
+        return doomed
+
+    monkeypatch.setattr(store, "expired", retried_meanwhile)
+    result = retention.sweep_services(svc)
+    assert result.transcriptions_removed == 0
+    kept = store.get(job.id)
+    assert kept is not None and kept.state == "pending" and store.folder(job.id).exists()
