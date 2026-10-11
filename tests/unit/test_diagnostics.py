@@ -334,9 +334,9 @@ def test_the_outbox_is_bounded(tmp_path: Path) -> None:
 # ------------------------------------------------------------------ the interface (C5)
 
 STACK = f"""TypeError: Cannot read properties of undefined (reading 'title')
-    at SummaryView (http://127.0.0.1:8000/assets/index-AbC123.js?v={SLUG}:12:345)
-    at renderWithHooks (http://127.0.0.1:8000/assets/vendor-XyZ.js:1:999)
-    at http://127.0.0.1:8000/meeting/{SLUG}:3:7"""
+    at SummaryView (http://127.0.0.1:43217/assets/index-AbC123.js?v={SLUG}:12:345)
+    at renderWithHooks (http://127.0.0.1:43217/assets/vendor-XyZ.js:1:999)
+    at http://127.0.0.1:43217/meeting/{SLUG}:3:7"""
 
 
 def test_a_page_stack_keeps_names_bundles_and_positions_only() -> None:

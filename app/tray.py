@@ -398,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     from app.services import build
 
     config = Config.load()
-    config.set("server.port", choose_port(config.server_host, config.server_port))
+    config.use_port(choose_port(config.server_host, config.server_port))
     services = build(config)
     from app import paths
     from app.diagnostics import native

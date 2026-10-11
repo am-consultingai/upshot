@@ -165,7 +165,7 @@ def frames_from_fault_dump(text: str) -> list[dict[str, Any]]:
     return frames[-MAX_FRAMES:]
 
 
-#: ``    at name (http://127.0.0.1:8000/assets/index-AbC.js:12:345)`` or without the name.
+#: ``    at name (http://127.0.0.1:43217/assets/index-AbC.js:12:345)`` or without the name.
 _JS_FRAME = re.compile(
     r"^\s*at (?:(?P<func>.+?) \()?(?P<url>[^\s()]+):(?P<line>\d+):(?P<col>\d+)\)?\s*$"
 )
