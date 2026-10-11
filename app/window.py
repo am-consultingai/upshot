@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from pathlib import Path, PureWindowsPath
@@ -36,6 +37,7 @@ log = get(__name__)
 
 #: The page's <title> (frontend/index.html). An app-mode window is titled with it alone;
 #: a tab in an ordinary window adds " - Microsoft Edge" or similar, and is not ours.
+#: The page never changes it: Upshot's window is found by it (``_is_ours``).
 WINDOW_TITLE = "Upshot"
 #: The top-level window class of every Chromium browser.
 CHROMIUM_CLASS = "Chrome_WidgetWin_1"
@@ -106,8 +108,23 @@ def open_external(url: str) -> bool:
     except OSError as exc:
         log.warning("could not open a link in the default browser: %s", exc)
         return False
-    log.info("opened a link to %s in the default browser (%s)", parsed.hostname, browser_forward())
+    log.info("opened a link to %s in the default browser", parsed.hostname)
+    _in_background(_bring_browser_forward)
     return True
+
+
+def _in_background(work: Any) -> None:
+    """The page waits for ``/api/open`` before anything else, and needs only whether the
+    link opened: the browser is brought forward after the answer."""
+    threading.Thread(target=work, name="browser-forward", daemon=True).start()
+
+
+def _bring_browser_forward() -> None:
+    try:
+        outcome = browser_forward()
+    except Exception as exc:  # pywintypes.error: a window went while it was looked at
+        outcome = f"could not bring it forward: {exc}"
+    log.info("after the link: %s", outcome)
 
 
 #: How long a browser has to take the foreground by itself once it has a link, and how
@@ -119,8 +136,9 @@ POLL_S = 0.1
 
 def browser_forward(*, own_s: float = BROWSER_OWN_S, window_s: float = BROWSER_WINDOW_S) -> str:
     """Put the default browser in front of Upshot's window after a link was opened.
-    What happened, for the log and the tests: "came forward", "brought forward",
-    "no browser window" or "could not bring it forward: ...".
+    What happened, for the log and the tests: "the browser came forward",
+    "another window is in front", "brought the browser forward", "no <exe> window",
+    "default browser unknown" or "could not bring it forward: ...".
 
     Windows gives the foreground only to the program the user is in, which is Upshot's
     window, not this server, so a browser already running often took the link into a
@@ -138,16 +156,28 @@ def browser_forward(*, own_s: float = BROWSER_OWN_S, window_s: float = BROWSER_W
         import win32gui
         import win32process
     except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
-        return "no browser window"
+        return "default browser unknown"
+    exe = _default_browser()
+    name = PureWindowsPath(exe).name.lower() if exe else ""
+    if not name:
+        return "default browser unknown"
+
+    def elsewhere(front: int) -> str:
+        pid = win32process.GetWindowThreadProcessId(front)[1]
+        if _process_image(pid).lower() == name:
+            return "the browser came forward"
+        return "another window is in front"
+
     ours = 0
     for _ in range(max(1, round(own_s / POLL_S))):
         front = win32gui.GetForegroundWindow()
-        if not _is_ours(win32gui, front):
-            return "came forward"
-        ours = front
+        if front and not _is_ours(win32gui, front):
+            return elsewhere(front)
+        if front:
+            ours = front
         time.sleep(POLL_S)
-    exe = _default_browser()
-    name = PureWindowsPath(exe).name.lower() if exe else ""
+    if not ours:
+        return "another window is in front"
     our_pid = win32process.GetWindowThreadProcessId(ours)[1]
     target = None
     for _ in range(max(1, round(window_s / POLL_S))):
@@ -156,9 +186,10 @@ def browser_forward(*, own_s: float = BROWSER_OWN_S, window_s: float = BROWSER_W
             break
         time.sleep(POLL_S)
     if not target:
-        return "no browser window"
-    if not _is_ours(win32gui, win32gui.GetForegroundWindow()):
-        return "came forward"
+        return f"no {name} window"
+    front = win32gui.GetForegroundWindow()
+    if front != ours:
+        return elsewhere(front) if front else "another window is in front"
     try:
         if win32gui.IsIconic(target):
             win32gui.ShowWindow(target, win32con.SW_RESTORE)
@@ -167,9 +198,9 @@ def browser_forward(*, own_s: float = BROWSER_OWN_S, window_s: float = BROWSER_W
             win32gui.SetForegroundWindow(target)
         finally:
             win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
-    except Exception as exc:  # pywintypes.error: Windows refused it, or the window went
+    except Exception as exc:  # pywintypes.error: Windows refused, or the window closed
         return f"could not bring it forward: {exc}"
-    return "brought forward"
+    return "brought the browser forward"
 
 
 def _browser_window(
@@ -211,14 +242,24 @@ def _cloaked(hwnd: int) -> bool:  # pragma: no cover - Windows only
 def _process_image(pid: int) -> str:  # pragma: no cover - Windows only
     """The file name of a process's executable ("chrome.exe"), or "" when unknown."""
     import ctypes
+    from ctypes import wintypes
 
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined,unused-ignore]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.QueryFullProcessImageNameW.argtypes = (
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         return ""
     try:
         buffer = ctypes.create_unicode_buffer(1024)
-        size = ctypes.c_ulong(len(buffer))
+        size = wintypes.DWORD(len(buffer))
         if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
             return ""
         return PureWindowsPath(buffer.value).name
