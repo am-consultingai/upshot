@@ -170,6 +170,8 @@ export const en = {
   "calendar.what": "Upshot can read your events, never change them. The sign-in is kept in Windows Credential Manager on this computer, not in any file.",
   "calendar.workingHours": "Working hours",
   "calendar.workingHoursHint": "The calendar opens at the start of your day and shades the hours outside it.",
+  "calendar.inviteToSummary": "Send the invitation with the transcript",
+  "calendar.inviteToSummaryHint": "When a meeting is summarized, its title, times, invitee names, description and attachment names go to your AI with the transcript. Email addresses never do.",
   "calendar.workFrom": "From",
   "calendar.workTo": "To",
   "calendar.connect": "Connect",
