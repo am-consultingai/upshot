@@ -226,6 +226,10 @@ export default function MeetingPage() {
     (item) => item.meeting_id === id && item.state === "waiting",
   );
   const working = summarize.isPending || awaitingFirstPoll || running.length > 0;
+  const stageText =
+    current?.state === "running"
+      ? `${t(STAGE_LABEL[current.stage] ?? "meeting.stageWorking")}…`
+      : `${t("meeting.stageWaiting")}: ${t(STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking")}`;
   // How far the running stage has got, where it can say (the transcription); a summary
   // has no honest percentage and keeps its spinner and elapsed time alone.
   const queued = useMeetingJob(id);
@@ -758,6 +762,14 @@ export default function MeetingPage() {
                 />
               )}
 
+              {/*
+               * The live region is always there and filled when work starts: one that
+               * mounts together with its text is not announced by some screen readers,
+               * so the first stage went unsaid (the PR #15 review).
+               */}
+              <span role="status" className="sr-only" data-testid="stage-announce">
+                {working ? stageText : ""}
+              </span>
               {working && (
                 <p
                   className="mb-3 inline-flex items-center gap-1.5 text-xs text-secondary"
@@ -772,13 +784,7 @@ export default function MeetingPage() {
                    * read each tick out; the progress bar carries the value for anyone
                    * who asks for it.
                    */}
-                  <span role="status">
-                    {current?.state === "running"
-                      ? `${t(STAGE_LABEL[current.stage] ?? "meeting.stageWorking")}…`
-                      : `${t("meeting.stageWaiting")}: ${t(
-                          STAGE_LABEL[current?.stage ?? "summarize"] ?? "meeting.stageWorking",
-                        )}`}
-                  </span>
+                  <span>{stageText}</span>
                   {progress !== null && (
                     <span className="tabular-nums" data-testid="stage-progress">
                       {[phaseLabel(measured?.phase, t), formatPercent(progress, locale)]

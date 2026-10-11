@@ -149,6 +149,27 @@ test("cancel_then_delete", async ({ page, seedBody }) => {
   await expect(page.getByTestId("transcription-row")).toHaveCount(0);
 });
 
+test("cancelling_a_running_file_asks_first", async ({ page, seedBody }) => {
+  // As Settings, Transcription does (the PR #15 review): a waiting one has nothing to lose.
+  await seedBody({ transcriptions: [{ state: "running", source_name: "long.mp3" }] });
+  await gotoApp(page, "/transcriptions");
+  const row = page.getByTestId("transcription-row");
+  await row.getByTestId("transcription-cancel").click();
+  const dialog = page.getByTestId("confirm-dialog");
+  await expect(dialog).toContainText("long.mp3");
+  const cancels: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/cancel")) cancels.push(request.url());
+  });
+  await page.getByTestId("confirm-cancel").click();
+  await expect(dialog).toHaveCount(0);
+  expect(cancels, "kept running").toHaveLength(0);
+  // Confirmed, it is asked to stop; a running job stops at its next check.
+  await row.getByTestId("transcription-cancel").click();
+  await page.getByTestId("confirm-ok").click();
+  await expect.poll(() => cancels.length).toBe(1);
+});
+
 test("a_transcription_event_refetches_the_list_and_nothing_else", async ({ page, seedBody, seedMore }) => {
   await seedBody({ meetings: [{ id: "m-weekly", title: "Weekly", state: "RENDERED", started_at: minutesAgo(90) }] });
   await gotoApp(page, "/transcriptions");
