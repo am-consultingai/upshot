@@ -24,10 +24,10 @@ class FakeDesktop:
         self.foreground: list[int] = []
         self.refuse_foreground: set[int] = set()
         self.keys: list[tuple[int, int]] = []
-        #: The window the user is in, and what was done to share its input.
+        #: The foreground window, and each window's process and its executable.
         self.front = 0
-        self.events: list[str] = []
-        self.refuse_attach = False
+        self.pids: dict[int, int] = {}
+        self.images: dict[int, str] = {}
 
     def add(self, hwnd: int, title: str = window.WINDOW_TITLE) -> None:
         self.windows[hwnd] = {"title": title, "closing": None}
@@ -69,28 +69,29 @@ class FakeDesktop:
     def keybd_event(self, key: int, scan: int, flags: int, extra: int) -> None:
         self.keys.append((key, flags))
 
-    def GetForegroundWindow(self) -> int:
-        return self.front
-
-    # -- win32process / win32api
-    def GetWindowThreadProcessId(self, hwnd: int) -> tuple[int, int]:
-        return (hwnd * 10, hwnd * 100)  # thread, process
-
-    def AttachThreadInput(self, mine: int, theirs: int, attach: bool) -> None:
-        if self.refuse_attach:
-            raise RuntimeError("(5, 'AttachThreadInput', 'Access is denied.')")
-        self.events.append(f"{'attach' if attach else 'detach'} {mine}->{theirs}")
-
-    def GetCurrentThreadId(self) -> int:
-        return self.thread
-
-    thread = 7
-
     def SetForegroundWindow(self, hwnd: int) -> None:
         if hwnd in self.refuse_foreground or hwnd not in self.windows:
             self.windows.pop(hwnd, None)
             raise RuntimeError("(1400, 'SetForegroundWindow', 'Invalid window handle.')")
         self.foreground.append(hwnd)
+        self.front = hwnd
+
+    def GetForegroundWindow(self) -> int:
+        return self.front
+
+    def GetWindow(self, hwnd: int, which: int) -> int:
+        return 0  # no owner
+
+    def GetWindowLong(self, hwnd: int, index: int) -> int:
+        return 0  # no tool windows
+
+    def GetWindowThreadProcessId(self, hwnd: int) -> tuple[int, int]:
+        return (hwnd * 10, self.pids.get(hwnd, hwnd * 100))  # thread, process
+
+    def browser(self, hwnd: int, title: str, pid: int, image: str = "chrome.exe") -> None:
+        self.add(hwnd, title)
+        self.pids[hwnd] = pid
+        self.images[pid] = image
 
 
 @pytest.fixture
@@ -105,15 +106,18 @@ def desktop(monkeypatch: pytest.MonkeyPatch) -> FakeDesktop:
     con.SW_RESTORE = 9  # type: ignore[attr-defined]
     con.VK_MENU = 0x12  # type: ignore[attr-defined]
     con.KEYEVENTF_KEYUP = 2  # type: ignore[attr-defined]
+    con.GW_OWNER = 4  # type: ignore[attr-defined]
+    con.GWL_EXSTYLE = -20  # type: ignore[attr-defined]
+    con.WS_EX_TOOLWINDOW = 0x80  # type: ignore[attr-defined]
     api = types.ModuleType("win32api")
     api.keybd_event = fake.keybd_event  # type: ignore[attr-defined]
-    api.GetCurrentThreadId = fake.GetCurrentThreadId  # type: ignore[attr-defined]
     proc = types.ModuleType("win32process")
     proc.GetWindowThreadProcessId = fake.GetWindowThreadProcessId  # type: ignore[attr-defined]
-    proc.AttachThreadInput = fake.AttachThreadInput  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "win32process", proc)
+    monkeypatch.setattr(window, "_cloaked", lambda hwnd: False)
+    monkeypatch.setattr(window, "_process_image", lambda pid: fake.images.get(pid, ""))
     monkeypatch.setattr(
-        window, "_allow_any_foreground", lambda: fake.events.append("allow any"), raising=False
+        window, "_default_browser", lambda: r"C:\Program Files\Google\Chrome\Application\chrome.exe"
     )
     monkeypatch.setitem(sys.modules, "win32gui", gui)
     monkeypatch.setitem(sys.modules, "win32con", con)
@@ -192,68 +196,92 @@ def test_setup_opens_maximized(desktop: FakeDesktop, monkeypatch: pytest.MonkeyP
     assert "--start-maximized" not in launched[1]
 
 
-def test_a_link_is_opened_from_the_foreground_so_the_browser_can_come_forward(
-    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+MEET = "https://meet.google.com/abc-defg-hij"
+
+
+@pytest.fixture
+def clicked(desktop: FakeDesktop) -> FakeDesktop:
+    """The user clicked a link in Upshot's window (101, Chrome as Upshot's own process
+    300). Their browser is Chrome too: a window behind (202) and one further back (203)."""
+    desktop.browser(101, window.WINDOW_TITLE, pid=300)
+    desktop.browser(202, "Inbox - Google Chrome", pid=500)
+    desktop.browser(203, "Docs - Google Chrome", pid=500)
+    desktop.front = 101
+    return desktop
+
+
+def test_a_browser_left_behind_upshot_is_brought_forward(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ "Join the meeting" opened the link in a browser window behind Upshot's
-    (z8tj1hfdwz): Windows lets only the program the user is in take the foreground. The
-    server shares the input of the window the user is in, passes the right on to any
-    process, opens the link, then lets go."""
-    desktop.front = 5  # Upshot's window, whose thread is 50
-    monkeypatch.setattr(
-        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
-    )
-    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
-    assert desktop.events == [
-        "attach 7->50",
-        "allow any",
-        "open https://meet.google.com/abc-defg-hij",
-        "detach 7->50",
-    ]
-    assert desktop.keys == [], "no synthetic key presses"
+    """ "Join the meeting" opened the link in a browser window behind Upshot's, and the
+    click looked as if it did nothing (z8tj1hfdwz)."""
+    opened: list[str] = []
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+    assert window.open_external(MEET) is True
+    assert opened == [MEET]
+    assert clicked.front == 202, "the browser's frontmost window, never Upshot's own"
+    assert clicked.keys == [(0x12, 0), (0x12, 2)], "with an Alt press around it"
 
 
-def test_the_input_is_let_go_even_when_the_link_cannot_be_opened(
-    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+def test_a_browser_that_came_forward_by_itself_is_left_alone(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def browser_comes_forward(url: str) -> None:
+        clicked.front = 203
+
+    monkeypatch.setattr(os, "startfile", browser_comes_forward, raising=False)
+    assert window.open_external(MEET) is True
+    assert clicked.front == 203 and clicked.foreground == [] and clicked.keys == []
+
+
+def test_a_window_the_user_went_to_meanwhile_keeps_the_foreground(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clicked.add(404, "Notepad")
+    monkeypatch.setattr(os, "startfile", lambda url: None, raising=False)
+    sleeps = iter(range(1000))
+
+    def user_switches(seconds: float) -> None:
+        if next(sleeps) == 3:
+            clicked.front = 404
+
+    monkeypatch.setattr(window.time, "sleep", user_switches)
+    assert window.open_external(MEET) is True
+    assert clicked.front == 404 and clicked.foreground == []
+
+
+def test_only_the_default_browsers_windows_are_candidates(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Upshot's own window is Chrome as well, in a process of its own: never chosen."""
+    clicked.windows.clear()
+    clicked.browser(101, window.WINDOW_TITLE, pid=300)
+    clicked.browser(150, "Mail - Mozilla Firefox", pid=700, image="firefox.exe")
+    clicked.browser(160, "A Chrome window of Upshot's process", pid=300)
+    monkeypatch.setattr(os, "startfile", lambda url: None, raising=False)
+    assert window.browser_forward() == "no browser window"
+    assert clicked.front == 101
+
+    monkeypatch.setattr(window, "_default_browser", lambda: r"C:\Mozilla Firefox\firefox.exe")
+    assert window.browser_forward() == "brought forward"
+    assert clicked.front == 150
+
+
+def test_a_refused_bring_forward_still_counts_as_opened(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clicked.refuse_foreground.add(202)
+    monkeypatch.setattr(os, "startfile", lambda url: None, raising=False)
+    assert window.open_external(MEET) is True
+    assert clicked.keys == [(0x12, 0), (0x12, 2)], "Alt is let go even then"
+
+
+def test_a_link_that_cannot_be_opened_brings_nothing_forward(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def refuse(url: str) -> None:
         raise OSError("no association")
 
-    desktop.front = 5
     monkeypatch.setattr(os, "startfile", refuse, raising=False)
-    assert window.open_external("https://meet.google.com/abc-defg-hij") is False
-    assert desktop.events == ["attach 7->50", "allow any", "detach 7->50"]
-
-
-def test_a_link_still_opens_when_windows_refuses_to_share_the_input(
-    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    desktop.front = 5
-    desktop.refuse_attach = True
-    monkeypatch.setattr(
-        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
-    )
-    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
-    assert desktop.events == ["allow any", "open https://meet.google.com/abc-defg-hij"]
-
-
-def test_nothing_to_attach_to_when_no_window_is_in_front(
-    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
-    )
-    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
-    assert desktop.events == ["allow any", "open https://meet.google.com/abc-defg-hij"]
-
-
-def test_no_attachment_when_the_window_in_front_is_on_this_thread(
-    desktop: FakeDesktop, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    desktop.front = 5
-    desktop.thread = 50  # GetWindowThreadProcessId(5) is thread 50
-    monkeypatch.setattr(
-        os, "startfile", lambda url: desktop.events.append(f"open {url}"), raising=False
-    )
-    assert window.open_external("https://meet.google.com/abc-defg-hij") is True
-    assert desktop.events == ["allow any", "open https://meet.google.com/abc-defg-hij"]
+    assert window.open_external(MEET) is False
+    assert clicked.front == 101 and clicked.keys == []
