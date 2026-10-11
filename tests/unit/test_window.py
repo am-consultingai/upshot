@@ -28,6 +28,7 @@ class FakeDesktop:
         self.front = 0
         self.pids: dict[int, int] = {}
         self.images: dict[int, str] = {}
+        self.sleeps: list[float] = []
 
     def add(self, hwnd: int, title: str = window.WINDOW_TITLE) -> None:
         self.windows[hwnd] = {"title": title, "closing": None}
@@ -124,7 +125,8 @@ def desktop(monkeypatch: pytest.MonkeyPatch) -> FakeDesktop:
     monkeypatch.setitem(sys.modules, "win32api", api)
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(window, "_closing", set())
-    monkeypatch.setattr(window.time, "sleep", lambda s: None)
+    monkeypatch.setattr(window.time, "sleep", lambda s: fake.sleeps.append(s))
+    monkeypatch.setattr(window, "_in_background", lambda work: work())
     return fake
 
 
@@ -258,13 +260,77 @@ def test_only_the_default_browsers_windows_are_candidates(
     clicked.browser(101, window.WINDOW_TITLE, pid=300)
     clicked.browser(150, "Mail - Mozilla Firefox", pid=700, image="firefox.exe")
     clicked.browser(160, "A Chrome window of Upshot's process", pid=300)
-    monkeypatch.setattr(os, "startfile", lambda url: None, raising=False)
-    assert window.browser_forward() == "no browser window"
+    assert window.browser_forward() == "no chrome.exe window"
     assert clicked.front == 101
 
     monkeypatch.setattr(window, "_default_browser", lambda: r"C:\Mozilla Firefox\firefox.exe")
-    assert window.browser_forward() == "brought forward"
+    assert window.browser_forward() == "brought the browser forward"
     assert clicked.front == 150
+
+
+def test_an_unknown_default_browser_is_not_waited_for(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(window, "_default_browser", lambda: None)
+    assert window.browser_forward() == "default browser unknown"
+    assert clicked.sleeps == [] and clicked.front == 101
+
+
+def test_a_browser_that_came_forward_by_itself_is_told_from_another_window(
+    clicked: FakeDesktop,
+) -> None:
+    clicked.front = 203
+    assert window.browser_forward() == "the browser came forward"
+    clicked.add(404, "Notepad")
+    clicked.front = 404
+    assert window.browser_forward() == "another window is in front"
+
+
+def test_no_window_in_front_for_a_moment_is_not_taken_for_the_browser(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows reports no foreground window while one hands over to another."""
+    fronts = iter([0, 0, 101])
+    real = FakeDesktop.GetForegroundWindow
+
+    def flicker() -> int:
+        return next(fronts, None) or real(clicked)
+
+    monkeypatch.setattr(sys.modules["win32gui"], "GetForegroundWindow", flicker)
+    assert window.browser_forward() == "brought the browser forward"
+    assert clicked.front == 202
+
+
+def test_a_browser_starting_cold_is_waited_for(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clicked.windows.pop(202)
+    clicked.windows.pop(203)
+
+    def window_appears(seconds: float) -> None:
+        clicked.sleeps.append(seconds)
+        if len(clicked.sleeps) == 15:  # half a second after the first second
+            clicked.browser(250, "New Tab - Google Chrome", pid=900)
+
+    monkeypatch.setattr(window.time, "sleep", window_appears)
+    assert window.browser_forward() == "brought the browser forward"
+    assert clicked.front == 250
+
+
+def test_an_error_while_looking_still_counts_as_opened(
+    clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A window that goes while it is looked at raises pywintypes.error, not OSError: the
+    link opened all the same, and the page must not open it a second time."""
+
+    def gone(hwnd: int) -> str:
+        raise RuntimeError("(1400, 'GetClassName', 'Invalid window handle.')")
+
+    monkeypatch.setattr(sys.modules["win32gui"], "GetClassName", gone)
+    monkeypatch.setattr(os, "startfile", lambda url: None, raising=False)
+    with caplog.at_level("INFO", logger=window.log.name):
+        assert window.open_external(MEET) is True
+    assert "could not bring it forward" in caplog.text
 
 
 def test_a_refused_bring_forward_still_counts_as_opened(
