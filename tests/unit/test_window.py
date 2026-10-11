@@ -290,14 +290,19 @@ def test_no_window_in_front_for_a_moment_is_not_taken_for_the_browser(
     clicked: FakeDesktop, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Windows reports no foreground window while one hands over to another."""
-    fronts = iter([0, 0, 101])
+    clicked.front = 0
+    seen: list[int] = []
     real = FakeDesktop.GetForegroundWindow
 
     def flicker() -> int:
-        return next(fronts, None) or real(clicked)
+        if len(seen) == 3:
+            clicked.front = 101  # the hand-over is done: Upshot's window again
+        seen.append(real(clicked))
+        return seen[-1]
 
     monkeypatch.setattr(sys.modules["win32gui"], "GetForegroundWindow", flicker)
     assert window.browser_forward() == "brought the browser forward"
+    assert seen[:3] == [0, 0, 0], "it saw no window in front, and kept looking"
     assert clicked.front == 202
 
 
