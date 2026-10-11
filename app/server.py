@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any
 
+from app.config import DEFAULT_PORT
 from app.log import get
 
 log = get(__name__)
@@ -14,9 +15,8 @@ log = get(__name__)
 # cannot keep the process alive.
 GRACEFUL_SHUTDOWN_S = 3
 
-#: Tried in order when the configured port is taken: the range the developer launcher
-#: has always fallen back to.
-FALLBACK_PORTS = range(8010, 8041)
+#: Tried in order when the configured port is taken: the 30 ports after the default.
+FALLBACK_PORTS = range(DEFAULT_PORT + 1, DEFAULT_PORT + 31)
 
 
 def port_is_free(host: str, port: int) -> bool:
@@ -54,7 +54,7 @@ def choose_port(host: str, preferred: int) -> int:
 
 
 class LocalServer:
-    def __init__(self, app: Any, *, host: str = "127.0.0.1", port: int = 8000) -> None:
+    def __init__(self, app: Any, *, host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> None:
         import uvicorn
 
         if host not in ("127.0.0.1", "localhost", "::1"):
