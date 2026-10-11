@@ -26,7 +26,8 @@ installer. A release:
 
 ``--set-rollout`` and ``--halt`` (rollout 0) re-sign and publish the current manifest only.
 ``--dry-run`` does the checks and writes a signed manifest to ``--out`` without tagging,
-releasing, committing or pushing: for the test machine test (B7), which serves it locally,
+releasing, committing or pushing: for the update test (B7)
+on the test machine, which serves it locally,
 with ``--download-base`` naming that server instead of GitHub Releases.
 Nothing secret is printed.
 """

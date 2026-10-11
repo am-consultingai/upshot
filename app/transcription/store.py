@@ -341,20 +341,23 @@ class TranscriptionStore:
         return self._finished(transcription_id)
 
     def retry(self, transcription_id: str) -> Transcription:
-        """A failed or cancelled job runs again, at the back of the queue."""
-        job = self.require(transcription_id)
-        if job.state not in (FAILED, CANCELLED):
-            raise ValueError(
-                f"{transcription_id} is {job.state}; only a failed or cancelled job is retried"
+        """A failed or cancelled job runs again, at the back of the queue. Under the lock
+        retention's ``purge_finished`` takes: a retry never answers "waiting" for a job
+        that is then deleted (the PR #20 review)."""
+        with self._lock:
+            job = self.require(transcription_id)
+            if job.state not in (FAILED, CANCELLED):
+                raise ValueError(
+                    f"{transcription_id} is {job.state}; only a failed or cancelled job is retried"
+                )
+            now = iso(self.clock.now())
+            self.conn.execute(
+                "UPDATE transcriptions SET state='pending', attempts=0, last_error=NULL, "
+                "not_before=NULL, phase=NULL, progress=0, started_at=NULL, finished_at=NULL, "
+                "queued_at=?, updated_at=? WHERE id=?",
+                (now, now, transcription_id),
             )
-        now = iso(self.clock.now())
-        self.conn.execute(
-            "UPDATE transcriptions SET state='pending', attempts=0, last_error=NULL, "
-            "not_before=NULL, phase=NULL, progress=0, started_at=NULL, finished_at=NULL, "
-            "queued_at=?, updated_at=? WHERE id=?",
-            (now, now, transcription_id),
-        )
-        updated = self.require(transcription_id)
+            updated = self.require(transcription_id)
         self._publish(updated)
         return updated
 
@@ -369,13 +372,16 @@ class TranscriptionStore:
             self.purge(transcription_id)
             return True
 
-    def purge_finished(self, transcription_id: str) -> bool:
-        """Retention's delete: only a job still done, failed or cancelled. One retried
-        after retention chose it is waiting to run again, and is kept (the PR #1 review).
-        Under the lock ``claim`` takes, so it cannot start half-deleted."""
+    def purge_finished(self, transcription_id: str, *, before: datetime | None = None) -> bool:
+        """Retention's delete: only a job still done, failed or cancelled, and finished
+        before ``before``. One retried after retention chose it is waiting to run again,
+        or has just finished again, and is kept (the PR #1 and #20 reviews). Under the
+        lock ``claim`` and ``retry`` take, so neither can start on a half-deleted job."""
         with self._lock:
             job = self.get(transcription_id)
             if job is None or job.state not in (DONE, FAILED, CANCELLED):
+                return False
+            if before is not None and parse_iso(job.finished_at or job.updated_at) >= before:
                 return False
             self.purge(transcription_id)
             return True

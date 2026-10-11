@@ -734,8 +734,10 @@ class Detector:
                     ),
                     recording=self.recorder.committed,
                 )
-            for announced in (event,) if event is not None else choices:
-                self.announced.add(announced.key)  # the call is the announcement
+            # The call is the announcement, but only one that was offered: a meeting
+            # whose offer was held back still gets its start-time reminder.
+            for announced in ((event,) if event is not None else choices) if offered else ():
+                self.announced.add(announced.key)
             if offered and self.notifier is not None:
                 self.notifier.call_detected(
                     wake.process,
