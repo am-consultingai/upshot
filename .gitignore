@@ -46,7 +46,7 @@ app/gcal/google_oauth_client.json
 client_secret*.json
 google_oauth_client.json
 
-# The developer's own machines and accounts: the two-machine agent loop, the machine B
+# The developer's own machines and accounts: the two-machine agent loop, the test machine
 # scenario runner, Claude Code's project permissions and the ClickUp workspace. They name
 # a local network, user names, key files and account ids, and none of the app needs
 # them. Kept on the developer's disk only; removed from this public repository's history.

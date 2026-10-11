@@ -289,7 +289,7 @@ def run_link(link: str, home: Any = None) -> int | None:
         return 2
     # Which button it was, in words a reader of the log can match to the screen: "Join
     # and record" and "Start recording" both start a recording, and only the join tells
-    # them apart (machine B, D78).
+    # them apart (the test machine, D78).
     log.info("notification button: %s", actions.describe(parsed))
     home = home or paths.app_home()
     port = recorded_port(home)
@@ -362,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
         # No logon task here: autostart is the installer's Startup-folder shortcut, which
         # Windows' Startup apps list can switch off; a task would ignore that. Creating an
         # ONLOGON task also needs admin, so on a standard account it failed and took the
-        # whole first run down with it (machine B).
+        # whole first run down with it (the test machine).
         # The installer passes --setup-again: setup runs after every install (D69).
         # --language=<code>: the language the installer ran in, for a first install.
         language = next(

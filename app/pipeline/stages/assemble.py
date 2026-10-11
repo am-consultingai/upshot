@@ -140,7 +140,7 @@ def run(ctx: StageContext) -> None:
         ],
     )
     # The recording's own length stands: a meeting with no speech, or a quiet ending, is
-    # not shorter than what was recorded (machine B, job 013: a 13 s meeting stored as 0).
+    # not shorter than what was recorded (the test machine, job 013: a 13 s meeting stored as 0).
     spoken = round(max((segment.end for segment in numbered), default=0.0))
     duration_s = max(ctx.refresh().duration_s or 0, spoken)
     ctx.dao.update_meeting(ctx.meeting.id, duration_s=duration_s)

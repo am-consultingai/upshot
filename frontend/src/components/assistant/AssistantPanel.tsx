@@ -104,7 +104,7 @@ export default function AssistantPanel({ onClose }: { onClose: () => void }) {
       aria-label={t("assistant.title")}
       // `overflow-clip`, not `overflow-hidden`: hidden still lets a script scroll the panel
       // itself, and it did — the header slid out of reach with blank space below and no
-      // way back (machine B, 2026-09-29). Clipped, only the log inside it ever scrolls.
+      // way back (the test machine, 2026-09-29). Clipped, only the log inside it ever scrolls.
       className="fixed bottom-24 start-5 z-40 flex h-[min(640px,calc(100vh-8rem))] w-[min(420px,calc(100vw-2.5rem))] flex-col overflow-clip rounded-2xl bg-surface-1 shadow-2xl ring-1 ring-line"
     >
       <header className="flex items-center gap-1 border-b border-line-subtle px-3 py-2">

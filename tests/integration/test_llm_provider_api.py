@@ -343,7 +343,7 @@ def test_claudes_code_goes_to_the_waiting_signin(api, monkeypatch: pytest.Monkey
         "/api/llm/signin/code", json={"provider": "claude-subscription", "code": "abc#def"}
     )
     assert none.status_code == 409, "no sign-in is waiting for a code"
-    # Claude Code can finish by itself before the code is pasted (machine B, 2026-09-28):
+    # Claude Code can finish by itself before the code is pasted (the test machine, 2026-09-28):
     # a late code is "already signed in", never a failure over a sign-in that worked.
     signed["in"] = True
     late = client.post(
@@ -364,3 +364,23 @@ def test_claudes_code_goes_to_the_waiting_signin(api, monkeypatch: pytest.Monkey
         assert empty.status_code == 400
     finally:
         routes._LOGINS.pop("claude-subscription", None)
+
+
+def test_a_key_with_nowhere_to_be_kept_is_refused_in_words(
+    api: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Where there is no credential store (WSL), saving a key raised out of the route
+    as a bare 500 (known-issues #13). It says why, and what to do instead."""
+    import keyring
+    import keyring.errors
+
+    from app.config import KeyringSecrets
+
+    def no_backend(*_: Any) -> None:
+        raise keyring.errors.NoKeyringError("No recommended backend was available.")
+
+    monkeypatch.setattr(keyring, "set_password", no_backend)
+    monkeypatch.setattr(api.services.config, "_secrets", KeyringSecrets())
+    response = api.client().put("/api/settings/secrets", json={"values": {"gemini": "abc"}})
+    assert response.status_code == 503
+    assert "no credential store" in response.json()["detail"]

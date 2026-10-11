@@ -1,4 +1,4 @@
-"""Deleting a meeting stops whatever runs for it (machine B, 2026-09-30).
+"""Deleting a meeting stops whatever runs for it (the test machine, 2026-09-30).
 
 The report: a meeting ended, its transcription started, and Delete was refused. Now the
 meeting leaves every list at once, its waiting jobs are dropped, a running stage stops at
@@ -132,7 +132,7 @@ def test_a_deletion_the_app_closed_on_is_finished_at_the_next_start(
 
 
 def test_deleting_takes_back_the_meetings_notifications(tmp_path: Path, app_home: Path) -> None:
-    """Machine B: "Meeting ended - Transcribing..." stayed on screen after the delete."""
+    """The test machine: "Meeting ended - Transcribing..." stayed on screen after the delete."""
     api = build_harness(tmp_path)
     meeting = make_meeting(api)
     api.services.notifier.recording_ended(meeting.id, 1)

@@ -1,4 +1,4 @@
-"""scripts/windows/e2e.py under WSL's default NAT networking (found on machine B).
+"""scripts/windows/e2e.py under WSL's default NAT networking (found on the test machine).
 
 Only the pure parts run here; the Windows half is exercised by the harness itself.
 """

@@ -1,7 +1,7 @@
 """The one "should Upshot offer to record?" state, shared by the banner and the toasts (D76).
 
 Before this the offer lived in three places that never heard of each other: a toast, a
-banner built from a one-off server event, and the recorder. On machine B (2026-09-28) the
+banner built from a one-off server event, and the recorder. On the test machine (2026-09-28) the
 banner kept saying "Test is under way and is not being recorded" while the meeting was
 being recorded, and after it had ended. Now the detector and the calendar reminders
 *offer*; the page shows whatever is on offer (``/api/status``); and the offer is withdrawn
@@ -51,6 +51,9 @@ class Prompt:
     #: it saw something. None and empty for a calendar offer, which is the clock's.
     score: int | None = None
     evidence: tuple[tuple[str, str], ...] = ()
+    #: The detector's clues point at the calendar meeting named here (``Assignment.backed``),
+    #: not only that it is the one on. Decides whether it may displace another app's offer.
+    backed: bool = False
 
     @property
     def key(self) -> str:
@@ -84,6 +87,28 @@ class Prompt:
         }
 
 
+def _settled_elsewhere(current: Prompt | None, new: Prompt) -> bool:
+    """A detected call already named as a calendar meeting stays the offer while its app
+    holds the microphone (``tick`` withdraws it once it lets go). Another app taking the
+    microphone meanwhile, OBS beside a Meet call on the test machine (z8tj1hfdwy), is not a
+    second call to offer: it replaced the settled offer with a weaker one. Kept unless the
+    new one names a different meeting *and* its clues point at it (the app fits its link,
+    or a window names it): the next meeting joined early in Zoom is offered, but OBS is
+    not taken for a meeting with no link (a focus block) that happens to be on."""
+    return (
+        current is not None
+        and current.kind == "detected"
+        and current.calendar_id is not None
+        and new.kind == "detected"
+        and new.process != current.process
+        and (
+            not new.calendar_id
+            or not new.backed
+            or new.names(current.calendar_id, current.event_id)
+        )
+    )
+
+
 class Prompts:
     def __init__(self, events: Any = None) -> None:
         self.events = events
@@ -97,7 +122,7 @@ class Prompts:
         if recording or prompt.key in self.dismissed:
             return False
         with self._lock:
-            if self.current == prompt:
+            if self.current == prompt or _settled_elsewhere(self.current, prompt):
                 return False
             self.current = prompt
         log.info("offering to record %r (%s)", prompt.title, prompt.kind)

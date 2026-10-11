@@ -15,7 +15,7 @@ Exactly one meeting fitting best is an assignment; so is, among meetings the clu
 not tell apart, the one that began last (back to back, the next meeting). Meetings booked
 at the same time that nothing tells apart are not: the user is offered them and picks.
 
-On machine B (2026-10-06) two meetings were on at 14:00 and the one that happened to
+On the test machine (2026-10-06) two meetings were on at 14:00 and the one that happened to
 sort last was offered, though Chrome's window named the other.
 """
 
@@ -24,7 +24,7 @@ from __future__ import annotations
 import ntpath
 import re
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -62,6 +62,10 @@ class Assignment:
     #: Every calendar meeting it could be, best first.
     candidates: tuple[Any, ...] = field(default_factory=tuple)
     reason: str = ""
+    #: The window or the app points at ``event`` itself (a clue score above 0), rather
+    #: than it being the only one on or the one that began last. Only such an assignment
+    #: may displace a call already offered as another meeting (z8tj1hfdwy).
+    backed: bool = False
 
 
 def exe(process: str | None) -> str:
@@ -123,6 +127,13 @@ def assign(
     events: Iterable[Any], *, process: str | None = None, windows: Sequence[str] = ()
 ) -> Assignment:
     """The calendar meeting a call by ``process`` is, among ``events`` (those on now)."""
+    found = _assign(events, process=process, windows=windows)
+    if found.event is not None and clues(found.event, process, windows) > 0:
+        return replace(found, backed=True)
+    return found
+
+
+def _assign(events: Iterable[Any], *, process: str | None, windows: Sequence[str]) -> Assignment:
     live = list(events)
     if not live:
         return Assignment(None, False, (), "no calendar meeting is on")

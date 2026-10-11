@@ -230,7 +230,7 @@ test("the_speech_model_is_never_asked_for", async ({ page }) => {
 });
 
 test("a_slow_device_list_is_not_reported_as_no_microphone", async ({ page }) => {
-  // Machine B, job 012: the list took seconds, and the screen said "No microphone found"
+  // The test machine, job 012: the list took seconds, and the screen said "No microphone found"
   // the whole time, on a laptop with a working microphone.
   let release: () => void = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));

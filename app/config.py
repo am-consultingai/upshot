@@ -236,7 +236,7 @@ DEFAULTS: dict[str, Any] = {
         "fallback_provider": "",
     },
     # Test-only hooks behind the launcher key: calendar events added straight into the
-    # cache, for machine B's scenario runs (D76, scripts/windows/scenarios). Off, and never
+    # cache, for the test machine's scenario runs (D76, scripts/windows/scenarios). Off, and never
     # turned on by anything but a test machine's own app_config.json.
     "testing": {"hooks": False},
     "delivery": {
@@ -643,15 +643,27 @@ class KeyringSecrets(SecretStore):
         return str(value) if value is not None else None
 
     def set(self, key: str, value: str) -> None:
+        """Unlike reading, a write that cannot be kept is the caller's to report: where
+        there is no credential store (WSL, a bare Linux), say so in words."""
         import keyring
 
-        keyring.set_password(SERVICE_NAME, key, value)
+        try:
+            keyring.set_password(SERVICE_NAME, key, value)
+        except Exception as exc:
+            raise SecretStoreUnavailable(
+                "There is no credential store to keep this in on this machine "
+                f"({type(exc).__name__}). Set it as an environment variable instead."
+            ) from exc
 
     def delete(self, key: str) -> None:
         import keyring
 
         with contextlib.suppress(Exception):
             keyring.delete_password(SERVICE_NAME, key)
+
+
+class SecretStoreUnavailable(RuntimeError):
+    """A secret could not be written: no credential store on this machine."""
 
 
 class FakeKeyring(SecretStore):

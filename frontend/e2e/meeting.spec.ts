@@ -194,7 +194,7 @@ test("settings_shows_both_meters", async ({ page }) => {
 });
 
 test("two_tabs_share_the_meters_instead_of_fighting_for_them", async ({ page, context }) => {
-  // Job 013 on machine B: three pages on the setup screen reopened the devices about
+  // Job 013 on the test machine: three pages on the setup screen reopened the devices about
   // twenty times a second, and neither meter ever showed a level.
   const second = await context.newPage();
   await gotoSettings(page, "audio");
@@ -253,6 +253,8 @@ test("a_running_stage_shows_a_spinner_and_says_what_it_is_doing", async ({ page,
   await gotoApp(page, "/m/e2e-busy");
   const status = page.getByTestId("stage-running");
   await expect(status).toHaveText(/Summarizing/);
+  // Announced from a live region that was there before it, so the first stage is said.
+  await expect(page.getByRole("status").filter({ hasText: "Summarizing" })).toHaveCount(1);
   await expect(status.getByTestId("spinner")).toBeVisible();
 });
 

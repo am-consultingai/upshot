@@ -18,7 +18,7 @@ class RecorderVad:
 
     Not the pre-roll ring: that is emptied at commit and stays empty while a recording
     runs, so "nobody is speaking" was all it could say about a call being recorded, and
-    every recording ended five minutes in as silent (machine B, 2026-10-06).
+    every recording ended five minutes in as silent (the test machine, 2026-10-06).
     """
 
     def __init__(

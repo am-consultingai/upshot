@@ -43,7 +43,7 @@ def test_assemble_writes_both_artifacts(tmp_path: Path) -> None:
 def test_a_quiet_ending_keeps_the_recorded_length(tmp_path: Path) -> None:
     """The last words are not the end of the recording.
 
-    Machine B, job 013: a 13 s meeting with nobody speaking was stored as 0 s once
+    The test machine, job 013: a 13 s meeting with nobody speaking was stored as 0 s once
     assembled, because the length was taken from the last transcribed segment.
     """
     h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
