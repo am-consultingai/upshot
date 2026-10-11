@@ -76,3 +76,24 @@ for (const language of LANGUAGES) {
     await reset(request);
   });
 }
+
+test("on_a_short_screen_a_step_without_a_lead_closes_its_slot", async ({ page, seedBody, request }) => {
+  // The slot became a minimum height for German; the audio step has no lead, and its
+  // slot must still close up on a short screen, where fitting unscrolled comes first
+  // (the PR #20 review).
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await seedBody({ setup_done: false });
+  await speak(request, "en");
+  await gotoApp(page, "/welcome");
+  await page.getByTestId("setup-next").click();
+  await page.getByTestId("setup-skip").click(); // calendar
+  await page.getByTestId("setup-skip").click(); // services
+  await expect(page.getByTestId("setup-step-key")).toBeVisible();
+  await page.getByTestId("setup-skip").click();
+  if (await page.getByTestId("setup-step-reports").isVisible()) await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-audio")).toBeVisible();
+  const lead = page.getByTestId("setup-lead");
+  await expect(lead).toBeEmpty();
+  expect((await lead.boundingBox())?.height ?? 0).toBe(0);
+  await reset(request);
+});

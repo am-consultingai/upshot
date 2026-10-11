@@ -34,6 +34,8 @@ export function isExternal(href: string, origin = window.location.origin): boole
  */
 export function interceptExternalLinks(root: Document = document): () => void {
   const onClick = (event: MouseEvent) => {
+    // In the capture phase a component's own handler has not run yet, so this sees only
+    // a click something earlier on the document already took.
     if (event.defaultPrevented || event.button !== 0) return;
     const anchor = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
     if (!anchor || !isExternal(anchor.href)) return;

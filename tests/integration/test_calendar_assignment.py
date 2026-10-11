@@ -458,3 +458,29 @@ def test_one_meeting_whose_link_is_for_another_app_is_not_offered_as_a_choice(
     assert offer is not None and offer.calendar_id is None
     assert offer.candidates == ()
     assert all("Which meeting" not in t.body for t in h.notifier.shown)
+
+
+def test_the_next_meeting_joined_early_in_another_app_is_still_offered(tmp_path: Path) -> None:
+    """The settled offer is kept only against an app that names no meeting or the same
+    one (the PR #20 review): Zoom for the 11:00 joined at 10:58, while Chrome still holds
+    the 10:00 Meet call, is that meeting, and is offered."""
+    from app.detect.sources import MicHolder
+
+    pricing = event("pricing", "Pricing", start=T0 + timedelta(minutes=60), url=ZOOM)
+    h = detector_with(tmp_path, DESIGN, pricing)
+    meet = "Meet - Design review: onboarding and settings - Google Chrome"
+    a_call(h, "chrome.exe", meet)
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "design"
+
+    at(h, T0 + timedelta(minutes=58, seconds=30))
+    h.mic.holders = [MicHolder(process="chrome.exe"), MicHolder(process="Zoom.exe")]
+    h.titles.window_titles = [meet, "Zoom Meeting"]
+    h.seconds(12)
+    h.mic.holders = [MicHolder(process="Zoom.exe")]
+    h.titles.window_titles = ["Zoom Meeting"]
+    h.seconds(120)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "pricing"
+    assert any(t.title == "Meeting started: Pricing" for t in h.notifier.shown)

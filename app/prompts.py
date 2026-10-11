@@ -88,13 +88,16 @@ def _settled_elsewhere(current: Prompt | None, new: Prompt) -> bool:
     """A detected call already named as a calendar meeting stays the offer while its app
     holds the microphone (``tick`` withdraws it once it lets go). Another app taking the
     microphone meanwhile, OBS beside a Meet call on the test machine (z8tj1hfdwy), is not a
-    second call to offer: it replaced the settled offer with a weaker one."""
+    second call to offer: it replaced the settled offer with a weaker one. Only when the
+    new one names no meeting, or the same one: another app's call that the calendar names
+    as a different meeting (the next one, joined early) is offered."""
     return (
         current is not None
         and current.kind == "detected"
         and current.calendar_id is not None
         and new.kind == "detected"
         and new.process != current.process
+        and (not new.calendar_id or new.names(current.calendar_id, current.event_id))
     )
 
 
