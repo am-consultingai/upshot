@@ -51,6 +51,9 @@ class Prompt:
     #: it saw something. None and empty for a calendar offer, which is the clock's.
     score: int | None = None
     evidence: tuple[tuple[str, str], ...] = ()
+    #: The detector's clues point at the calendar meeting named here (``Assignment.backed``),
+    #: not only that it is the one on. Decides whether it may displace another app's offer.
+    backed: bool = False
 
     @property
     def key(self) -> str:
@@ -88,16 +91,21 @@ def _settled_elsewhere(current: Prompt | None, new: Prompt) -> bool:
     """A detected call already named as a calendar meeting stays the offer while its app
     holds the microphone (``tick`` withdraws it once it lets go). Another app taking the
     microphone meanwhile, OBS beside a Meet call on the test machine (z8tj1hfdwy), is not a
-    second call to offer: it replaced the settled offer with a weaker one. Only when the
-    new one names no meeting, or the same one: another app's call that the calendar names
-    as a different meeting (the next one, joined early) is offered."""
+    second call to offer: it replaced the settled offer with a weaker one. Kept unless the
+    new one names a different meeting *and* its clues point at it (the app fits its link,
+    or a window names it): the next meeting joined early in Zoom is offered, but OBS is
+    not taken for a meeting with no link (a focus block) that happens to be on."""
     return (
         current is not None
         and current.kind == "detected"
         and current.calendar_id is not None
         and new.kind == "detected"
         and new.process != current.process
-        and (not new.calendar_id or new.names(current.calendar_id, current.event_id))
+        and (
+            not new.calendar_id
+            or not new.backed
+            or new.names(current.calendar_id, current.event_id)
+        )
     )
 
 

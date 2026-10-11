@@ -484,3 +484,26 @@ def test_the_next_meeting_joined_early_in_another_app_is_still_offered(tmp_path:
     offer = h.detector.prompts.current
     assert offer is not None and offer.event_id == "pricing"
     assert any(t.title == "Meeting started: Pricing" for t in h.notifier.shown)
+
+
+def test_obs_is_not_taken_for_a_meeting_with_no_link_that_is_on(tmp_path: Path) -> None:
+    """The second review of PR #20: with a Zoom call offered over a "Focus time" block
+    with no link, OBS took the microphone, and OBS fits that block as well as anything (no
+    link to contradict it). It replaced the call's offer. Only clues may do that."""
+    from app.detect.sources import MicHolder
+
+    call = event("call", "Customer call", url=ZOOM)
+    focus = event("focus", "Focus time")  # booked over the call, no link
+    h = detector_with(tmp_path, call, focus)
+    a_call(h, "Zoom.exe")
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "call"
+
+    at(h, T0 + timedelta(minutes=15))
+    h.mic.holders = [MicHolder(process="Zoom.exe"), MicHolder(process="obs64.exe")]
+    h.titles.window_titles = ["Zoom Meeting", "jazz - YouTube - Google Chrome"]
+    h.seconds(12)
+    offer = h.detector.prompts.current
+    assert offer is not None and offer.event_id == "call" and offer.process == "Zoom.exe"
+    assert not any(t.title == "Meeting started: Focus time" for t in h.notifier.shown)

@@ -30,3 +30,22 @@ test("a_summary_cannot_paint_over_the_apps_controls", async ({ page, seed }) => 
   );
   expect(beside, "the summary's box paints outside the summary").toBe(false);
 });
+
+test("a_floated_box_stays_inside_the_summary", async ({ page, seed }) => {
+  // Clipping without a formatting context let a float hang out of the summary and be cut
+  // off at its edge (the second review of PR #20).
+  await seed([
+    {
+      id: "m-float",
+      title: "Float",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      summary_html: '<div style="float:right;width:120px;height:300px">aside</div><p>Short.</p>',
+      turns: [{ speaker: "THEM", at_ms: 1000, text: "Hello." }],
+    },
+  ]);
+  await gotoApp(page, "/m/m-float");
+  const summary = page.getByTestId("summary-html");
+  await expect(summary.locator("div", { hasText: "aside" })).toHaveCSS("float", "right");
+  expect((await summary.boundingBox())!.height).toBeGreaterThanOrEqual(300);
+});

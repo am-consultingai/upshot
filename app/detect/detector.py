@@ -731,6 +731,7 @@ class Detector:
                         ),
                         score=wake.peak_score,
                         evidence=tuple((item.code, item.detail) for item in wake.evidence),
+                        backed=found.backed,
                     ),
                     recording=self.recorder.committed,
                 )

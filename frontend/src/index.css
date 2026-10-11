@@ -217,8 +217,10 @@ kbd {
    * transforms, which could otherwise slide a box over the app's own controls
    * (z8tj1hftg0). Clipped, not contained: the margin leaves room for a focus ring
    * (2px wide, 2px out) on a link at the summary's edge, and the isolation keeps a
-   * z-index inside from stacking against the app's own.
+   * z-index inside from stacking against the app's own. flow-root keeps a floated box
+   * and the margins inside it, as contain: paint did; clip alone would cut a float off.
    */
+  display: flow-root;
   overflow: clip;
   overflow-clip-margin: 6px;
   isolation: isolate;
