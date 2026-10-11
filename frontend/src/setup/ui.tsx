@@ -16,8 +16,10 @@ export const FOOTER =
  * every part in the same box from step to step: the title on one line, then a lead
  * slot of fixed height whether the step has a lead or not, so the step's main content
  * (the cards, the panels, the choices) always starts on the same line and only what
- * is inside it changes. Keep a lead to two lines; the slot does not grow. On a short
- * screen an empty slot closes up: there, fitting unscrolled comes first.
+ * is inside it changes. Keep a lead to two lines: the slot is two lines tall, and grows
+ * only for a longer one (German runs to three) rather than letting the step's content
+ * cover its last line. On a short screen an empty slot closes up: there, fitting
+ * unscrolled comes first.
  */
 export function StepFrame({
   id,
@@ -45,7 +47,7 @@ export function StepFrame({
         {icon}
         {t(title)}
       </h1>
-      <div data-testid="setup-lead" className="mx-auto mb-4 h-12 max-w-2xl [@media(max-height:720px)]:mb-2 [@media(max-height:639px)]:empty:h-0 text-center text-base text-secondary">
+      <div data-testid="setup-lead" className="mx-auto mb-4 min-h-12 max-w-2xl [@media(max-height:720px)]:mb-2 [@media(max-height:639px)]:empty:h-0 text-center text-base text-secondary">
         {lead}
       </div>
       <div data-testid="setup-content">{children}</div>

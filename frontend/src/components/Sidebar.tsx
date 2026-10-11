@@ -297,12 +297,13 @@ export default function Sidebar() {
         data-testid={recording ? "stop-recording" : "start-recording"}
         aria-busy={start.isPending || stop.isPending}
         onClick={() => (recording ? stop.mutate() : start.mutate())}
-        className={`mx-2.5 mb-2 flex h-control items-center gap-2.5 rounded-md px-2.5 text-sm font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] ${
+        className={`mx-2.5 mb-2 flex min-h-[var(--height-control)] items-center gap-2.5 rounded-md px-2.5 py-1.5 text-start text-sm leading-tight font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] ${
           recording ? "bg-danger text-on-solid hover:brightness-95" : "bg-raised hover:bg-a-200 active:bg-a-300"
         }`}
       >
         <span className={`size-2.5 shrink-0 ${recording ? "rounded-[2px] bg-on-solid" : "rounded-full bg-danger"}`} />
-        <span className="truncate">{recording ? t("timeline.stop") : t("timeline.start")}</span>
+        {/* Wraps rather than cuts: "Besprechung aufnehmen" is wider than the rail. */}
+        <span className="min-w-0">{recording ? t("timeline.stop") : t("timeline.start")}</span>
         <kbd className="ms-auto shrink-0 rounded-2xs px-1 font-mono text-3xs text-tertiary shadow-[var(--shadow-ring-subtle)]">
           ⌘R
         </kbd>
@@ -351,7 +352,7 @@ export default function Sidebar() {
        * The count belongs in the header, which is where Cursor and Linear put it,
        * rather than on a badge beside every row.
        */}
-      <div className="flex items-center gap-2 px-4 pt-4 pb-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4 pb-1.5">
         <span
           data-testid="timeline"
           className="text-2xs font-medium uppercase tracking-wide text-tertiary"

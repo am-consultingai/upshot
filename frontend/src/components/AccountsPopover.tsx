@@ -138,7 +138,7 @@ export function AccountsTrigger({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((was) => !was)}
-        className={`inline-flex h-control-sm items-center gap-1 rounded-sm px-2 text-xs shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary ${
+        className={`inline-flex h-control-sm items-center gap-1 rounded-sm px-2 text-xs whitespace-nowrap shadow-[var(--shadow-ring)] hover:bg-a-200 hover:text-primary ${
           active ? "text-primary" : "text-secondary"
         }`}
       >
