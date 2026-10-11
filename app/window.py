@@ -27,6 +27,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from collections.abc import Iterator
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -89,21 +90,46 @@ def open_external(url: str) -> bool:
     http(s) link) and the page should open it itself.
 
     Only http and https: ``os.startfile`` would run anything else, a file path included.
+
+    Windows gives the foreground only to the program the user is in, which is Upshot's
+    window, not this server: a browser already running took the link into a window left
+    behind Upshot's, and "Join the meeting" looked as if it did nothing (z8tj1hfdwz). An
+    Alt press around the call, as in ``bring_to_front``, lets the browser come forward.
     """
     from urllib.parse import urlparse
 
-    if urlparse(url).scheme not in ("http", "https"):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
         raise ValueError("only http and https links are opened")
     if sys.platform != "win32":
         return False
-    try:
-        import os
+    import os
 
-        os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
+    try:
+        with _foreground_unlocked():
+            os.startfile(url)  # type: ignore[attr-defined,unused-ignore]
     except OSError as exc:
         log.warning("could not open a link in the default browser: %s", exc)
         return False
+    log.info("opened a link to %s in the default browser", parsed.hostname)
     return True
+
+
+@contextlib.contextmanager
+def _foreground_unlocked() -> Iterator[None]:
+    """Hold Alt down around a call, which Windows takes as the user's own switch, so a
+    program that call starts or wakes may take the foreground."""
+    try:
+        import win32api
+        import win32con
+    except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
+        yield
+        return
+    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+    try:
+        yield
+    finally:
+        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
 
 
 def _registry(
