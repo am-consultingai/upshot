@@ -253,6 +253,8 @@ test("a_running_stage_shows_a_spinner_and_says_what_it_is_doing", async ({ page,
   await gotoApp(page, "/m/e2e-busy");
   const status = page.getByTestId("stage-running");
   await expect(status).toHaveText(/Summarizing/);
+  // Announced from a live region that was there before it, so the first stage is said.
+  await expect(page.getByRole("status").filter({ hasText: "Summarizing" })).toHaveCount(1);
   await expect(status.getByTestId("spinner")).toBeVisible();
 });
 
