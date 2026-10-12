@@ -850,7 +850,7 @@ export const he: Record<MessageKey, string> = {
   "firstRun.services.gemini.plan": "מנוי Google AI Pro או Ultra · Google",
   "firstRun.ai.intro.claude": "לחיצה על כניסה פותחת את Claude בדפדפן. נכנסים עם החשבון שיש בו את המנוי ולוחצים Authorize. בדרך כלל Upshot מזהה לבד כשסיימתם; אם Claude מציג קוד, מעתיקים אותו ומדביקים כאן.",
   "firstRun.ai.intro.codex": "לחיצה על כניסה פותחת את הכניסה ל-ChatGPT בדפדפן. נכנסים עם החשבון שיש בו את המנוי ולוחצים Continue. Upshot מזהה לבד כשסיימתם.",
-  "firstRun.ai.intro.antigravity": "לחיצה על כניסה פותחת את הכניסה ל-Google בדפדפן. בוחרים את החשבון שיש בו את מנוי Google AI ולוחצים Continue. Google מציגה אז קוד: מעתיקים אותו ומדביקים כאן תוך דקה.",
+  "firstRun.ai.intro.antigravity": "לחיצה על כניסה פותחת את הכניסה ל-Google בדפדפן. בוחרים את החשבון שיש בו את מנוי Google AI ולוחצים Continue. Google מציגה אז קוד: מעתיקים אותו, מדביקים בחלון Antigravity שנפתח לצד הדפדפן ומקישים Enter, תוך דקה.",
   "firstRun.ai.signinButton": "כניסה עם {name}",
   "firstRun.ai.pasteCodeHere": "אם Claude מציג קוד בדפדפן, הדביקו אותו כאן:",
   "firstRun.ai.pasteCodeWindow": "העתיקו את הקוד ש-Google מציגה בדפדפן, הדביקו אותו בחלון Antigravity שנפתח והקישו Enter, תוך דקה.",

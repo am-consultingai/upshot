@@ -276,3 +276,28 @@ def test_removing_antigravity_is_one_line_and_its_users_fall_back(
     with pytest.raises(ConfigError):
         config.set("llm.provider", PROVIDER)
         config.validate()
+
+
+def test_cancel_closes_the_sign_in_window(api) -> None:  # type: ignore[no-untyped-def]
+    """Left open, its agy would go on waiting for a code; an install window is not touched."""
+    import subprocess
+    import sys
+
+    from app.api import routes
+
+    window = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    routes._CONSOLES[PROVIDER] = window
+    routes._SIGNIN_CONSOLES.add(PROVIDER)
+    try:
+        stopped = api.client().post("/api/llm/signin/cancel", json={"provider": PROVIDER})
+        assert stopped.json() == {"stopped": True}
+        assert window.poll() is not None
+        install = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        routes._CONSOLES[PROVIDER] = install
+        again = api.client().post("/api/llm/signin/cancel", json={"provider": PROVIDER})
+        assert again.json() == {"stopped": False}
+        assert install.poll() is None, "an install's window is not a sign-in's"
+        install.kill()
+    finally:
+        routes._CONSOLES.pop(PROVIDER, None)
+        routes._SIGNIN_CONSOLES.discard(PROVIDER)

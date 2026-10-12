@@ -2447,6 +2447,25 @@ _CONSOLES: dict[str, Any] = {}
 #: Sign-ins running with no window (``app/llm/signin.py``), one per CLI provider.
 _LOGINS: dict[str, Any] = {}
 
+#: Providers whose console in ``_CONSOLES`` is a sign-in window (not an install). Cancel
+#: closes it, and a second Sign in replaces it: left open, its ``agy`` would go on waiting
+#: for a code from a Google page the user has since closed (review of #23, 2026-10-12).
+_SIGNIN_CONSOLES: set[str] = set()
+
+
+def stop_signin_console(provider: str) -> bool:
+    """Close ``provider``'s sign-in window and what runs in it. True if one was open."""
+    from app.llm.signin import kill_tree
+
+    if provider not in _SIGNIN_CONSOLES:
+        return False
+    _SIGNIN_CONSOLES.discard(provider)
+    process = _CONSOLES.get(provider)
+    if process is None or process.poll() is not None:
+        return False
+    kill_tree(process)
+    return True
+
 
 def console_open(provider: str) -> bool:
     """Is the install or sign-in launched for ``provider`` still going?
@@ -2473,6 +2492,7 @@ def launch_console(
     *,
     provider: str = "claude-subscription",
     visible: bool = True,
+    signin: bool = False,
 ) -> dict[str, Any]:
     r"""Run an interactive command in a console of its own, and report what ran.
 
@@ -2532,6 +2552,10 @@ def launch_console(
             )
             continue
         log.info("launched %s in %s (attempt %d)", argv[0], where, index)
+        if signin:
+            _SIGNIN_CONSOLES.add(provider)
+        else:
+            _SIGNIN_CONSOLES.discard(provider)
         return {"launched": True, "command": " ".join(command)}
 
     raise HTTPException(500, f"{failure}: {'; '.join(problems)}")
@@ -2579,10 +2603,13 @@ def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, 
     background = body is not None and body.background and getattr(module, "SIGNIN_HIDDEN", True)
     if background or not getattr(module, "SIGNIN_CONSOLE", True):
         return hidden_signin(provider, client.login_command(), module)
+    # A second Sign in replaces the first window, as it replaces a windowless sign-in.
+    stop_signin_console(provider)
     return launch_console(
         module.login_console(client.login_command()),
         f"could not launch {product}",
         provider=provider,
+        signin=True,
     ) | {"log": console_log(provider, "signin")}
 
 
@@ -2694,12 +2721,14 @@ def llm_signin_code(request: Request, body: SigninCodePost) -> dict[str, Any]:
 
 @router.post("/llm/signin/cancel")
 def llm_signin_cancel(body: ProviderPost | None = None) -> dict[str, Any]:
-    """Stop a windowless sign-in: it holds a port and would otherwise wait forever."""
+    """Stop a sign-in: a windowless one holds a port and would otherwise wait forever, and
+    a sign-in window (Antigravity's) would go on waiting for a code."""
     provider = chosen_cli(body)
     login = _LOGINS.pop(provider, None)
     if login is not None:
         login.stop()
-    return {"stopped": login is not None}
+    window = stop_signin_console(provider)
+    return {"stopped": login is not None or window}
 
 
 @router.post("/llm/install")

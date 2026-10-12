@@ -54,6 +54,10 @@ def client_error(request: Request, body: ClientError) -> dict[str, Any]:
     return {"reported": sent is not None}
 
 
+#: Reasons the page gives when no run began, so there is no log of it to send.
+NO_RUN = frozenset({"refused", "not-launched"})
+
+
 @router.post("/setup-failure")
 def setup_failure(request: Request, body: SetupFailure) -> dict[str, Any]:
     """Setup could not install or sign in to an AI CLI. Reported only with consent.
@@ -72,7 +76,10 @@ def setup_failure(request: Request, body: SetupFailure) -> dict[str, Any]:
     sent = None
     if reporter is not None:
         short = body.provider.removesuffix("-subscription")
-        lines = log_tail(log_path(f"{short}-{body.stage}")) if body.stage != "test" else []
+        # A test prompt's log is not this one's; a run refused or never launched wrote
+        # nothing, and the log's last run would be an older one.
+        ran = body.stage != "test" and body.reason not in NO_RUN
+        lines = log_tail(log_path(f"{short}-{body.stage}")) if ran else []
         sent = reporter.report_setup_failure(
             product=product, stage=body.stage, reason=body.reason, log=lines
         )
