@@ -712,6 +712,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  /** Setup gave up on an install or sign-in; reported only with consent, with the run's log tail. */
+  reportSetupFailure: (body: { provider: string; stage: "install" | "signin" | "test"; reason: string }) =>
+    request<{ reported: boolean }>("/api/diagnostics/setup-failure", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   /** Answers at once; progress arrives as `updates` events. */
   checkUpdates: () => request<UpdateState>("/api/updates/check", { method: "POST" }),
   /** The app quits and the installer starts it again on the new version. */

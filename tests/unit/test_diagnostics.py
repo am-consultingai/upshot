@@ -404,3 +404,60 @@ def test_a_package_init_frame_is_named_after_the_package() -> None:
         r'  File "C:\Python\Lib\ctypes\__init__.py", line 538 in string_at' + "\n"
     )
     assert scrub.frames_from_fault_dump(dump)[0]["module"] == "ctypes"
+
+
+# ------------------------------------------------------------------ setup failures
+
+
+TRANSCRIPT = """**********************
+Windows PowerShell transcript start
+Start time: 20261012065759
+Username: SOMEPC\\someone
+RunAs User: SOMEPC\\someone
+Machine: SOMEPC (Microsoft Windows NT 10.0.26200.0)
+Host Application: powershell.exe -NoProfile -Command ...
+Process ID: 14488
+PSVersion: 5.1.26100.9444
+**********************
+This window is recorded to C:\\Users\\someone\\AppData\\Local\\upshot\\logs\\antigravity-signin.log
+Authentication required. Please visit the URL to log in:
+  https://accounts.google.com/o/oauth2/auth?client_id=1071006060591&state=abcdefabcdefabcdefabcdefabcdefabcdef
+Waiting for authentication (timeout 60s)...
+Error: authentication timed out.
+**********************
+Windows PowerShell transcript end
+End time: 20261012065900
+**********************
+"""
+
+
+def test_a_log_tail_keeps_why_it_stopped_and_not_who_or_where(tmp_path: Path) -> None:
+    log = tmp_path / "antigravity-signin.log"
+    log.write_text(TRANSCRIPT, encoding="utf-8")
+    tail = scrub.log_tail(log)
+    assert tail[-1] == "Error: authentication timed out."
+    assert "https://accounts.google.com/…" in tail
+    joined = "\n".join(tail)
+    for gone in ("SOMEPC", "someone", "state=", "Username", "recorded to"):
+        assert gone not in joined
+    assert scrub.log_tail(tmp_path / "missing.log") == []
+
+
+def test_a_setup_failure_is_reported_once_a_day_with_its_log(tmp_path: Path) -> None:
+    made, sent = reporter(tmp_path)
+    event = made.report_setup_failure(
+        product="Antigravity CLI", stage="signin", reason="ended-signed-out", log=["Error: x"]
+    )
+    assert event is not None and len(sent.items) == 1
+    value = event["exception"]["values"][0]
+    assert value["type"] == "SetupFailure"
+    assert value["value"] == "Antigravity CLI signin did not finish: ended-signed-out"
+    assert event["extra"] == {"log_tail": ["Error: x"]}
+    assert event["tags"]["where"] == "setup:signin" and event["tags"]["cli"] == "Antigravity CLI"
+    again = made.report_setup_failure(
+        product="Antigravity CLI", stage="signin", reason="ended-signed-out", log=[]
+    )
+    assert again is None, "the same failure is one report a day"
+    off, nothing = reporter(tmp_path / "off", consent="off")
+    assert off.report_setup_failure(product="Codex", stage="install", reason="x", log=[]) is None
+    assert nothing.items == []

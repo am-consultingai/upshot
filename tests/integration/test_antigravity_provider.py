@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -210,64 +209,22 @@ def test_install_and_update_take_the_provider(api) -> None:  # type: ignore[no-u
     assert update["command"].endswith(" update")
 
 
-# ------------------------------------------------------------------ the windowless sign-in
+# ------------------------------------------------------------------ sign-in
 
 
-@pytest.fixture
-def signed_out(api, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
-    """Signed out, with every sign-in stopped when the test ends."""
+def test_setup_signs_in_in_a_window_too(api) -> None:  # type: ignore[no-untyped-def]
+    """Setup asks for no window (D75), but ``agy`` reads its code only from a console: a
+    code passed through a pipe is ignored and the run times out (machine A, 2026-10-12).
+    So setup's sign-in opens the same window Settings does, and nothing runs hidden."""
     from app.api import routes
 
-    monkeypatch.setenv("FAKE_AGY_MODE", "signed-out")
-    yield api
-    for login in routes._LOGINS.values():
-        login.stop()
-    routes._LOGINS.clear()
-
-
-def wait_until(check, timeout: float = 10.0) -> bool:  # type: ignore[no-untyped-def]
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if check():
-            return True
-        time.sleep(0.05)
-    return False
-
-
-def test_setup_signs_in_with_the_code_pasted_in_the_page(signed_out, agy_log: Path) -> None:  # type: ignore[no-untyped-def]
-    """Setup's sign-in (D75): no window; Google's link goes to the page, the code comes
-    back through it, and the row turns signed in."""
-    client = signed_out.client()
-    body = client.post("/api/llm/signin", json={"provider": PROVIDER, "background": True}).json()
-    assert body["launched"] is True
-    assert body["url"].startswith("https://accounts.google.com/o/oauth2/auth?")
-    assert row(signed_out)["console_open"] is True
-    assert row(signed_out)["signin_url"] == body["url"]
-
-    sent = client.post("/api/llm/signin/code", json={"provider": PROVIDER, "code": "GOOD-CODE"})
-    assert sent.json() == {"sent": True}
-    assert wait_until(lambda: row(signed_out)["console_open"] is False), (
-        "the run ends once signed in"
+    body = (
+        api.client().post("/api/llm/signin", json={"provider": PROVIDER, "background": True}).json()
     )
-    assert row(signed_out)["signed_in"] is True
-    signin = [call for call in calls(agy_log) if call["args"][:1] == ["-p"]]
-    assert signin and "GEMINI_API_KEY" not in signin[0]["env"], "the sign-in gets no key either"
-
-
-def test_a_wrong_code_leaves_it_signed_out(signed_out) -> None:  # type: ignore[no-untyped-def]
-    client = signed_out.client()
-    client.post("/api/llm/signin", json={"provider": PROVIDER, "background": True})
-    client.post("/api/llm/signin/code", json={"provider": PROVIDER, "code": "WRONG"})
-    assert wait_until(lambda: row(signed_out)["console_open"] is False)
-    assert row(signed_out)["signed_in"] is False
-
-
-def test_cancel_stops_a_waiting_signin(signed_out) -> None:  # type: ignore[no-untyped-def]
-    client = signed_out.client()
-    client.post("/api/llm/signin", json={"provider": PROVIDER, "background": True})
-    stopped = client.post("/api/llm/signin/cancel", json={"provider": PROVIDER})
-    assert stopped.json() == {"stopped": True}
-    assert row(signed_out)["console_open"] is False
+    assert body["launched"] is False, "off Windows nothing is launched"
+    assert "'-p' 'Reply with exactly the word OK.'" in body["command"]
+    assert "url" not in body, "no windowless sign-in, so no link for the page"
+    assert PROVIDER not in routes._LOGINS
 
 
 def test_settings_signs_in_in_a_window(api) -> None:  # type: ignore[no-untyped-def]
