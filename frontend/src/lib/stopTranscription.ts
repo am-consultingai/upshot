@@ -11,8 +11,8 @@ import { toast } from "../components/Toaster";
 import { useI18n } from "../i18n";
 import { ACTIVE_KEY } from "./activeJobs";
 
-/** The stages that make a transcript, as the server's ``TRANSCRIPT_STAGES``. */
-export const TRANSCRIPT_STAGES = new Set(["transcribe", "assemble"]);
+/** What Stop stops, as the server's ``TRANSCRIPT_STAGES``: the transcribe stage alone. */
+export const TRANSCRIPT_STAGES = new Set(["transcribe"]);
 
 export function useStopTranscription(meetingId: string) {
   const { t } = useI18n();

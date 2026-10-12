@@ -28,8 +28,10 @@ MAX_ATTEMPTS = 5
 #: ``last_error`` of a job the user stopped, which sets it apart from one withdrawn for a
 #: merge or a continued recording (also ``cancelled``).
 STOPPED = "stopped by the user"
-#: The stages that make a meeting's transcript: what "Stop transcription" stops.
-TRANSCRIPT_STAGES = (str(JobStage.TRANSCRIBE), str(JobStage.ASSEMBLE))
+#: What "Stop transcription" stops: the transcribe stage alone. Once it has written its
+#: segments the old transcript is already replaced, and assemble (a second's work) only
+#: renders them, so stopping there could not leave the meeting as it was.
+TRANSCRIPT_STAGES = (str(JobStage.TRANSCRIBE),)
 MAX_BACKOFF_S = 3600
 JITTER = 0.10
 
@@ -285,11 +287,12 @@ class JobQueue:
         return True
 
     def restore(self, meeting_id: str) -> None:
-        """Undo :meth:`withdraw`: a meeting's cancelled jobs wait again."""
+        """Undo :meth:`withdraw`: a meeting's cancelled jobs wait again, except one the
+        user stopped, which a refused merge must not start again."""
         self.conn.execute(
             "UPDATE jobs SET state='pending', updated_at=? "
-            "WHERE meeting_id = ? AND state = 'cancelled'",
-            (iso(self.clock.now()), meeting_id),
+            "WHERE meeting_id = ? AND state = 'cancelled' AND coalesce(last_error, '') != ?",
+            (iso(self.clock.now()), meeting_id, STOPPED),
         )
 
     def enqueue_next_stage(self, job: Job) -> Job | None:

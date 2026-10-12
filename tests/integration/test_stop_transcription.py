@@ -144,3 +144,58 @@ def test_the_ended_notification_stops_it(tmp_path: Path, app_home: Path) -> None
     from app.transcription.active import stop_running
 
     assert stop_running(api.services) is None, "nothing runs once it is stopped"
+
+
+def test_a_stop_after_the_last_checkpoint_lets_the_run_finish(
+    tmp_path: Path, app_home: Path
+) -> None:
+    """Past its last checkpoint the stage has replaced the transcript: it completes."""
+    api = build_harness(tmp_path)
+    meeting = make_meeting(api)
+    queue = api.services.queue
+    queue.enqueue(meeting.id, "transcribe")
+    job = queue.claim_next()
+    assert job is not None
+    api.client().post(f"/api/meetings/{meeting.id}/transcription/stop")
+    api.services.worker.stages["transcribe"] = lambda ctx: None
+    api.services.worker.execute(job)
+    assert queue.require(job.id).state == "done"
+    assert not queue.stopping(meeting.id)
+    assert queue.get_by_stage(meeting.id, "assemble") is not None
+
+
+def test_assemble_is_not_stopped(tmp_path: Path, app_home: Path) -> None:
+    api = build_harness(tmp_path)
+    meeting = make_meeting(api, state="TRANSCRIBING")
+    api.services.queue.enqueue(meeting.id, "assemble")
+    answer = api.client().post(f"/api/meetings/{meeting.id}/transcription/stop")
+    assert answer.status_code == 409
+    jobs = api.client().get("/api/jobs/active").json()["jobs"]
+    assert jobs[0]["cancellable"] is False
+
+
+def test_a_refused_merge_does_not_restart_a_stopped_transcription(
+    tmp_path: Path, app_home: Path
+) -> None:
+    api = build_harness(tmp_path)
+    meeting = make_meeting(api)
+    queue = api.services.queue
+    queue.enqueue(meeting.id, "transcribe")
+    api.client().post(f"/api/meetings/{meeting.id}/transcription/stop")
+    assert queue.withdraw(meeting.id)
+    queue.restore(meeting.id)
+    assert queue.get_by_stage(meeting.id, "transcribe").state == "cancelled"
+
+
+def test_the_tray_stop_takes_back_the_notification(tmp_path: Path, app_home: Path) -> None:
+    from app.transcription.active import stop_running
+
+    api = build_harness(tmp_path)
+    meeting = make_meeting(api)
+    queue = api.services.queue
+    queue.enqueue(meeting.id, "transcribe")
+    assert queue.claim_next() is not None
+    api.services.notifier.recording_ended(meeting.id, 12)
+    assert stop_running(api.services) == f"meeting:{meeting.id}"
+    assert queue.stopping(meeting.id)
+    assert api.services.notifier.withdrawn == [meeting.id]

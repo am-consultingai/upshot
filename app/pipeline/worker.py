@@ -71,6 +71,25 @@ def settle_stopped(dao: Dao, meeting_id: str, before: str) -> None:
     log.info("meeting %s: transcription stopped by the user; back to %s", meeting_id, target)
 
 
+def stop_transcription(svc: Any, meeting_id: str) -> str | None:
+    """Stop a meeting's transcription, for every place that offers it (the page, the
+    tray, the notification): ``"waiting"``, ``"running"`` or ``None`` (nothing to stop)."""
+    stopped = svc.queue.request_stop(meeting_id)
+    if stopped is None:
+        return None
+    if stopped == "waiting":
+        # It never started; only a merge (D89) moves a meeting to TRANSCRIBING ahead of it.
+        meeting = svc.dao.get_meeting(meeting_id)
+        if meeting is not None:
+            settle_stopped(svc.dao, meeting_id, meeting.state)
+        svc.events.publish("job", meeting_id=meeting_id, stage="transcribe", state="cancelled")
+    if svc.notifier is not None:
+        # "Meeting ended. Transcribing…" is no longer true.
+        svc.notifier.withdraw(meeting_id)
+    log.info("meeting %s: transcription stop requested (%s)", meeting_id, stopped)
+    return str(stopped)
+
+
 class Worker:
     def __init__(
         self,
@@ -243,8 +262,6 @@ class Worker:
                     stage_fn(context)
                     if self.queue.deleting(job.meeting_id):
                         raise Cancelled(f"{job.stage} finished, but the meeting is being deleted")
-                    if self.queue.stopping(job.meeting_id):
-                        raise Cancelled(f"{job.stage} finished, but the user stopped it")
                 except Cancelled as exc:
                     log.info("%s", exc)  # the deletion itself is finished below
                     if not self.queue.deleting(job.meeting_id) and self.queue.stopping(
