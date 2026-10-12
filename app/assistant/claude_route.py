@@ -215,6 +215,16 @@ class ClaudeRoute:
         self.cli = claude_cli.ClaudeCliClient(config)
         #: A test hook: the whole command line that stands for ``claude``.
         self.command = list(command) if command else None
+        self.choose_model()
+
+    def choose_model(self) -> None:
+        """The conversation's model: the user's choice for it, or ours (model_choice).
+        Called again by a route that brings its own CLI client."""
+        from app.llm import model_choice
+
+        model = model_choice.resolve(self.config, self.name, "assistant", model_choice.catalog())
+        if model:
+            self.cli.model = model
 
     label = "Claude Code"
 
@@ -256,6 +266,8 @@ class ClaudeRoute:
             "--system-prompt",
             system,
         ]
+        if self.cli.model:
+            args += ["--model", self.cli.model]
         if resume:
             args += ["--resume", resume]
         return args

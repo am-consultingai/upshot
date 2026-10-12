@@ -404,3 +404,44 @@ def test_setup_failure_takes_a_known_provider_and_stage(api) -> None:  # type: i
         json={"provider": "codex-subscription", "stage": "signin", "reason": "Dana's meeting"},
     )
     assert free_text.status_code == 422, "a reason is a slug, never free text"
+
+
+def test_models_are_listed_chosen_and_checked(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """Settings' model choice (2026-10-12): the provider's own list, a choice it must
+    offer, automatic again on empty, and the choice in force in the next client."""
+    from app.llm import model_choice
+    from app.llm.client import make_client
+
+    agy = "Fetching…\ngemini-3.8-flash-medium\tFlash (Medium)\ngemini-3.8-flash-low\tFlash (Low)\n"
+    monkeypatch.setattr(api.services.models, "run", lambda args, timeout: (0, agy, ""))
+
+    class Cli:
+        def resolve(self) -> str:
+            return "agy"
+
+    monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: Cli())
+    model_choice.set_catalog(api.services.models)
+    provider = "antigravity-subscription"
+    client = api.client()
+    listed = client.get("/api/llm/models", params={"provider": provider}).json()
+    ids = [m["id"] for m in listed["models"]]
+    assert ids == ["gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
+    assert listed["chosen"] == {"summary": "", "assistant": ""}
+    assert listed["effective"] == {
+        "summary": "gemini-3.8-flash-medium",
+        "assistant": "gemini-3.8-flash-low",
+    }
+    refused = client.put(
+        "/api/llm/model", json={"provider": provider, "use": "summary", "model": "made-up"}
+    )
+    assert refused.status_code == 400, "only a model the provider offers"
+    chose = client.put(
+        "/api/llm/model",
+        json={"provider": provider, "use": "summary", "model": "gemini-3.8-flash-low"},
+    ).json()
+    assert chose["chosen"]["summary"] == "gemini-3.8-flash-low"
+    assert make_client(api.services.config, provider=provider).model == "gemini-3.8-flash-low"  # type: ignore[attr-defined]
+    back = client.put("/api/llm/model", json={"provider": provider, "use": "summary", "model": ""})
+    assert back.json()["chosen"]["summary"] == ""
+    assert client.get("/api/llm/models", params={"provider": "none"}).status_code == 400
+    model_choice.set_catalog(None)

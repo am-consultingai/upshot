@@ -92,6 +92,12 @@ def create_app(services: Services | None = None, *, config: Config | None = None
 
         svc.events.bind_loop(asyncio.get_running_loop())
         svc.queue.reset_running()
+        if svc.models is not None:
+            # The model lists, for Settings and for the automatic choice: off the start
+            # path, and a provider that cannot answer just has none.
+            from app.llm.model_choice import providers_to_list
+
+            svc.models.refresh_in_background(providers_to_list(svc.config))
         # The assistant's MCP server keeps its sessions in a task group that must be
         # running for as long as the app is; a mounted app's own lifespan never runs.
         async with mcp_server.session_manager.run():
