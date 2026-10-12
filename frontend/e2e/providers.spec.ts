@@ -139,3 +139,34 @@ test("the_chosen_providers_models_are_offered_and_a_choice_is_saved", async ({ p
     await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "" } } });
   }
 });
+
+test("a_model_the_server_refuses_says_why_and_a_choice_without_a_list_still_shows", async ({ page }) => {
+  const listed = {
+    provider: "gemini",
+    models: [] as { id: string; label: string }[],
+    source: "live",
+    fetched_at: 1,
+    error: "the provider answered 401",
+    chosen: { summary: "gemini-old", assistant: "" },
+    automatic: { summary: "", assistant: "" },
+    effective: { summary: "gemini-old", assistant: "" },
+  };
+  await page.route("**/api/llm/models?**", (route) => route.fulfill({ json: listed }));
+  await page.route("**/api/llm/model", (route) =>
+    route.fulfill({ status: 400, json: { detail: "gemini does not offer 'x'" } }),
+  );
+  await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "test-key" } } });
+  await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "gemini" } } });
+  try {
+    await gotoSettings(page, "summaries");
+    const choice = page.getByTestId("model-choice");
+    // The list failed, but the chosen model is what runs: the select says so.
+    await expect(choice.getByTestId("model-summary")).toHaveValue("gemini-old");
+    await expect(choice.getByTestId("model-list-error")).toContainText("401");
+    await choice.getByTestId("model-summary").selectOption("");
+    await expect(choice.getByTestId("model-save-error")).toBeVisible();
+  } finally {
+    await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
+    await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "" } } });
+  }
+});

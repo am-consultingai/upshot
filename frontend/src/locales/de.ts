@@ -714,6 +714,8 @@ export const de: Record<MessageKey, string> = {
   "settings.models.automaticDefault": "Automatisch (Voreinstellung des Anbieters)",
   "settings.models.dropped": "{model} wird nicht mehr angeboten, daher gilt die automatische Wahl.",
   "settings.models.none": "Der Anbieter hat keine Modelle aufgelistet: {reason}",
+  "settings.models.loading": "Der Anbieter wird nach seinen Modellen gefragt…",
+  "settings.models.unavailable": "Die Modellliste konnte nicht geladen werden.",
   "settings.models.refresh": "Liste aktualisieren",
   "settings.models.refreshing": "Wird aktualisiert…",
   "assistant.model": "Modell für die Unterhaltung",
