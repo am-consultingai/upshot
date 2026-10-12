@@ -360,3 +360,57 @@ def test_the_conversation_runs_its_own_model_on_every_route(tmp_path: Path) -> N
     assert agy[agy.index("--model") + 1] == "gemini-3.8-flash-low"
     cfg.set("llm.assistant_models", {})
     assert "--model" not in ClaudeRoute(cfg).args(["c"], mcp_config="{}", system="s", resume="")
+
+
+def test_a_list_asked_for_before_a_change_is_not_kept_after_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A key pasted while the first list request is out: its "no key" must not stick."""
+    import threading
+
+    monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: FakeCli("agy"))
+    started, release = threading.Event(), threading.Event()
+
+    def run(args: list[str], timeout: float) -> tuple[int, str, str]:
+        started.set()
+        release.wait(5)
+        return 1, "Please sign in\n", ""
+
+    catalog = Catalog(config(tmp_path), run=run)
+    worker = threading.Thread(target=lambda: catalog.listing("antigravity-subscription"))
+    worker.start()
+    started.wait(5)
+    catalog.forget("antigravity-subscription")  # signed in meanwhile
+    release.set()
+    worker.join(5)
+    assert catalog.cached("antigravity-subscription") is None, "the stale answer is dropped"
+
+
+def test_a_key_from_the_environment_lists_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "from-env")
+    http = Http(
+        {"models": [{"name": "models/g", "supportedGenerationMethods": ["generateContent"]}]}
+    )
+    cfg = config(tmp_path)
+    cfg.set("secrets.backend", "memory")
+    assert [m.id for m in Catalog(cfg, http=http).listing("gemini").models] == ["g"]
+
+
+def test_a_test_route_with_its_own_command_still_runs_the_chosen_model(tmp_path: Path) -> None:
+    from app.assistant.claude_route import ClaudeRoute
+
+    cfg = config(tmp_path)
+    cfg.set("llm.assistant_models", {"claude-subscription": "haiku"})
+    args = ClaudeRoute(cfg, command=["python", "fake_claude.py"]).args(
+        ["python", "fake_claude.py"], mcp_config="{}", system="s", resume=""
+    )
+    assert args[args.index("--model") + 1] == "haiku"
+
+
+def test_who_answers_someone_waiting() -> None:
+    assert model_choice.conversation_use("antigravity-subscription") == "assistant"
+    assert model_choice.conversation_use("gemini") == "summary", (
+        "no chat box to choose a conversation model at: the summaries' model, chosen in Settings"
+    )

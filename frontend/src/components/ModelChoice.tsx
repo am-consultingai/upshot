@@ -14,6 +14,9 @@ export const MODEL_PROVIDERS = new Set([
   "ollama",
 ]);
 
+/** The providers the assistant panel talks to: only they have a chat box. */
+export const CHAT_PROVIDERS = new Set(["claude-subscription", "codex-subscription", "antigravity-subscription"]);
+
 const USE_LABEL: Record<ModelUse, MessageKey> = {
   summary: "settings.models.summary",
   assistant: "settings.models.assistant",
@@ -110,9 +113,10 @@ export default function ModelChoice({
         value={chosen}
         disabled={save.isPending}
         onChange={(event) => save.mutate({ use, model: event.target.value })}
-        title={compact ? saveError || t(USE_LABEL[use]) : undefined}
+        title={compact ? t(USE_LABEL[use]) : undefined}
         aria-label={compact ? t("assistant.model") : undefined}
         aria-invalid={compact && !!saveError ? true : undefined}
+        aria-describedby={compact && (saveError || save.isPending) ? `model-note-${provider}` : undefined}
         className={`max-w-full rounded-md border bg-raised px-2 py-1 ${compact ? "text-xs" : "text-sm"} ${
           compact && saveError ? "border-danger" : "border-line"
         }`}
@@ -131,13 +135,34 @@ export default function ModelChoice({
     );
   };
 
-  if (compact) return select(uses[0], data);
+  if (compact) {
+    // Trying a model can take a few seconds, and a refusal must be read, not hovered.
+    const note = save.isPending ? t("settings.models.trying") : saveError;
+    return (
+      <span className="flex flex-col items-end gap-0.5">
+        {select(uses[0], data)}
+        {note && (
+          <span
+            id={`model-note-${provider}`}
+            data-testid="model-note"
+            role={saveError ? "alert" : "status"}
+            className={`text-2xs ${saveError ? "text-danger" : "text-tertiary"}`}
+          >
+            {note}
+          </span>
+        )}
+      </span>
+    );
+  }
 
   const listError = data.models.length === 0 && data.error ? data.error : "";
   return (
     <div data-testid="model-choice" className="mt-4 space-y-2">
       <h4 className="text-sm font-medium">{t("settings.models.title")}</h4>
-      <p className="text-xs text-tertiary">{t("settings.models.hint")}</p>
+      <p className="text-xs text-tertiary">
+        {t("settings.models.hint")}
+        {CHAT_PROVIDERS.has(provider) ? ` ${t("settings.models.hintChat")}` : ""}
+      </p>
       {uses.map((use) => {
         const chosen = data.chosen[use];
         const dropped = !!chosen && data.models.length > 0 && !data.models.some((model) => model.id === chosen);
