@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   llmStatus: vi.fn(),
   llmSignin: vi.fn(),
   llmSigninCode: vi.fn(),
+  llmTest: vi.fn(),
   reportSetupFailure: vi.fn(),
 }));
 vi.mock("../src/api", () => ({ api }));
@@ -70,6 +71,55 @@ describe("ApiSetupBackend: a sign-in that does not finish is reported (machine A
     await flush();
     expect(backend.snapshot().cli.antigravity.codeInWindow).toBe(true);
     expect(backend.snapshot().cli.claude.codeInWindow).toBe(false);
+    backend.dispose();
+  });
+});
+
+describe("ApiSetupBackend: a sign-in that worked is never reported as failed (machine B, 2026-10-12)", () => {
+  const claude = (signedIn: boolean, consoleOpen: boolean) => ({
+    providers: [{ id: "claude-subscription", ready: true, signed_in: signedIn, console_open: consoleOpen }],
+  });
+
+  it("a second press while signing in starts nothing", async () => {
+    api.llmSignin.mockResolvedValue({ launched: true, url: "https://claude.ai/x" });
+    const backend = await ApiSetupBackend.create();
+    backend.signIn("claude");
+    backend.signIn("claude");
+    await flush();
+    expect(api.llmSignin).toHaveBeenCalledTimes(1);
+    backend.dispose();
+  });
+
+  it("one poll with nothing running, as a login is replaced, does not fail the card", async () => {
+    vi.useFakeTimers();
+    api.llmSignin.mockResolvedValue({ launched: true });
+    api.llmTest.mockResolvedValue({ ok: true });
+    const backend = await ApiSetupBackend.create();
+    backend.signIn("claude");
+    await vi.advanceTimersByTimeAsync(0);
+    api.llmStatus.mockResolvedValue(claude(false, false));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(backend.snapshot().cli.claude.phase).toBe("signing-in");
+    api.llmStatus.mockResolvedValue(claude(true, false));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(api.llmTest).toHaveBeenCalledWith("claude-subscription");
+    expect(backend.snapshot().cli.claude.phase).toBe("idle");
+    expect(api.reportSetupFailure).not.toHaveBeenCalled();
+    backend.dispose();
+  });
+
+  it("a failed card still turns ready when the CLI signs in afterwards", async () => {
+    vi.useFakeTimers();
+    api.llmSignin.mockRejectedValue(new Error("500"));
+    api.llmTest.mockResolvedValue({ ok: true });
+    const backend = await ApiSetupBackend.create();
+    backend.signIn("claude");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(backend.snapshot().cli.claude.phase).toBe("signin-failed");
+    api.llmStatus.mockResolvedValue(claude(true, false));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(backend.snapshot().cli.claude.phase).toBe("idle");
+    expect(backend.snapshot().cli.claude.signedIn).toBe(true);
     backend.dispose();
   });
 });

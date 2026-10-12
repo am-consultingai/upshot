@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.clock import parse_iso
-from app.pipeline.queue import Job
+from app.pipeline.queue import TRANSCRIPT_STAGES, Job
 from app.transcription.store import RUNNING, Transcription
 
 
@@ -52,6 +52,22 @@ def running_progress(svc: Any) -> float | None:
     return None
 
 
+def stop_running(svc: Any) -> str | None:
+    """Stop whatever transcription is running now, meeting or file: the tray's "Stop
+    transcription". What was stopped (``meeting:<id>`` or ``file:<id>``), or ``None``."""
+    from app.pipeline.worker import stop_transcription
+
+    for job in svc.queue.running_jobs():
+        if job.stage in TRANSCRIPT_STAGES and stop_transcription(svc, job.meeting_id):
+            return f"meeting:{job.meeting_id}"
+    store = svc.transcriptions
+    current = store.running() if store is not None else None
+    if current is not None:
+        store.cancel(current.id)
+        return f"file:{current.id}"
+    return None
+
+
 def _meeting(svc: Any, job: Job) -> dict[str, Any] | None:
     meeting = svc.dao.visible_meeting(job.meeting_id)
     if meeting is None:
@@ -73,8 +89,8 @@ def _meeting(svc: Any, job: Job) -> dict[str, Any] | None:
         "eta_s": progress["eta_s"] if progress else None,
         "queued_at": job.fifo_key,
         "started_at": job.started_at,
-        # A meeting's work is stopped by deleting the meeting, not from a queue.
-        "cancellable": False,
+        # Its transcription can be stopped (the meeting stays); a summary cannot.
+        "cancellable": job.stage in TRANSCRIPT_STAGES,
     }
 
 

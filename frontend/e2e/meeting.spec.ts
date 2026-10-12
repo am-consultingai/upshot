@@ -258,6 +258,26 @@ test("a_running_stage_shows_a_spinner_and_says_what_it_is_doing", async ({ page,
   await expect(status.getByTestId("spinner")).toBeVisible();
 });
 
+test("a_waiting_transcription_can_be_stopped_and_started_again", async ({ page, seed }) => {
+  // The only way to stop one used to be deleting the meeting.
+  await seed([
+    {
+      id: "e2e-stop",
+      title: "To be stopped",
+      state: "RECORDED",
+      started_at: isoAt(0, 10),
+      jobs: { transcribe: "pending" },
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-stop");
+  await page.getByTestId("stop-transcription").click();
+  await expect(page.getByTestId("stage-running")).toHaveCount(0);
+  await expect(page.getByTestId("transcription-stopped")).toBeVisible();
+  await page.getByTestId("transcribe-now").click();
+  await expect(page.getByTestId("transcription-stopped")).toHaveCount(0);
+  await expect(page.getByTestId("stage-running")).toBeVisible();
+});
+
 test("view_prompt_opens_the_prompt_in_settings", async ({ page, seed }) => {
   await seed([
     {

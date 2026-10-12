@@ -26,6 +26,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Empezar a grabar",
         "fr": "Démarrer l'enregistrement",
     },
+    "tray.stopTranscription": {
+        "en": "Stop transcription",
+        "he": "עצירת התמלול",
+        "de": "Transkription beenden",
+        "es": "Detener la transcripción",
+        "fr": "Arrêter la transcription",
+    },
     "tray.stop": {
         "en": "Stop recording",
         "he": "עצירת הקלטה",
@@ -407,6 +414,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "de": "Keine Besprechung",
         "es": "No es una reunión",
         "fr": "Pas une réunion",
+    },
+    "button.stopTranscription": {
+        "en": "Stop transcription",
+        "he": "עצירת התמלול",
+        "de": "Transkription beenden",
+        "es": "Detener la transcripción",
+        "fr": "Arrêter la transcription",
     },
     "button.open": {
         "en": "Open",
