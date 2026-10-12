@@ -25,6 +25,13 @@ from app.pipeline.states import (
 log = get(__name__)
 
 MAX_ATTEMPTS = 5
+#: ``last_error`` of a job the user stopped, which sets it apart from one withdrawn for a
+#: merge or a continued recording (also ``cancelled``).
+STOPPED = "stopped by the user"
+#: What "Stop transcription" stops: the transcribe stage alone. Once it has written its
+#: segments the old transcript is already replaced, and assemble (a second's work) only
+#: renders them, so stopping there could not leave the meeting as it was.
+TRANSCRIPT_STAGES = (str(JobStage.TRANSCRIBE),)
 MAX_BACKOFF_S = 3600
 JITTER = 0.10
 
@@ -103,6 +110,9 @@ class JobQueue:
         #: Meetings being deleted while a stage of theirs runs: the stage stops at its
         #: next checkpoint and the worker finishes the deletion (Cancelled).
         self._deleting: set[str] = set()
+        #: Meetings whose running transcription the user stopped: the stage stops at its
+        #: next checkpoint, as for a deletion, and the worker settles the meeting.
+        self._stopping: set[str] = set()
 
     # -- writing -----------------------------------------------------------
 
@@ -277,11 +287,12 @@ class JobQueue:
         return True
 
     def restore(self, meeting_id: str) -> None:
-        """Undo :meth:`withdraw`: a meeting's cancelled jobs wait again."""
+        """Undo :meth:`withdraw`: a meeting's cancelled jobs wait again, except one the
+        user stopped, which a refused merge must not start again."""
         self.conn.execute(
             "UPDATE jobs SET state='pending', updated_at=? "
-            "WHERE meeting_id = ? AND state = 'cancelled'",
-            (iso(self.clock.now()), meeting_id),
+            "WHERE meeting_id = ? AND state = 'cancelled' AND coalesce(last_error, '') != ?",
+            (iso(self.clock.now()), meeting_id, STOPPED),
         )
 
     def enqueue_next_stage(self, job: Job) -> Job | None:
@@ -322,6 +333,62 @@ class JobQueue:
     def deleted(self, meeting_id: str) -> None:
         """The deletion is done: nothing is left to stop."""
         self._deleting.discard(meeting_id)
+
+    def request_stop(self, meeting_id: str) -> str | None:
+        """Stop this meeting's transcription: ``"waiting"`` when a job of it that had not
+        started was taken out of the queue, ``"running"`` when the running one was asked
+        to stop at its next checkpoint, ``None`` when no transcription is in the queue.
+
+        One step, so the worker cannot claim the waiting job between the look and the stop.
+        """
+        from app.db.dao import transaction
+
+        now = iso(self.clock.now())
+        marks = ",".join("?" * len(TRANSCRIPT_STAGES))
+        with transaction(self.conn):
+            running = self.conn.execute(
+                f"SELECT 1 FROM jobs WHERE meeting_id = ? AND state = 'running' "
+                f"AND stage IN ({marks})",
+                (meeting_id, *TRANSCRIPT_STAGES),
+            ).fetchone()
+            if running:
+                self._stopping.add(meeting_id)
+                return "running"
+            cur = self.conn.execute(
+                f"UPDATE jobs SET state='cancelled', last_error=?, finished_at=?, updated_at=? "
+                f"WHERE meeting_id = ? AND state = 'pending' AND stage IN ({marks})",
+                (STOPPED, now, now, meeting_id, *TRANSCRIPT_STAGES),
+            )
+        if not cur.rowcount:
+            return None
+        self.forget_reruns(meeting_id)
+        return "waiting"
+
+    def stopping(self, meeting_id: str) -> bool:
+        return meeting_id in self._stopping
+
+    def stopped(self, job: Job) -> Job:
+        """The running stage has stopped as asked: the job ends ``cancelled``, marked as the
+        user's doing, and nothing of the press is left behind."""
+        now = iso(self.clock.now())
+        self.conn.execute(
+            "UPDATE jobs SET state='cancelled', last_error=?, finished_at=?, updated_at=? "
+            "WHERE id = ?",
+            (STOPPED, now, now, job.id),
+        )
+        self.clear_stop(job.meeting_id)
+        self.forget_reruns(job.meeting_id)
+        return self.require(job.id)
+
+    def clear_stop(self, meeting_id: str) -> None:
+        """However the stage ended (deleted, failed, finished): the press applied to that
+        run only, and must not stop the next one."""
+        self._stopping.discard(meeting_id)
+
+    def forget_reruns(self, meeting_id: str) -> None:
+        """Drop the redo requests a press left for this meeting's later stages: a stopped
+        transcription must not have its summary redone at some later, unrelated run."""
+        self._rerun = {key for key in self._rerun if key[0] != meeting_id}
 
     def running_for(self, meeting_id: str) -> Job | None:
         row = self.conn.execute(

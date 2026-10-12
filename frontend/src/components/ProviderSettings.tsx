@@ -74,6 +74,10 @@ const GROUPS = [
 /** Not rows here: summaries off is simply no row chosen, and the local model is set aside. */
 const NOT_LISTED = new Set(["none", "ollama"]);
 
+/** How long a Test's answer stays beside its button, the last part of it fading out. */
+const TEST_SHOWN_MS = 5000;
+const TEST_FADE_MS = 300;
+
 /** A sign-in that ends on a code pasted back (Claude's may, Antigravity's does, D75, D79). */
 const TAKES_CODE = new Set(["claude-subscription", "antigravity-subscription"]);
 
@@ -111,7 +115,35 @@ export default function ProviderSettings() {
   // The radio must respond to the click immediately, not after the server round-trip —
   // otherwise it visibly snaps back and the UI reads as broken.
   const [pendingProvider, setPendingProvider] = useState<string | null>(null);
-  const [tested, setTested] = useState<Record<string, { ok: boolean; detail: string }>>({});
+  /*
+   * A Test's answer, shown as a balloon beside its button for a few seconds and then
+   * faded out. It used to be text inside the row, and the row's buttons moved to make
+   * room for it (machine B, 2026-10-12).
+   */
+  const [tested, setTested] = useState<Record<string, { ok: boolean; detail: string; fading: boolean }>>({});
+  const testTimers = useRef(new Map<string, number[]>());
+  useEffect(() => {
+    const timers = testTimers.current;
+    return () => {
+      for (const list of timers.values()) list.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+  const showTested = (provider: string, ok: boolean, detail: string) => {
+    for (const timer of testTimers.current.get(provider) ?? []) window.clearTimeout(timer);
+    setTested((previous) => ({ ...previous, [provider]: { ok, detail, fading: false } }));
+    const fade = window.setTimeout(() => {
+      setTested((previous) =>
+        previous[provider] ? { ...previous, [provider]: { ...previous[provider]!, fading: true } } : previous,
+      );
+    }, TEST_SHOWN_MS - TEST_FADE_MS);
+    const gone = window.setTimeout(() => {
+      setTested((previous) => {
+        const { [provider]: _gone, ...rest } = previous;
+        return rest;
+      });
+    }, TEST_SHOWN_MS);
+    testTimers.current.set(provider, [fade, gone]);
+  };
   // Which CLI's install or sign-in is being waited on, or null, and since when: a status
   // fetched before the launch says nothing about it.
   const [watching, setWatching] = useState<string | null>(null);
@@ -155,11 +187,7 @@ export default function ProviderSettings() {
   });
   const test = useMutation({
     mutationFn: (provider: string) => api.llmTest(provider),
-    onSuccess: (result) =>
-      setTested((previous) => ({
-        ...previous,
-        [result.provider]: { ok: result.ok, detail: result.error ?? result.model ?? "" },
-      })),
+    onSuccess: (result) => showTested(result.provider, result.ok, result.error ?? result.model ?? ""),
   });
   const signin = useMutation({
     // `background`: no window, as setup does it (D75).
@@ -391,25 +419,35 @@ export default function ProviderSettings() {
                             </Button>
                           )}
 
-                          <Button
-                            data-testid="provider-test"
-                            busy={test.isPending && test.variables === provider.id}
-                            onClick={() => test.mutate(provider.id)}
-                            variant="secondary"
-                            size="md"
-                          >
-                            {t("settings.test")}
-                          </Button>
-                          {result && (
-                            <span
-                              data-testid="provider-test-result"
-                              data-ok={result.ok}
-                              title={result.detail}
-                              className={`text-sm ${result.ok ? "text-success" : "text-danger"}`}
+                          <span className="relative inline-flex">
+                            <Button
+                              data-testid="provider-test"
+                              busy={test.isPending && test.variables === provider.id}
+                              onClick={() => test.mutate(provider.id)}
+                              variant="secondary"
+                              size="md"
                             >
-                              {result.ok ? t("settings.testOk") : t("settings.testFailed")}
+                              {t("settings.test")}
+                            </Button>
+                            {/* Over the row, not in it: nothing beside it moves. */}
+                            <span
+                              role="status"
+                              className="absolute end-0 top-full z-10 mt-1.5"
+                            >
+                              {result && (
+                                <span
+                                  data-testid="provider-test-result"
+                                  data-ok={result.ok}
+                                  title={result.detail}
+                                  className={`block whitespace-nowrap rounded-md bg-raised px-2 py-1 text-xs shadow-md transition-opacity duration-300 ${
+                                    result.fading ? "opacity-0" : "opacity-100"
+                                  } ${result.ok ? "text-success" : "text-danger"}`}
+                                >
+                                  {result.ok ? t("settings.testOk") : t("settings.testFailed")}
+                                </span>
+                              )}
                             </span>
-                          )}
+                          </span>
                         </span>
                       </div>
 

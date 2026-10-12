@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { Meeting } from "../api";
 import { formatDurationShort, formatClock, formatElapsed } from "../lib/format";
 import { formatPercent, timeLeft, useMeetingJob } from "../lib/activeJobs";
+import { TRANSCRIPT_STAGES, useStopTranscription } from "../lib/stopTranscription";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 import Menu, { useContextMenu, type MenuItem } from "./Menu";
@@ -77,6 +78,8 @@ export default function MeetingCard({
    * with no honest figure (a summary) shows its state word and nothing else.
    */
   const job = useMeetingJob(meeting.id);
+  const stopTranscription = useStopTranscription(meeting.id);
+  const transcribing = job !== undefined && TRANSCRIPT_STAGES.has(job.stage ?? "");
   const progress = job?.state === "running" ? job.progress : null;
   const left = job?.state === "running" ? timeLeft(job.eta_s, t) : null;
   /*
@@ -103,6 +106,15 @@ export default function MeetingCard({
         ]
       : []),
     ...(recording && onStop ? [{ id: "stop", label: t("timeline.stop"), run: onStop }] : []),
+    ...(transcribing
+      ? [
+          {
+            id: "stop-transcription",
+            label: t("meeting.stopTranscription"),
+            run: () => void stopTranscription.ask(meeting.title ?? meeting.id, job.state === "running"),
+          },
+        ]
+      : []),
     ...(!recording && onResummarize
       ? [{ id: "resummarize", label: t("meeting.resummarize"), run: onResummarize }]
       : []),
