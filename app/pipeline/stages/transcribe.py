@@ -208,7 +208,7 @@ def _classify(ctx: StageContext, inputs: dict[str, Path]) -> LanguageDecision:
     else:
         classifier = classifier_for(ctx.config, ctx.services)
         if hasattr(classifier, "stop_check"):
-            classifier.stop_check = ctx.stop_if_deleted  # a deletion stops it at once
+            classifier.stop_check = ctx.stop_if_asked  # a deletion or a Stop stops it at once
         decision = classifier.classify(inputs)
     log.info("%s", decision.log_line())
     ctx.metrics["language_detection_s"] = round(decision.seconds, 2)
@@ -363,9 +363,9 @@ def _transcribe_tracks(
 ) -> list[Segment]:
     """Each track in one pass, reporting how far through the two it has got."""
     bar = _TrackBar(ctx, "transcribe", tracks)
-    # Between segments, a deletion stops the track; the recorder does not (a track cannot
+    # Between segments, a deletion or a Stop stops the track; the recorder does not (a track cannot
     # be resumed part-way, so it waits for the next checkpoint).
-    hooks = {"stop_check": ctx.stop_if_deleted, "on_segment": bar.at_second}
+    hooks = {"stop_check": ctx.stop_if_asked, "on_segment": bar.at_second}
     hooked = [name for name in hooks if hasattr(backend, name)]
     for name in hooked:
         setattr(backend, name, hooks[name])

@@ -39,6 +39,7 @@ class Action(StrEnum):
     START = "recording.start"
     STOP = "recording.stop"
     PAUSE = "recording.pause"
+    STOP_TRANSCRIPTION = "transcription.stop"
     OPEN = "dashboard.open"
     QUIT = "app.quit"
     UPDATE = "app.update"
@@ -138,6 +139,12 @@ def menu_for(state: AppState) -> tuple[MenuItem, ...]:
         MenuItem(tr("tray.stop", language), Action.STOP, enabled=active),
         MenuItem(
             tr("tray.resume" if paused else "tray.pause", language), Action.PAUSE, enabled=active
+        ),
+        # Only while one runs: the tooltip says "Transcribing 42%", and this ends it.
+        *(
+            (MenuItem(tr("tray.stopTranscription", language), Action.STOP_TRANSCRIPTION),)
+            if state.transcribing is not None
+            else ()
         ),
         MenuItem(tr("tray.open", language), Action.OPEN, enabled=True, default=True),
         MenuItem(tr("tray.feedback", language), Action.FEEDBACK, enabled=True),

@@ -107,6 +107,9 @@ def _build() -> frozenset[tuple[MeetingState, MeetingState]]:
     pairs.add((M.RENDERED, M.SUMMARIZED))  # re-render
     pairs.add((M.DELIVERED, M.RENDERED))
     pairs.add((M.TRANSCRIBED, M.TRANSCRIBING))  # re-transcribe
+    # A re-transcription the user stopped: back to where the meeting was before it.
+    for state in (M.SUMMARIZED, M.RENDERED, M.DELIVERED):
+        pairs.add((M.TRANSCRIBING, state))
     pairs.add((M.SUMMARIZED, M.SUMMARIZING))
     pairs.add((M.ARMED, M.RECORDING))
     pairs.add((M.RECORDED, M.RECORDING))  # the same call, recorded again (D88)

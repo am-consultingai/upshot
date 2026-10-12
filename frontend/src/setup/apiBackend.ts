@@ -215,8 +215,9 @@ export class ApiSetupBackend implements SetupBackend {
   signIn(id: CliId): void {
     // A second press while one is running would replace it — and cancel a sign-in the
     // browser may be finishing (the test machine, 2026-09-28: the first attempt was cut off
-    // nine seconds in).
-    if (this.state.cli[id].phase === "signing-in") return;
+    // nine seconds in). Nor while the sign-in that just worked is being tested.
+    const phase = this.state.cli[id].phase;
+    if (phase === "signing-in" || phase === "testing") return;
     this.setCli(id, { phase: "signing-in" });
     this.started.set(id, Date.now());
     void api
@@ -257,9 +258,12 @@ export class ApiSetupBackend implements SetupBackend {
    * has ended: installed, the card waits for the user to press Sign in (the page explains
    * what happens first); not installed, it failed. Signed in means one tiny test prompt,
    * then ready. A sign-in that ends without signing in, or ten minutes of nothing, fails.
+   * "Ends" is read twice in a row: one poll landing as a login is replaced saw nothing
+   * running, and a sign-in that went on to work was failed (machine B, 2026-10-12).
    */
   private watch(id: CliId): void {
     const provider = CLI_PROVIDER[id];
+    let goneFor = 0;
     this.poll(`cli-${id}`, async () => {
       const status = await api.llmStatus();
       const row = status.providers.find((r) => r.id === provider);
@@ -285,7 +289,8 @@ export class ApiSetupBackend implements SetupBackend {
           this.test(id);
           return true;
         }
-        if (windowGone || overdue) {
+        goneFor = windowGone ? goneFor + 1 : 0;
+        if (goneFor >= 2 || overdue) {
           this.fail(id, "signin", windowGone ? "ended-signed-out" : "timed-out");
           return true;
         }
@@ -310,6 +315,26 @@ export class ApiSetupBackend implements SetupBackend {
   private fail(id: CliId, stage: "install" | "signin" | "test", reason: string): void {
     this.setCli(id, { phase: stage === "install" ? "install-failed" : "signin-failed" });
     void api.reportSetupFailure({ provider: CLI_PROVIDER[id], stage, reason }).catch(() => undefined);
+    if (stage === "signin") this.followFailed(id);
+  }
+
+  /**
+   * A failed sign-in is still looked at: the login may finish after all, or a Try again
+   * the card never heard back from may. Signed in, the card moves on as if it had
+   * watched it; it said "Not signed in" while the CLI was (machine B, 2026-10-12).
+   */
+  private followFailed(id: CliId): void {
+    const provider = CLI_PROVIDER[id];
+    this.poll(`cli-${id}`, async () => {
+      if (this.state.cli[id].phase !== "signin-failed") return true;
+      const row = (await api.llmStatus()).providers.find((r) => r.id === provider);
+      if (row?.signed_in === true) {
+        this.setCli(id, cliFacts(row, id));
+        this.test(id);
+        return true;
+      }
+      return Date.now() - (this.started.get(id) ?? 0) > GIVE_UP_MS;
+    });
   }
 
   // ------------------------------------------------------------------ key

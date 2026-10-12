@@ -47,6 +47,30 @@ class WorkerStats:
     skipped_by_policy: int = 0
 
 
+def settle_stopped(dao: Dao, meeting_id: str, before: str) -> None:
+    """A meeting whose transcription the user stopped goes back to where it was: a
+    re-transcription to its transcript and summary, which nothing has replaced (the
+    stage writes its output only once it has finished), a first one to "recorded".
+
+    From a state that says nothing of what is on disk (still transcribing after a
+    restart, failed, interrupted), the transcript decides which.
+    """
+    from app.pipeline.stages.assemble import transcript_paths
+    from app.pipeline.states import is_legal
+
+    meeting = dao.get_meeting(meeting_id)
+    if meeting is None:
+        return
+    target = MeetingState(before)
+    if target in (MeetingState.TRANSCRIBING, MeetingState.FAILED, MeetingState.INTERRUPTED):
+        transcribed = transcript_paths(Path(meeting.folder))[1].exists()
+        target = MeetingState.TRANSCRIBED if transcribed else MeetingState.RECORDED
+    current = MeetingState(meeting.state)
+    if current != target and is_legal(current, target):
+        dao.set_state(meeting_id, target)
+    log.info("meeting %s: transcription stopped by the user; back to %s", meeting_id, target)
+
+
 class Worker:
     def __init__(
         self,
@@ -171,6 +195,8 @@ class Worker:
             )
             self.stats.failed += 1
             return
+        # Where a transcription the user stops takes the meeting back to.
+        before = meeting.state
         context = StageContext(
             meeting=meeting,
             dao=self.dao,
@@ -217,8 +243,15 @@ class Worker:
                     stage_fn(context)
                     if self.queue.deleting(job.meeting_id):
                         raise Cancelled(f"{job.stage} finished, but the meeting is being deleted")
+                    if self.queue.stopping(job.meeting_id):
+                        raise Cancelled(f"{job.stage} finished, but the user stopped it")
                 except Cancelled as exc:
                     log.info("%s", exc)  # the deletion itself is finished below
+                    if not self.queue.deleting(job.meeting_id) and self.queue.stopping(
+                        job.meeting_id
+                    ):
+                        self.queue.stopped(job)
+                        settle_stopped(self.dao, job.meeting_id, before)
                     return
                 except Preempted:
                     self.queue.release(job)
@@ -236,6 +269,7 @@ class Worker:
                     return
                 finally:
                     release()
+                    self.queue.clear_stop(job.meeting_id)
                     # However the stage ended: a meeting deleted meanwhile goes now.
                     self.finish_delete(job.meeting_id)
                     # Failed, deferred, preempted, deleted; a success is said below, once done.
