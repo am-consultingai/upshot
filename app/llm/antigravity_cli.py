@@ -237,23 +237,34 @@ def install_console(command: str, *, shown: str | None = None, sign_in: bool = T
 
 
 def login_console(argv: Sequence[str]) -> list[str]:
-    """Sign in, in a console of its own, where the code is pasted. Arguments quoted."""
+    """Sign in, in a console of its own, where the code is pasted. Arguments quoted.
+
+    The window closes when the run ends, so the page watching it learns the outcome at
+    once rather than after its ten-minute wait. Signed in, it closes by itself. Otherwise
+    it says so and closes on Enter, so what happened can be read first. The page judges
+    by the signed-in state, not by this exit code: a sign-in that worked followed by a
+    prompt that failed still counts, which is why the words here are careful.
+
+    The transcript does not record what a native program prints (Windows PowerShell 5.1,
+    machine A, 2026-10-12), so the exit code is written out for the log to keep.
+    """
     quoted = " ".join("'" + part.replace("'", "''") + "'" for part in argv)
     script = (
         "Write-Host 'Signing in to Antigravity with your Google account.' -ForegroundColor Cyan; "
         f"{_LOGIN_GUIDANCE}"
         f"& {quoted}; "
-        # Signed in, the window has nothing more to say and closes: the page, watching
-        # it, moves on. Otherwise it stays, so what went wrong can be read.
-        "if ($LASTEXITCODE -eq 0) { Stop-Transcript | Out-Null; exit 0 }; "
+        "$code = $LASTEXITCODE; "
+        "Write-Host ('Antigravity exited with code ' + $code); "
+        "if ($code -eq 0) { Stop-Transcript | Out-Null; exit 0 }; "
         "Write-Host ''; "
-        "Write-Host ('The sign-in did not finish. Close this window, then press Sign in ' + "
-        "'again.') -ForegroundColor Yellow"
+        "Write-Host ('Antigravity stopped. If Upshot did not move on, press Sign in there ' + "
+        "'again.') -ForegroundColor Yellow; "
+        "Read-Host 'Press Enter to close this window' | Out-Null; "
+        "Stop-Transcript | Out-Null; exit 1"
     )
     return [
         "powershell.exe",
         "-NoProfile",
-        "-NoExit",
         "-Command",
         transcribed(script, "antigravity-signin"),
     ]
