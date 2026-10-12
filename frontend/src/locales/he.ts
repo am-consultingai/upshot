@@ -762,6 +762,8 @@ export const he: Record<MessageKey, string> = {
   "settings.models.automaticDefault": "אוטומטי (ברירת המחדל של הספק)",
   "settings.models.dropped": "{model} כבר לא זמין, ולכן נעשה שימוש בבחירה האוטומטית.",
   "settings.models.none": "הספק לא החזיר רשימת מודלים: {reason}",
+  "settings.models.loading": "מבקשים מהספק את רשימת המודלים…",
+  "settings.models.unavailable": "לא ניתן היה לטעון את רשימת המודלים.",
   "settings.models.refresh": "רענון הרשימה",
   "settings.models.refreshing": "מרענן…",
   "assistant.model": "מודל לשיחה",

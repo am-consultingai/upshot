@@ -2799,7 +2799,7 @@ def _model_view(config: Config, catalog: Any, provider: str, listing: Any) -> di
         "error": listing.error,
         "chosen": {use: model_choice.chosen(config, provider, use) for use in model_choice.USES},
         "automatic": {
-            use: model_choice.automatic(provider, use, listing) for use in model_choice.USES
+            use: model_choice.automatic(provider, use, listing, config) for use in model_choice.USES
         },
         "effective": {
             use: model_choice.resolve(config, provider, use, catalog) for use in model_choice.USES
@@ -2834,8 +2834,13 @@ def llm_model_put(request: Request, body: ModelChoicePut) -> dict[str, Any]:
     svc = services_of(request)
     catalog = svc.models
     model = body.model.strip()
+    if model and not model_choice.valid_id(model):
+        raise HTTPException(400, "that is not a model id")
+    if model and body.provider == "ollama" and not model_choice.is_local_ollama({"name": model}):
+        raise HTTPException(400, "an Ollama cloud model would take meetings off this machine")
     if model and catalog is not None:
-        listing = catalog.listing(body.provider)
+        # The list held, which Settings has just shown; asked for only if there is none.
+        listing = catalog.cached(body.provider) or catalog.listing(body.provider)
         if listing.models and model not in listing.ids():
             raise HTTPException(400, f"{body.provider} does not offer {model!r}")
     key = model_choice.CONFIG_KEY[body.use]

@@ -714,6 +714,8 @@ export const es: Record<MessageKey, string> = {
   "settings.models.automaticDefault": "Automático (el predeterminado del proveedor)",
   "settings.models.dropped": "{model} ya no se ofrece, así que se usa la elección automática.",
   "settings.models.none": "El proveedor no listó sus modelos: {reason}",
+  "settings.models.loading": "Pidiendo al proveedor su lista de modelos…",
+  "settings.models.unavailable": "No se pudo cargar la lista de modelos.",
   "settings.models.refresh": "Actualizar la lista",
   "settings.models.refreshing": "Actualizando…",
   "assistant.model": "Modelo para la conversación",
