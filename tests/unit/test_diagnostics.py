@@ -404,3 +404,82 @@ def test_a_package_init_frame_is_named_after_the_package() -> None:
         r'  File "C:\Python\Lib\ctypes\__init__.py", line 538 in string_at' + "\n"
     )
     assert scrub.frames_from_fault_dump(dump)[0]["module"] == "ctypes"
+
+
+# ------------------------------------------------------------------ setup failures
+
+
+def _transcript(username: str, machine: str, body: str) -> str:
+    """A console's transcript as Windows PowerShell 5.1 writes it, header labels and all."""
+    return f"""**********************
+Windows PowerShell transcript start
+Start time: 20261012065759
+{username}: SOMEPC\\someone
+{machine}: SOMEPC (Microsoft Windows NT 10.0.26200.0)
+Host Application: powershell.exe -NoProfile -Command ...
+**********************
+This window is recorded to C:\\Users\\someone\\AppData\\Local\\upshot\\logs\\x.log
+{body}
+**********************
+Windows PowerShell transcript end
+End time: 20261012065900
+**********************
+"""
+
+
+OLD_RUN = "=== 2026-10-10 09:00:00 hidden: agy -p x\nan older run's last words\n=== exited with 1\n"
+
+
+def test_a_log_tail_is_the_latest_run_without_who_or_where(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(scrub, "_identity", lambda: ["SOMEPC", "someone", "CORP"])
+    log = tmp_path / "antigravity-signin.log"
+    body = (
+        "Authentication required. Please visit the URL to log in:\n"
+        "  https://accounts.google.com/o/oauth2/auth?state=abcdefabcdefabcdefabcdefabcdefabcdef\n"
+        '{"error":"open C:\\\\Users\\\\someone\\\\.gemini\\\\x failed"}\n'
+        "Access denied for CORP\\someone on SOMEPC\n"
+        "Antigravity exited with code 1"
+    )
+    # German Windows labels the header in German: it goes by its borders, not its words.
+    log.write_text(OLD_RUN + _transcript("Benutzername", "Computer", body), encoding="utf-8")
+    tail = scrub.log_tail(log)
+    assert tail[-1] == "Antigravity exited with code 1"
+    assert "https://accounts.google.com/…" in tail
+    joined = "\n".join(tail)
+    for gone in ("SOMEPC", "someone", "CORP", "state=", "Benutzername", "older run", "recorded to"):
+        assert gone not in joined, gone
+    assert scrub.log_tail(tmp_path / "missing.log") == []
+
+
+def test_a_windowless_runs_tail_starts_at_its_own_marker(tmp_path: Path) -> None:
+    log = tmp_path / "codex-signin.log"
+    latest = "=== 2026-10-12 07:00:00 hidden: agy -p x\nError: timed out.\n=== exited with 1\n"
+    log.write_text(OLD_RUN + latest)
+    assert scrub.log_tail(log) == ["Error: timed out.", "=== exited with 1"]
+
+
+def test_every_form_of_a_windows_user_folder_is_scrubbed() -> None:
+    for path in (r"C:\Users\someone\x", r"C:\\Users\\someone\\x", "C:/Users/someone/x"):
+        assert "someone" not in scrub.scrub_text(path), path
+
+
+def test_a_setup_failure_is_reported_once_a_day_with_its_log(tmp_path: Path) -> None:
+    made, sent = reporter(tmp_path)
+    event = made.report_setup_failure(
+        product="Antigravity CLI", stage="signin", reason="ended-signed-out", log=["Error: x"]
+    )
+    assert event is not None and len(sent.items) == 1
+    value = event["exception"]["values"][0]
+    assert value["type"] == "SetupFailure"
+    assert value["value"] == "Antigravity CLI signin did not finish: ended-signed-out"
+    assert event["extra"] == {"log_tail": ["Error: x"]}
+    assert event["tags"]["where"] == "setup:signin" and event["tags"]["cli"] == "Antigravity CLI"
+    again = made.report_setup_failure(
+        product="Antigravity CLI", stage="signin", reason="ended-signed-out", log=[]
+    )
+    assert again is None, "the same failure is one report a day"
+    off, nothing = reporter(tmp_path / "off", consent="off")
+    assert off.report_setup_failure(product="Codex", stage="install", reason="x", log=[]) is None
+    assert nothing.items == []

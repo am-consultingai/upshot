@@ -296,27 +296,52 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
  * Sign-in. The vendor's tool has opened its page in the browser; the scene shows what
  * happens there. The link stays in reach in case the browser did not come forward, and
  * Claude's code is pasted back here, where Upshot passes it on (D75). Pasting it is
- * enough: there is no button to find afterwards.
+ * enough: there is no button to find afterwards. Once a code is on its way the form gives
+ * way to "Checking the code…", and the same code is never sent twice (pasting sends it,
+ * and Done used to send it again). Antigravity's code goes into its own window instead.
  */
 function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipInstall: boolean }) {
   const { t } = useI18n();
   const backend = useSetupBackend();
   const [code, setCode] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const send = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === sent) return;
+    setSent(trimmed);
+    backend.submitCode(id, trimmed);
+  };
   return (
     <div data-testid={`ai-signing-in-${id}`} className="space-y-3">
       <StageTrack current="signin" skipInstall={skipInstall} />
       <VendorSignInScene vendor={id} />
-      {cli.signinNeedsCode ? (
+      {cli.signinNeedsCode && cli.codeInWindow ? (
+        <Busy testId={`ai-code-in-window-${id}`}>{t("firstRun.ai.pasteCodeWindow")}</Busy>
+      ) : cli.signinNeedsCode && sent ? (
+        <div className="space-y-1.5">
+          <Busy testId={`ai-checking-code-${id}`}>{t("firstRun.ai.checkingCode")}</Busy>
+          <button
+            type="button"
+            className="text-xs text-secondary underline"
+            onClick={() => {
+              setSent(null);
+              setCode("");
+            }}
+          >
+            {t("firstRun.ai.otherCode")}
+          </button>
+        </div>
+      ) : cli.signinNeedsCode ? (
         <form
           className="space-y-1.5"
           onSubmit={(event) => {
             event.preventDefault();
-            backend.submitCode(id, code);
+            send(code);
           }}
         >
           <label htmlFor={`ai-code-${id}`} className="block text-sm">
-            {t(id === "antigravity" ? "firstRun.ai.pasteCodeGoogle" : "firstRun.ai.pasteCodeHere")}
+            {t("firstRun.ai.pasteCodeHere")}
           </label>
           <div className="flex gap-2">
             <input
@@ -331,7 +356,7 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
                 if (!pasted) return;
                 event.preventDefault();
                 setCode(pasted);
-                backend.submitCode(id, pasted);
+                send(pasted);
               }}
               autoComplete="off"
               spellCheck={false}
