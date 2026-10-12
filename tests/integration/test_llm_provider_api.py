@@ -503,3 +503,55 @@ def test_the_general_settings_cannot_set_a_bad_model(api) -> None:  # type: igno
         client.put("/api/settings", json={"values": {"llm.gemini_model": "gemini-3"}}).status_code
         == 200
     )
+
+
+def test_a_cli_model_is_not_tried_and_a_choice_is_announced(
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    """A CLI runs what it lists, so no trial prompt; the choice is published for any
+    other window showing it."""
+    from app.llm import model_choice
+    from app.llm.claude_cli import ClaudeCliClient
+
+    def never(self, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("a CLI's model is not tried")
+
+    monkeypatch.setattr(ClaudeCliClient, "complete_json", never)
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        api.services.events, "publish", lambda kind, **data: seen.append({kind: data})
+    )
+    api.services.models._lists["claude-subscription"] = model_choice.Listing(
+        models=[model_choice.ModelInfo("haiku", "Haiku")], fetched_at=api.services.models.now()
+    )
+    saved = api.client().put(
+        "/api/llm/model",
+        json={"provider": "claude-subscription", "use": "assistant", "model": "haiku"},
+    )
+    assert saved.status_code == 200
+    assert {"settings": {"changed": ["llm.assistant_models"]}} in seen
+
+
+def test_ask_runs_the_summaries_model_for_a_provider_with_no_chat_box(
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    """Ask's model: the conversation's for a provider with a chat box to choose it at,
+    the summaries' for one without; a model the settings refuse is said on the page."""
+    from app import ask as ask_module
+    from app.errors import PermanentError
+    from tests.integration.test_redesign_api import _transcribed
+
+    _transcribed(api, "m-a", "Churn review", [(0, "ME", "Churn went up in August.")])
+    meeting = api.services.dao.get_meeting("m-a")
+    used: list[str] = []
+
+    def make(config, *, sensitive=False, provider=None, use="summary", fetch=False):  # type: ignore[no-untyped-def]
+        used.append(use)
+        raise PermanentError("The Ollama model set is a cloud model.")
+
+    monkeypatch.setattr(ask_module, "make_client", make)
+    for provider in ("gemini", "antigravity-subscription"):
+        api.services.config.set("llm.provider", provider)
+        with pytest.raises(ask_module.AskError, match="cloud model"):
+            ask_module.ask(api.services.dao, api.services.config, meeting, "What happened?")
+    assert used == ["summary", "assistant"]

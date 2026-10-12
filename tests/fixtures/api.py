@@ -152,8 +152,14 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
 
     # Never a real CLI: machines A and B have agy and codex on PATH, and the app's start
     # asks every CLI for its list. A test that wants a list sets ``run`` itself.
+    class NoNetwork:
+        """An API provider's list in a test is one the test seeds, never the network's."""
+
+        def get(self, url: str, **kwargs: Any) -> Any:
+            raise model_choice.ListError(model_choice.FAILED)
+
     services.models = model_choice.Catalog(
-        config, run=lambda args, timeout: (1, "", "not in tests")
+        config, run=lambda args, timeout: (1, "", "not in tests"), http=NoNetwork()
     )
     model_choice.set_catalog(services.models)
     from app.diagnostics.feedback import FeedbackSender
