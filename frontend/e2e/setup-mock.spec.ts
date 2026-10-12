@@ -63,6 +63,41 @@ test.describe("setupmock_", () => {
     await expect(page.getByTestId("key-offer")).toHaveCount(0);
   });
 
+  /** Choose one service and reach its sign-in, on the flow as it is now (services, then AI). */
+  async function signingIn(page: Page, id: "claude" | "antigravity"): Promise<void> {
+    await open(page, "scenario=fresh&step=services");
+    await page.getByTestId(`service-${id}`).click();
+    await page.getByTestId("setup-next").click();
+    const intro = page.getByTestId(`ai-signin-${id}`);
+    const signing = page.getByTestId(`ai-signing-in-${id}`);
+    await expect(intro.or(signing)).toBeVisible({ timeout: 15000 });
+    if (await intro.isVisible()) await intro.click();
+    await expect(signing).toBeVisible();
+  }
+
+  test("setupmock_signin: Done shows the code being checked, and the form gives way", async ({
+    page,
+    seedBody,
+  }) => {
+    await seedBody({ reset: true });
+    await signingIn(page, "claude");
+    await page.getByTestId("ai-code-claude").fill("abc-123");
+    await page.getByTestId("ai-submit-code-claude").click();
+    await expect(page.getByTestId("ai-checking-code-claude")).toBeVisible();
+    await expect(page.getByTestId("ai-submit-code-claude")).toHaveCount(0);
+    await expect(page.getByTestId("ai-ready-claude")).toBeVisible({ timeout: 15000 });
+  });
+
+  test("setupmock_signin: Antigravity's code goes into its own window, not the page", async ({
+    page,
+    seedBody,
+  }) => {
+    await seedBody({ reset: true });
+    await signingIn(page, "antigravity");
+    await expect(page.getByTestId("ai-code-in-window-antigravity")).toBeVisible();
+    await expect(page.getByTestId("ai-code-antigravity")).toHaveCount(0);
+  });
+
   test("setupmock_walkthrough: the speaker test runs by itself", async ({ page, seedBody }) => {
     await seedBody({ reset: true });
     await open(page, "scenario=fresh&step=audio");

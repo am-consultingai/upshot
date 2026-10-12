@@ -368,6 +368,14 @@ def test_sign_in_is_a_tiny_prompt_and_sign_out_does_not_exist(tmp_path: Path) ->
     assert client.logout_command() is None, "/logout is refused in print mode"
     script = antigravity_cli.login_console([r"C:\Users\someone\App Data\agy.exe", "-p", "x"])[-1]
     assert "'C:\\Users\\someone\\App Data\\agy.exe'" in script, "a path with a space is quoted"
+    assert "if ($code -eq 0) { Stop-Transcript | Out-Null; exit 0 }" in script, (
+        "signed in, the window closes by itself"
+    )
+    assert "Read-Host" in script, "otherwise it closes on Enter, after it can be read"
+    assert "Antigravity exited with code" in script, "the transcript misses agy's own output"
+    argv = antigravity_cli.login_console(["agy"])
+    assert "-NoExit" not in argv, "the window ends with the run, so the page learns at once"
+    assert antigravity_cli.SIGNIN_HIDDEN is False, "agy never reads a code from a pipe"
 
 
 def test_googles_login_link_is_recognised() -> None:
