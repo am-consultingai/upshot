@@ -35,6 +35,8 @@ REMOTE = frozenset(
         # "Which meeting was this?" (D89): one of the meetings, or none.
         "meeting.assign",
         "meeting.none",
+        # "Meeting ended. Transcribing…": stop that transcription.
+        "transcription.stop",
     }
 )
 #: Actions that show a page of the app; the launched process does these itself, since

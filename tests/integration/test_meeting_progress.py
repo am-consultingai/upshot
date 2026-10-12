@@ -222,7 +222,7 @@ def test_the_active_list_is_both_queues_in_scheduler_order_and_nothing_finished(
         meeting_progress("transcribe", 0.5)
     )
     assert first["eta_s"] is not None and first["eta_s"] > 0
-    assert first["cancellable"] is False
+    assert first["cancellable"] is True, "a meeting's transcription can be stopped"
     assert jobs[1]["client"] == "mcp" and jobs[1]["cancellable"] is True
     assert jobs[1]["waiting_reason"] == "queue"
     assert jobs[2]["progress"] is None, "a meeting waiting has no figure yet"

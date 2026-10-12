@@ -168,7 +168,10 @@ class BaseNotifier:
             Toast(
                 title=self._t("toast.ended.title", length=length),
                 body=why,
-                buttons=(Button(self._t("button.open"), "meeting.open", meeting_id),),
+                buttons=(
+                    Button(self._t("button.open"), "meeting.open", meeting_id),
+                    Button(self._t("button.stopTranscription"), "transcription.stop", meeting_id),
+                ),
                 key=f"ended:{meeting_id}",
                 meeting_id=meeting_id,
             )
