@@ -1481,22 +1481,14 @@ def stop_transcription(request: Request, meeting_id: str) -> dict[str, Any]:
     was. A running one stops at its next checkpoint (between segments of speech), so the
     answer says ``running`` and the meeting settles a moment later.
     """
-    from app.pipeline.worker import settle_stopped
+    from app.pipeline.worker import stop_transcription as stop
 
     svc = services_of(request)
     meeting = _visible(svc, meeting_id)
     meeting_id = meeting.id  # an id merged away names the meeting it joined (D89)
-    stopped = svc.queue.request_stop(meeting_id)
+    stopped = stop(svc, meeting_id)
     if stopped is None:
         raise HTTPException(409, "this meeting is not being transcribed")
-    if stopped == "waiting":
-        # It never started; only a merge (D89) moves a meeting to TRANSCRIBING ahead of it.
-        settle_stopped(svc.dao, meeting_id, meeting.state)
-        svc.events.publish("job", meeting_id=meeting_id, stage="transcribe", state="cancelled")
-    if svc.notifier is not None:
-        # "Meeting ended. Transcribing…" is no longer true.
-        svc.notifier.withdraw(meeting_id)
-    log.info("meeting %s: transcription stop requested (%s)", meeting_id, stopped)
     return {"meeting_id": meeting_id, "stopped": stopped}
 
 

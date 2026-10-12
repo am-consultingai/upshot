@@ -55,8 +55,10 @@ def running_progress(svc: Any) -> float | None:
 def stop_running(svc: Any) -> str | None:
     """Stop whatever transcription is running now, meeting or file: the tray's "Stop
     transcription". What was stopped (``meeting:<id>`` or ``file:<id>``), or ``None``."""
+    from app.pipeline.worker import stop_transcription
+
     for job in svc.queue.running_jobs():
-        if job.stage in TRANSCRIPT_STAGES and svc.queue.request_stop(job.meeting_id):
+        if job.stage in TRANSCRIPT_STAGES and stop_transcription(svc, job.meeting_id):
             return f"meeting:{job.meeting_id}"
     store = svc.transcriptions
     current = store.running() if store is not None else None
