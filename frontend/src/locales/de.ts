@@ -803,7 +803,7 @@ export const de: Record<MessageKey, string> = {
   "firstRun.services.gemini.plan": "Google AI Pro- oder Ultra-Plan · Google",
   "firstRun.ai.intro.claude": "Klicken Sie auf „Anmelden“, und Claude öffnet sich in Ihrem Browser. Melden Sie sich mit dem Konto an, zu dem Ihr Abonnement gehört, und klicken Sie auf „Authorize“. Upshot bemerkt das meist von selbst; zeigt Claude stattdessen einen Code an, kopieren Sie ihn und fügen Sie ihn hier ein.",
   "firstRun.ai.intro.codex": "Klicken Sie auf „Anmelden“, und die Anmeldung von ChatGPT öffnet sich in Ihrem Browser. Melden Sie sich mit dem Konto an, zu dem Ihr Abonnement gehört, und klicken Sie auf „Continue“. Upshot bemerkt von selbst, wenn Sie fertig sind.",
-  "firstRun.ai.intro.antigravity": "Klicken Sie auf „Anmelden“, und die Anmeldung von Google öffnet sich in Ihrem Browser. Wählen Sie das Konto mit Ihrem Google AI-Plan und klicken Sie auf „Weiter“. Google zeigt dann einen Code an: Kopieren Sie ihn und fügen Sie ihn innerhalb einer Minute hier ein.",
+  "firstRun.ai.intro.antigravity": "Klicken Sie auf „Anmelden“, und die Anmeldung von Google öffnet sich in Ihrem Browser. Wählen Sie das Konto mit Ihrem Google AI-Plan und klicken Sie auf „Weiter“. Google zeigt dann einen Code an: Kopieren Sie ihn, fügen Sie ihn in das daneben geöffnete Antigravity-Fenster ein und drücken Sie innerhalb einer Minute die Eingabetaste.",
   "firstRun.ai.signinButton": "Mit {name} anmelden",
   "firstRun.ai.pasteCodeHere": "Wenn Claude im Browser einen Code anzeigt, fügen Sie ihn hier ein:",
   "firstRun.ai.pasteCodeWindow": "Kopieren Sie den Code, den Google im Browser anzeigt, fügen Sie ihn innerhalb einer Minute in das geöffnete Antigravity-Fenster ein und drücken Sie die Eingabetaste.",

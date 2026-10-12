@@ -2605,7 +2605,7 @@
     },
     "/api/llm/signin/cancel": {
       "post": {
-        "description": "Stop a windowless sign-in: it holds a port and would otherwise wait forever.",
+        "description": "Stop a sign-in: a windowless one holds a port and would otherwise wait forever, and\na sign-in window (Antigravity's) would go on waiting for a code.",
         "operationId": "llm_signin_cancel_api_llm_signin_cancel_post",
         "requestBody": {
           "content": {

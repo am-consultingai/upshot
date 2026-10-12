@@ -197,18 +197,27 @@ class HiddenLogin:
         The npm install is a chain (``codex.cmd`` → ``node`` → ``codex.exe``): killing only
         the process we started would leave the one holding the callback port alive.
         """
-        if not self.running():
-            return
-        if sys.platform == "win32":
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(self.process.pid)],
-                capture_output=True,
-                creationflags=creation_flags(visible=False),
-                check=False,
-            )
-        else:
-            self.process.kill()
-        try:
-            self.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            log.warning("sign-in process %d did not exit after being stopped", self.process.pid)
+        kill_tree(self.process)
+
+
+def kill_tree(process: subprocess.Popen[str] | subprocess.Popen[bytes]) -> None:
+    """End ``process`` and everything it started, if it is still running.
+
+    A chain (``codex.cmd`` → ``node`` → ``codex.exe``, or a sign-in window's
+    ``powershell.exe`` → ``agy.exe``): killing only the first leaves the one that matters.
+    """
+    if process.poll() is not None:
+        return
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            capture_output=True,
+            creationflags=creation_flags(visible=False),
+            check=False,
+        )
+    else:
+        process.kill()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        log.warning("sign-in process %d did not exit after being stopped", process.pid)
