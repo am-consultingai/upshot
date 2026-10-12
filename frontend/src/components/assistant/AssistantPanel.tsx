@@ -10,6 +10,7 @@ import { confirmDialog } from "../ConfirmDialog";
 import type { Citation } from "./Answer";
 import { ArrowRight, ChevronDown, X } from "lucide-react";
 import { Icon } from "../Icon";
+import ModelChoice, { MODEL_PROVIDERS } from "../ModelChoice";
 
 // The Markdown renderer is the heaviest thing in the panel; it loads with the first answer.
 const Answer = lazy(() => import("./Answer"));
@@ -357,6 +358,12 @@ function Chat({
           <p className="min-w-0 flex-1 text-2xs leading-snug text-tertiary" data-testid="assistant-disclaimer">
             {provider ? t("assistant.sentTo").replace("{provider}", providerName(t, provider)) : ""}
           </p>
+          {/* The conversation's model, switchable between questions (2026-10-12). */}
+          {provider && !unavailable && MODEL_PROVIDERS.has(provider) && (
+            <span data-testid="assistant-model" className="max-w-[45%] shrink">
+              <ModelChoice provider={provider} uses={["assistant"]} compact />
+            </span>
+          )}
           {busy ? (
             <Button
               data-testid="assistant-stop"

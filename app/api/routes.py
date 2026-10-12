@@ -11,7 +11,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from app import meta
 from app.clock import iso
-from app.config import LLM_PROVIDERS
+from app.config import LLM_PROVIDERS, Config
 from app.db.dao import GlossaryTerm, Meeting, capabilities, transaction
 from app.log import get
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
@@ -114,6 +114,14 @@ class GlossaryPut(BaseModel):
 
 class SecretsPut(BaseModel):
     values: dict[str, str] = Field(default_factory=dict)
+
+
+class ModelChoicePut(BaseModel):
+    """A model chosen for one provider and one use; empty goes back to automatic."""
+
+    provider: str = Field(max_length=40)
+    use: Literal["summary", "assistant"]
+    model: str = Field(default="", max_length=120)
 
 
 class ProviderPost(BaseModel):
@@ -2780,6 +2788,72 @@ def llm_update(request: Request, body: ProviderPost | None = None) -> dict[str, 
     ) | {"command": command}
 
 
+def _model_view(config: Config, catalog: Any, provider: str, listing: Any) -> dict[str, Any]:
+    from app.llm import model_choice
+
+    return {
+        "provider": provider,
+        "models": [model.as_dict() for model in listing.models],
+        "source": listing.source,
+        "fetched_at": listing.fetched_at or None,
+        "error": listing.error,
+        "chosen": {use: model_choice.chosen(config, provider, use) for use in model_choice.USES},
+        "automatic": {
+            use: model_choice.automatic(provider, use, listing) for use in model_choice.USES
+        },
+        "effective": {
+            use: model_choice.resolve(config, provider, use, catalog) for use in model_choice.USES
+        },
+    }
+
+
+@router.get("/llm/models")
+def llm_models(request: Request, provider: str, refresh: bool = False) -> dict[str, Any]:
+    """What ``provider`` offers, asked of the provider itself, and what is chosen for
+    summaries and for the conversation (``app.llm.model_choice``)."""
+    from app.llm import model_choice
+
+    if provider not in model_choice.PROVIDERS:
+        raise HTTPException(400, f"{provider!r} has no models to choose from")
+    svc = services_of(request)
+    catalog = svc.models
+    if catalog is None:
+        raise HTTPException(503, "model lists are not available")
+    listing = catalog.listing(provider, refresh=refresh)
+    return _model_view(svc.config, catalog, provider, listing)
+
+
+@router.put("/llm/model")
+def llm_model_put(request: Request, body: ModelChoicePut) -> dict[str, Any]:
+    """Choose the model ``provider`` runs for one use. Only one the provider lists, so a
+    typo never becomes a summary that fails; empty is automatic again."""
+    from app.llm import model_choice
+
+    if body.provider not in model_choice.PROVIDERS:
+        raise HTTPException(400, f"{body.provider!r} has no models to choose from")
+    svc = services_of(request)
+    catalog = svc.models
+    model = body.model.strip()
+    if model and catalog is not None:
+        listing = catalog.listing(body.provider)
+        if listing.models and model not in listing.ids():
+            raise HTTPException(400, f"{body.provider} does not offer {model!r}")
+    key = model_choice.CONFIG_KEY[body.use]
+    current = svc.config.get(key) or {}
+    choices = dict(current) if isinstance(current, dict) else {}
+    if model:
+        choices[body.provider] = model
+    else:
+        choices.pop(body.provider, None)
+    svc.config.set(key, choices)
+    svc.config.save()
+    log.info("%s model for %s: %s", body.use, body.provider, model or "automatic")
+    listing = catalog.cached(body.provider) if catalog is not None else None
+    if listing is None:
+        listing = model_choice.Listing()
+    return _model_view(svc.config, catalog, body.provider, listing)
+
+
 @router.post("/llm/test")
 def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
     """One tiny real call against the selected provider. Costs a few tokens."""
@@ -2792,16 +2866,31 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
     # start — so a Test pressed straight after choosing a provider (both requests in
     # flight at once) restored the *old* choice over the new one, and the next save
     # persisted it. Found by the Codex browser spec; see D59.
+    # The conversation's model: the check only proves the provider answers, and a model
+    # that thinks at length made setup's "Ready" wait 92 s (Antigravity's default,
+    # machine A, 2026-10-12). Timed and logged, so a slow one can be seen.
+    started = time.monotonic()
+    model = ""
     try:
-        client = make_client(svc.config, provider=provider)
+        client = make_client(svc.config, provider=provider, use="assistant")
+        model = str(getattr(client, "model", "") or "")
         result = client.complete_json(
             system_blocks=system_blocks("You answer with JSON only.", None),
             user='Reply with exactly {"ok": true}',
             schema=PROBE_SCHEMA,
             max_tokens=64,
         )
-        return {"provider": provider, "ok": bool(result.data.get("ok")), "model": result.model}
+        ok = bool(result.data.get("ok"))
+        verdict = "ok" if ok else "wrong answer"
+        took = time.monotonic() - started
+        log.info("provider test %s (model %s): %s in %.1f s", provider, model or "default",
+                 verdict, took)  # fmt: skip
+        return {"provider": provider, "ok": ok, "model": result.model}
     except Exception as exc:
+        log.warning(
+            "provider test %s (model %s) failed in %.1f s: %s",
+            provider, model or "default", time.monotonic() - started, type(exc).__name__,
+        )  # fmt: skip
         return {"provider": provider, "ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
