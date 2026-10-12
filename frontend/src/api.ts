@@ -347,6 +347,27 @@ export interface BuildInfo {
   reports: boolean;
 }
 
+export type ModelUse = "summary" | "assistant";
+
+/** A provider's model list and its choices (`GET /api/llm/models`). */
+export interface ModelChoices {
+  provider: string;
+  models: { id: string; label: string }[];
+  /** `live` was asked of the provider; `fixed` is our own list (Claude Code's aliases). */
+  source: "live" | "fixed";
+  fetched_at: number | null;
+  /** Why the list is empty, if it is: a code (`not-installed`, `signed-out`, `refused`…). */
+  error: string;
+  /** The HTTP status a vendor refused with. */
+  status: number | null;
+  /** What the user chose; "" is automatic. */
+  chosen: Record<ModelUse, string>;
+  /** Our own choice; "" is the provider's default. */
+  automatic: Record<ModelUse, string>;
+  /** What runs. */
+  effective: Record<ModelUse, string>;
+}
+
 export interface LlmProvider {
   id: string;
   label: string;
@@ -791,6 +812,17 @@ export const api = {
     request<{ secrets: Record<string, boolean> }>("/api/settings/secrets", {
       method: "PUT",
       body: JSON.stringify({ values }),
+    }),
+  /** What `provider` offers, asked of the provider itself, and what each use runs. */
+  llmModels: (provider: string, refresh = false) =>
+    request<ModelChoices>(
+      `/api/llm/models?provider=${encodeURIComponent(provider)}${refresh ? "&refresh=true" : ""}`,
+    ),
+  /** Choose the model `provider` runs for summaries or the conversation; "" is automatic. */
+  setLlmModel: (provider: string, use: ModelUse, model: string) =>
+    request<ModelChoices>("/api/llm/model", {
+      method: "PUT",
+      body: JSON.stringify({ provider, use, model }),
     }),
   llmTest: (provider: string) =>
     request<{ provider: string; ok: boolean; model?: string; error?: string }>(

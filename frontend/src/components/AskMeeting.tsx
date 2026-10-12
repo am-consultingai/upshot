@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
-import { api, type AskAnswer } from "../api";
+import { api, reason, type AskAnswer } from "../api";
 import { useI18n } from "../i18n";
 import { stamp } from "../lib/speakers";
 import { Spinner } from "./Button";
@@ -50,7 +50,7 @@ export default function AskMeeting({
       setTurns((all) =>
         all.map((turn) =>
           turn.question === text && !turn.answer
-            ? { ...turn, error: String(error instanceof Error ? error.message : error).replace(/^\d+: /, "") }
+            ? { ...turn, error: reason(error) }
             : turn,
         ),
       ),

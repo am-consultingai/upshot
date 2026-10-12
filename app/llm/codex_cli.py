@@ -558,6 +558,8 @@ class CodexCliClient:
         self.config = config
         self.executable = str(config.get("llm.codex_cli_path", DEFAULT_EXECUTABLE))
         self.timeout = float(config.get("llm.codex_cli_timeout_s", 600))
+        #: ``--model``; empty is the CLI's own default (``app.llm.model_choice``).
+        self.model = ""
         self.max_repairs = max_repairs
         self.runner: Runner = runner or subprocess_runner
         self.calls: list[dict[str, Any]] = []
@@ -668,6 +670,7 @@ class CodexCliClient:
             str(scratch.schema_file),
             "--output-last-message",
             str(scratch.answer_file),
+            *(["--model", self.model] if self.model else []),
             *extra,
             "-",
         ]

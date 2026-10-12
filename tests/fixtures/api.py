@@ -148,6 +148,20 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
 
     # A run from source: no DSN, so nothing can be sent whatever the answer (D87).
     services.reporter = CrashReporter(config, dsn="", home=tmp_path, background=False)
+    from app.llm import model_choice
+
+    # Never a real CLI: machines A and B have agy and codex on PATH, and the app's start
+    # asks every CLI for its list. A test that wants a list sets ``run`` itself.
+    class NoNetwork:
+        """An API provider's list in a test is one the test seeds, never the network's."""
+
+        def get(self, url: str, **kwargs: Any) -> Any:
+            raise model_choice.ListError(model_choice.FAILED)
+
+    services.models = model_choice.Catalog(
+        config, run=lambda args, timeout: (1, "", "not in tests"), http=NoNetwork()
+    )
+    model_choice.set_catalog(services.models)
     from app.diagnostics.feedback import FeedbackSender
 
     # No DSN either: feedback can be previewed but not sent (D87).

@@ -9,6 +9,7 @@ import Tooltip from "./Tooltip";
 import { openExternal } from "../lib/external";
 import { VendorLogo, type VendorId } from "../setup/logos";
 import { Loading, SkeletonRows } from "./Skeleton";
+import ModelChoice, { MODEL_PROVIDERS } from "./ModelChoice";
 
 /** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
 const LOGO: Record<string, VendorId | undefined> = {
@@ -513,6 +514,16 @@ export default function ProviderSettings() {
               ))}
           </select>
         </label>
+      )}
+
+      {/*
+       * Which model the chosen provider runs for summaries, from the list the provider
+       * gives (D97). The conversation's model is chosen where the conversation is, in the
+       * assistant panel (product owner, 2026-10-12). Only once it can answer: a CLI not yet
+       * signed in, or a key not yet saved, has nothing to list.
+       */}
+      {active && MODEL_PROVIDERS.has(active) && rows.some((provider) => provider.id === active && provider.ready && provider.signed_in !== false) && (
+        <ModelChoice key={active} provider={active} uses={["summary"]} />
       )}
     </section>
   );

@@ -517,6 +517,36 @@
         "title": "MergePost",
         "type": "object"
       },
+      "ModelChoicePut": {
+        "description": "A model chosen for one provider and one use; empty goes back to automatic.",
+        "properties": {
+          "model": {
+            "default": "",
+            "maxLength": 120,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 40,
+            "title": "Provider",
+            "type": "string"
+          },
+          "use": {
+            "enum": [
+              "summary",
+              "assistant"
+            ],
+            "title": "Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "use"
+        ],
+        "title": "ModelChoicePut",
+        "type": "object"
+      },
       "OpenPost": {
         "properties": {
           "url": {
@@ -2532,6 +2562,99 @@
           }
         },
         "summary": "Llm Install"
+      }
+    },
+    "/api/llm/model": {
+      "put": {
+        "description": "Choose the model ``provider`` runs for one use. Only one the provider lists, so a\ntypo never becomes a summary that fails; empty is automatic again. A refusal's\n``detail`` is a code the page translates.",
+        "operationId": "llm_model_put_api_llm_model_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelChoicePut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Model Put Api Llm Model Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Llm Model Put"
+      }
+    },
+    "/api/llm/models": {
+      "get": {
+        "description": "What ``provider`` offers, asked of the provider itself, and what is chosen for\nsummaries and for the conversation (``app.llm.model_choice``).",
+        "operationId": "llm_models_api_llm_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Llm Models Api Llm Models Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Llm Models"
       }
     },
     "/api/llm/prompt": {
