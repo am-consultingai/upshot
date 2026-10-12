@@ -106,8 +106,10 @@ class CodexRoute(ClaudeRoute):
     name = "codex-subscription"
     label = "Codex"
 
-    def __init__(self, config: Any, *, command: list[str] | None = None) -> None:
-        super().__init__(config, command=command)
+    def __init__(
+        self, config: Any, *, command: list[str] | None = None, fetch: bool = False
+    ) -> None:
+        super().__init__(config, command=command, fetch=fetch)
         self.cli = codex_cli.CodexCliClient(config)  # type: ignore[assignment]
         self.choose_model()
         self.token = ""

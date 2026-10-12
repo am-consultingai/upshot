@@ -11,8 +11,9 @@ the conversation, from what the provider itself lists.
   Claude Code has no list command, so it offers the aliases its ``--model`` takes. The
   lists are kept in memory, refreshed in the background at start and on request.
 * **Automatic is a choice of ours, and the default.** It is what each provider did
-  before, except Antigravity's conversation, whose automatic choice is the newest Gemini
-  Flash (Low): someone waits for each answer. Its summaries keep the stronger default.
+  before, except Antigravity: its own default is unnamed and slow (75 s for one line), so
+  automatic names the newest Gemini Flash, Medium for summaries and Low for the
+  conversation. Any other Gemini model on the plan can be chosen instead.
 * **A choice that is no longer offered falls back to automatic**, logged, never an error:
   a CLI update that drops a model must not stop the summaries.
 
@@ -22,6 +23,7 @@ model id; a provider missing or empty is automatic.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import subprocess
@@ -51,6 +53,26 @@ CLAUDE_ALIASES = (
 
 #: How long a list is trusted before Settings asks again.
 FRESH_S = 6 * 3600
+#: How long a failure is kept: a CLI signed in, or a key fixed, a minute later must not
+#: wait six hours to be seen (second review of #24).
+RETRY_S = 60
+
+#: Why a list is empty, as a code the page translates. Never the provider's own words:
+#: they could name an account or a path, and they would reach the log.
+NOT_INSTALLED = "not-installed"
+SIGNED_OUT = "signed-out"
+NO_KEY = "no-key"
+NO_ANSWER = "no-answer"
+REFUSED = "refused"
+NO_MODELS = "no-models"
+FAILED = "failed"
+
+
+class ListError(Exception):
+    def __init__(self, code: str, status: int | None = None) -> None:
+        super().__init__(code if status is None else f"{code} {status}")
+        self.code = code
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -68,12 +90,18 @@ class Listing:
 
     models: list[ModelInfo] = field(default_factory=list)
     fetched_at: float = 0.0
+    #: One of the codes above, or ``""``.
     error: str = ""
+    #: The HTTP status a vendor refused with.
+    status: int | None = None
     #: ``live`` asked the provider; ``fixed`` is a list of our own (Claude's aliases).
     source: str = "live"
 
     def ids(self) -> set[str]:
         return {model.id for model in self.models}
+
+    def fresh(self, now: float) -> bool:
+        return now - self.fetched_at < (FRESH_S if self.models else RETRY_S)
 
 
 # ---------------------------------------------------------------------- listing
@@ -111,7 +139,9 @@ def _run(args: list[str], timeout: float) -> tuple[int, str, str]:
         out, err = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         kill_tree(process)
-        raise LookupError(f"no answer in {timeout:g} s") from None
+        with contextlib.suppress(Exception):
+            process.communicate(timeout=5)  # close the pipes
+        raise ListError(NO_ANSWER) from None
     return process.returncode, out, err
 
 
@@ -148,20 +178,20 @@ def _list_cli(provider: str, config: Config, run: Runner) -> list[ModelInfo]:
     client = _cli_client(provider, config)
     path = client.resolve()
     if path is None:
-        raise LookupError("not installed")
+        raise ListError(NOT_INSTALLED)
     if provider == "antigravity-subscription":
         code, out, err = run([path, "models"], 30.0)
         models = parse_agy_models(out)
         if not models:
-            lines = (err or out).strip().splitlines()
-            raise LookupError(lines[-1] if lines else "no models listed")
+            said = f"{out}\n{err}".lower()
+            raise ListError(SIGNED_OUT if "sign in" in said else NO_MODELS)
         return models
     if provider == "codex-subscription":
         code, out, err = run([path, "debug", "models"], 30.0)
         if code != 0:
-            raise LookupError(f"codex debug models exited {code}")
+            raise ListError(FAILED)
         return parse_codex_models(out)
-    raise LookupError(f"{provider} cannot list models")
+    raise ListError(FAILED)
 
 
 def _cli_client(provider: str, config: Config) -> Any:
@@ -199,7 +229,7 @@ def _get(http: Any, url: str, **kwargs: Any) -> dict[str, Any]:
     response = http.get(url, **kwargs)
     status = getattr(response, "status_code", 200)
     if status >= 400:
-        raise LookupError(f"the provider answered {status}")
+        raise ListError(REFUSED, status)
     data = response.json()
     return data if isinstance(data, dict) else {}
 
@@ -216,7 +246,7 @@ def _list_api(provider: str, config: Config, http: Any) -> list[ModelInfo]:
         ]
     key = config.secret(provider)
     if not key:
-        raise LookupError("no key saved")
+        raise ListError(NO_KEY)
     if provider == "anthropic":
         data = _get(
             http,
@@ -252,7 +282,7 @@ def _list_api(provider: str, config: Config, http: Any) -> list[ModelInfo]:
             ),
             key=lambda model: model.id,
         )
-    raise LookupError(f"{provider} has no model list")
+    raise ListError(FAILED)
 
 
 CLI_PROVIDERS = ("claude-subscription", "codex-subscription", "antigravity-subscription")
@@ -284,7 +314,7 @@ class Catalog:
         """The provider's list, asking for it if it has none, it is stale, or ``refresh``."""
         with self._lock:
             held = self._lists.get(provider)
-            if held is not None and not refresh and self.now() - held.fetched_at < FRESH_S:
+            if held is not None and not refresh and held.fresh(self.now()):
                 return held
             running = self._fetching.get(provider)
             if running is None:
@@ -293,7 +323,7 @@ class Catalog:
         if running is not None:
             running.wait(60)
             with self._lock:
-                return self._lists.get(provider) or Listing(error="still being asked for")
+                return self._lists.get(provider) or Listing(error=NO_ANSWER)
         try:
             listing = self._fetch(provider)
             with self._lock:
@@ -308,6 +338,12 @@ class Catalog:
         """The list already held, without asking: for a summary that must not wait."""
         with self._lock:
             return self._lists.get(provider)
+
+    def forget(self, provider: str) -> None:
+        """Drop ``provider``'s list: its key, sign-in or install changed, so the next ask
+        is a real one."""
+        with self._lock:
+            self._lists.pop(provider, None)
 
     def refresh_in_background(self, providers: Iterable[str]) -> threading.Thread:
         """Ask every given provider for its list, off the caller's thread (at start)."""
@@ -339,23 +375,26 @@ class Catalog:
                         models = _list_api(provider, self.config, http)
                 source = "live"
             else:
-                return Listing(fetched_at=started, error="this provider has no model list")
+                return Listing(fetched_at=started, error=FAILED)
+        except ListError as exc:
+            log.info("model list for %s unavailable: %s", provider, exc)
+            return Listing(fetched_at=started, error=exc.code, status=exc.status)
         except Exception as exc:
-            reason = str(exc) or type(exc).__name__
-            log.info("model list for %s unavailable: %s", provider, reason)
-            return Listing(fetched_at=started, error=reason[:200])
+            # Only the kind of failure: its text could carry a path or an account.
+            log.info("model list for %s failed: %s", provider, type(exc).__name__)
+            return Listing(fetched_at=started, error=FAILED)
         log.info("model list for %s: %d model(s)", provider, len(models))
         return Listing(models=models, fetched_at=started, source=source)
 
 
 def providers_to_list(config: Config) -> list[str]:
-    """Whose lists to ask for at start: the CLIs (each says at once if it is not
-    installed), the API providers with a key saved, and Ollama when it is in use."""
-    active = {str(config.get("llm.provider") or ""), str(config.get("llm.fallback_provider") or "")}
-    wanted = [*CLI_PROVIDERS]
-    wanted += [p for p in ("anthropic", "gemini", "openai") if config.secret(p)]
-    if "ollama" in active:
-        wanted.append("ollama")
+    """Whose lists to ask for at start: the providers in use (chosen and fallback). The
+    rest are asked when Settings shows them."""
+    wanted = []
+    for key in ("llm.provider", "llm.fallback_provider"):
+        provider = str(config.get(key) or "")
+        if provider in PROVIDERS and provider not in wanted:
+            wanted.append(provider)
     return wanted
 
 
@@ -364,28 +403,32 @@ def providers_to_list(config: Config) -> list[str]:
 #: ``gemini-3.8-flash-low`` → version (3, 8) and level ``low``.
 _AGY_FLASH = re.compile(r"^gemini-(?P<version>\d+(?:\.\d+)*)-flash-(?P<level>low|medium|high)$")
 
+#: The providers whose automatic choice is read from their list.
+NEEDS_LIST = frozenset({"antigravity-subscription"})
+
 
 def automatic(
     provider: str, use: str, listing: Listing | None, config: Config | None = None
 ) -> str:
     """Our own choice for ``provider`` and ``use``; ``""`` means the provider's default.
 
-    Only Antigravity's conversation gets one: its default thinks at length (75 s for a
-    one-line answer), and someone waits for each answer. The newest Gemini Flash (Low)
-    it lists. Its summaries keep the default, the stronger model, and an
-    ``llm.antigravity_model`` set by hand still wins for both.
+    Only Antigravity gets one: its own default is unnamed and thinks at length (75 s for
+    a one-line answer on machine A). The newest Gemini Flash it lists: Medium for
+    summaries, Low for the conversation. An ``llm.antigravity_model`` set by hand still
+    wins for both.
     """
     if provider != "antigravity-subscription":
         return ""
     configured = str(config.get("llm.antigravity_model") or "") if config is not None else ""
     if configured:
         return configured if valid_id(configured) else ""
-    if use != "assistant" or listing is None:
+    if listing is None:
         return ""
+    want = "medium" if use == "summary" else "low"
     flashes = []
     for model in listing.models:
         match = _AGY_FLASH.match(model.id)
-        if match and match.group("level") == "low":
+        if match and match.group("level") == want:
             version = tuple(int(part) for part in match.group("version").split("."))
             flashes.append((version, model.id))
     return max(flashes)[1] if flashes else ""
@@ -396,31 +439,34 @@ def chosen(config: Config, provider: str, use: str) -> str:
     choices = config.get(CONFIG_KEY[use]) or {}
     value = str(choices.get(provider, "") or "") if isinstance(choices, dict) else ""
     if value and not valid_id(value):
-        log.warning("ignoring %s model %r for %s: not a model id", use, value, provider)
+        log.warning("ignoring a %s model for %s: not a model id", use, provider)
         return ""
     return value
 
 
-def resolve(config: Config, provider: str, use: str, catalog: Catalog | None) -> str:
+def resolve(
+    config: Config, provider: str, use: str, catalog: Catalog | None, *, fetch: bool = False
+) -> str:
     """The model to run: the user's choice while the provider still offers it, else ours.
 
-    Uses the list already held, so a summary does not wait on one. Antigravity's
-    conversation is the exception: its automatic choice needs the list, and without one
-    it would think at length, so the list is asked for (about two seconds). With no list
-    held, a choice is trusted as it stands, except a cloud model for Ollama.
+    Uses the list already held. ``fetch`` lets a caller that may wait (a summary on the
+    worker, a conversation turn off the event loop) ask for it when Antigravity's
+    automatic choice needs one and none usable is held: about two seconds. Never on the
+    event loop: ``agy models`` can take thirty (second review of #24). With no list, a
+    choice is trusted as it stands, except a cloud model for Ollama.
     """
     listing = catalog.cached(provider) if catalog is not None else None
+    choice = chosen(config, provider, use)
     if (
-        listing is None
+        fetch
         and catalog is not None
-        and provider == "antigravity-subscription"
-        and use == "assistant"
-        and not chosen(config, provider, use)
+        and not choice
+        and provider in NEEDS_LIST
+        and (listing is None or not listing.models)
     ):
         listing = catalog.listing(provider)
-    choice = chosen(config, provider, use)
     if choice and provider == "ollama" and not is_local_ollama({"name": choice}):
-        log.warning("ignoring the cloud model %s for Ollama: it would leave the machine", choice)
+        log.warning("ignoring a cloud model for Ollama: it would leave the machine")
         choice = ""
     if choice:
         if listing is None or not listing.models or choice in listing.ids():
@@ -429,6 +475,39 @@ def resolve(config: Config, provider: str, use: str, catalog: Catalog | None) ->
             "%s no longer offers %s for %s; using the automatic choice", provider, choice, use
         )
     return automatic(provider, use, listing, config)
+
+
+#: The clients whose model is a CLI flag: without one, the CLI's own default runs.
+_CLI_CLIENTS = frozenset(CLI_PROVIDERS)
+
+
+def guard(provider: str, model: str) -> str:
+    """The model as it will run, checked where it is used, whatever set it (a hand-edited
+    ``llm.antigravity_model`` or ``llm.local_model`` included).
+
+    A CLI's model that is not a model id is dropped (the CLI's default runs). An API
+    model that is not one, and an Ollama model that runs in the cloud, refuse: a
+    sensitive meeting must never leave the machine.
+    """
+    from app.errors import PermanentError
+
+    if not model:
+        return model
+    if not valid_id(model):
+        if provider in _CLI_CLIENTS:
+            log.warning("ignoring the %s model: not a model id", provider)
+            return ""
+        raise PermanentError(
+            f"The model set for {provider} is not a model id. Choose one in Settings.",
+            category="setup",
+        )
+    if provider == "ollama" and not is_local_ollama({"name": model}):
+        raise PermanentError(
+            "The Ollama model set is a cloud model, which would send the meeting off this "
+            "machine. Choose a local one in Settings.",
+            category="setup",
+        )
+    return model
 
 
 # ---------------------------------------------------------------------- the one in use
