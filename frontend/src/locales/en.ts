@@ -768,6 +768,8 @@ export const en = {
   "settings.models.automaticDefault": "Automatic (the provider's default)",
   "settings.models.dropped": "{model} is no longer offered, so the automatic choice is used.",
   "settings.models.none": "The provider did not list its models: {reason}",
+  "settings.models.loading": "Asking the provider for its models…",
+  "settings.models.unavailable": "The model list could not be loaded.",
   "settings.models.refresh": "Refresh the list",
   "settings.models.refreshing": "Refreshing…",
   "assistant.model": "Model for the conversation",

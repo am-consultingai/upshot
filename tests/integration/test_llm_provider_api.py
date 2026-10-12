@@ -420,17 +420,15 @@ def test_models_are_listed_chosen_and_checked(api, monkeypatch: pytest.MonkeyPat
             return "agy"
 
     monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: Cli())
-    model_choice.set_catalog(api.services.models)
     provider = "antigravity-subscription"
     client = api.client()
     listed = client.get("/api/llm/models", params={"provider": provider}).json()
     ids = [m["id"] for m in listed["models"]]
     assert ids == ["gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
     assert listed["chosen"] == {"summary": "", "assistant": ""}
-    assert listed["effective"] == {
-        "summary": "gemini-3.8-flash-medium",
-        "assistant": "gemini-3.8-flash-low",
-    }
+    assert listed["effective"] == {"summary": "", "assistant": "gemini-3.8-flash-low"}, (
+        "summaries keep agy's stronger default; the conversation gets the quick Flash"
+    )
     refused = client.put(
         "/api/llm/model", json={"provider": provider, "use": "summary", "model": "made-up"}
     )
@@ -444,4 +442,12 @@ def test_models_are_listed_chosen_and_checked(api, monkeypatch: pytest.MonkeyPat
     back = client.put("/api/llm/model", json={"provider": provider, "use": "summary", "model": ""})
     assert back.json()["chosen"]["summary"] == ""
     assert client.get("/api/llm/models", params={"provider": "none"}).status_code == 400
-    model_choice.set_catalog(None)
+    flag = client.put(
+        "/api/llm/model", json={"provider": provider, "use": "summary", "model": "-x"}
+    )
+    assert flag.status_code == 400, "never something a command line would read as a flag"
+    cloud = client.put(
+        "/api/llm/model",
+        json={"provider": "ollama", "use": "summary", "model": "gpt-oss:120b-cloud"},
+    )
+    assert cloud.status_code == 400, "a sensitive meeting must never reach a cloud model"

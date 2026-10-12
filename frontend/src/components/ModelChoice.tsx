@@ -55,7 +55,15 @@ export default function ModelChoice({
   });
 
   const data = models.data;
-  if (!data) return null;
+  if (!data) {
+    if (compact) return null;
+    // Asking a CLI for its list can take a few seconds the first time.
+    return (
+      <p data-testid="model-choice-pending" className="mt-4 text-xs text-tertiary">
+        {models.isError ? t("settings.models.unavailable") : t("settings.models.loading")}
+      </p>
+    );
+  }
   const labelOf = (id: string) => data.models.find((model) => model.id === id)?.label ?? id;
   const automaticLabel = (use: ModelUse) =>
     data.automatic[use]
@@ -64,7 +72,10 @@ export default function ModelChoice({
 
   const select = (use: ModelUse) => {
     const chosen = data.chosen[use];
-    const offered = !chosen || data.models.length === 0 || data.models.some((model) => model.id === chosen);
+    const listed = data.models.some((model) => model.id === chosen);
+    // With no list to check against, the choice still runs: show it as it stands.
+    const unlisted = !!chosen && data.models.length === 0;
+    const offered = !chosen || listed || unlisted;
     return (
       <select
         id={`model-${use}-${provider}`}
@@ -77,6 +88,7 @@ export default function ModelChoice({
         className={`max-w-full rounded-md border border-line bg-raised px-2 py-1 ${compact ? "text-xs" : "text-sm"}`}
       >
         <option value="">{automaticLabel(use)}</option>
+        {unlisted && <option value={chosen}>{chosen}</option>}
         {data.models.map((model) => (
           <option key={model.id} value={model.id}>
             {model.label}
@@ -109,6 +121,11 @@ export default function ModelChoice({
           </div>
         );
       })}
+      {save.error && (
+        <p data-testid="model-save-error" className="text-xs text-danger">
+          {save.error instanceof Error ? save.error.message : String(save.error)}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-3 text-xs">
         {data.models.length === 0 && data.error && (
           <span data-testid="model-list-error" className="text-secondary">
