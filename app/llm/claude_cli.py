@@ -491,6 +491,8 @@ class ClaudeCliClient:
         self.config = config
         self.executable = str(config.get("llm.claude_cli_path", "claude"))
         self.timeout = float(config.get("llm.claude_cli_timeout_s", 600))
+        #: ``--model``; empty is the CLI's own default (``app.llm.model_choice``).
+        self.model = ""
         self.max_repairs = max_repairs
         self.runner: Runner = runner or subprocess_runner
         self.calls: list[dict[str, Any]] = []
@@ -590,6 +592,8 @@ class ClaudeCliClient:
             # This is a text transformation, so it gets a system prompt that says only
             # that.
             args += ["--system-prompt", system]
+        if self.model:
+            args += ["--model", self.model]
         return [*args, *extra]
 
     def complete_json(

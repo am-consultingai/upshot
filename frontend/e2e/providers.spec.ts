@@ -95,3 +95,47 @@ test("claude_subscription_shows_install_state", async ({ page }) => {
     await expect(row.getByTestId("provider-signin")).toBeEnabled();
   }
 });
+
+test("the_chosen_providers_models_are_offered_and_a_choice_is_saved", async ({ page }) => {
+  // The list is the provider's own (2026-10-12); here it stands in for Gemini's API.
+  const listed = {
+    provider: "gemini",
+    models: [
+      { id: "gemini-3-pro", label: "Gemini 3 Pro" },
+      { id: "gemini-3-flash", label: "Gemini 3 Flash" },
+    ],
+    source: "live",
+    fetched_at: 1,
+    error: "",
+    chosen: { summary: "", assistant: "" },
+    automatic: { summary: "", assistant: "" },
+    effective: { summary: "", assistant: "" },
+  };
+  const saved: unknown[] = [];
+  await page.route("**/api/llm/models?**", (route) => route.fulfill({ json: listed }));
+  await page.route("**/api/llm/model", async (route) => {
+    const body = route.request().postDataJSON() as { use: "summary" | "assistant"; model: string };
+    saved.push(body);
+    await route.fulfill({ json: { ...listed, chosen: { ...listed.chosen, [body.use]: body.model } } });
+  });
+  await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "test-key" } } });
+  await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "gemini" } } });
+  try {
+    await gotoSettings(page, "summaries");
+    const choice = page.getByTestId("model-choice");
+    await expect(choice).toBeVisible();
+    const summary = choice.getByTestId("model-summary");
+    await expect(summary.locator("option")).toHaveText([
+      "Automatic (the provider's default)",
+      "Gemini 3 Pro",
+      "Gemini 3 Flash",
+    ]);
+    await summary.selectOption("gemini-3-pro");
+    await expect.poll(() => saved).toEqual([{ provider: "gemini", use: "summary", model: "gemini-3-pro" }]);
+    await expect(summary).toHaveValue("gemini-3-pro");
+    await expect(choice.getByTestId("model-assistant")).toHaveValue("");
+  } finally {
+    await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
+    await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "" } } });
+  }
+});

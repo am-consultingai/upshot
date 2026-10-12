@@ -170,6 +170,7 @@ class AntigravityRoute(ClaudeRoute):
         super().__init__(config, command=command)
         self.agy = antigravity_cli.AntigravityCliClient(config)
         self.cli = self.agy  # type: ignore[assignment]
+        self.choose_model()
         self.services = services
         #: The screen the question came from, for what to gather (set per turn by the API).
         self.context: dict[str, Any] = {}

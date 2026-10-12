@@ -240,6 +240,11 @@ DEFAULTS: dict[str, Any] = {
         "antigravity_cli_timeout_s": 600,
         "antigravity_cli_args": [],
         "antigravity_model": "",
+        # The model each provider runs for summaries and for the conversation, chosen in
+        # Settings from what the provider lists (app/llm/model_choice.py). A provider not
+        # here, or empty, is automatic: our choice, which for most is the provider's own.
+        "summary_models": {},
+        "assistant_models": {},
         # Who summarizes when a subscription provider reports its plan allowance used up
         # (and only then). Empty means nobody: the summary waits for the reset and the
         # transcript does not leave the machine. A deliberate choice, never a default.
