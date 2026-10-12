@@ -153,7 +153,8 @@ def client_for(ctx: StageContext) -> LlmClient:
     client = getattr(services, "llm", None) if services is not None else None
     if client is not None:
         return client  # type: ignore[no-any-return]
-    return make_client(ctx.config, sensitive=bool(ctx.meeting.sensitive))
+    # On the worker: it may ask the provider for its model list if the choice needs it.
+    return make_client(ctx.config, sensitive=bool(ctx.meeting.sensitive), fetch=True)
 
 
 #: Optional in an edited prompt: where the calendar invitation should be written. Without
@@ -470,7 +471,7 @@ def fallback_client(ctx: StageContext, spent: QuotaExhausted) -> LlmClient | Non
     chosen = str(ctx.config.get("llm.fallback_provider", "") or "")
     if not chosen or chosen == spent.provider or ctx.meeting.sensitive:
         return None
-    return make_client(ctx.config, provider=chosen)
+    return make_client(ctx.config, provider=chosen, fetch=True)
 
 
 def written_by(

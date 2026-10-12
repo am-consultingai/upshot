@@ -356,8 +356,10 @@ export interface ModelChoices {
   /** `live` was asked of the provider; `fixed` is our own list (Claude Code's aliases). */
   source: "live" | "fixed";
   fetched_at: number | null;
-  /** Why the list is empty, if it is. */
+  /** Why the list is empty, if it is: a code (`not-installed`, `signed-out`, `refused`…). */
   error: string;
+  /** The HTTP status a vendor refused with. */
+  status: number | null;
   /** What the user chose; "" is automatic. */
   chosen: Record<ModelUse, string>;
   /** Our own choice; "" is the provider's default. */

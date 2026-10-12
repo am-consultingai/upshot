@@ -183,7 +183,9 @@ def ask(
         # *related* to the one being asked about: one sensitive transcript in the context
         # makes the whole request local.
         # Someone waits for the answer: the conversation's model, not the summaries'.
-        client = make_client(config, sensitive=any(m.sensitive for m in meetings), use="assistant")
+        client = make_client(
+            config, sensitive=any(m.sensitive for m in meetings), use="assistant", fetch=True
+        )
     budget = CHAR_BUDGET.get(client.name, DEFAULT_CHAR_BUDGET)
     # The meeting asked about gets the larger share; related ones split the rest.
     shares = (

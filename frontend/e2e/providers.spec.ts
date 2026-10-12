@@ -107,6 +107,7 @@ test("the_chosen_providers_models_are_offered_and_a_choice_is_saved", async ({ p
     source: "live",
     fetched_at: 1,
     error: "",
+    status: null,
     chosen: { summary: "", assistant: "" },
     automatic: { summary: "", assistant: "" },
     effective: { summary: "", assistant: "" },
@@ -133,7 +134,8 @@ test("the_chosen_providers_models_are_offered_and_a_choice_is_saved", async ({ p
     await summary.selectOption("gemini-3-pro");
     await expect.poll(() => saved).toEqual([{ provider: "gemini", use: "summary", model: "gemini-3-pro" }]);
     await expect(summary).toHaveValue("gemini-3-pro");
-    await expect(choice.getByTestId("model-assistant")).toHaveValue("");
+    // The conversation's model is chosen in the assistant panel, not here.
+    await expect(choice.getByTestId("model-assistant")).toHaveCount(0);
   } finally {
     await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
     await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "" } } });
@@ -146,14 +148,15 @@ test("a_model_the_server_refuses_says_why_and_a_choice_without_a_list_still_show
     models: [] as { id: string; label: string }[],
     source: "live",
     fetched_at: 1,
-    error: "the provider answered 401",
+    error: "refused",
+    status: 401,
     chosen: { summary: "gemini-old", assistant: "" },
     automatic: { summary: "", assistant: "" },
     effective: { summary: "gemini-old", assistant: "" },
   };
   await page.route("**/api/llm/models?**", (route) => route.fulfill({ json: listed }));
   await page.route("**/api/llm/model", (route) =>
-    route.fulfill({ status: 400, json: { detail: "gemini does not offer 'x'" } }),
+    route.fulfill({ status: 400, json: { detail: "not-offered" } }),
   );
   await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "test-key" } } });
   await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "gemini" } } });
@@ -164,7 +167,9 @@ test("a_model_the_server_refuses_says_why_and_a_choice_without_a_list_still_show
     await expect(choice.getByTestId("model-summary")).toHaveValue("gemini-old");
     await expect(choice.getByTestId("model-list-error")).toContainText("401");
     await choice.getByTestId("model-summary").selectOption("");
-    await expect(choice.getByTestId("model-save-error")).toBeVisible();
+    await expect(choice.getByTestId("model-save-error")).toHaveText(
+      "The provider does not offer that model. Refresh the list.",
+    );
   } finally {
     await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
     await page.request.put("/api/settings/secrets", { headers: HEADERS, data: { values: { gemini: "" } } });

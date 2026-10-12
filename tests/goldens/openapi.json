@@ -2566,7 +2566,7 @@
     },
     "/api/llm/model": {
       "put": {
-        "description": "Choose the model ``provider`` runs for one use. Only one the provider lists, so a\ntypo never becomes a summary that fails; empty is automatic again.",
+        "description": "Choose the model ``provider`` runs for one use. Only one the provider lists, so a\ntypo never becomes a summary that fails; empty is automatic again. A refusal's\n``detail`` is a code the page translates.",
         "operationId": "llm_model_put_api_llm_model_put",
         "requestBody": {
           "content": {

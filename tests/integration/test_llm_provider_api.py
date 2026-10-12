@@ -426,9 +426,10 @@ def test_models_are_listed_chosen_and_checked(api, monkeypatch: pytest.MonkeyPat
     ids = [m["id"] for m in listed["models"]]
     assert ids == ["gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
     assert listed["chosen"] == {"summary": "", "assistant": ""}
-    assert listed["effective"] == {"summary": "", "assistant": "gemini-3.8-flash-low"}, (
-        "summaries keep agy's stronger default; the conversation gets the quick Flash"
-    )
+    assert listed["effective"] == {
+        "summary": "gemini-3.8-flash-medium",
+        "assistant": "gemini-3.8-flash-low",
+    }
     refused = client.put(
         "/api/llm/model", json={"provider": provider, "use": "summary", "model": "made-up"}
     )
@@ -451,3 +452,54 @@ def test_models_are_listed_chosen_and_checked(api, monkeypatch: pytest.MonkeyPat
         json={"provider": "ollama", "use": "summary", "model": "gpt-oss:120b-cloud"},
     )
     assert cloud.status_code == 400, "a sensitive meeting must never reach a cloud model"
+
+
+def test_an_api_model_is_tried_before_it_is_kept(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """A vendor's list can name a model our client cannot drive: it is tried once."""
+    from app.llm import model_choice
+    from app.llm.gemini_client import GeminiClient
+
+    api.services.config.set("secrets.backend", "memory")
+    api.services.config.secrets.set("gemini", "k")
+    api.services.models._lists["gemini"] = model_choice.Listing(
+        models=[
+            model_choice.ModelInfo("gemini-tts", "TTS"),
+            model_choice.ModelInfo("gemini-3", "3"),
+        ],
+        fetched_at=api.services.models.now(),
+    )
+    tried: list[str] = []
+
+    def answer(self, **kwargs):  # type: ignore[no-untyped-def]
+        tried.append(self.model)
+        if self.model == "gemini-tts":
+            raise RuntimeError("this model only speaks")
+        from app.llm.client import LlmResult
+
+        return LlmResult(data={"ok": True}, model=self.model)
+
+    monkeypatch.setattr(GeminiClient, "complete_json", answer)
+    client = api.client()
+    refused = client.put(
+        "/api/llm/model", json={"provider": "gemini", "use": "summary", "model": "gemini-tts"}
+    )
+    assert refused.status_code == 400 and refused.json()["detail"] == "did-not-answer"
+    kept = client.put(
+        "/api/llm/model", json={"provider": "gemini", "use": "summary", "model": "gemini-3"}
+    )
+    assert kept.status_code == 200 and kept.json()["chosen"]["summary"] == "gemini-3"
+    assert tried == ["gemini-tts", "gemini-3"]
+
+
+def test_the_general_settings_cannot_set_a_bad_model(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    for values in (
+        {"llm.antigravity_model": "--dangerously-x"},
+        {"llm.local_model": "gpt-oss:120b-cloud"},
+        {"llm.summary_models": {"gemini": "x"}},
+    ):
+        assert client.put("/api/settings", json={"values": values}).status_code == 400, values
+    assert (
+        client.put("/api/settings", json={"values": {"llm.gemini_model": "gemini-3"}}).status_code
+        == 200
+    )

@@ -517,12 +517,13 @@ export default function ProviderSettings() {
       )}
 
       {/*
-       * Which model the chosen provider runs, for summaries and for the conversation, from
-       * the list the provider gives (2026-10-12). Only once it can answer: a CLI not yet
+       * Which model the chosen provider runs for summaries, from the list the provider
+       * gives (D97). The conversation's model is chosen where the conversation is, in the
+       * assistant panel (product owner, 2026-10-12). Only once it can answer: a CLI not yet
        * signed in, or a key not yet saved, has nothing to list.
        */}
       {active && MODEL_PROVIDERS.has(active) && rows.some((provider) => provider.id === active && provider.ready && provider.signed_in !== false) && (
-        <ModelChoice key={active} provider={active} />
+        <ModelChoice key={active} provider={active} uses={["summary"]} />
       )}
     </section>
   );

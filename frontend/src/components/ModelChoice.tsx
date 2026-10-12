@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type ModelUse } from "../api";
+import { api, type ModelChoices, type ModelUse } from "../api";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../locales/en";
 
@@ -19,19 +19,45 @@ const USE_LABEL: Record<ModelUse, MessageKey> = {
   assistant: "settings.models.assistant",
 };
 
+/** Why a list is empty: the server sends a code, never the provider's own words. */
+const LIST_ERROR: Record<string, MessageKey> = {
+  "not-installed": "settings.models.err.notInstalled",
+  "signed-out": "settings.models.err.signedOut",
+  "no-key": "settings.models.err.noKey",
+  "no-answer": "settings.models.err.noAnswer",
+  refused: "settings.models.err.refused",
+  "no-models": "settings.models.err.noModels",
+  failed: "settings.models.err.failed",
+};
+
+/** Why a choice was not kept (`PUT /api/llm/model`'s `detail`). */
+const SAVE_ERROR: Record<string, MessageKey> = {
+  "not-offered": "settings.models.save.notOffered",
+  "did-not-answer": "settings.models.save.didNotAnswer",
+  "cloud-model": "settings.models.save.cloud",
+  "not-a-model": "settings.models.save.notAModel",
+};
+
 function fill(text: string, values: Record<string, string>): string {
   return text.replace(/\{(\w+)\}/g, (whole, key: string) => values[key] ?? whole);
+}
+
+/** The code inside a refused request's message (`400: {"detail":"not-offered"}`). */
+function saveCode(error: unknown): string {
+  const text = error instanceof Error ? error.message : String(error);
+  return Object.keys(SAVE_ERROR).find((code) => text.includes(`"${code}"`)) ?? "";
 }
 
 export const modelsKey = (provider: string) => ["llm-models", provider] as const;
 
 /**
- * The model a provider runs, for summaries and for the conversation (2026-10-12). The
- * list is the provider's own, asked for by the server; "Automatic" is ours, and names the
- * model it stands for. A choice the provider no longer offers says so: the server has
- * already gone back to automatic for it.
+ * The model a provider runs, for summaries and for the conversation (D97). The list is
+ * the provider's own, asked for by the server; "Automatic" is ours, and names the model
+ * it stands for. A choice the provider no longer offers stays visible, marked, so going
+ * back to automatic is a real change of the select: the server already runs automatic.
  *
- * `compact` is the assistant panel's: one select, no headings.
+ * `compact` is the assistant panel's: one select, no headings; a refusal shows as the
+ * select's own warning and title.
  */
 export default function ModelChoice({
   provider,
@@ -47,11 +73,11 @@ export default function ModelChoice({
   const models = useQuery({ queryKey: modelsKey(provider), queryFn: () => api.llmModels(provider) });
   const save = useMutation({
     mutationFn: ({ use, model }: { use: ModelUse; model: string }) => api.setLlmModel(provider, use, model),
-    onSuccess: (data) => queryClient.setQueryData(modelsKey(provider), data),
+    onSuccess: (data) => queryClient.setQueryData(modelsKey(data.provider), data),
   });
   const refresh = useMutation({
     mutationFn: () => api.llmModels(provider, true),
-    onSuccess: (data) => queryClient.setQueryData(modelsKey(provider), data),
+    onSuccess: (data) => queryClient.setQueryData(modelsKey(data.provider), data),
   });
 
   const data = models.data;
@@ -64,32 +90,39 @@ export default function ModelChoice({
       </p>
     );
   }
-  const labelOf = (id: string) => data.models.find((model) => model.id === id)?.label ?? id;
-  const automaticLabel = (use: ModelUse) =>
-    data.automatic[use]
-      ? fill(t("settings.models.automatic"), { model: labelOf(data.automatic[use]) })
-      : t("settings.models.automaticDefault");
+  const saveError = save.error ? t(SAVE_ERROR[saveCode(save.error)] ?? "settings.models.save.failed") : "";
 
-  const select = (use: ModelUse) => {
-    const chosen = data.chosen[use];
-    const listed = data.models.some((model) => model.id === chosen);
-    // With no list to check against, the choice still runs: show it as it stands.
-    const unlisted = !!chosen && data.models.length === 0;
-    const offered = !chosen || listed || unlisted;
+  const select = (use: ModelUse, current: ModelChoices) => {
+    const labelOf = (id: string) => current.models.find((model) => model.id === id)?.label ?? id;
+    const automatic = current.automatic[use]
+      ? fill(t("settings.models.automatic"), { model: labelOf(current.automatic[use]) })
+      : t("settings.models.automaticDefault");
+    const chosen = current.chosen[use];
+    const listed = current.models.some((model) => model.id === chosen);
+    // No list to check against: the choice still runs, so it shows as it stands.
+    const unlisted = !!chosen && current.models.length === 0;
+    // Listed no more: the server runs automatic, but the choice is still saved.
+    const dropped = !!chosen && current.models.length > 0 && !listed;
     return (
       <select
         id={`model-${use}-${provider}`}
         data-testid={`model-${use}`}
-        value={offered ? chosen : ""}
+        value={chosen}
         disabled={save.isPending}
         onChange={(event) => save.mutate({ use, model: event.target.value })}
-        title={compact ? t(USE_LABEL[use]) : undefined}
+        title={compact ? saveError || t(USE_LABEL[use]) : undefined}
         aria-label={compact ? t("assistant.model") : undefined}
-        className={`max-w-full rounded-md border border-line bg-raised px-2 py-1 ${compact ? "text-xs" : "text-sm"}`}
+        aria-invalid={compact && !!saveError ? true : undefined}
+        className={`max-w-full rounded-md border bg-raised px-2 py-1 ${compact ? "text-xs" : "text-sm"} ${
+          compact && saveError ? "border-danger" : "border-line"
+        }`}
       >
-        <option value="">{automaticLabel(use)}</option>
+        <option value="">{automatic}</option>
         {unlisted && <option value={chosen}>{chosen}</option>}
-        {data.models.map((model) => (
+        {dropped && (
+          <option value={chosen}>{fill(t("settings.models.droppedOption"), { model: chosen })}</option>
+        )}
+        {current.models.map((model) => (
           <option key={model.id} value={model.id}>
             {model.label}
           </option>
@@ -98,8 +131,9 @@ export default function ModelChoice({
     );
   };
 
-  if (compact) return select(uses[0]);
+  if (compact) return select(uses[0], data);
 
+  const listError = data.models.length === 0 && data.error ? data.error : "";
   return (
     <div data-testid="model-choice" className="mt-4 space-y-2">
       <h4 className="text-sm font-medium">{t("settings.models.title")}</h4>
@@ -112,7 +146,7 @@ export default function ModelChoice({
             <label htmlFor={`model-${use}-${provider}`} className="w-32 text-secondary">
               {t(USE_LABEL[use])}
             </label>
-            {select(use)}
+            {select(use, data)}
             {dropped && (
               <span data-testid={`model-dropped-${use}`} className="text-xs text-warning">
                 {fill(t("settings.models.dropped"), { model: chosen })}
@@ -121,15 +155,17 @@ export default function ModelChoice({
           </div>
         );
       })}
-      {save.error && (
+      {saveError && (
         <p data-testid="model-save-error" className="text-xs text-danger">
-          {save.error instanceof Error ? save.error.message : String(save.error)}
+          {saveError}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        {data.models.length === 0 && data.error && (
+        {listError && (
           <span data-testid="model-list-error" className="text-secondary">
-            {fill(t("settings.models.none"), { reason: data.error })}
+            {fill(t(LIST_ERROR[listError] ?? "settings.models.err.failed"), {
+              status: String(data.status ?? ""),
+            })}
           </span>
         )}
         <button
