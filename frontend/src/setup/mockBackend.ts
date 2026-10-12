@@ -92,6 +92,7 @@ function cli(id: CliId, over: Partial<CliSnapshot> = {}): CliSnapshot {
     phase: "idle",
     installCommand: INSTALL[id],
     signinNeedsCode: id !== "codex",
+    codeInWindow: id === "antigravity",
     ...over,
   };
 }
@@ -223,9 +224,9 @@ export class MockSetupBackend implements SetupBackend {
       phase: "signing-in",
       signinUrl: SIGNIN_URL[id],
     });
-    // Codex notices the browser finishing by itself; Claude and Antigravity wait for the
-    // pasted code.
-    if (id === "codex") this.later(6000, () => this.completeSignIn(id));
+    // Codex notices the browser finishing by itself, and Antigravity's code is pasted into
+    // its own window, which the page never sees; Claude waits for the code in the page.
+    if (id !== "claude") this.later(6000, () => this.completeSignIn(id));
   }
 
   submitCode(id: CliId, code: string): void {

@@ -744,9 +744,11 @@ export default function TimeGrid({
               ),
             )}
             {nowMinute !== null && (
+              // A label, not a control: at night it lies over the folded band, and took the
+              // click meant for it (CI at 05:47 UTC, 2026-10-12).
               <span
                 data-testid="now-time"
-                className="absolute z-10 -translate-y-1/2 font-mono text-2xs font-medium tabular-nums text-accent"
+                className="pointer-events-none absolute z-10 -translate-y-1/2 font-mono text-2xs font-medium tabular-nums text-accent"
                 style={{ top: fold.y(nowMinute), insetInlineEnd: "0.5rem" }}
               >
                 {nowLabel}

@@ -34,7 +34,8 @@ _MEETING = re.compile(r"\d{4}-\d{2}-\d{2}_\d{4}_[0-9a-f]{6}(?:_[^\s/\\'\"<>|:]*)
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _URL = re.compile(r"\b(https?)://([^/\s'\"<>?#]+)[^\s'\"<>]*")
 _TOKEN = re.compile(r"[A-Za-z0-9+/=_\-]{32,}")
-_WINDOWS_USER = re.compile(r"(?i)([A-Z]:\\Users\\)[^\\/\s'\"]+")
+#: ``C:\Users\name``, also as JSON escapes it (``C:\\Users\\name``) or with slashes.
+_WINDOWS_USER = re.compile(r"(?i)([A-Z]:(?:\\{1,2}|/)Users(?:\\{1,2}|/))[^\\/\s'\"]+")
 _POSIX_USER = re.compile(r"(/(?:home|Users)/)[^/\s'\"]+")
 _QUOTED = re.compile(r"(['\"“”‘’])([^'\"“”‘’]{0,400}?)\1")
 #: Quoted text with more words than this is someone's words, not an identifier.
@@ -61,6 +62,77 @@ def scrub_text(text: str, *, homes: Iterable[str] = ()) -> str:
         lambda m: m.group(0) if len(m.group(2).split()) <= QUOTED_WORDS else "<text>", out
     )
     return out if len(out) <= MAX_TEXT else out[: MAX_TEXT - 1] + "…"
+
+
+#: Where a run begins in an install or sign-in log: a windowless run's own marker, or the
+#: line every console prints first (``console_log.transcribed``). Both are Upshot's own
+#: English, whatever the language of Windows.
+_RUN_START = re.compile(r"^(=== \d{4}-\d{2}-\d{2} [\d:]+ hidden: |This window is recorded to )")
+
+
+def log_tail(path: Path, *, lines: int = 6) -> list[str]:
+    """The last ``lines`` lines of the latest run in an install or sign-in log, scrubbed.
+
+    Only for the logs of an install or a sign-in: what runs there is an installer and the
+    one fixed sign-in prompt, never a meeting, so its last words are the reason it
+    stopped. The logs are appended to, so only the latest run counts. PowerShell's
+    transcript header and footer, which name the user and the machine, are dropped by
+    their ``****`` borders, since their labels are in the language of Windows. The
+    user's, the machine's and the domain's names are taken out wherever else they appear,
+    and every line kept goes through ``scrub_text``. Nothing, if there is no log.
+    """
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - 16000))
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    run: list[str] = []
+    in_header = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line and set(line) == {"*"}:
+            in_header = not in_header
+            continue
+        if in_header or not line:
+            continue
+        if _RUN_START.match(line):
+            run = []
+            continue
+        run.append(line)
+    names = _identity()
+    return [_without(scrub_text(line, homes=homes()), names) for line in run[-lines:]]
+
+
+def _identity() -> list[str]:
+    """This user's, machine's and domain's names: in a log, they say who and where."""
+    import getpass
+    import os
+    import socket
+
+    found: set[str] = set()
+    for get in (
+        getpass.getuser,
+        socket.gethostname,
+        lambda: os.environ.get("USERNAME", ""),
+        lambda: os.environ.get("USERDOMAIN", ""),
+        lambda: os.environ.get("COMPUTERNAME", ""),
+    ):
+        try:
+            value = str(get() or "").strip()
+        except Exception:  # never let scrubbing fail on a lookup
+            continue
+        if len(value) >= 2:
+            found.add(value)
+            found.add(value.split(".")[0])
+    return sorted((n for n in found if len(n) >= 2), key=len, reverse=True)
+
+
+def _without(text: str, names: Iterable[str]) -> str:
+    for name in names:
+        text = re.sub(rf"(?<![\w]){re.escape(name)}(?![\w])", "<name>", text, flags=re.IGNORECASE)
+    return text
 
 
 def homes() -> list[str]:

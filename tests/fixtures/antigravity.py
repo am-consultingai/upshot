@@ -8,9 +8,12 @@ every invocation so a test can see what was sent.
 
 ``FAKE_AGY_MODE`` picks the behaviour: ``ok`` (default), ``quota`` or ``signed-out``.
 A signed-out ``-p`` run is the sign-in: it prints Google's link and reads a code from
-stdin, as the real one does for 60 seconds. The code ``GOOD-CODE`` signs it in (a
+its console, as the real one does for 60 seconds. The code ``GOOD-CODE`` signs it in (a
 ``signed-in`` file beside the script, which wins over the mode from then on); anything
-else fails the way a wrong code does.
+else fails the way a wrong code does. Like the real one, it never reads a code from a
+pipe: with no console it fails as a timed-out sign-in. An earlier fake read the pipe, and
+setup's windowless sign-in passed here while it failed every time on machine A
+(2026-10-12).
 """
 
 from __future__ import annotations
@@ -67,7 +70,9 @@ if args[:1] == ["-p"]:
         print("", file=sys.stderr)
         print("Waiting for authentication (timeout 60s)...", file=sys.stderr)
         print("Or, paste the authorization code here and press Enter:", file=sys.stderr, flush=True)
-        code = sys.stdin.readline().strip()
+        # The real ``agy`` reads the code from a console only; one written to a pipe is
+        # never read and the minute runs out (machine A, 2026-10-12).
+        code = sys.stdin.readline().strip() if sys.stdin.isatty() else ""
         record(code=code)
         if code != "GOOD-CODE":
             print("error: authentication failed or timed out", file=sys.stderr)

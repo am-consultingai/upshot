@@ -59,10 +59,15 @@ INSTALL_DOCS_URL = "https://antigravity.google/docs/getting-started?tab=cli"
 #: carries its own fallbacks for Constrained Language Mode (``certutil`` for the hash).
 NATIVE_INSTALL = "irm https://antigravity.google/cli/install.ps1 | iex"
 
-#: Show Sign in's PowerShell window from Settings (True), as Claude's does: the code the
-#: browser shows is pasted there. Setup signs in with no window and takes the code in the
-#: page (``background``, D75).
+#: Show Sign in's PowerShell window (True), as Claude's does: the code the browser shows
+#: is pasted there.
 SIGNIN_CONSOLE = True
+#: Whether setup may sign in with no window and pass the code in from the page (D75).
+#: Not for ``agy``: it reads the code from a console, never from a pipe. Written to its
+#: stdin, a code is ignored and the run times out after its minute (machine A,
+#: 2026-10-12: four sign-ins, every code passed, every one timed out; a made-up code
+#: through a pipe was not even refused). Setup opens the window instead.
+SIGNIN_HIDDEN = False
 #: The link a signed-out run prints on stderr: Google's own consent page, returning to
 #: ``antigravity.google/oauth-callback``, which shows the code to paste.
 LOGIN_URL = re.compile(r"https://accounts\.google\.com/\S+")
@@ -232,17 +237,34 @@ def install_console(command: str, *, shown: str | None = None, sign_in: bool = T
 
 
 def login_console(argv: Sequence[str]) -> list[str]:
-    """Sign in, in a console of its own, where the code is pasted. Arguments quoted."""
+    """Sign in, in a console of its own, where the code is pasted. Arguments quoted.
+
+    The window closes when the run ends, so the page watching it learns the outcome at
+    once rather than after its ten-minute wait. Signed in, it closes by itself. Otherwise
+    it says so and closes on Enter, so what happened can be read first. The page judges
+    by the signed-in state, not by this exit code: a sign-in that worked followed by a
+    prompt that failed still counts, which is why the words here are careful.
+
+    The transcript does not record what a native program prints (Windows PowerShell 5.1,
+    machine A, 2026-10-12), so the exit code is written out for the log to keep.
+    """
     quoted = " ".join("'" + part.replace("'", "''") + "'" for part in argv)
     script = (
         "Write-Host 'Signing in to Antigravity with your Google account.' -ForegroundColor Cyan; "
         f"{_LOGIN_GUIDANCE}"
-        f"& {quoted}"
+        f"& {quoted}; "
+        "$code = $LASTEXITCODE; "
+        "Write-Host ('Antigravity exited with code ' + $code); "
+        "if ($code -eq 0) { Stop-Transcript | Out-Null; exit 0 }; "
+        "Write-Host ''; "
+        "Write-Host ('Antigravity stopped. If Upshot did not move on, press Sign in there ' + "
+        "'again.') -ForegroundColor Yellow; "
+        "Read-Host 'Press Enter to close this window' | Out-Null; "
+        "Stop-Transcript | Out-Null; exit 1"
     )
     return [
         "powershell.exe",
         "-NoProfile",
-        "-NoExit",
         "-Command",
         transcribed(script, "antigravity-signin"),
     ]
