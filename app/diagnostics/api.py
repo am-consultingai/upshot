@@ -7,7 +7,7 @@ The answer itself is a setting (``diagnostics.crash_reports``), saved through
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -21,6 +21,15 @@ class ClientError(BaseModel):
     kind: str = Field(max_length=40)
     message: str = Field(default="", max_length=2000)
     stack: str = Field(default="", max_length=20000)
+
+
+class SetupFailure(BaseModel):
+    """An install or sign-in in setup that the page gave up on, and why."""
+
+    provider: str = Field(max_length=40)
+    stage: Literal["install", "signin", "test"]
+    #: What the page saw: the window closed, the wait ran out, the test prompt failed, ….
+    reason: str = Field(max_length=40, pattern=r"^[a-z-]+$")
 
 
 @router.get("")
@@ -42,4 +51,29 @@ def client_error(request: Request, body: ClientError) -> dict[str, Any]:
     sent = None
     if reporter is not None:
         sent = reporter.report_client(kind=body.kind, message=body.message, stack=body.stack)
+    return {"reported": sent is not None}
+
+
+@router.post("/setup-failure")
+def setup_failure(request: Request, body: SetupFailure) -> dict[str, Any]:
+    """Setup could not install or sign in to an AI CLI. Reported only with consent.
+
+    The page knows that it failed; the log the run wrote says why, and only the scrubbed
+    last lines of an install's or a sign-in's log go with it (``scrub.log_tail``).
+    """
+    from app.api.routes import CLI_PROVIDERS
+    from app.diagnostics.scrub import log_tail
+    from app.llm.console_log import log_path
+
+    product = CLI_PROVIDERS.get(body.provider)
+    if product is None:
+        raise HTTPException(400, f"unknown provider {body.provider!r}")
+    reporter = request.app.state.services.reporter
+    sent = None
+    if reporter is not None:
+        short = body.provider.removesuffix("-subscription")
+        lines = log_tail(log_path(f"{short}-{body.stage}")) if body.stage != "test" else []
+        sent = reporter.report_setup_failure(
+            product=product, stage=body.stage, reason=body.reason, log=lines
+        )
     return {"reported": sent is not None}

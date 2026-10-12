@@ -47,10 +47,11 @@ function cliFacts(row: LlmProvider | undefined, id: CliId): Omit<CliSnapshot, "p
     account: row?.account,
     installCommand: row?.install_command ?? "",
     signinUrl: row?.signin_url || undefined,
-    // Claude Code's and Antigravity's logins end on a code, pasted in the page (D75, D79);
-    // Codex's does not.
+    // Claude Code's and Antigravity's logins end on a code (D75, D79); Codex's does not.
+    // Claude's is pasted in the page. Antigravity reads its code only from a console, so
+    // it is pasted into the window its sign-in opens (machine A, 2026-10-12).
     signinNeedsCode: id !== "codex",
-    codeInWindow: false,
+    codeInWindow: id === "antigravity",
   };
 }
 
@@ -203,12 +204,12 @@ export class ApiSetupBackend implements SetupBackend {
       .llmInstall(CLI_PROVIDER[id], true)
       .then((result) => {
         if (!result.launched) {
-          this.setCli(id, { phase: "install-failed" });
+          this.fail(id, "install", "not-launched");
           return;
         }
         this.watch(id);
       })
-      .catch(() => this.setCli(id, { phase: "install-failed" }));
+      .catch(() => this.fail(id, "install", "refused"));
   }
 
   signIn(id: CliId): void {
@@ -226,7 +227,7 @@ export class ApiSetupBackend implements SetupBackend {
         if (result.url) this.setCli(id, { signinUrl: result.url });
         this.watch(id);
       })
-      .catch(() => this.setCli(id, { phase: "signin-failed" }));
+      .catch(() => this.fail(id, "signin", "refused"));
   }
 
   /** Claude's or Antigravity's code, pasted in the page, goes to its windowless sign-in (D75). */
@@ -238,7 +239,7 @@ export class ApiSetupBackend implements SetupBackend {
     void api.llmSigninCode(CLI_PROVIDER[id], code).catch(async () => {
       const row = (await api.llmStatus().catch(() => null))?.providers.find((r) => r.id === CLI_PROVIDER[id]);
       if (this.state.cli[id].phase === "signing-in" && row?.signed_in !== true) {
-        this.setCli(id, { phase: "signin-failed" });
+        this.fail(id, "signin", "code-refused");
       }
     });
   }
@@ -274,7 +275,7 @@ export class ApiSetupBackend implements SetupBackend {
           return true;
         }
         if (windowGone || overdue) {
-          this.setCli(id, { phase: "install-failed" });
+          this.fail(id, "install", windowGone ? "not-installed" : "timed-out");
           return true;
         }
         return false;
@@ -285,7 +286,7 @@ export class ApiSetupBackend implements SetupBackend {
           return true;
         }
         if (windowGone || overdue) {
-          this.setCli(id, { phase: "signin-failed" });
+          this.fail(id, "signin", windowGone ? "ended-signed-out" : "timed-out");
           return true;
         }
       }
@@ -297,8 +298,18 @@ export class ApiSetupBackend implements SetupBackend {
     this.setCli(id, { phase: "testing" });
     void api
       .llmTest(CLI_PROVIDER[id])
-      .then((result) => this.setCli(id, { phase: result.ok ? "idle" : "signin-failed" }))
-      .catch(() => this.setCli(id, { phase: "signin-failed" }));
+      .then((result) => (result.ok ? this.setCli(id, { phase: "idle" }) : this.fail(id, "test", "failed")))
+      .catch(() => this.fail(id, "test", "refused"));
+  }
+
+  /**
+   * An install or sign-in that did not finish. The card says so; the crash reports hear
+   * of it too, with the run's own last words, since nothing throws and no one else would
+   * (machine A, 2026-10-12: four failed sign-ins and not one report).
+   */
+  private fail(id: CliId, stage: "install" | "signin" | "test", reason: string): void {
+    this.setCli(id, { phase: stage === "install" ? "install-failed" : "signin-failed" });
+    void api.reportSetupFailure({ provider: CLI_PROVIDER[id], stage, reason }).catch(() => undefined);
   }
 
   // ------------------------------------------------------------------ key
