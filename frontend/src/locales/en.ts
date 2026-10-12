@@ -763,7 +763,7 @@ export const en = {
   "settings.models.title": "Models",
   "settings.models.hint": "The list comes from the provider itself. Automatic picks a quick model where the provider's own default is slow.",
   "settings.models.hintChat": "The conversation's model is chosen in the assistant panel, above the message box.",
-  "settings.models.trying": "Trying the model…",
+  "settings.models.saving": "Saving…",
   "settings.models.summary": "Summaries",
   "settings.models.assistant": "Conversation",
   "settings.models.automatic": "Automatic: {model}",

@@ -709,7 +709,7 @@ export const es: Record<MessageKey, string> = {
   "settings.models.title": "Modelos",
   "settings.models.hint": "La lista viene del propio proveedor. «Automático» elige un modelo rápido cuando el predeterminado del proveedor es lento.",
   "settings.models.hintChat": "El modelo de la conversación se elige en el panel del asistente, encima del cuadro de mensaje.",
-  "settings.models.trying": "Probando el modelo…",
+  "settings.models.saving": "Guardando…",
   "settings.models.summary": "Resúmenes",
   "settings.models.assistant": "Conversación",
   "settings.models.automatic": "Automático: {model}",

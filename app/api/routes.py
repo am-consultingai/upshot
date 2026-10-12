@@ -2884,6 +2884,10 @@ def llm_model_put(request: Request, body: ModelChoicePut) -> dict[str, Any]:
 
     if body.provider not in model_choice.PROVIDERS:
         raise HTTPException(400, "unknown-provider")
+    if body.use == "assistant" and body.provider not in model_choice.CHAT_PROVIDERS:
+        # Its Ask and Test run the summaries' model (conversation_use): a conversation
+        # model saved for it would never run (fourth review of #24).
+        raise HTTPException(400, "no-chat-box")
     svc = services_of(request)
     catalog = svc.models
     model = body.model.strip()

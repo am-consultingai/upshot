@@ -10,7 +10,7 @@ import { confirmDialog } from "../ConfirmDialog";
 import type { Citation } from "./Answer";
 import { ArrowRight, ChevronDown, X } from "lucide-react";
 import { Icon } from "../Icon";
-import ModelChoice, { MODEL_PROVIDERS } from "../ModelChoice";
+import ModelChoice, { CHAT_PROVIDERS } from "../ModelChoice";
 
 // The Markdown renderer is the heaviest thing in the panel; it loads with the first answer.
 const Answer = lazy(() => import("./Answer"));
@@ -212,7 +212,7 @@ function Chat({
     onFinish: () => void queries.invalidateQueries({ queryKey: ["assistant-sessions"] }),
   });
   const busy = status === "submitted" || status === "streaming";
-  const showModel = !!provider && !unavailable && MODEL_PROVIDERS.has(provider);
+  const showModel = !!provider && !unavailable && CHAT_PROVIDERS.has(provider);
   const [stopped, setStopped] = useState(false);
 
   useEffect(() => {
@@ -329,7 +329,7 @@ function Chat({
          * is chosen here, at the chat box, and switches from the next question on (D97).
          */}
         {(meetingId || showModel) && (
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             {meetingId && (
               <div className="flex" data-testid="assistant-scope" data-scope={effectiveScope}>
                 <button
