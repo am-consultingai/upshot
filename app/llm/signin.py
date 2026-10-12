@@ -34,6 +34,12 @@ log = get(__name__)
 #: prints it within a second; the rest is a slow first start of the npm shim.
 URL_WAIT_S = 15.0
 
+#: A second Sign in this soon after the first is the same press arriving twice (a
+#: double click, a click as the card re-rendered), not a user giving up: it joins the
+#: login already running. Killing it there made its exit 1 the outcome the page read,
+#: and a sign-in that went on to succeed was reported as failed (machine B, 2026-10-12).
+JOIN_S = 30.0
+
 
 def _job_that_dies_with_us() -> int | None:
     """A Windows job object whose processes are killed when this process ends.
@@ -134,6 +140,7 @@ class HiddenLogin:
         self.log_file = log_file
         self.url: str | None = None
         self.lines: list[str] = []
+        self.started = time.monotonic()
         self._found = threading.Event()
         log_file.parent.mkdir(parents=True, exist_ok=True)
         with log_file.open("a", encoding="utf-8") as out:
@@ -178,6 +185,10 @@ class HiddenLogin:
 
     def running(self) -> bool:
         return self.process.poll() is None
+
+    def joinable(self) -> bool:
+        """Still running and only just started: a second press joins it (``JOIN_S``)."""
+        return self.running() and time.monotonic() - self.started < JOIN_S
 
     def send(self, text: str) -> bool:
         """Type ``text`` and Enter into the login: Claude's code, pasted in the page."""

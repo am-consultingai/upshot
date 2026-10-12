@@ -73,6 +73,8 @@ export interface Job {
   last_error: string | null;
   /** When the current attempt began. Null while pending. */
   started_at?: string | null;
+  /** Cancelled because the user pressed Stop, not withdrawn for a merge. */
+  stopped?: boolean;
 }
 
 export interface AudioTrack {
@@ -778,6 +780,12 @@ export const api = {
     request<Job>(
       `/api/meetings/${id}/jobs/${stage}/retry?force=${force}` +
         (language ? `&language=${encodeURIComponent(language)}` : ""),
+      { method: "POST" },
+    ),
+  /** Stop a meeting's transcription, running or waiting; the meeting and its audio stay. */
+  stopMeetingTranscription: (id: string) =>
+    request<{ meeting_id: string; stopped: "running" | "waiting" }>(
+      `/api/meetings/${id}/transcription/stop`,
       { method: "POST" },
     ),
   languages: () => request<{ languages: Language[] }>("/api/languages"),

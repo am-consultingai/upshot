@@ -188,7 +188,7 @@ def test_a_toast_is_handed_to_another_process() -> None:
     assert command[:3] == [sys.executable, "-m", "app.notify_toast"]
     payload = json.loads(command[3])
     assert payload["title"].startswith("Meeting ended")
-    assert [button["label"] for button in payload["buttons"]] == ["Open"]
+    assert [button["label"] for button in payload["buttons"]] == ["Open", "Stop transcription"]
 
 
 def test_a_toast_that_cannot_start_never_reaches_the_caller() -> None:
