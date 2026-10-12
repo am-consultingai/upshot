@@ -63,6 +63,37 @@ def scrub_text(text: str, *, homes: Iterable[str] = ()) -> str:
     return out if len(out) <= MAX_TEXT else out[: MAX_TEXT - 1] + "…"
 
 
+#: A PowerShell transcript's own header and footer: who ran it and on which machine.
+_TRANSCRIPT_CHROME = re.compile(
+    r"^(\*+|Windows PowerShell transcript (start|end)|Start time:|End time:|Username:|"
+    r"RunAs User:|Configuration Name:|Machine:|Host Application:|Process ID:|PS\w+:|"
+    r"\w*Version:|This window is recorded to)"
+)
+
+
+def log_tail(path: Path, *, lines: int = 6) -> list[str]:
+    """The last ``lines`` lines of an install or sign-in log, scrubbed, for a failure report.
+
+    Only for the logs of an install or a sign-in: what runs there is an installer and the
+    one fixed sign-in prompt, never a meeting, so its last words are the reason it
+    stopped. The transcript's header and footer, which name the user and the machine, are
+    left out; every line kept goes through ``scrub_text``. Nothing, if there is no log.
+    """
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            handle.seek(max(0, handle.tell() - 8000))
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    kept = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not _TRANSCRIPT_CHROME.match(line.strip())
+    ]
+    return [scrub_text(line, homes=homes()) for line in kept[-lines:]]
+
+
 def homes() -> list[str]:
     """The folders whose paths are personal: the user's, and the app's data folder."""
     found = [str(Path.home())]

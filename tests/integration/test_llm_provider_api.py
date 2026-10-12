@@ -384,3 +384,23 @@ def test_a_key_with_nowhere_to_be_kept_is_refused_in_words(
     response = api.client().put("/api/settings/secrets", json={"values": {"gemini": "abc"}})
     assert response.status_code == 503
     assert "no credential store" in response.json()["detail"]
+
+
+def test_setup_failure_takes_a_known_provider_and_stage(api) -> None:  # type: ignore[no-untyped-def]
+    """The page reports an install or sign-in it gave up on (machine A, 2026-10-12)."""
+    client = api.client()
+    ok = client.post(
+        "/api/diagnostics/setup-failure",
+        json={"provider": "antigravity-subscription", "stage": "signin", "reason": "timed-out"},
+    )
+    assert ok.status_code == 200 and "reported" in ok.json()
+    unknown = client.post(
+        "/api/diagnostics/setup-failure",
+        json={"provider": "someone-else", "stage": "signin", "reason": "timed-out"},
+    )
+    assert unknown.status_code == 400
+    free_text = client.post(
+        "/api/diagnostics/setup-failure",
+        json={"provider": "codex-subscription", "stage": "signin", "reason": "Dana's meeting"},
+    )
+    assert free_text.status_code == 422, "a reason is a slug, never free text"

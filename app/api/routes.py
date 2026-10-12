@@ -2574,7 +2574,10 @@ def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, 
             f"{product} is not installed. Install it, then sign in — the app never "
             "handles your credentials.",
         )
-    if (body is not None and body.background) or not getattr(module, "SIGNIN_CONSOLE", True):
+    # Setup asks for no window (``background``), but a CLI that reads its code only from a
+    # console (Antigravity) gets one anyway: without it the sign-in cannot finish.
+    background = body is not None and body.background and getattr(module, "SIGNIN_HIDDEN", True)
+    if background or not getattr(module, "SIGNIN_CONSOLE", True):
         return hidden_signin(provider, client.login_command(), module)
     return launch_console(
         module.login_console(client.login_command()),

@@ -145,6 +145,30 @@ class CrashReporter:
             dsn=self.frontend_dsn,
         )
 
+    def report_setup_failure(
+        self, *, product: str, stage: str, reason: str, log: list[str]
+    ) -> dict[str, Any] | None:
+        """An install or sign-in in setup that ended without working (2026-10-12).
+
+        Nothing raises when it happens: the card says "didn't finish" and the user is left
+        to try again, so without this no one hears of it. Reported as an error of its own
+        kind, one per product, stage and reason a day, with the scrubbed last lines of the
+        run's log (``scrub.log_tail``).
+        """
+        if not self.enabled:
+            return None
+        value = {
+            "type": "SetupFailure",
+            "module": "upshot.setup",
+            "value": scrub.scrub_text(f"{product} {stage} did not finish: {reason}"),
+        }
+        return self._report(
+            {"exception": {"values": [value]}, "level": "error", "extra": {"log_tail": log}},
+            fingerprint=f"SetupFailure@{product}:{stage}:{reason}",
+            where=f"setup:{stage}",
+            tags={"cli": product},
+        )
+
     def last_report(self) -> dict[str, Any] | None:
         try:
             data = json.loads((self.home / "last-report.json").read_text(encoding="utf-8"))
