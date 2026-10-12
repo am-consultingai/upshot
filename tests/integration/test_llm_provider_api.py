@@ -404,3 +404,162 @@ def test_setup_failure_takes_a_known_provider_and_stage(api) -> None:  # type: i
         json={"provider": "codex-subscription", "stage": "signin", "reason": "Dana's meeting"},
     )
     assert free_text.status_code == 422, "a reason is a slug, never free text"
+
+
+def test_models_are_listed_chosen_and_checked(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """Settings' model choice (2026-10-12): the provider's own list, a choice it must
+    offer, automatic again on empty, and the choice in force in the next client."""
+    from app.llm import model_choice
+    from app.llm.client import make_client
+
+    agy = "Fetching…\ngemini-3.8-flash-medium\tFlash (Medium)\ngemini-3.8-flash-low\tFlash (Low)\n"
+    monkeypatch.setattr(api.services.models, "run", lambda args, timeout: (0, agy, ""))
+
+    class Cli:
+        def resolve(self) -> str:
+            return "agy"
+
+    monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: Cli())
+    provider = "antigravity-subscription"
+    client = api.client()
+    listed = client.get("/api/llm/models", params={"provider": provider}).json()
+    ids = [m["id"] for m in listed["models"]]
+    assert ids == ["gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
+    assert listed["chosen"] == {"summary": "", "assistant": ""}
+    assert listed["effective"] == {
+        "summary": "gemini-3.8-flash-medium",
+        "assistant": "gemini-3.8-flash-low",
+    }
+    refused = client.put(
+        "/api/llm/model", json={"provider": provider, "use": "summary", "model": "made-up"}
+    )
+    assert refused.status_code == 400, "only a model the provider offers"
+    chose = client.put(
+        "/api/llm/model",
+        json={"provider": provider, "use": "summary", "model": "gemini-3.8-flash-low"},
+    ).json()
+    assert chose["chosen"]["summary"] == "gemini-3.8-flash-low"
+    assert make_client(api.services.config, provider=provider).model == "gemini-3.8-flash-low"  # type: ignore[attr-defined]
+    back = client.put("/api/llm/model", json={"provider": provider, "use": "summary", "model": ""})
+    assert back.json()["chosen"]["summary"] == ""
+    assert client.get("/api/llm/models", params={"provider": "none"}).status_code == 400
+    flag = client.put(
+        "/api/llm/model", json={"provider": provider, "use": "summary", "model": "-x"}
+    )
+    assert flag.status_code == 400, "never something a command line would read as a flag"
+    cloud = client.put(
+        "/api/llm/model",
+        json={"provider": "ollama", "use": "summary", "model": "gpt-oss:120b-cloud"},
+    )
+    assert cloud.status_code == 400, "a sensitive meeting must never reach a cloud model"
+
+
+def test_an_api_model_is_tried_before_it_is_kept(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """A vendor's list can name a model our client cannot drive: it is tried once."""
+    from app.llm import model_choice
+    from app.llm.gemini_client import GeminiClient
+
+    api.services.config.set("secrets.backend", "memory")
+    api.services.config.secrets.set("gemini", "k")
+    api.services.models._lists["gemini"] = model_choice.Listing(
+        models=[
+            model_choice.ModelInfo("gemini-tts", "TTS"),
+            model_choice.ModelInfo("gemini-3", "3"),
+        ],
+        fetched_at=api.services.models.now(),
+    )
+    tried: list[str] = []
+
+    def answer(self, **kwargs):  # type: ignore[no-untyped-def]
+        tried.append(self.model)
+        if self.model == "gemini-tts":
+            raise RuntimeError("this model only speaks")
+        from app.llm.client import LlmResult
+
+        return LlmResult(data={"ok": True}, model=self.model)
+
+    monkeypatch.setattr(GeminiClient, "complete_json", answer)
+    client = api.client()
+    refused = client.put(
+        "/api/llm/model", json={"provider": "gemini", "use": "summary", "model": "gemini-tts"}
+    )
+    assert refused.status_code == 400 and refused.json()["detail"] == "did-not-answer"
+    kept = client.put(
+        "/api/llm/model", json={"provider": "gemini", "use": "summary", "model": "gemini-3"}
+    )
+    assert kept.status_code == 200 and kept.json()["chosen"]["summary"] == "gemini-3"
+    assert tried == ["gemini-tts", "gemini-3"]
+
+
+def test_the_general_settings_cannot_set_a_bad_model(api) -> None:  # type: ignore[no-untyped-def]
+    client = api.client()
+    for values in (
+        {"llm.antigravity_model": "--dangerously-x"},
+        {"llm.local_model": "gpt-oss:120b-cloud"},
+        {"llm.summary_models": {"gemini": "x"}},
+    ):
+        assert client.put("/api/settings", json={"values": values}).status_code == 400, values
+    assert (
+        client.put("/api/settings", json={"values": {"llm.gemini_model": "gemini-3"}}).status_code
+        == 200
+    )
+
+
+def test_a_cli_model_is_not_tried_and_a_choice_is_announced(
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    """A CLI runs what it lists, so no trial prompt; the choice is published for any
+    other window showing it."""
+    from app.llm import model_choice
+    from app.llm.claude_cli import ClaudeCliClient
+
+    def never(self, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("a CLI's model is not tried")
+
+    monkeypatch.setattr(ClaudeCliClient, "complete_json", never)
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        api.services.events, "publish", lambda kind, **data: seen.append({kind: data})
+    )
+    api.services.models._lists["claude-subscription"] = model_choice.Listing(
+        models=[model_choice.ModelInfo("haiku", "Haiku")], fetched_at=api.services.models.now()
+    )
+    saved = api.client().put(
+        "/api/llm/model",
+        json={"provider": "claude-subscription", "use": "assistant", "model": "haiku"},
+    )
+    assert saved.status_code == 200
+    assert {"settings": {"changed": ["llm.assistant_models"]}} in seen
+
+
+def test_ask_runs_the_summaries_model_for_a_provider_with_no_chat_box(
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    """Ask's model: the conversation's for a provider with a chat box to choose it at,
+    the summaries' for one without; a model the settings refuse is said on the page."""
+    from app import ask as ask_module
+    from app.errors import PermanentError
+    from tests.integration.test_redesign_api import _transcribed
+
+    _transcribed(api, "m-a", "Churn review", [(0, "ME", "Churn went up in August.")])
+    meeting = api.services.dao.get_meeting("m-a")
+    used: list[str] = []
+
+    def make(config, *, sensitive=False, provider=None, use="summary", fetch=False):  # type: ignore[no-untyped-def]
+        used.append(use)
+        raise PermanentError("The Ollama model set is a cloud model.")
+
+    monkeypatch.setattr(ask_module, "make_client", make)
+    for provider in ("gemini", "antigravity-subscription"):
+        api.services.config.set("llm.provider", provider)
+        with pytest.raises(ask_module.AskError, match="cloud model"):
+            ask_module.ask(api.services.dao, api.services.config, meeting, "What happened?")
+    assert used == ["summary", "assistant"]
+
+
+def test_no_conversation_model_for_a_provider_with_no_chat_box(api) -> None:  # type: ignore[no-untyped-def]
+    """Its Ask and Test run the summaries' model; a conversation model would never run."""
+    put = api.client().put(
+        "/api/llm/model", json={"provider": "gemini", "use": "assistant", "model": "gemini-3"}
+    )
+    assert put.status_code == 400 and put.json()["detail"] == "no-chat-box"

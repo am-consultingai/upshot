@@ -30,10 +30,13 @@ interface ConfigShape {
 
 /*
  * Sections, in the order someone meets them: what it records, how it looks, what it
- * connects to, then the two long ones. Which model runs and where it runs are the
+ * connects to, then the two long ones. Which speech model runs and where it runs are the
  * app's business, not the user's (first-run setup still downloads the model and says
- * where it runs). Where recordings are kept is shown, not chosen: Storage says where
- * and how much, which is how "local only" can be checked.
+ * where it runs). The AI model for summaries and for the conversation is the user's to
+ * choose, from the provider's own list, under the provider (2026-10-12; it was the
+ * app's alone until Antigravity's default took 75 s over a one-line check). Where
+ * recordings are kept is shown, not chosen: Storage says where and how much, which is
+ * how "local only" can be checked.
  *
  * Each carries one line of purpose under its heading, said in terms of what it is for
  * rather than what is in it — the name says the second.

@@ -350,7 +350,9 @@ def test_with_a_fallback_the_meeting_is_summarized_and_says_by_whom(  # type: ig
     stand_in = FakeLlm()
     stand_in.name = "gemini"
 
-    def make(config: Config, *, sensitive: bool = False, provider: str | None = None) -> Any:
+    def make(
+        config: Config, *, sensitive: bool = False, provider: str | None = None, **_: Any
+    ) -> Any:
         built.append(provider)
         return stand_in if provider == "gemini" else _codex(api)
 
