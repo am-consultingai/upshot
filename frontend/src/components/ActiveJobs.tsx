@@ -6,12 +6,15 @@ import { api, reason, type ActiveJob } from "../api";
 import { useI18n } from "../i18n";
 import { ACTIVE_KEY, clientName, jobStatus, timeLeft, useActiveJobs } from "../lib/activeJobs";
 import { LIST_KEY } from "../lib/transcriptions";
+import { useStopTranscription } from "../lib/stopTranscription";
 import { SettingGroup } from "./SettingRow";
 import { toast } from "./Toaster";
 
 function Row({ job }: { job: ActiveJob }) {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
+  // A meeting's transcription stops (the meeting stays); a file's job is cancelled.
+  const stop = useStopTranscription(job.id);
   const cancel = useMutation({
     mutationFn: () => api.cancelTranscription(job.id),
     onSuccess: () => {
@@ -69,8 +72,12 @@ function Row({ job }: { job: ActiveJob }) {
         <Button
           variant="ghost"
           data-testid="active-job-cancel"
-          busy={cancel.isPending}
+          busy={cancel.isPending || stop.pending}
           onClick={() => {
+            if (job.kind === "meeting") {
+              void stop.ask(job.title ?? job.id, job.state === "running");
+              return;
+            }
             // A waiting job has nothing to lose; a running one asks first.
             if (job.state !== "running") {
               cancel.mutate();
@@ -84,7 +91,7 @@ function Row({ job }: { job: ActiveJob }) {
             }).then((yes) => yes && cancel.mutate());
           }}
         >
-          {t("transcriptions.cancel")}
+          {t(job.kind === "meeting" ? "stopTranscription.confirm" : "transcriptions.cancel")}
         </Button>
       )}
     </li>

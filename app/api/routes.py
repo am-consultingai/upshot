@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ from app.clock import iso
 from app.config import LLM_PROVIDERS, Config
 from app.db.dao import GlossaryTerm, Meeting, capabilities, transaction
 from app.log import get
+from app.pipeline.queue import STOPPED
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
 from app.services import Services
 from app.version import build_info
@@ -683,6 +685,10 @@ def launcher_action(request: Request, body: LauncherAction) -> dict[str, Any]:
             raise HTTPException(409, "that recording is not being followed")
         svc.events.publish("recorder", state="recording", meeting_id=current)
         return {"meeting_id": current, "kept": True}
+    if body.action == "transcription.stop":
+        if not body.meeting_id:
+            raise HTTPException(400, "name the meeting")
+        return stop_transcription(request, body.meeting_id)
     if body.action in ("meeting.assign", "meeting.none"):
         if not body.meeting_id:
             raise HTTPException(400, "name the meeting")
@@ -845,6 +851,8 @@ def _meeting_payload(svc: Services, meeting_id: str) -> dict[str, Any]:
             "last_error": job.last_error,
             # So the page can say how long a stage has been at it, not merely that it is.
             "started_at": job.started_at,
+            # Stopped by the user, not withdrawn for a merge (also ``cancelled``).
+            "stopped": job.state == "cancelled" and job.last_error == STOPPED,
         }
         for job in svc.queue.for_meeting(meeting_id)
     ]
@@ -1464,6 +1472,32 @@ def retry_stage(
     job = svc.queue.retry(meeting_id, JobStage(stage))
     svc.events.publish("job", meeting_id=meeting_id, stage=stage, state=job.state)
     return {"stage": job.stage, "state": job.state, "attempts": job.attempts}
+
+
+@router.post("/meetings/{meeting_id}/transcription/stop")
+def stop_transcription(request: Request, meeting_id: str) -> dict[str, Any]:
+    """Stop this meeting's transcription, running or waiting. The audio stays, and so does
+    a transcript an earlier run made: a stopped re-transcription leaves the meeting as it
+    was. A running one stops at its next checkpoint (between segments of speech), so the
+    answer says ``running`` and the meeting settles a moment later.
+    """
+    from app.pipeline.worker import settle_stopped
+
+    svc = services_of(request)
+    meeting = _visible(svc, meeting_id)
+    meeting_id = meeting.id  # an id merged away names the meeting it joined (D89)
+    stopped = svc.queue.request_stop(meeting_id)
+    if stopped is None:
+        raise HTTPException(409, "this meeting is not being transcribed")
+    if stopped == "waiting":
+        # It never started; only a merge (D89) moves a meeting to TRANSCRIBING ahead of it.
+        settle_stopped(svc.dao, meeting_id, meeting.state)
+        svc.events.publish("job", meeting_id=meeting_id, stage="transcribe", state="cancelled")
+    if svc.notifier is not None:
+        # "Meeting ended. Transcribing…" is no longer true.
+        svc.notifier.withdraw(meeting_id)
+    log.info("meeting %s: transcription stop requested (%s)", meeting_id, stopped)
+    return {"meeting_id": meeting_id, "stopped": stopped}
 
 
 @router.post("/meetings/{meeting_id}/keep")
@@ -2496,6 +2530,16 @@ _CONSOLES: dict[str, Any] = {}
 #: Sign-ins running with no window (``app/llm/signin.py``), one per CLI provider.
 _LOGINS: dict[str, Any] = {}
 
+#: Providers whose windowless sign-in is being started or replaced right now. While one
+#: is, the row still counts as waiting: between stopping the old login and the new one
+#: printing its link there is no process, and a page that polled then read "the sign-in
+#: ended signed out" (machine B, 2026-10-12).
+_STARTING: set[str] = set()
+
+#: Held while a windowless sign-in is looked up, stopped or started: two presses arriving
+#: together must not both start one, the second stopping the first.
+_LOGINS_LOCK = threading.Lock()
+
 #: Providers whose console in ``_CONSOLES`` is a sign-in window (not an install). Cancel
 #: closes it, and a second Sign in replaces it: left open, its ``agy`` would go on waiting
 #: for a code from a Google page the user has since closed (review of #23, 2026-10-12).
@@ -2524,8 +2568,10 @@ def console_open(provider: str) -> bool:
     """
     process = _CONSOLES.get(provider)
     login = _LOGINS.get(provider)
-    return (process is not None and process.poll() is None) or (
-        login is not None and login.running()
+    return (
+        (process is not None and process.poll() is None)
+        or (login is not None and login.running())
+        or provider in _STARTING
     )
 
 
@@ -2667,34 +2713,55 @@ def hidden_signin(provider: str, argv: list[str], module: Any) -> dict[str, Any]
     """Run the login with no window and return the link it prints (``app/llm/signin.py``).
 
     A second Sign in replaces the first: the old one still holds the callback port, and
-    the user pressing the button again means they have given up on it.
+    the user pressing the button again means they have given up on it. One that arrives
+    within seconds of the first is the same press twice, and joins it instead
+    (``signin.JOIN_S``): two logins started 0.8 s apart, the first killed by the second,
+    and the page reported a sign-in that worked as failed (machine B, 2026-10-12).
     """
     from app.llm.console_log import log_path
     from app.llm.signin import HiddenLogin
 
     product = CLI_PROVIDERS[provider]
-    previous = _LOGINS.pop(provider, None)
-    if previous is not None:
-        previous.stop()
     name = f"{provider.removesuffix('-subscription')}-signin"
-    try:
-        login = HiddenLogin(
-            argv,
-            url_pattern=module.LOGIN_URL,
-            log_file=log_path(name),
-            cwd=module.workdir(),
-            env=module.child_env(),
-        )
-    except OSError as exc:
-        log.error("hidden sign-in for %s failed to start: %s", provider, exc, exc_info=True)
-        raise HTTPException(500, f"could not start the {product} sign-in: {exc}") from exc
-    _LOGINS[provider] = login
+    with _LOGINS_LOCK:
+        previous = _LOGINS.get(provider)
+        joined = False
+        if previous is not None and previous.joinable():
+            login, joined = previous, True
+        else:
+            # Counted as waiting throughout: the old login is gone before the new one runs.
+            _STARTING.add(provider)
+            try:
+                _LOGINS.pop(provider, None)
+                if previous is not None:
+                    previous.stop()
+                try:
+                    login = HiddenLogin(
+                        argv,
+                        url_pattern=module.LOGIN_URL,
+                        log_file=log_path(name),
+                        cwd=module.workdir(),
+                        env=module.child_env(),
+                    )
+                except OSError as exc:
+                    log.error(
+                        "hidden sign-in for %s failed to start: %s", provider, exc, exc_info=True
+                    )
+                    raise HTTPException(
+                        500, f"could not start the {product} sign-in: {exc}"
+                    ) from exc
+                _LOGINS[provider] = login
+            finally:
+                _STARTING.discard(provider)
     url = login.wait_for_url()
     if url is None and not login.running():
         tail = " ".join(login.lines[-3:]) or "it printed nothing"
         log.error("hidden sign-in for %s exited without a link: %s", provider, tail)
         raise HTTPException(500, f"the {product} sign-in stopped before it began: {tail}")
-    log.info("hidden sign-in for %s started (pid %d)", provider, login.process.pid)
+    if joined:
+        log.info("hidden sign-in for %s pressed again; joined pid %d", provider, login.process.pid)
+    else:
+        log.info("hidden sign-in for %s started (pid %d)", provider, login.process.pid)
     return {
         "launched": True,
         "command": " ".join(argv),

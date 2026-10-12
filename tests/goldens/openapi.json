@@ -3921,6 +3921,48 @@
         "summary": "Get Transcript"
       }
     },
+    "/api/meetings/{meeting_id}/transcription/stop": {
+      "post": {
+        "description": "Stop this meeting's transcription, running or waiting. The audio stays, and so does\na transcript an earlier run made: a stopped re-transcription leaves the meeting as it\nwas. A running one stops at its next checkpoint (between segments of speech), so the\nanswer says ``running`` and the meeting settles a moment later.",
+        "operationId": "stop_transcription_api_meetings__meeting_id__transcription_stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "meeting_id",
+            "required": true,
+            "schema": {
+              "title": "Meeting Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stop Transcription Api Meetings  Meeting Id  Transcription Stop Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Transcription"
+      }
+    },
     "/api/model": {
       "get": {
         "description": "The speech model: on disk, downloading (with bytes), failed or missing.",

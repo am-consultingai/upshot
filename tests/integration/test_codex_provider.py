@@ -249,16 +249,47 @@ def test_cancel_stops_a_hidden_signin(hidden) -> None:  # type: ignore[no-untype
     assert row["signin_url"] == ""
 
 
-def test_a_second_signin_replaces_the_first(hidden) -> None:  # type: ignore[no-untyped-def]
+def test_a_second_signin_replaces_the_first(  # type: ignore[no-untyped-def]
+    hidden, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The old login holds the callback port; pressing Sign in again means it is abandoned."""
     from app.api import routes
+    from app.llm import signin
 
+    monkeypatch.setattr(signin, "JOIN_S", 0.0)  # pressed again later, not twice at once
     client = hidden.client()
     client.post("/api/llm/signin", json={"provider": "codex-subscription"})
     first = routes._LOGINS["codex-subscription"]
     client.post("/api/llm/signin", json={"provider": "codex-subscription"})
     assert not first.running()
     assert routes._LOGINS["codex-subscription"].running()
+
+
+def test_the_same_press_twice_joins_the_running_signin(hidden) -> None:  # type: ignore[no-untyped-def]
+    """Two Sign ins a moment apart are one press: the second must not kill the first, whose
+    exit the page then read as a failed sign-in (machine B, 2026-10-12)."""
+    from app.api import routes
+
+    client = hidden.client()
+    one = client.post("/api/llm/signin", json={"provider": "codex-subscription"}).json()
+    first = routes._LOGINS["codex-subscription"]
+    two = client.post("/api/llm/signin", json={"provider": "codex-subscription"}).json()
+    assert routes._LOGINS["codex-subscription"] is first
+    assert first.running()
+    assert two["url"] == one["url"]
+
+
+def test_the_row_keeps_waiting_while_a_signin_is_replaced(hidden) -> None:  # type: ignore[no-untyped-def]
+    """No process runs between stopping the old login and starting the new one; the row
+    must not read as "the sign-in ended" in that gap."""
+    from app.api import routes
+
+    routes._STARTING.add("codex-subscription")
+    try:
+        assert codex_row(hidden)["console_open"] is True
+    finally:
+        routes._STARTING.discard("codex-subscription")
+    assert codex_row(hidden)["console_open"] is False
 
 
 def test_a_hidden_signin_that_dies_says_why(  # type: ignore[no-untyped-def]

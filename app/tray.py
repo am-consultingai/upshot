@@ -182,6 +182,10 @@ class TrayApp:
                 services.recorder.resume()
             else:
                 services.recorder.pause()
+        elif action is Action.STOP_TRANSCRIPTION:
+            from app.transcription.active import stop_running
+
+            log.info("tray: stop transcription (%s)", stop_running(services) or "nothing running")
         elif action is Action.OPEN:
             # A fresh one-time link on every click. The single link minted at startup
             # was spent by the first browser, so a second browser profile opened from

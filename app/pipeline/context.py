@@ -43,16 +43,18 @@ class StageContext:
 
     def checkpoint(self) -> None:
         """Called between units of work. Raises :class:`Cancelled` when the meeting is being
-        deleted, :class:`Preempted` when a meeting starts."""
-        self.stop_if_deleted()
+        deleted or its transcription stopped, :class:`Preempted` when a meeting starts."""
+        self.stop_if_asked()
         if self.should_yield():
             raise Preempted(f"{self.job.stage} yielded to the recorder")
 
-    def stop_if_deleted(self) -> None:
-        """For work that cannot be resumed part-way (a track mid-transcription): stop only
-        for a deletion, never for the recorder."""
+    def stop_if_asked(self) -> None:
+        """For work that cannot be resumed part-way (a track mid-transcription): stop for a
+        deletion or the user's Stop, never for the recorder."""
         if self.queue.deleting(self.meeting.id):
             raise Cancelled(f"{self.job.stage} stopped: the meeting is being deleted")
+        if self.queue.stopping(self.meeting.id):
+            raise Cancelled(f"{self.job.stage} stopped by the user")
 
     def refresh(self) -> Meeting:
         self.meeting = self.dao.require_meeting(self.meeting.id)

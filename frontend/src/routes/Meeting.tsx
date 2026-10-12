@@ -29,6 +29,7 @@ import { citedSeconds, leadFirst, withCitations } from "../lib/summary";
 import { meetingDirections } from "../lib/direction";
 // What each stage is doing, in words. "summarize: running" told nobody anything.
 import { STAGE_LABEL, formatPercent, phaseLabel, timeLeft, useMeetingJob } from "../lib/activeJobs";
+import { TRANSCRIPT_STAGES, useStopTranscription } from "../lib/stopTranscription";
 import { Loading, Skeleton, SkeletonProse } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 import { shortcutKey, typing } from "../lib/keys";
@@ -197,6 +198,16 @@ export default function MeetingPage() {
       queryClient.invalidateQueries();
     },
   });
+  // After a Stop: the whole transcription again, from the audio.
+  const retranscribeNow = useMutation({
+    mutationFn: () => api.retry(id, "transcribe", true),
+    onSuccess: () => {
+      setPressedAt(Date.now());
+      setPipelineBusy(true);
+      queryClient.invalidateQueries();
+    },
+    onError: (error) => toast({ title: reason(error), tone: "danger" }),
+  });
   const summarize = useMutation({
     // force: pressing this means redo it, not "redo it if you think it is stale".
     mutationFn: () => api.retry(id, "summarize", true),
@@ -238,6 +249,20 @@ export default function MeetingPage() {
       ? queued
       : undefined;
   const progress = measured?.progress ?? null;
+  // Its transcription, running or waiting, can be stopped from here (a summary cannot).
+  const stopTranscription = useStopTranscription(id);
+  const transcribing = current !== undefined && TRANSCRIPT_STAGES.has(current.stage);
+  // Pressed and accepted, but the stage stops only at its next checkpoint: say so until it has.
+  const stopping = stopTranscription.pending || (stopTranscription.requested && transcribing);
+  const { requested: stopRequested, reset: resetStop } = stopTranscription;
+  useEffect(() => {
+    // Stopped: a later run on this page starts with a Stop that can be pressed again.
+    if (stopRequested && !transcribing) resetStop();
+  }, [stopRequested, transcribing, resetStop]);
+  const askToStop = () =>
+    void stopTranscription.ask(meeting.data?.title ?? id, current?.state === "running");
+  // Stopped by the user and not run since: the page says so and offers to transcribe.
+  const stoppedJob = running.length === 0 ? jobs.find((job) => job.stopped) : undefined;
 
   // Ticks only while something is working, for the elapsed time beside the spinner.
   const [now, setNow] = useState(() => Date.now());
@@ -569,6 +594,9 @@ export default function MeetingPage() {
               label: summary.data ? t("meeting.resummarize") : t("meeting.summarize"),
               run: () => summarize.mutate(),
             },
+            ...(transcribing
+              ? [{ id: "stop-transcription", label: t("meeting.stopTranscription"), run: askToStop }]
+              : []),
             ...(meeting.data?.language
               ? [{ id: "transcribe-again", label: t("meeting.transcribeAgain"), run: () => setTranscribeAgain(true) }]
               : []),
@@ -802,7 +830,35 @@ export default function MeetingPage() {
                       {timeLeft(measured?.eta_s, t)}
                     </span>
                   )}
+                  {transcribing && (
+                    <Button
+                      variant="ghost"
+                      data-testid="stop-transcription"
+                      busy={stopping}
+                      onClick={askToStop}
+                      className="ms-1"
+                    >
+                      {stopping ? t("stopTranscription.stopping") : t("meeting.stopTranscription")}
+                    </Button>
+                  )}
                 </p>
+              )}
+              {stoppedJob && meeting.data.state !== "RECORDING" && (
+                <div
+                  data-testid="transcription-stopped"
+                  className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-sm"
+                >
+                  <span className="text-secondary">{t("meeting.transcriptionStopped")}</span>
+                  <Button
+                    data-testid="transcribe-now"
+                    busy={retranscribeNow.isPending}
+                    onClick={() => retranscribeNow.mutate()}
+                    variant="primary"
+                    className="ms-auto"
+                  >
+                    {t("meeting.transcribe")}
+                  </Button>
+                </div>
               )}
               {working && progress !== null && (
                 <div
