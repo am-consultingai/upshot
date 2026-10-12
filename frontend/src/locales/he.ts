@@ -757,7 +757,7 @@ export const he: Record<MessageKey, string> = {
   "settings.models.title": "מודלים",
   "settings.models.hint": "הרשימה מגיעה מהספק עצמו. 'אוטומטי' בוחר מודל מהיר כשברירת המחדל של הספק איטית.",
   "settings.models.hintChat": "את המודל לשיחה בוחרים בחלון העוזר, מעל תיבת ההודעה.",
-  "settings.models.trying": "בודקים את המודל…",
+  "settings.models.saving": "שומרים…",
   "settings.models.summary": "סיכומים",
   "settings.models.assistant": "שיחה",
   "settings.models.automatic": "אוטומטי: {model}",

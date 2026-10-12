@@ -379,11 +379,44 @@ def test_a_list_asked_for_before_a_change_is_not_kept_after_it(
     catalog = Catalog(config(tmp_path), run=run)
     worker = threading.Thread(target=lambda: catalog.listing("antigravity-subscription"))
     worker.start()
-    started.wait(5)
+    assert started.wait(5)
     catalog.forget("antigravity-subscription")  # signed in meanwhile
     release.set()
     worker.join(5)
+    assert not worker.is_alive()
     assert catalog.cached("antigravity-subscription") is None, "the stale answer is dropped"
+
+
+def test_after_a_forget_the_next_caller_asks_afresh_instead_of_waiting_on_the_old_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Signed in while the start's list was still out: Settings must show the new list,
+    not "no answer" (fourth review of #24)."""
+    import threading
+
+    monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: FakeCli("agy"))
+    started, release = threading.Event(), threading.Event()
+    answers = iter([(1, "Please sign in\n", ""), (0, AGY_MODELS, "")])
+
+    def run(args: list[str], timeout: float) -> tuple[int, str, str]:
+        answer = next(answers)
+        if answer[0] == 1:
+            started.set()
+            release.wait(5)
+        return answer
+
+    catalog = Catalog(config(tmp_path), run=run)
+    old = threading.Thread(target=lambda: catalog.listing("antigravity-subscription"))
+    old.start()
+    assert started.wait(5)
+    catalog.forget("antigravity-subscription")
+    fresh = catalog.listing("antigravity-subscription")  # does not wait on the old fetch
+    release.set()
+    old.join(5)
+    assert not old.is_alive()
+    assert len(fresh.models) == 6 and fresh.error == ""
+    assert len(catalog.cached("antigravity-subscription").models) == 6, "the old answer lost"  # type: ignore[union-attr]
+    assert catalog._fetching == {}
 
 
 def test_a_key_from_the_environment_lists_too(

@@ -116,7 +116,7 @@ export default function ModelChoice({
         title={compact ? t(USE_LABEL[use]) : undefined}
         aria-label={compact ? t("assistant.model") : undefined}
         aria-invalid={compact && !!saveError ? true : undefined}
-        aria-describedby={compact && (saveError || save.isPending) ? `model-note-${provider}` : undefined}
+        aria-describedby={compact ? `model-note-${provider} model-error-${provider}` : undefined}
         className={`max-w-full rounded-md border bg-raised px-2 py-1 ${compact ? "text-xs" : "text-sm"} ${
           compact && saveError ? "border-danger" : "border-line"
         }`}
@@ -136,21 +136,17 @@ export default function ModelChoice({
   };
 
   if (compact) {
-    // Trying a model can take a few seconds, and a refusal must be read, not hovered.
-    const note = save.isPending ? t("settings.models.trying") : saveError;
+    // Saving can take a few seconds, and a refusal must be read, not hovered. Both
+    // regions are always there, so a screen reader announces a change of their text.
     return (
-      <span className="flex flex-col items-end gap-0.5">
+      <span className="flex flex-col items-end gap-0.5 text-end">
         {select(uses[0], data)}
-        {note && (
-          <span
-            id={`model-note-${provider}`}
-            data-testid="model-note"
-            role={saveError ? "alert" : "status"}
-            className={`text-2xs ${saveError ? "text-danger" : "text-tertiary"}`}
-          >
-            {note}
-          </span>
-        )}
+        <span id={`model-note-${provider}`} role="status" className="text-2xs text-tertiary">
+          {save.isPending ? t("settings.models.saving") : ""}
+        </span>
+        <span id={`model-error-${provider}`} data-testid="model-note" role="alert" className="text-2xs text-danger">
+          {save.isPending ? "" : saveError}
+        </span>
       </span>
     );
   }

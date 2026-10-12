@@ -360,30 +360,31 @@ test("the_conversations_model_is_chosen_at_the_chat_box", async ({ page, seed })
   await page.route("**/api/assistant/status", (route) =>
     route.fulfill({ json: { provider: "antigravity-subscription", available: true, problem: null } }),
   );
-  {
-    await gotoApp(page, "/");
-    await page.getByTestId("assistant-launcher").click();
-    const picker = page.getByTestId("assistant-model").locator("select");
-    await expect(picker.locator("option")).toHaveText([
-      "Automatic: Gemini 3.8 Flash (Low)",
-      "Gemini 3.8 Flash (Low)",
-      "Gemini 3.1 Pro (High)",
-    ]);
-    await expect(picker).toHaveAccessibleName("Model for the conversation");
-    await picker.selectOption("gemini-3.1-pro-high");
-    await expect
-      .poll(() => saved)
-      .toEqual([{ provider: "antigravity-subscription", use: "assistant", model: "gemini-3.1-pro-high" }]);
-    await expect(picker).toHaveValue("gemini-3.1-pro-high");
-    // A refusal is read at the chat box, not hidden in a tooltip.
-    await page.unroute("**/api/llm/model");
-    await page.route("**/api/llm/model", (route) =>
-      route.fulfill({ status: 400, json: { detail: "not-offered" } }),
-    );
-    await picker.selectOption("gemini-3.8-flash-low");
-    await expect(page.getByTestId("model-note")).toHaveText(
-      "The provider does not offer that model. Refresh the list.",
-    );
-    await expect(picker).toHaveAttribute("aria-describedby", "model-note-antigravity-subscription");
-  }
+  await gotoApp(page, "/");
+  await page.getByTestId("assistant-launcher").click();
+  const picker = page.getByTestId("assistant-model").locator("select");
+  await expect(picker.locator("option")).toHaveText([
+    "Automatic: Gemini 3.8 Flash (Low)",
+    "Gemini 3.8 Flash (Low)",
+    "Gemini 3.1 Pro (High)",
+  ]);
+  await expect(picker).toHaveAccessibleName("Model for the conversation");
+  await picker.selectOption("gemini-3.1-pro-high");
+  await expect
+    .poll(() => saved)
+    .toEqual([{ provider: "antigravity-subscription", use: "assistant", model: "gemini-3.1-pro-high" }]);
+  await expect(picker).toHaveValue("gemini-3.1-pro-high");
+  // A refusal is read at the chat box, not hidden in a tooltip.
+  await page.unroute("**/api/llm/model");
+  await page.route("**/api/llm/model", (route) =>
+    route.fulfill({ status: 400, json: { detail: "not-offered" } }),
+  );
+  await picker.selectOption("gemini-3.8-flash-low");
+  await expect(page.getByTestId("model-note")).toHaveText(
+    "The provider does not offer that model. Refresh the list.",
+  );
+  await expect(picker).toHaveAttribute(
+    "aria-describedby",
+    "model-note-antigravity-subscription model-error-antigravity-subscription",
+  );
 });
