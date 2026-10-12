@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -46,11 +47,11 @@ def test_codexs_catalog_keeps_only_what_it_lists_for_people() -> None:
     assert ids == ["gpt-6-astra", "gpt-6-luna"]
 
 
-def test_automatic_is_a_quick_flash_for_antigravitys_conversation_only(tmp_path: Path) -> None:
+def test_automatic_names_the_newest_flash_for_antigravity(tmp_path: Path) -> None:
     listing = Listing(models=model_choice.parse_agy_models(AGY_MODELS))
     assert automatic("antigravity-subscription", "assistant", listing) == "gemini-3.8-flash-low"
-    assert automatic("antigravity-subscription", "summary", listing) == "", (
-        "summaries keep agy's own, stronger default"
+    assert automatic("antigravity-subscription", "summary", listing) == "gemini-3.8-flash-medium", (
+        "agy's own default is unnamed and slow: automatic names a model for summaries too"
     )
     assert automatic("antigravity-subscription", "assistant", None) == "", "no list: agy decides"
     assert automatic("claude-subscription", "assistant", listing) == ""
@@ -73,7 +74,7 @@ def test_a_choice_stands_while_offered_and_falls_back_when_not(tmp_path: Path) -
     )
     assert resolve(cfg, provider, "summary", catalog) == "gemini-3.1-pro-high"
     cfg.set("llm.summary_models", {provider: "gemini-2.0-gone"})
-    assert resolve(cfg, provider, "summary", catalog) == "", (
+    assert resolve(cfg, provider, "summary", catalog) == "gemini-3.8-flash-medium", (
         "a model the provider dropped falls back to automatic, never fails a summary"
     )
     assert resolve(cfg, provider, "assistant", catalog) == "gemini-3.8-flash-low"
@@ -112,8 +113,8 @@ def test_a_vendor_that_refuses_says_so_and_the_list_is_not_taken_for_empty(tmp_p
     cfg.secrets.set("openai", "k")
     refused = Catalog(cfg, http=Http({"error": {"message": "bad key sk-123"}}, status=401))
     listing = refused.listing("openai")
-    assert listing.models == [] and listing.error == "the provider answered 401"
-    assert "sk-" not in listing.error, "the body is never echoed"
+    assert listing.models == [] and (listing.error, listing.status) == ("refused", 401)
+    assert "sk-" not in repr(listing), "the body is never echoed"
     http = Http({"data": [{"id": "gpt-6"}, {"id": "whisper-1"}, {"id": "text-embedding-3"}]})
     assert [m.id for m in Catalog(cfg, http=http).listing("openai").models] == ["gpt-6"]
 
@@ -154,20 +155,33 @@ def test_callers_asking_at_once_share_one_fetch(
         target=lambda: results.append(len(catalog.listing("antigravity-subscription").models))
     )
     second.start()
+    # The second caller is waiting on the first one's fetch, not reading a fresh list.
+    for _ in range(100):
+        if catalog._lists.get("antigravity-subscription") is None and second.is_alive():
+            break
+        time.sleep(0.01)
+    assert catalog._fetching and catalog._lists.get("antigravity-subscription") is None
+    time.sleep(0.1)
     release.set()
     first.join(5)
     second.join(5)
     assert calls == [["agy", "models"]] and results == [6, 6]
 
 
-def test_antigravitys_error_is_its_last_line(
+def test_a_cli_s_words_become_a_code_never_its_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """What a CLI says could name an account or a path, and it would reach the log."""
     monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: FakeCli("agy"))
-    catalog = Catalog(
-        config(tmp_path), run=lambda args, timeout: (1, "Fetching…\nPlease sign in first\n", "")
-    )
-    assert catalog.listing("antigravity-subscription").error == "Please sign in first"
+    said = "Fetching…\nPlease sign in first (someone@example.com)\n"
+    catalog = Catalog(config(tmp_path), run=lambda args, timeout: (1, said, ""))
+    assert catalog.listing("antigravity-subscription").error == "signed-out"
+
+    def broken(args: list[str], timeout: float) -> tuple[int, str, str]:
+        raise OSError(r"C:\Users\someone\AppData\Local\agy\bin\agy.exe: access denied")
+
+    catalog = Catalog(config(tmp_path), run=broken)
+    assert catalog.listing("antigravity-subscription").error == "failed"
 
 
 class FakeCli:
@@ -208,8 +222,60 @@ def test_a_provider_that_cannot_answer_has_an_empty_list_and_a_reason(
     monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: FakeCli(None))
     catalog = Catalog(config(tmp_path))
     listing = catalog.listing("antigravity-subscription")
-    assert listing.models == [] and listing.error == "not installed"
-    assert catalog.listing("gemini").error == "no key saved"
+    assert listing.models == [] and listing.error == "not-installed"
+    assert catalog.listing("gemini").error == "no-key"
+
+
+def test_a_failure_is_asked_again_a_minute_later_not_six_hours(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Signed out at start, signed in a moment later: the quick automatic model must
+    follow (second review of #24)."""
+    monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: FakeCli("agy"))
+    answers = iter([(1, "Please sign in\n", ""), (0, AGY_MODELS, "")])
+    clock = {"now": 1000.0}
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, run=lambda args, timeout: next(answers), now=lambda: clock["now"])
+    assert catalog.listing("antigravity-subscription").error == "signed-out"
+    assert catalog.listing("antigravity-subscription").error == "signed-out", "within the minute"
+    clock["now"] += model_choice.RETRY_S + 1
+    provider = "antigravity-subscription"
+    assert resolve(cfg, provider, "assistant", catalog, fetch=True) == "gemini-3.8-flash-low"
+
+
+def test_a_request_never_waits_on_a_list_unless_it_may(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(model_choice, "_cli_client", lambda provider, cfg: FakeCli("agy"))
+
+    def run(args: list[str], timeout: float) -> tuple[int, str, str]:
+        calls.append(args)
+        return 0, AGY_MODELS, ""
+
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, run=run)
+    assert resolve(cfg, "antigravity-subscription", "assistant", catalog) == ""
+    assert calls == [], "the event loop's path (the assistant's status) asks nothing"
+    assert resolve(cfg, "antigravity-subscription", "assistant", catalog, fetch=True) != ""
+    assert calls == [["agy", "models"]]
+
+
+def test_a_model_is_checked_where_it_runs_whatever_set_it(tmp_path: Path) -> None:
+    """A hand-edited key gets past the choice; it must not get past the client."""
+    from app.errors import PermanentError
+    from app.llm.client import make_client
+
+    cfg = config(tmp_path)
+    cfg.set("llm.antigravity_model", "--dangerously-x")
+    assert make_client(cfg, provider="antigravity-subscription").model == ""  # type: ignore[attr-defined]
+    cfg.set("llm.local_model", "gpt-oss:120b-cloud")
+    with pytest.raises(PermanentError):
+        make_client(cfg, provider="antigravity-subscription", sensitive=True)
+    cfg.set("llm.local_model", "dictalm3:12b")
+    cfg.set("llm.summary_models", {"ollama": "llama4:8b"})
+    sensitive = make_client(cfg, provider="anthropic", sensitive=True)
+    assert sensitive.name == "ollama" and sensitive.model == "llama4:8b"  # type: ignore[attr-defined]
 
 
 class Http:

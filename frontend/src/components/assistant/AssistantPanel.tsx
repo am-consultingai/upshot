@@ -212,6 +212,7 @@ function Chat({
     onFinish: () => void queries.invalidateQueries({ queryKey: ["assistant-sessions"] }),
   });
   const busy = status === "submitted" || status === "streaming";
+  const showModel = !!provider && !unavailable && MODEL_PROVIDERS.has(provider);
   const [stopped, setStopped] = useState(false);
 
   useEffect(() => {
@@ -323,17 +324,30 @@ function Chat({
       </div>
 
       <div className="border-t border-line-subtle p-3">
-        {meetingId && (
-          <div className="mb-2 flex" data-testid="assistant-scope" data-scope={effectiveScope}>
-            <button
-              type="button"
-              onClick={() => setScope(effectiveScope === "meeting" ? "all" : "meeting")}
-              aria-label={effectiveScope === "meeting" ? t("assistant.scopeWiden") : t("assistant.scopeNarrow")}
-              className="flex items-center gap-1 rounded-full bg-a-200 px-2 py-0.5 text-xs text-secondary hover:bg-a-300"
-            >
-              {effectiveScope === "meeting" ? t("assistant.scopeMeeting") : t("assistant.scopeAll")}
-              <span aria-hidden="true">{effectiveScope === "meeting" ? "×" : "+"}</span>
-            </button>
+        {/*
+         * What the question is about, and which model answers it: the conversation's model
+         * is chosen here, at the chat box, and switches from the next question on (D97).
+         */}
+        {(meetingId || showModel) && (
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            {meetingId && (
+              <div className="flex" data-testid="assistant-scope" data-scope={effectiveScope}>
+                <button
+                  type="button"
+                  onClick={() => setScope(effectiveScope === "meeting" ? "all" : "meeting")}
+                  aria-label={effectiveScope === "meeting" ? t("assistant.scopeWiden") : t("assistant.scopeNarrow")}
+                  className="flex items-center gap-1 rounded-full bg-a-200 px-2 py-0.5 text-xs text-secondary hover:bg-a-300"
+                >
+                  {effectiveScope === "meeting" ? t("assistant.scopeMeeting") : t("assistant.scopeAll")}
+                  <span aria-hidden="true">{effectiveScope === "meeting" ? "×" : "+"}</span>
+                </button>
+              </div>
+            )}
+            {showModel && (
+              <span data-testid="assistant-model" className="ms-auto min-w-0 max-w-full">
+                <ModelChoice key={provider} provider={provider} uses={["assistant"]} compact />
+              </span>
+            )}
           </div>
         )}
         <textarea
@@ -358,12 +372,6 @@ function Chat({
           <p className="min-w-0 flex-1 text-2xs leading-snug text-tertiary" data-testid="assistant-disclaimer">
             {provider ? t("assistant.sentTo").replace("{provider}", providerName(t, provider)) : ""}
           </p>
-          {/* The conversation's model, switchable between questions (2026-10-12). */}
-          {provider && !unavailable && MODEL_PROVIDERS.has(provider) && (
-            <span data-testid="assistant-model" className="max-w-[45%] shrink">
-              <ModelChoice provider={provider} uses={["assistant"]} compact />
-            </span>
-          )}
           {busy ? (
             <Button
               data-testid="assistant-stop"

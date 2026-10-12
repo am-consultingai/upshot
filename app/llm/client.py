@@ -447,6 +447,7 @@ def make_client(
     sensitive: bool = False,
     provider: str | None = None,
     use: str = "summary",
+    fetch: bool = False,
 ) -> LlmClient:
     """Which LLM is wired, running the model chosen for ``use``. A sensitive meeting
     always routes to the local model.
@@ -454,7 +455,9 @@ def make_client(
     ``provider`` overrides the configured one — the summarize stage passes
     ``llm.fallback_provider`` here when a plan's allowance is spent — and loses to
     ``sensitive`` like everything else does. ``use`` is ``summary`` or ``assistant``
-    (``app.llm.model_choice``): the model the user chose for it, or ours.
+    (``app.llm.model_choice``): the model the user chose for it, or ours. ``fetch`` lets a
+    caller that may wait ask the provider for its list when the choice needs one; never
+    on the event loop.
     """
     if not sensitive and provider is None:
         provider = str(config.get("llm.provider", "anthropic"))
@@ -462,9 +465,9 @@ def make_client(
     client = _client_for(config, provider)
     from app.llm import model_choice
 
-    model = model_choice.resolve(config, provider, use, model_choice.catalog())
-    if model and hasattr(client, "model"):
-        client.model = model
+    if hasattr(client, "model"):
+        model = model_choice.resolve(config, provider, use, model_choice.catalog(), fetch=fetch)
+        client.model = model_choice.guard(provider, model or str(client.model or ""))
     return client
 
 

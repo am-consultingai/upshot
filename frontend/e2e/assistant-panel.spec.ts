@@ -330,3 +330,51 @@ test("an_answer_cannot_show_a_remote_image_or_link_out_of_the_app", async ({ pag
   await expect(page).toHaveURL(/\/m\/ap-1$/);
   expect(requests.filter((url) => url.includes("evil.example"))).toEqual([]);
 });
+
+test("the_conversations_model_is_chosen_beside_send", async ({ page, seed, request }) => {
+  // The product owner, 2026-10-12: the conversation's model belongs at the chat box (D97).
+  await seed(BUDGET);
+  const listed = {
+    provider: "antigravity-subscription",
+    models: [
+      { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
+      { id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" },
+    ],
+    source: "live",
+    fetched_at: 1,
+    error: "",
+    status: null,
+    chosen: { summary: "", assistant: "" },
+    automatic: { summary: "", assistant: "gemini-3.8-flash-low" },
+    effective: { summary: "", assistant: "gemini-3.8-flash-low" },
+  };
+  const saved: unknown[] = [];
+  await page.route("**/api/llm/models?**", (route) => route.fulfill({ json: listed }));
+  await page.route("**/api/llm/model", async (route) => {
+    const body = route.request().postDataJSON() as { model: string };
+    saved.push(route.request().postDataJSON());
+    await route.fulfill({ json: { ...listed, chosen: { summary: "", assistant: body.model } } });
+  });
+  await request.put("/api/settings", {
+    headers: HEADERS,
+    data: { values: { "llm.provider": "antigravity-subscription" } },
+  });
+  try {
+    await gotoApp(page, "/");
+    await page.getByTestId("assistant-launcher").click();
+    const picker = page.getByTestId("assistant-model").locator("select");
+    await expect(picker.locator("option")).toHaveText([
+      "Automatic: Gemini 3.8 Flash (Low)",
+      "Gemini 3.8 Flash (Low)",
+      "Gemini 3.1 Pro (High)",
+    ]);
+    await expect(picker).toHaveAccessibleName("Model for the conversation");
+    await picker.selectOption("gemini-3.1-pro-high");
+    await expect
+      .poll(() => saved)
+      .toEqual([{ provider: "antigravity-subscription", use: "assistant", model: "gemini-3.1-pro-high" }]);
+    await expect(picker).toHaveValue("gemini-3.1-pro-high");
+  } finally {
+    await request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
+  }
+});

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import uuid
 from collections.abc import AsyncIterator
@@ -63,8 +64,14 @@ def last_user_text(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
-def route_for(svc: Services) -> tuple[ClaudeRoute | None, dict[str, Any] | None]:
-    """The CLI that answers, or why none can: the two subscriptions for now (D62)."""
+def route_for(
+    svc: Services, *, fetch: bool = False
+) -> tuple[ClaudeRoute | None, dict[str, Any] | None]:
+    """The CLI that answers, or why none can: the two subscriptions for now (D62).
+
+    ``fetch`` lets the route ask its provider for the model list when the model chosen
+    needs one (``app.llm.model_choice``). It can take seconds, so only off the event loop.
+    """
     provider = str(svc.config.get("llm.provider", "anthropic"))
     command = [
         sys.executable if part == "{python}" else str(part)
@@ -73,18 +80,21 @@ def route_for(svc: Services) -> tuple[ClaudeRoute | None, dict[str, Any] | None]
     if provider == "fake":
         if not command:
             return None, {"code": "not-configured", "provider": provider}
-        return ClaudeRoute(svc.config, command=command), None
+        return ClaudeRoute(svc.config, command=command, fetch=fetch), None
     if provider == "claude-subscription":
-        return ClaudeRoute(svc.config, command=command or None), None
+        return ClaudeRoute(svc.config, command=command or None, fetch=fetch), None
     if provider == "codex-subscription":
         from app.assistant.codex_route import CodexRoute
 
-        return CodexRoute(svc.config, command=command or None), None
+        return CodexRoute(svc.config, command=command or None, fetch=fetch), None
     if provider == "antigravity-subscription":
         # No tools of its own: Upshot looks things up and passes them in (D79).
         from app.assistant.antigravity_route import AntigravityRoute
 
-        return AntigravityRoute(svc.config, command=command or None, services=svc), None
+        return (
+            AntigravityRoute(svc.config, command=command or None, services=svc, fetch=fetch),
+            None,
+        )
     if provider == "ollama":
         return None, {"code": "local-model", "provider": provider}
     return None, {"code": "unsupported-provider", "provider": provider}
@@ -128,7 +138,9 @@ async def chat(request: Request, body: ChatPost) -> StreamingResponse:
     svc = services_of(request)
     question = last_user_text(body.messages)
     chat_id = body.id or uuid.uuid4().hex
-    route, problem = route_for(svc)
+    # Off the event loop: choosing the model may ask the provider for its list, and a
+    # stalled loop stalls every stream and request (second review of #24).
+    route, problem = await asyncio.to_thread(route_for, svc, fetch=True)
     store = store_of(svc)
 
     async def events() -> AsyncIterator[str]:

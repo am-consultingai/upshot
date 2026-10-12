@@ -1771,10 +1771,39 @@ def refuse_unusable_provider(svc: Services, values: dict[str, Any]) -> None:
             )
 
 
+def refuse_bad_models(values: dict[str, Any]) -> None:
+    """A model written through the general settings must be a model id, and Ollama's must
+    run on this machine. The model choice itself goes through ``PUT /llm/model``."""
+    from app.llm import model_choice
+
+    for dotted in ("llm.summary_models", "llm.assistant_models"):
+        if dotted in values:
+            raise HTTPException(400, "choose models with PUT /api/llm/model")
+    for dotted in MODEL_KEYS:
+        value = values.get(dotted)
+        if value in (None, ""):
+            continue
+        if not isinstance(value, str) or not model_choice.valid_id(value):
+            raise HTTPException(400, f"{dotted}: not a model id")
+        if dotted == "llm.local_model" and not model_choice.is_local_ollama({"name": value}):
+            raise HTTPException(400, f"{dotted}: a cloud model would leave this machine")
+
+
+#: The model keys from before the model choice (D97), still read as each client's default.
+MODEL_KEYS = (
+    "llm.model",
+    "llm.gemini_model",
+    "llm.openai_model",
+    "llm.local_model",
+    "llm.antigravity_model",
+)
+
+
 @router.put("/settings")
 def put_settings(request: Request, body: SettingsPut) -> dict[str, Any]:
     svc = services_of(request)
     refuse_unusable_provider(svc, body.values)
+    refuse_bad_models(body.values)
     for dotted, value in body.values.items():
         svc.config.set(dotted, value)
     svc.config.validate()
@@ -1870,8 +1899,20 @@ def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
         else:
             svc.config.secrets.delete(name)
         changed.append(name)
+    _forget_models(*changed)
     svc.events.publish("settings", changed=[f"secret:{name}" for name in sorted(changed)])
     return secret_status(request)
+
+
+def _forget_models(*providers: str) -> None:
+    """A key saved, or a CLI being installed or signed into: its model list, held from
+    before, may be an error that no longer holds (second review of #24)."""
+    from app.llm import model_choice
+
+    catalog = model_choice.catalog()
+    if catalog is not None:
+        for provider in providers:
+            catalog.forget(provider)
 
 
 @router.get("/settings/secrets")
@@ -2597,6 +2638,7 @@ def console_log(provider: str, action: str) -> str:
 def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
     """Launch the vendor's own login. We never see the credential it creates."""
     provider = chosen_cli(body)
+    _forget_models(provider)
     module = cli_module(provider)
     product = CLI_PROVIDERS[provider]
     client = cli_client(services_of(request), provider)
@@ -2749,6 +2791,7 @@ def llm_install(body: ProviderPost | None = None) -> dict[str, Any]:
     before it is pressed.
     """
     provider = chosen_cli(body)
+    _forget_models(provider)
     module = cli_module(provider)
     background = body is not None and body.background
     plan = module.install_plan(sign_in=not background)
@@ -2797,6 +2840,7 @@ def _model_view(config: Config, catalog: Any, provider: str, listing: Any) -> di
         "source": listing.source,
         "fetched_at": listing.fetched_at or None,
         "error": listing.error,
+        "status": listing.status,
         "chosen": {use: model_choice.chosen(config, provider, use) for use in model_choice.USES},
         "automatic": {
             use: model_choice.automatic(provider, use, listing, config) for use in model_choice.USES
@@ -2814,7 +2858,7 @@ def llm_models(request: Request, provider: str, refresh: bool = False) -> dict[s
     from app.llm import model_choice
 
     if provider not in model_choice.PROVIDERS:
-        raise HTTPException(400, f"{provider!r} has no models to choose from")
+        raise HTTPException(400, "unknown-provider")
     svc = services_of(request)
     catalog = svc.models
     if catalog is None:
@@ -2823,26 +2867,52 @@ def llm_models(request: Request, provider: str, refresh: bool = False) -> dict[s
     return _model_view(svc.config, catalog, provider, listing)
 
 
+#: Providers whose list can name a model our client cannot drive (an old Claude without
+#: adaptive thinking, a Gemini TTS model, an OpenAI Responses-only model): a model chosen
+#: for them is tried once before it is kept (second review of #24). A CLI runs what it
+#: lists, and Ollama's list is already its own local models.
+TRIED_ON_CHOICE = frozenset({"anthropic", "gemini", "openai"})
+
+
 @router.put("/llm/model")
 def llm_model_put(request: Request, body: ModelChoicePut) -> dict[str, Any]:
     """Choose the model ``provider`` runs for one use. Only one the provider lists, so a
-    typo never becomes a summary that fails; empty is automatic again."""
+    typo never becomes a summary that fails; empty is automatic again. A refusal's
+    ``detail`` is a code the page translates."""
     from app.llm import model_choice
+    from app.llm.client import _client_for, system_blocks
 
     if body.provider not in model_choice.PROVIDERS:
-        raise HTTPException(400, f"{body.provider!r} has no models to choose from")
+        raise HTTPException(400, "unknown-provider")
     svc = services_of(request)
     catalog = svc.models
     model = body.model.strip()
     if model and not model_choice.valid_id(model):
-        raise HTTPException(400, "that is not a model id")
+        raise HTTPException(400, "not-a-model")
     if model and body.provider == "ollama" and not model_choice.is_local_ollama({"name": model}):
-        raise HTTPException(400, "an Ollama cloud model would take meetings off this machine")
+        raise HTTPException(400, "cloud-model")
     if model and catalog is not None:
         # The list held, which Settings has just shown; asked for only if there is none.
         listing = catalog.cached(body.provider) or catalog.listing(body.provider)
         if listing.models and model not in listing.ids():
-            raise HTTPException(400, f"{body.provider} does not offer {model!r}")
+            raise HTTPException(400, "not-offered")
+    if model and body.provider in TRIED_ON_CHOICE:
+        started = time.monotonic()
+        try:
+            client = _client_for(svc.config, body.provider)
+            client.model = model  # type: ignore[attr-defined]
+            client.complete_json(
+                system_blocks=system_blocks("You answer with JSON only.", None),
+                user='Reply with exactly {"ok": true}',
+                schema=PROBE_SCHEMA,
+                max_tokens=64,
+            )
+        except Exception as exc:
+            log.warning(
+                "%s model %s did not answer a trial (%s, %.1f s)",
+                body.provider, model, type(exc).__name__, time.monotonic() - started,
+            )  # fmt: skip
+            raise HTTPException(400, "did-not-answer") from None
     key = model_choice.CONFIG_KEY[body.use]
     current = svc.config.get(key) or {}
     choices = dict(current) if isinstance(current, dict) else {}
@@ -2877,7 +2947,7 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
     started = time.monotonic()
     model = ""
     try:
-        client = make_client(svc.config, provider=provider, use="assistant")
+        client = make_client(svc.config, provider=provider, use="assistant", fetch=True)
         model = str(getattr(client, "model", "") or "")
         result = client.complete_json(
             system_blocks=system_blocks("You answer with JSON only.", None),
