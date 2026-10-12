@@ -331,7 +331,7 @@ test("an_answer_cannot_show_a_remote_image_or_link_out_of_the_app", async ({ pag
   expect(requests.filter((url) => url.includes("evil.example"))).toEqual([]);
 });
 
-test("the_conversations_model_is_chosen_beside_send", async ({ page, seed, request }) => {
+test("the_conversations_model_is_chosen_at_the_chat_box", async ({ page, seed }) => {
   // The product owner, 2026-10-12: the conversation's model belongs at the chat box (D97).
   await seed(BUDGET);
   const listed = {
@@ -355,11 +355,12 @@ test("the_conversations_model_is_chosen_beside_send", async ({ page, seed, reque
     saved.push(route.request().postDataJSON());
     await route.fulfill({ json: { ...listed, chosen: { summary: "", assistant: body.model } } });
   });
-  await request.put("/api/settings", {
-    headers: HEADERS,
-    data: { values: { "llm.provider": "antigravity-subscription" } },
-  });
-  try {
+  // Antigravity as the panel sees it: the real switch is refused where agy is not
+  // installed (CI), and the picker is the subject here, not the sign-in.
+  await page.route("**/api/assistant/status", (route) =>
+    route.fulfill({ json: { provider: "antigravity-subscription", available: true, problem: null } }),
+  );
+  {
     await gotoApp(page, "/");
     await page.getByTestId("assistant-launcher").click();
     const picker = page.getByTestId("assistant-model").locator("select");
@@ -374,7 +375,15 @@ test("the_conversations_model_is_chosen_beside_send", async ({ page, seed, reque
       .poll(() => saved)
       .toEqual([{ provider: "antigravity-subscription", use: "assistant", model: "gemini-3.1-pro-high" }]);
     await expect(picker).toHaveValue("gemini-3.1-pro-high");
-  } finally {
-    await request.put("/api/settings", { headers: HEADERS, data: { values: { "llm.provider": "fake" } } });
+    // A refusal is read at the chat box, not hidden in a tooltip.
+    await page.unroute("**/api/llm/model");
+    await page.route("**/api/llm/model", (route) =>
+      route.fulfill({ status: 400, json: { detail: "not-offered" } }),
+    );
+    await picker.selectOption("gemini-3.8-flash-low");
+    await expect(page.getByTestId("model-note")).toHaveText(
+      "The provider does not offer that model. Refresh the list.",
+    );
+    await expect(picker).toHaveAttribute("aria-describedby", "model-note-antigravity-subscription");
   }
 });

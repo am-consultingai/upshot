@@ -244,7 +244,7 @@ def _list_api(provider: str, config: Config, http: Any) -> list[ModelInfo]:
             for m in data.get("models", [])
             if valid_id(str(m.get("name") or "")) and is_local_ollama(m) and not _is_embedding(m)
         ]
-    key = config.secret(provider)
+    key = config.secret(provider, env=KEY_ENV.get(provider))
     if not key:
         raise ListError(NO_KEY)
     if provider == "anthropic":
@@ -288,6 +288,20 @@ def _list_api(provider: str, config: Config, http: Any) -> list[ModelInfo]:
 CLI_PROVIDERS = ("claude-subscription", "codex-subscription", "antigravity-subscription")
 API_PROVIDERS = ("anthropic", "gemini", "openai", "ollama")
 PROVIDERS = (*CLI_PROVIDERS, *API_PROVIDERS)
+#: The providers the assistant panel talks to (``app.assistant.api.route_for``): only
+#: they have a chat box to choose the conversation's model at.
+CHAT_PROVIDERS = frozenset(CLI_PROVIDERS)
+
+
+def conversation_use(provider: str) -> str:
+    """The use whose model answers someone waiting (Ask, the provider Test). For a
+    provider with no chat box, whose conversation model cannot be chosen anywhere, that is
+    the summaries' model, which Settings does choose (third review of #24)."""
+    return "assistant" if provider in CHAT_PROVIDERS else "summary"
+
+
+#: The environment variable each key may come from, as each client reads it.
+KEY_ENV = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY"}
 
 
 class Catalog:
@@ -309,6 +323,8 @@ class Catalog:
         self._lists: dict[str, Listing] = {}
         self._lock = threading.Lock()
         self._fetching: dict[str, threading.Event] = {}
+        #: Bumped by ``forget``: a fetch begun before it is not kept after it.
+        self._generation: dict[str, int] = {}
 
     def listing(self, provider: str, *, refresh: bool = False) -> Listing:
         """The provider's list, asking for it if it has none, it is stale, or ``refresh``."""
@@ -317,6 +333,7 @@ class Catalog:
             if held is not None and not refresh and held.fresh(self.now()):
                 return held
             running = self._fetching.get(provider)
+            generation = self._generation.get(provider, 0)
             if running is None:
                 done = threading.Event()
                 self._fetching[provider] = done
@@ -327,7 +344,8 @@ class Catalog:
         try:
             listing = self._fetch(provider)
             with self._lock:
-                self._lists[provider] = listing
+                if self._generation.get(provider, 0) == generation:
+                    self._lists[provider] = listing
             return listing
         finally:
             with self._lock:
@@ -344,6 +362,7 @@ class Catalog:
         is a real one."""
         with self._lock:
             self._lists.pop(provider, None)
+            self._generation[provider] = self._generation.get(provider, 0) + 1
 
     def refresh_in_background(self, providers: Iterable[str]) -> threading.Thread:
         """Ask every given provider for its list, off the caller's thread (at start)."""

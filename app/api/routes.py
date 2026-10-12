@@ -2923,6 +2923,7 @@ def llm_model_put(request: Request, body: ModelChoicePut) -> dict[str, Any]:
     svc.config.set(key, choices)
     svc.config.save()
     log.info("%s model for %s: %s", body.use, body.provider, model or "automatic")
+    svc.events.publish("settings", changed=[key])
     listing = catalog.cached(body.provider) if catalog is not None else None
     if listing is None:
         listing = model_choice.Listing()
@@ -2947,7 +2948,11 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
     started = time.monotonic()
     model = ""
     try:
-        client = make_client(svc.config, provider=provider, use="assistant", fetch=True)
+        from app.llm.model_choice import conversation_use
+
+        client = make_client(
+            svc.config, provider=provider, use=conversation_use(provider), fetch=True
+        )
         model = str(getattr(client, "model", "") or "")
         result = client.complete_json(
             system_blocks=system_blocks("You answer with JSON only.", None),

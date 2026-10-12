@@ -182,10 +182,20 @@ def ask(
         # A sensitive meeting never leaves the machine, and that holds when it is only
         # *related* to the one being asked about: one sensitive transcript in the context
         # makes the whole request local.
-        # Someone waits for the answer: the conversation's model, not the summaries'.
-        client = make_client(
-            config, sensitive=any(m.sensitive for m in meetings), use="assistant", fetch=True
-        )
+        # Someone waits for the answer: the conversation's model where there is a chat
+        # box to choose it at, the summaries' otherwise (model_choice.conversation_use).
+        from app.errors import PermanentError
+        from app.llm.model_choice import conversation_use
+
+        sensitive = any(m.sensitive for m in meetings)
+        provider = "ollama" if sensitive else str(config.get("llm.provider", "anthropic"))
+        try:
+            client = make_client(
+                config, sensitive=sensitive, use=conversation_use(provider), fetch=True
+            )
+        except PermanentError as exc:
+            # No provider, or a model the settings would not let run: said on the page.
+            raise AskError(str(exc)) from exc
     budget = CHAR_BUDGET.get(client.name, DEFAULT_CHAR_BUDGET)
     # The meeting asked about gets the larger share; related ones split the rest.
     shares = (

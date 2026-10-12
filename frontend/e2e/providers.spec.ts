@@ -166,7 +166,14 @@ test("a_model_the_server_refuses_says_why_and_a_choice_without_a_list_still_show
     // The list failed, but the chosen model is what runs: the select says so.
     await expect(choice.getByTestId("model-summary")).toHaveValue("gemini-old");
     await expect(choice.getByTestId("model-list-error")).toContainText("401");
-    await choice.getByTestId("model-summary").selectOption("");
+    // A choice the server refuses (the list is gone, so it cannot say it is offered).
+    await choice.getByTestId("model-summary").evaluate((select: HTMLSelectElement) => {
+      const option = document.createElement("option");
+      option.value = "gemini-gone";
+      option.textContent = "gemini-gone";
+      select.append(option);
+    });
+    await choice.getByTestId("model-summary").selectOption("gemini-gone");
     await expect(choice.getByTestId("model-save-error")).toHaveText(
       "The provider does not offer that model. Refresh the list.",
     );
