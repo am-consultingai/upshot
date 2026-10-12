@@ -709,7 +709,7 @@ export const de: Record<MessageKey, string> = {
   "settings.models.title": "Modelle",
   "settings.models.hint": "Die Liste stammt vom Anbieter selbst. „Automatisch“ wählt ein schnelles Modell, wenn die Voreinstellung des Anbieters langsam ist.",
   "settings.models.hintChat": "Das Modell für die Unterhaltung wird im Assistenten über dem Eingabefeld gewählt.",
-  "settings.models.trying": "Modell wird geprüft…",
+  "settings.models.saving": "Wird gespeichert…",
   "settings.models.summary": "Zusammenfassungen",
   "settings.models.assistant": "Unterhaltung",
   "settings.models.automatic": "Automatisch: {model}",

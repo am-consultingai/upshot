@@ -555,3 +555,11 @@ def test_ask_runs_the_summaries_model_for_a_provider_with_no_chat_box(
         with pytest.raises(ask_module.AskError, match="cloud model"):
             ask_module.ask(api.services.dao, api.services.config, meeting, "What happened?")
     assert used == ["summary", "assistant"]
+
+
+def test_no_conversation_model_for_a_provider_with_no_chat_box(api) -> None:  # type: ignore[no-untyped-def]
+    """Its Ask and Test run the summaries' model; a conversation model would never run."""
+    put = api.client().put(
+        "/api/llm/model", json={"provider": "gemini", "use": "assistant", "model": "gemini-3"}
+    )
+    assert put.status_code == 400 and put.json()["detail"] == "no-chat-box"

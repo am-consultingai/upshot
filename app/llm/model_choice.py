@@ -349,7 +349,9 @@ class Catalog:
             return listing
         finally:
             with self._lock:
-                self._fetching.pop(provider, None)
+                # Only our own entry: after a forget(), a newer fetch may hold the slot.
+                if self._fetching.get(provider) is done:
+                    del self._fetching[provider]
             done.set()
 
     def cached(self, provider: str) -> Listing | None:
@@ -363,6 +365,9 @@ class Catalog:
         with self._lock:
             self._lists.pop(provider, None)
             self._generation[provider] = self._generation.get(provider, 0) + 1
+            # A fetch still out answers what was asked before the change: the next caller
+            # starts its own instead of waiting on it (fourth review of #24).
+            self._fetching.pop(provider, None)
 
     def refresh_in_background(self, providers: Iterable[str]) -> threading.Thread:
         """Ask every given provider for its list, off the caller's thread (at start)."""
