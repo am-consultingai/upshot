@@ -442,17 +442,36 @@ def _first_at_ms(text: str) -> int:
 
 
 def make_client(
-    config: Config, *, sensitive: bool = False, provider: str | None = None
+    config: Config,
+    *,
+    sensitive: bool = False,
+    provider: str | None = None,
+    use: str = "summary",
+    fetch: bool = False,
 ) -> LlmClient:
-    """Which LLM is wired. A sensitive meeting always routes to the local model.
+    """Which LLM is wired, running the model chosen for ``use``. A sensitive meeting
+    always routes to the local model.
 
     ``provider`` overrides the configured one — the summarize stage passes
     ``llm.fallback_provider`` here when a plan's allowance is spent — and loses to
-    ``sensitive`` like everything else does.
+    ``sensitive`` like everything else does. ``use`` is ``summary`` or ``assistant``
+    (``app.llm.model_choice``): the model the user chose for it, or ours. ``fetch`` lets a
+    caller that may wait ask the provider for its list when the choice needs one; never
+    on the event loop.
     """
     if not sensitive and provider is None:
         provider = str(config.get("llm.provider", "anthropic"))
     provider = "ollama" if sensitive else str(provider)
+    client = _client_for(config, provider)
+    from app.llm import model_choice
+
+    if hasattr(client, "model"):
+        model = model_choice.resolve(config, provider, use, model_choice.catalog(), fetch=fetch)
+        client.model = model_choice.guard(provider, model or str(client.model or ""))
+    return client
+
+
+def _client_for(config: Config, provider: str) -> LlmClient:
     if provider == "none":
         # Transcripts only (D63). The pipeline never asks for a summary then; this is for
         # everything else that wants a model — Ask, the assistant — to say so plainly.

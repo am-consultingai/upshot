@@ -57,6 +57,7 @@ class Services:
     updates: Any = None  # app.updates.service.UpdateService
     installer: Any = None  # app.updates.install.UpdateInstaller
     reporter: Any = None  # app.diagnostics.reporter.CrashReporter
+    models: Any = None  # app.llm.model_choice.Catalog: each provider's model list
     feedback: Any = None  # app.diagnostics.feedback.FeedbackSender
     extras: dict[str, Any] = field(default_factory=dict)
 
@@ -162,6 +163,11 @@ def build(
 
     # Crash reports, only with consent and a DSN (D87).
     services.reporter = CrashReporter(cfg)
+    from app.llm import model_choice
+
+    # What models each provider offers, asked for in the background once the app runs.
+    services.models = model_choice.Catalog(cfg)
+    model_choice.set_catalog(services.models)
     from app import paths as _paths
     from app.diagnostics.feedback import FeedbackSender
     from app.version import build_info as _build_info

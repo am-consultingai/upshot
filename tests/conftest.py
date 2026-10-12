@@ -83,3 +83,13 @@ def _no_wall_clock_home(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytes
     # Nor for a newer version of the app (app/updates/service.py).
     monkeypatch.setenv("UP_UPDATES__CHECK", "false")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_model_catalog_between_tests():  # type: ignore[no-untyped-def]
+    """The app keeps one model catalog for the process (app.llm.model_choice); a test
+    that builds services sets it, and the next test must not inherit it."""
+    yield
+    from app.llm import model_choice
+
+    model_choice.set_catalog(None)

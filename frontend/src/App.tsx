@@ -248,6 +248,9 @@ export default function App() {
     source.addEventListener("prompt", invalidate);
     // A newer version of the Terms arrived from the website, or was accepted (D83).
     source.addEventListener("legal", invalidate);
+    // A model chosen in another window (D97): the pickers show what runs. The lists
+    // themselves are the server's to keep, so this asks it again, not the providers.
+    source.addEventListener("settings", () => void queryClient.invalidateQueries({ queryKey: ["llm-models"] }));
     // File transcriptions (D86) report progress every second: they update their own list
     // and nothing else, or each one would refetch the whole app.
     source.addEventListener("transcription", (event) => {
