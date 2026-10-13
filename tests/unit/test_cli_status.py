@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from app.llm.cli_status import CliStatusCache
 
 
@@ -65,3 +67,45 @@ def test_another_program_is_asked_not_the_answer_for_the_old_one() -> None:
     assert cache.get("codex", probe, program="codex") == 1, "each program its own answer"
     cache.forget("codex")
     assert cache.get("codex", probe, program="/opt/codex") == 3, "forget drops them all"
+
+
+def test_an_answer_asked_before_a_forget_is_not_held_after_it() -> None:
+    """A status asked just before a sign-out finished after it, and held "signed in"
+    for five minutes (review of #26)."""
+    cache = CliStatusCache(clock=Clock())
+    asked = threading.Event()
+    answer = threading.Event()
+    results: list[str] = []
+
+    def slow() -> str:
+        asked.set()
+        answer.wait(5)
+        return "signed in"
+
+    thread = threading.Thread(target=lambda: results.append(cache.get("claude", slow)))
+    thread.start()
+    assert asked.wait(5)
+    cache.forget("claude")  # the sign-out, while the CLI is still answering
+    answer.set()
+    thread.join(5)
+    assert results == ["signed in"], "its caller still gets the answer it asked for"
+    assert cache.get("claude", lambda: "signed out") == "signed out", "but it is not held"
+
+
+def test_forget_all_also_drops_what_is_being_asked() -> None:
+    cache = CliStatusCache(clock=Clock())
+    asked = threading.Event()
+    answer = threading.Event()
+
+    def slow() -> str:
+        asked.set()
+        answer.wait(5)
+        return "old"
+
+    thread = threading.Thread(target=lambda: cache.get("codex", slow))
+    thread.start()
+    assert asked.wait(5)
+    cache.forget()
+    answer.set()
+    thread.join(5)
+    assert cache.get("codex", lambda: "new") == "new"

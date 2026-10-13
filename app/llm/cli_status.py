@@ -30,7 +30,14 @@ class CliStatusCache:
         self.clock = clock
         #: (provider, the program it runs) → (when asked, the answer).
         self._held: dict[tuple[str, str], tuple[float, Any]] = {}
+        #: Raised by each forget, per provider and for all: an answer asked before a
+        #: forget is returned to its caller but not held (review of #26).
+        self._generation: dict[str, int] = {}
+        self._all_generation = 0
         self._lock = threading.Lock()
+
+    def _generation_of(self, provider: str) -> tuple[int, int]:
+        return self._all_generation, self._generation.get(provider, 0)
 
     def get(
         self,
@@ -42,23 +49,33 @@ class CliStatusCache:
     ) -> Any:
         """``provider``'s status: the one held, or ``probe()``'s when there is none, it is
         older than ``ttl_s``, or ``fresh`` asks for a new one. ``program`` is the CLI the
-        settings point at: pointed at another, the provider is asked again."""
+        settings point at: pointed at another, the provider is asked again.
+
+        The CLI runs outside the lock, for seconds. A sign-out that forgets the provider
+        meanwhile must not find the answer from before it held afterwards, so the answer
+        is kept only if nothing was forgotten while it was asked.
+        """
         key = (provider, program)
-        now = self.clock()
-        if not fresh:
-            with self._lock:
-                held = self._held.get(key)
-            if held is not None and now - held[0] < self.ttl_s:
-                return held[1]
+        with self._lock:
+            held = None if fresh else self._held.get(key)
+            generation = self._generation_of(provider)
+        if held is not None and self.clock() - held[0] < self.ttl_s:
+            return held[1]
         status = probe()
         with self._lock:
-            self._held[key] = (self.clock(), status)
+            if self._generation_of(provider) == generation:
+                self._held[key] = (self.clock(), status)
         return status
 
     def forget(self, *providers: str) -> None:
-        """Drop what is held for ``providers``, or for all of them when none is named."""
+        """Drop what is held for ``providers``, or for all of them when none is named,
+        and what is being asked for them now."""
         with self._lock:
             if not providers:
                 self._held.clear()
+                self._all_generation += 1
+                return
+            for provider in providers:
+                self._generation[provider] = self._generation.get(provider, 0) + 1
             for key in [key for key in self._held if key[0] in providers]:
                 del self._held[key]

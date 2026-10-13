@@ -175,7 +175,15 @@ export default function ProviderSettings() {
     const timer = window.setTimeout(() => setSigningOut(null), 300_000);
     return () => window.clearTimeout(timer);
   }, [signingOut, status.data, status.dataUpdatedAt]);
-  const invalidate = () => queryClient.invalidateQueries();
+  // The status asked fresh, by name: the sidebar shares the key with a held-answer
+  // queryFn, and a plain invalidation would refetch with whichever one the query last
+  // took (review of #26).
+  // Awaited, as the plain invalidation was: a mutation stays pending until the row shows it.
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "llm-status" }),
+      queryClient.fetchQuery({ queryKey: ["llm-status"], queryFn: () => api.llmStatus(true) }),
+    ]);
 
   const select = useMutation({
     mutationFn: (provider: string) => api.putSettings({ "llm.provider": provider }),

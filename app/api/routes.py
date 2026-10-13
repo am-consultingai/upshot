@@ -2817,9 +2817,14 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
         log.error("sign-out of %s failed to run: %s", provider, exc, exc_info=True)
         raise HTTPException(500, f"could not sign out of {product}: {exc}") from exc
     log.info("signed out of %s (exit %d)", provider, code)
-    # Again: a status asked while the command ran may have held the signed-in answer.
+    # Again, so a status asked while the command ran is not held; then the answer after
+    # the sign-out is the one held, for the page's next look.
     _forget_cli_status(request, provider)
-    signed_in = client.status().signed_in
+    signed_in = (
+        services_of(request)
+        .cli_status.get(provider, client.status, program=client.executable, fresh=True)
+        .signed_in
+    )
     if signed_in is True:
         detail = (err or out).strip() or f"exit code {code}"
         raise HTTPException(500, f"{product} is still signed in after signing out: {detail}")
