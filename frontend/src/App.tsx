@@ -34,7 +34,7 @@ import AssistantLauncher from "./components/assistant/AssistantLauncher";
 import Confetti from "./components/Confetti";
 import { useRecordingControls } from "./lib/recording";
 import { shortcutKey, typing } from "./lib/keys";
-import { refetchAllSoon } from "./lib/refetchAll";
+import { refetchAll, refetchAllSoon } from "./lib/refetchAll";
 
 /*
  * The first-run setup mock (Setup 0, z8tj1hb03a), for confirming the flow before it is
@@ -227,9 +227,8 @@ export default function App() {
     source.addEventListener("error", () => {
       document.documentElement.dataset.stream = "closed";
     });
-    const invalidate = () => {
-      void queryClient.invalidateQueries();
-    };
+    // Not the provider status: answering it runs the CLIs (lib/refetchAll).
+    const invalidate = () => refetchAll(queryClient);
     // A meeting's transcription reports progress every second, like a file's: it patches
     // the list of running work and nothing else. A job starting or ending refetches all.
     source.addEventListener("job", (event) => {

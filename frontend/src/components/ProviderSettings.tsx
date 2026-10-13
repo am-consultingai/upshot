@@ -10,6 +10,7 @@ import { openExternal } from "../lib/external";
 import { VendorLogo, type VendorId } from "../setup/logos";
 import { Loading, SkeletonRows } from "./Skeleton";
 import ModelChoice, { MODEL_PROVIDERS } from "./ModelChoice";
+import { refetchAfterProviderChange } from "../lib/refetchAll";
 
 /** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
 const LOGO: Record<string, VendorId | undefined> = {
@@ -160,7 +161,8 @@ export default function ProviderSettings() {
 
   const status = useQuery({
     queryKey: ["llm-status"],
-    queryFn: api.llmStatus,
+    // Fresh: Settings opening, and a sign-in watched, must see what the CLI says now.
+    queryFn: () => api.llmStatus(true),
     refetchInterval: watching || signingOut ? 3000 : false,
   });
   useEffect(() => {
@@ -174,7 +176,11 @@ export default function ProviderSettings() {
     const timer = window.setTimeout(() => setSigningOut(null), 300_000);
     return () => window.clearTimeout(timer);
   }, [signingOut, status.data, status.dataUpdatedAt]);
-  const invalidate = () => queryClient.invalidateQueries();
+  // The status asked fresh, by name: the sidebar shares the key with a held-answer
+  // queryFn, and a plain invalidation would refetch with whichever one the query last
+  // took (review of #26).
+  // Awaited, as the plain invalidation was: a mutation stays pending until the row shows it.
+  const invalidate = () => refetchAfterProviderChange(queryClient);
 
   const select = useMutation({
     mutationFn: (provider: string) => api.putSettings({ "llm.provider": provider }),

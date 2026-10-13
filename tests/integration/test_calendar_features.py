@@ -447,6 +447,35 @@ def test_an_event_that_arrives_later_is_matched_on_the_next_sync(world: World) -
     assert world.dao.require_meeting(meeting.id).title == "Added afterwards"
 
 
+def test_the_same_answer_every_minute_is_not_written_again(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A meeting with no event was written and logged on every one-minute sync, though
+    nothing had changed (machine A, 2026-10-13)."""
+    world.api.items = [g_event("tomorrow", NOW + timedelta(days=1))]  # nothing overlapping
+    world.synced()
+    meeting = world.meetings.create(source="manual")
+    world.clock.set(NOW + timedelta(minutes=30))
+    world.meetings.finish(meeting.id, duration_s=30 * 60)
+    world.meetings.rematch_recent()  # the first look after the end may still change it
+    writes: list[str] = []
+    real = world.dao.update_meeting
+
+    def counted(meeting_id: str, **fields: Any) -> Any:
+        writes.append(meeting_id)
+        return real(meeting_id, **fields)
+
+    monkeypatch.setattr(world.dao, "update_meeting", counted)
+    for _ in range(3):
+        world.clock.advance(61)
+        world.synced()
+    assert writes == [], "nothing new on the calendar: nothing written"
+    world.api.items.append(g_event("added", NOW, title="Added afterwards"))
+    world.clock.advance(61)
+    world.synced()
+    assert world.dao.require_meeting(meeting.id).title == "Added afterwards"
+
+
 def test_a_user_choice_is_never_undone(world: World) -> None:
     from app.gcal.source import snapshot
 

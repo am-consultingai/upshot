@@ -271,6 +271,10 @@ class MeetingService:
         if enrichment.title and title_is_open(meeting):
             fields["title"] = enrichment.title
             fields["title_source"] = "calendar"
+        if all(getattr(meeting, name) == value for name, value in fields.items()):
+            # The sync looks again every minute: the same answer is not news, and was
+            # written and logged each time (machine A, 2026-10-13).
+            return meeting
         updated = self._write_calendar(meeting.id, raw, fields)
         log.info(
             "enrichment from %s applied to %s (%s)",
