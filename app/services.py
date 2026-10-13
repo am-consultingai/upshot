@@ -59,6 +59,7 @@ class Services:
     reporter: Any = None  # app.diagnostics.reporter.CrashReporter
     models: Any = None  # app.llm.model_choice.Catalog: each provider's model list
     feedback: Any = None  # app.diagnostics.feedback.FeedbackSender
+    keep_awake: Any = None  # app.power.KeepAwake, started with the worker
     extras: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -83,6 +84,8 @@ class Services:
     def close(self) -> None:
         if self.worker is not None:
             self.worker.stop()
+        if self.keep_awake is not None:
+            self.keep_awake.stop()
         # The detector was started but never stopped here, so it kept polling against a
         # closing database during shutdown.
         if self.detector is not None:
