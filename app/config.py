@@ -54,6 +54,8 @@ DEFAULTS: dict[str, Any] = {
     "glossary_path": None,  # null → <app home>/glossary.yaml
     "profile": "auto",  # auto|gpu-live|cpu-deferred
     "job_policy": "auto",  # auto|asap|after_meeting|when_idle|scheduled
+    # Hold the computer awake while a meeting records or a job runs (app/power.py).
+    "power": {"keep_awake": True},
     "ui": {
         "language": "en",
         "view": "list",  # list|calendar — the main screen's layout

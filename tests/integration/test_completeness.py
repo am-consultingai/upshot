@@ -168,6 +168,30 @@ def test_after_meeting_policy_yields_to_the_recorder(tmp_path: Path) -> None:
     assert worker.run_once() is True
 
 
+def test_the_worker_says_it_is_busy_while_a_job_runs(tmp_path: Path) -> None:
+    """The computer is kept awake while it is (app/power.py)."""
+    h = harness(tmp_path, job_policy="asap")
+    seen: list[bool] = []
+    worker: Worker
+
+    def stage(_ctx: object) -> None:
+        seen.append(worker.busy)
+
+    worker = Worker(
+        dao=h.dao,
+        queue=h.queue,
+        config=h.config,
+        stages={"noop": stage},
+        clock=h.clock,
+        recorder=FakeRecorderState(False),
+    )
+    h.queue.enqueue(h.meeting().id, "noop")
+    assert worker.busy is False
+    assert worker.run_once() is True
+    assert seen == [True]
+    assert worker.busy is False, "and not after"
+
+
 def test_asap_policy_runs_during_a_meeting(tmp_path: Path) -> None:
     h = harness(tmp_path, job_policy="asap")
     worker = Worker(
