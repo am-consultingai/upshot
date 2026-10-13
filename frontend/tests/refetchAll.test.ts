@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { refetchAll, refetchAllSoon } from "../src/lib/refetchAll";
+import { api } from "../src/api";
+import { refetchAfterProviderChange, refetchAll, refetchAllSoon } from "../src/lib/refetchAll";
 
 function seeded(): QueryClient {
   const client = new QueryClient();
@@ -40,5 +41,26 @@ describe("refetchAll", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("refetchAfterProviderChange", () => {
+  // A status fetch begun before a sign-out or a cancel was joined, and showed the state
+  // from before it (second review of #26).
+  it("does not join a status fetch begun before the change", async () => {
+    const client = seeded();
+    const fresh = vi.spyOn(api, "llmStatus").mockResolvedValue({ active: "x", providers: [] });
+    let finishOld: (value: unknown) => void = () => undefined;
+    const old = client.fetchQuery({
+      queryKey: ["llm-status"],
+      queryFn: () => new Promise((resolve) => (finishOld = resolve)),
+    });
+    await refetchAfterProviderChange(client);
+    expect(fresh).toHaveBeenCalledWith(true);
+    expect(client.getQueryData(["llm-status"])).toEqual({ active: "x", providers: [] });
+    finishOld({ stale: true });
+    await old.catch(() => undefined);
+    expect(client.getQueryData(["llm-status"])).toEqual({ active: "x", providers: [] });
+    fresh.mockRestore();
   });
 });

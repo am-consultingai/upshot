@@ -10,6 +10,7 @@ import { openExternal } from "../lib/external";
 import { VendorLogo, type VendorId } from "../setup/logos";
 import { Loading, SkeletonRows } from "./Skeleton";
 import ModelChoice, { MODEL_PROVIDERS } from "./ModelChoice";
+import { refetchAfterProviderChange } from "../lib/refetchAll";
 
 /** The vendor's mark beside its row, as setup shows it (product owner, 2026-09-28). */
 const LOGO: Record<string, VendorId | undefined> = {
@@ -179,11 +180,7 @@ export default function ProviderSettings() {
   // queryFn, and a plain invalidation would refetch with whichever one the query last
   // took (review of #26).
   // Awaited, as the plain invalidation was: a mutation stays pending until the row shows it.
-  const invalidate = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "llm-status" }),
-      queryClient.fetchQuery({ queryKey: ["llm-status"], queryFn: () => api.llmStatus(true) }),
-    ]);
+  const invalidate = () => refetchAfterProviderChange(queryClient);
 
   const select = useMutation({
     mutationFn: (provider: string) => api.putSettings({ "llm.provider": provider }),

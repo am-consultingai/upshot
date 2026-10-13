@@ -1,4 +1,5 @@
 import type { Query, QueryClient } from "@tanstack/react-query";
+import { api } from "../api";
 
 /**
  * Queries a server event does not refetch. The provider status runs Claude's, Codex's
@@ -35,4 +36,19 @@ export function refetchAllSoon(queryClient: QueryClient, wait = 200): void {
       refetchAll(queryClient);
     }, wait),
   );
+}
+
+/**
+ * After a provider was signed in or out, installed, chosen or given a key: the rest
+ * refetched, and the provider status asked fresh by name. Not through the key's own
+ * queryFn, which the sidebar shares with a held-answer one (review of #26); and a status
+ * already being fetched began before the change, so it is cancelled rather than joined
+ * (second review of #26).
+ */
+export async function refetchAfterProviderChange(queryClient: QueryClient): Promise<unknown> {
+  const status = async () => {
+    await queryClient.cancelQueries({ queryKey: ["llm-status"] });
+    return queryClient.fetchQuery({ queryKey: ["llm-status"], queryFn: () => api.llmStatus(true) });
+  };
+  return Promise.all([queryClient.invalidateQueries({ predicate: onEvents }), status()]);
 }

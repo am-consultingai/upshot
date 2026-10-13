@@ -28,7 +28,7 @@ class CliStatusCache:
     def __init__(self, ttl_s: float = TTL_S, clock: Callable[[], float] = time.monotonic) -> None:
         self.ttl_s = ttl_s
         self.clock = clock
-        #: (provider, the program it runs) → (when asked, the answer).
+        #: (provider, the program it runs) → (when it was asked, the answer).
         self._held: dict[tuple[str, str], tuple[float, Any]] = {}
         #: Raised by each forget, per provider and for all: an answer asked before a
         #: forget is returned to its caller but not held (review of #26).
@@ -59,12 +59,17 @@ class CliStatusCache:
         with self._lock:
             held = None if fresh else self._held.get(key)
             generation = self._generation_of(provider)
-        if held is not None and self.clock() - held[0] < self.ttl_s:
+            asked_at = self.clock()
+        if held is not None and asked_at - held[0] < self.ttl_s:
             return held[1]
         status = probe()
         with self._lock:
-            if self._generation_of(provider) == generation:
-                self._held[key] = (self.clock(), status)
+            newer = self._held.get(key)
+            # Nor over an answer asked after this one: a slow probe ends last, not newest.
+            if self._generation_of(provider) == generation and (
+                newer is None or newer[0] <= asked_at
+            ):
+                self._held[key] = (asked_at, status)
         return status
 
     def forget(self, *providers: str) -> None:

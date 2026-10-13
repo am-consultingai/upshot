@@ -109,3 +109,26 @@ def test_forget_all_also_drops_what_is_being_asked() -> None:
     answer.set()
     thread.join(5)
     assert cache.get("codex", lambda: "new") == "new"
+
+
+def test_a_slow_answer_does_not_replace_a_newer_one() -> None:
+    """A probe begun before a sign-in made in the user's terminal ended after a fresh one
+    begun after it, and held the older answer (second review of #26)."""
+    clock = Clock()
+    cache = CliStatusCache(clock=clock)
+    asked = threading.Event()
+    answer = threading.Event()
+
+    def slow() -> str:
+        asked.set()
+        answer.wait(5)
+        return "signed out"
+
+    thread = threading.Thread(target=lambda: cache.get("claude", slow))
+    thread.start()
+    assert asked.wait(5)
+    clock.now = 1.0
+    assert cache.get("claude", lambda: "signed in", fresh=True) == "signed in"
+    answer.set()
+    thread.join(5)
+    assert cache.get("claude", lambda: "asked again") == "signed in"
