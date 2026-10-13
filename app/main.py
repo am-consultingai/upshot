@@ -226,6 +226,15 @@ def start_background(services: Services) -> None:
     if services.worker is not None:
         services.worker.start()
         log.info("worker started (policy %s)", services.worker.policy)
+    # A laptop slept through a recording and the transcription after it (machine B).
+    from app.power import KeepAwake, busy_reason
+
+    config = services.config
+    services.keep_awake = KeepAwake(
+        lambda: busy_reason(services),
+        enabled=lambda: bool(config.get("power.keep_awake", True)),
+    )
+    services.keep_awake.start()
     detector = services.detector
     if detector is not None:
         # Started even when detection is off: the loop reads the mode every second, so

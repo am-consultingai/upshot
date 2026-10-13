@@ -119,6 +119,8 @@ class Worker:
         self.transcriptions = transcriptions
         self.scheduler = scheduler
         self.stats = WorkerStats()
+        #: True while a job runs: the computer is kept awake for it (app/power.py).
+        self.busy = False
         self.last_metrics: dict[str, dict[str, Any]] = {}
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -195,10 +197,14 @@ class Worker:
         if claimed is None:
             return False
         self.stats.claimed += 1
-        if isinstance(claimed, Job):
-            self._execute(claimed)
-        else:
-            self._execute_file(claimed)
+        self.busy = True
+        try:
+            if isinstance(claimed, Job):
+                self._execute(claimed)
+            else:
+                self._execute_file(claimed)
+        finally:
+            self.busy = False
         return True
 
     def execute(self, job: Job) -> None:
