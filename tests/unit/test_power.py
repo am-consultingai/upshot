@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
+
+import pytest
 
 from app.power import KeepAwake, NoPowerRequest, busy_reason
 
@@ -85,13 +88,73 @@ def test_turned_off_releases_at_once() -> None:
     assert request.calls == ["hold:Upshot is recording a meeting", "release"]
 
 
-def test_a_refused_request_is_not_asked_again_every_tick() -> None:
+def test_a_refused_request_is_asked_again_only_after_a_while() -> None:
     reason: list[str | None] = ["Upshot is recording a meeting"]
     request, clock = Request(ok=False), Clock()
     keep = keeper(reason, request, clock)
     for _ in range(3):
         keep.tick()
     assert request.calls == ["hold:Upshot is recording a meeting"]
+    assert keep.held is None
+    clock.now = 60.0
+    request.ok = True
+    keep.tick()
+    assert keep.held == "Upshot is recording a meeting", "a passing failure is not for good"
+
+
+def test_a_refused_change_of_reason_keeps_and_later_releases_the_old_request() -> None:
+    """A refused new request left the old one held until the app closed (review of #27)."""
+    reason: list[str | None] = ["Upshot is recording a meeting"]
+    request, clock = Request(), Clock()
+    keep = keeper(reason, request, clock)
+    keep.tick()
+    request.ok = False
+    reason[0] = "Upshot is transcribing and summarizing"
+    keep.tick()
+    assert keep.held == "Upshot is recording a meeting", "the old request is still the one held"
+    reason[0] = None
+    clock.now = 120.0
+    keep.tick()
+    assert request.calls[-1] == "release"
+    assert keep.held is None
+
+
+def test_nothing_ends_the_thread() -> None:
+    """One exception ended the thread, and a request held then stayed held (review of #27)."""
+    held = threading.Event()
+
+    class Flaky(Request):
+        def hold(self, reason: str) -> bool:
+            self.calls.append(f"hold:{reason}")
+            if len(self.calls) == 1:
+                raise OSError("the first one fails")
+            held.set()
+            return True
+
+    request = Flaky()
+    keep = KeepAwake(lambda: "Upshot is recording a meeting", request=request, interval_s=0.01)
+    keep.start()
+    try:
+        assert held.wait(5), "the thread lived on and asked again"
+    finally:
+        keep.stop()
+    assert request.calls[-1] == "release"
+
+
+def test_a_release_that_raises_is_tried_again() -> None:
+    reason: list[str | None] = ["Upshot is recording a meeting"]
+    request, clock = Request(), Clock()
+    keep = keeper(reason, request, clock)
+    keep.tick()
+    real = request.release
+    request.release = lambda: (_ for _ in ()).throw(OSError("busy"))  # type: ignore[method-assign]
+    reason[0] = None
+    clock.now = 120.0
+    with pytest.raises(OSError):
+        keep.tick()
+    assert keep.held is not None, "not forgotten while still held"
+    request.release = real  # type: ignore[method-assign]
+    keep.tick()
     assert keep.held is None
 
 

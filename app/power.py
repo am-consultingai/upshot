@@ -31,6 +31,8 @@ log = logging.getLogger(__name__)
 INTERVAL_S = 15.0
 #: Longer than the gap between two stages of one meeting.
 LINGER_S = 120.0
+#: A request the system refused is asked for again after this long.
+RETRY_S = 60.0
 
 
 class PowerRequest(Protocol):
@@ -60,14 +62,21 @@ class WindowsPowerRequest:  # pragma: no cover - Windows only
         import ctypes
         from ctypes import wintypes
 
-        class Reason(ctypes.Structure):
-            # REASON_CONTEXT with POWER_REQUEST_CONTEXT_SIMPLE_STRING: only the string
-            # member of the union is read.
+        class Detailed(ctypes.Structure):
             _fields_ = [
-                ("Version", wintypes.ULONG),
-                ("Flags", wintypes.DWORD),
-                ("SimpleReasonString", wintypes.LPWSTR),
+                ("LocalizedReasonModule", wintypes.HMODULE),
+                ("LocalizedReasonId", wintypes.ULONG),
+                ("ReasonStringCount", wintypes.ULONG),
+                ("ReasonStrings", ctypes.POINTER(wintypes.LPWSTR)),
             ]
+
+        class Union(ctypes.Union):
+            _fields_ = [("Detailed", Detailed), ("SimpleReasonString", wintypes.LPWSTR)]
+
+        class Reason(ctypes.Structure):
+            # REASON_CONTEXT, its full size; with POWER_REQUEST_CONTEXT_SIMPLE_STRING only
+            # the string member of the union is read.
+            _fields_ = [("Version", wintypes.ULONG), ("Flags", wintypes.DWORD), ("Reason", Union)]
 
         self._ctypes = ctypes
         self._reason_type = Reason
@@ -90,7 +99,8 @@ class WindowsPowerRequest:  # pragma: no cover - Windows only
         change of reason leaves no moment unheld."""
         ctypes = self._ctypes
         text = ctypes.create_unicode_buffer(reason)
-        context = self._reason_type(0, 0x1, ctypes.cast(text, ctypes.c_wchar_p))
+        context = self._reason_type(Version=0, Flags=0x1)
+        context.Reason.SimpleReasonString = ctypes.cast(text, ctypes.c_wchar_p)
         handle = self._kernel32.PowerCreateRequest(ctypes.byref(context))
         if not handle or handle == ctypes.c_void_p(-1).value:
             log.warning("keep awake: PowerCreateRequest failed (%d)", ctypes.get_last_error())
@@ -140,6 +150,7 @@ class KeepAwake:
         enabled: Callable[[], bool] = lambda: True,
         interval_s: float = INTERVAL_S,
         linger_s: float = LINGER_S,
+        retry_s: float = RETRY_S,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.reason = reason
@@ -147,11 +158,13 @@ class KeepAwake:
         self.enabled = enabled
         self.interval_s = interval_s
         self.linger_s = linger_s
+        self.retry_s = retry_s
         self.monotonic = monotonic
         #: The reason the request is held for, or None when it is not held.
         self.held: str | None = None
         #: A reason the system refused a request for (or NoPowerRequest declined).
         self._refused: str | None = None
+        self._refused_at = 0.0
         self._last_reason_at = 0.0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -159,42 +172,52 @@ class KeepAwake:
     def tick(self) -> None:
         """Hold, change or release the request to match what is happening now."""
         try:
-            reason = self.reason() if self.enabled() else None
+            enabled = bool(self.enabled())
+            reason = self.reason() if enabled else None
         except Exception:
             log.exception("keep awake: could not tell whether anything is running")
-            reason = None
+            enabled, reason = True, None
         now = self.monotonic()
         if reason is not None:
             self._last_reason_at = now
-            if reason != self.held and reason != self._refused:
+            refused = reason == self._refused and now - self._refused_at < self.retry_s
+            if reason != self.held and not refused:
                 # The reason is fixed when a request is made: another reason, another one.
                 if self.request.hold(reason):
                     log.info("keeping the computer awake: %s", reason)
                     self.held = reason
                     self._refused = None
                 else:
-                    # Not asked again every tick for the same reason: one warning is enough.
-                    self.held = None
-                    self._refused = reason
+                    # Asked again only after ``retry_s``: one warning a minute is enough.
+                    # What was held stays held (a new one is set before the old is
+                    # cleared), and is released as usual (review of #27).
+                    self._refused, self._refused_at = reason, now
             return
         self._refused = None
-        if self.held is not None and (
-            not self.enabled() or now - self._last_reason_at >= self.linger_s
-        ):
+        if self.held is not None and (not enabled or now - self._last_reason_at >= self.linger_s):
             self.release()
 
     def release(self) -> None:
         if self.held is None:
             return
+        # Released before it is forgotten: one that raises is still held, and tried again.
         self.request.release()
-        log.info("no longer keeping the computer awake")
         self.held = None
+        log.info("no longer keeping the computer awake")
 
     def run_forever(self) -> None:
+        # Nothing may end the thread: a request held when it ended would be held until
+        # the app closes, and none would be held again (review of #27).
         while not self._stop.is_set():
-            self.tick()
+            try:
+                self.tick()
+            except Exception:
+                log.exception("keep awake: tick failed")
             self._stop.wait(self.interval_s)
-        self.release()
+        try:
+            self.release()
+        except Exception:
+            log.exception("keep awake: could not release")
 
     def start(self) -> threading.Thread:
         thread = threading.Thread(target=self.run_forever, name="keep-awake", daemon=True)
