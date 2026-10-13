@@ -15,7 +15,7 @@ import { expect, gotoApp, gotoSettings, reset, test } from "./fixtures";
 test.beforeEach(async ({ page, seedBody }) => {
   await seedBody({ setup_done: false });
   // Neither CLI on this machine, whatever is really installed on it.
-  await page.route("**/api/llm/status", async (route) => {
+  await page.route("**/api/llm/status*", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
     body.providers = body.providers.map((p: { needs: string }) =>
@@ -150,8 +150,8 @@ test("continue_waits_while_a_helper_installs_and_says_so", async ({ page }) => {
   await page.route("**/api/llm/install", (route) =>
     route.fulfill({ json: { launched: true, command: "irm …", docs: "", log: "" } }),
   );
-  await page.unroute("**/api/llm/status");
-  await page.route("**/api/llm/status", async (route) => {
+  await page.unroute("**/api/llm/status*");
+  await page.route("**/api/llm/status*", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
     body.providers = body.providers.map((p: { needs: string }) =>
@@ -172,7 +172,7 @@ test("continue_waits_while_a_helper_installs_and_says_so", async ({ page }) => {
 
 test("a_signed_in_subscription_passes_the_key_step_over", async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
-  await page.route("**/api/llm/status", async (route) => {
+  await page.route("**/api/llm/status*", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
     body.providers = body.providers.map((p: { id: string; needs: string }) =>

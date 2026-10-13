@@ -36,7 +36,7 @@ export function summarizerMissing(active: string | undefined, providers: LlmProv
 export function useSetupWarnings(): SetupWarnings {
   const calendar = useQuery({ queryKey: ["calendar"], queryFn: api.calendarStatus });
   // Shared with the Summaries screen, so connecting there clears the mark here.
-  const llm = useQuery({ queryKey: ["llm-status"], queryFn: api.llmStatus, staleTime: 5 * 60_000 });
+  const llm = useQuery({ queryKey: ["llm-status"], queryFn: () => api.llmStatus(), staleTime: 5 * 60_000 });
   return {
     calendar: Boolean(calendar.data?.configured) && calendar.data?.state !== "connected",
     summaries: summarizerMissing(llm.data?.active, llm.data?.providers ?? []),

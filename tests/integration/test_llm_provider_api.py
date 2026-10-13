@@ -563,3 +563,62 @@ def test_no_conversation_model_for_a_provider_with_no_chat_box(api) -> None:  # 
         "/api/llm/model", json={"provider": "gemini", "use": "assistant", "model": "gemini-3"}
     )
     assert put.status_code == 400 and put.json()["detail"] == "no-chat-box"
+
+
+def test_status_does_not_run_the_cli_on_every_refetch(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The calendar's sync refetched the status every minute, and each one ran the three
+    CLIs; one of them flashed a console window now and then (machine A, 2026-10-13)."""
+    from app.llm import claude_cli
+
+    state = {"signed_in": False}
+    asked: list[list[str]] = []
+
+    def runner(args, _stdin, _timeout):  # type: ignore[no-untyped-def]
+        asked.append(list(args))
+        if args[1:3] == ["auth", "status"]:
+            return 0, json.dumps({"loggedIn": state["signed_in"]}), ""
+        return 0, "2.1.263 (Claude Code)", ""
+
+    monkeypatch.setattr(claude_cli, "subprocess_runner", runner)
+    monkeypatch.setattr(claude_cli.ClaudeCliClient, "resolve", lambda _self: "claude")
+    client = api.client()
+
+    def row(path: str = "/api/llm/status") -> dict[str, Any]:
+        providers = client.get(path).json()["providers"]
+        return {p["id"]: p for p in providers}["claude-subscription"]
+
+    assert row()["signed_in"] is False
+    first = len(asked)
+    assert first > 0
+    state["signed_in"] = True  # signed in from the user's own terminal
+    assert row()["signed_in"] is False, "held: the refetch ran nothing"
+    assert len(asked) == first
+    assert row("/api/llm/status?fresh=true")["signed_in"] is True, "fresh asks the CLI"
+    assert row()["signed_in"] is True, "and the fresh answer is the one held"
+
+
+def test_a_sign_out_is_not_hidden_by_a_held_status(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.llm import claude_cli
+
+    state = {"signed_in": True}
+
+    def runner(args, _stdin, _timeout):  # type: ignore[no-untyped-def]
+        if args[1:] == ["auth", "logout"]:
+            state["signed_in"] = False
+            return 0, "", ""
+        if args[1:3] == ["auth", "status"]:
+            return 0, json.dumps({"loggedIn": state["signed_in"]}), ""
+        return 0, "2.1.263 (Claude Code)", ""
+
+    monkeypatch.setattr(claude_cli, "subprocess_runner", runner)
+    monkeypatch.setattr(claude_cli.ClaudeCliClient, "resolve", lambda _self: "claude")
+    client = api.client()
+    rows = {p["id"]: p for p in client.get("/api/llm/status").json()["providers"]}
+    assert rows["claude-subscription"]["signed_in"] is True
+    client.post("/api/llm/signout", json={"provider": "claude-subscription"})
+    rows = {p["id"]: p for p in client.get("/api/llm/status").json()["providers"]}
+    assert rows["claude-subscription"]["signed_in"] is False

@@ -1,4 +1,22 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { Query, QueryClient } from "@tanstack/react-query";
+
+/**
+ * Queries a server event does not refetch. The provider status runs Claude's, Codex's
+ * and Antigravity's CLIs to answer, and the calendar's sync sends an event every minute:
+ * refetching it with everything else ran the three CLIs all day, and one of them
+ * (Antigravity's) now and then opens a console window that flashes on screen (machine A,
+ * 2026-10-13). It is refetched where it can change: Settings, setup, a sign-in.
+ */
+const NOT_ON_EVENTS = new Set(["llm-status"]);
+
+function onEvents(query: Query): boolean {
+  return !NOT_ON_EVENTS.has(String(query.queryKey[0]));
+}
+
+/** Refetch everything a server event can have changed. */
+export function refetchAll(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ predicate: onEvents });
+}
 
 const waiting = new WeakMap<QueryClient, ReturnType<typeof setTimeout>>();
 
@@ -14,7 +32,7 @@ export function refetchAllSoon(queryClient: QueryClient, wait = 200): void {
     queryClient,
     setTimeout(() => {
       waiting.delete(queryClient);
-      void queryClient.invalidateQueries();
+      refetchAll(queryClient);
     }, wait),
   );
 }

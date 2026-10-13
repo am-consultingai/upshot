@@ -59,11 +59,17 @@ class Services:
     reporter: Any = None  # app.diagnostics.reporter.CrashReporter
     models: Any = None  # app.llm.model_choice.Catalog: each provider's model list
     feedback: Any = None  # app.diagnostics.feedback.FeedbackSender
+    #: app.llm.cli_status.CliStatusCache: what each CLI said about itself, held a while.
+    cli_status: Any = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Here rather than in build(): tests and the selftest assemble Services by hand,
         # and file transcription is part of every one of them.
+        if self.cli_status is None:
+            from app.llm.cli_status import CliStatusCache
+
+            self.cli_status = CliStatusCache()
         if self.transcriptions is None:
             from app.transcription.store import TranscriptionStore
 

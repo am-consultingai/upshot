@@ -160,7 +160,8 @@ export default function ProviderSettings() {
 
   const status = useQuery({
     queryKey: ["llm-status"],
-    queryFn: api.llmStatus,
+    // Fresh: Settings opening, and a sign-in watched, must see what the CLI says now.
+    queryFn: () => api.llmStatus(true),
     refetchInterval: watching || signingOut ? 3000 : false,
   });
   useEffect(() => {
