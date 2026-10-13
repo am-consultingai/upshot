@@ -1930,6 +1930,12 @@ def put_secrets(request: Request, body: SecretsPut) -> dict[str, Any]:
     return secret_status(request)
 
 
+def _forget_cli_status(request: Request, provider: str) -> None:
+    """A sign-in, sign-out, install or update changes what the CLI would say: the held
+    answer goes, so the next status asks it (``app.llm.cli_status``)."""
+    services_of(request).cli_status.forget(provider)
+
+
 def _forget_models(*providers: str) -> None:
     """A key saved, or a CLI being installed or signed into: its model list, held from
     before, may be an error that no longer holds (second review of #24)."""
@@ -2401,8 +2407,12 @@ def calendar_cancel(request: Request) -> dict[str, Any]:
 
 
 @router.get("/llm/status")
-def llm_status(request: Request) -> dict[str, Any]:
-    """What each summarization provider needs, and whether it has it."""
+def llm_status(request: Request, fresh: bool = False) -> dict[str, Any]:
+    """What each summarization provider needs, and whether it has it.
+
+    A CLI's own answer is held a few minutes (``app.llm.cli_status``): asking runs it.
+    ``fresh`` asks again, for a page that is watching a sign-in or opening Settings.
+    """
     svc = services_of(request)
 
     def has(name: str, env: str) -> bool:
@@ -2439,19 +2449,26 @@ def llm_status(request: Request) -> dict[str, Any]:
         # product not appear to be Claude Code. The install and sign-in copy still names
         # Claude Code, because that is the thing to install.
         providers.append(
-            cli_row(svc, "claude-subscription", "Claude Agent (your own subscription)")
+            cli_row(svc, "claude-subscription", "Claude Agent (your own subscription)", fresh=fresh)
         )
     if "codex-subscription" in CLI_PROVIDERS:
         # OpenAI's brand page lets a developer "truthfully identify the OpenAI technology
         # you use" but keeps OpenAI's brands out of the app's own name (D58). This names
         # the program actually run, Codex CLI, and the plan it spends — the way D46 names
         # "Claude Agent" rather than presenting the row as Claude Code itself.
-        providers.append(cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)"))
+        providers.append(
+            cli_row(svc, "codex-subscription", "Codex CLI (your own ChatGPT plan)", fresh=fresh)
+        )
     if "antigravity-subscription" in CLI_PROVIDERS:
         # Named the way Codex's row is (D58, D79): the program actually run and the plan
         # it spends, with no Google mark and nothing that reads as a Google product.
         providers.append(
-            cli_row(svc, "antigravity-subscription", "Antigravity CLI (your own Google AI plan)")
+            cli_row(
+                svc,
+                "antigravity-subscription",
+                "Antigravity CLI (your own Google AI plan)",
+                fresh=fresh,
+            )
         )
     providers.append(
         {
@@ -2470,10 +2487,11 @@ def llm_status(request: Request) -> dict[str, Any]:
     }
 
 
-def cli_row(svc: Services, provider: str, label: str) -> dict[str, Any]:
+def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) -> dict[str, Any]:
     """One CLI-backed provider's Settings row: installed, signed in, and how to fix it."""
     module = cli_module(provider)
-    cli = cli_client(svc, provider).status()
+    client = cli_client(svc, provider)
+    cli = svc.cli_status.get(provider, client.status, program=client.executable, fresh=fresh)
     # Only probed when there is something to install: winget's own start-up is slow
     # enough to be felt on every settings load otherwise.
     plan = module.install_plan() if not cli.installed else None
@@ -2677,6 +2695,7 @@ def llm_signin(request: Request, body: ProviderPost | None = None) -> dict[str, 
     """Launch the vendor's own login. We never see the credential it creates."""
     provider = chosen_cli(body)
     _forget_models(provider)
+    _forget_cli_status(request, provider)
     module = cli_module(provider)
     product = CLI_PROVIDERS[provider]
     client = cli_client(services_of(request), provider)
@@ -2770,6 +2789,7 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
     the user signs in again, which the row then offers.
     """
     provider = chosen_cli(body)
+    _forget_cli_status(request, provider)
     product = CLI_PROVIDERS[provider]
     client = cli_client(services_of(request), provider)
     if client.resolve() is None:
@@ -2797,7 +2817,14 @@ def llm_signout(request: Request, body: ProviderPost | None = None) -> dict[str,
         log.error("sign-out of %s failed to run: %s", provider, exc, exc_info=True)
         raise HTTPException(500, f"could not sign out of {product}: {exc}") from exc
     log.info("signed out of %s (exit %d)", provider, code)
-    signed_in = client.status().signed_in
+    # Again, so a status asked while the command ran is not held; then the answer after
+    # the sign-out is the one held, for the page's next look.
+    _forget_cli_status(request, provider)
+    signed_in = (
+        services_of(request)
+        .cli_status.get(provider, client.status, program=client.executable, fresh=True)
+        .signed_in
+    )
     if signed_in is True:
         detail = (err or out).strip() or f"exit code {code}"
         raise HTTPException(500, f"{product} is still signed in after signing out: {detail}")
@@ -2814,6 +2841,7 @@ def llm_signin_code(request: Request, body: SigninCodePost) -> dict[str, Any]:
     worked as failed, and the user signed in twice more.
     """
     provider = chosen_cli(ProviderPost(provider=body.provider))
+    _forget_cli_status(request, provider)
     login = _LOGINS.get(provider)
     if login is None or not login.running():
         if cli_client(services_of(request), provider).status().signed_in is True:
@@ -2829,10 +2857,11 @@ def llm_signin_code(request: Request, body: SigninCodePost) -> dict[str, Any]:
 
 
 @router.post("/llm/signin/cancel")
-def llm_signin_cancel(body: ProviderPost | None = None) -> dict[str, Any]:
+def llm_signin_cancel(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
     """Stop a sign-in: a windowless one holds a port and would otherwise wait forever, and
     a sign-in window (Antigravity's) would go on waiting for a code."""
     provider = chosen_cli(body)
+    _forget_cli_status(request, provider)
     login = _LOGINS.pop(provider, None)
     if login is not None:
         login.stop()
@@ -2841,7 +2870,7 @@ def llm_signin_cancel(body: ProviderPost | None = None) -> dict[str, Any]:
 
 
 @router.post("/llm/install")
-def llm_install(body: ProviderPost | None = None) -> dict[str, Any]:
+def llm_install(request: Request, body: ProviderPost | None = None) -> dict[str, Any]:
     """Install Claude Code or Codex in a console the user can watch.
 
     Each module's ``install_plan`` chooses: the vendor's own installer where PowerShell
@@ -2851,6 +2880,7 @@ def llm_install(body: ProviderPost | None = None) -> dict[str, Any]:
     """
     provider = chosen_cli(body)
     _forget_models(provider)
+    _forget_cli_status(request, provider)
     module = cli_module(provider)
     background = body is not None and body.background
     plan = module.install_plan(sign_in=not background)
@@ -2878,6 +2908,7 @@ def llm_update(request: Request, body: ProviderPost | None = None) -> dict[str, 
     to a complaint rather than a standing feature.
     """
     provider = chosen_cli(body)
+    _forget_cli_status(request, provider)
     product = CLI_PROVIDERS[provider]
     path = cli_client(services_of(request), provider).resolve()
     if path is None:
