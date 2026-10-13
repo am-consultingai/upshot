@@ -2865,8 +2865,20 @@
     },
     "/api/llm/status": {
       "get": {
-        "description": "What each summarization provider needs, and whether it has it.",
+        "description": "What each summarization provider needs, and whether it has it.\n\nA CLI's own answer is held a few minutes (``app.llm.cli_status``): asking runs it.\n``fresh`` asks again, for a page that is watching a sign-in or opening Settings.",
         "operationId": "llm_status_api_llm_status_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fresh",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2879,6 +2891,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Llm Status"

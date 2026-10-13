@@ -107,7 +107,7 @@ export class ApiSetupBackend implements SetupBackend {
   private learnClis(): void {
     const attempt = (left: number): void => {
       api
-        .llmStatus()
+        .llmStatus(true)
         .then((status) => {
           const rows = status.providers;
           const learned = (id: CliId): CliSnapshot => ({
@@ -238,7 +238,7 @@ export class ApiSetupBackend implements SetupBackend {
     // failure if the card is still waiting and the CLI is still signed out — never over
     // a sign-in that worked (the test machine, 2026-09-28).
     void api.llmSigninCode(CLI_PROVIDER[id], code).catch(async () => {
-      const row = (await api.llmStatus().catch(() => null))?.providers.find((r) => r.id === CLI_PROVIDER[id]);
+      const row = (await api.llmStatus(true).catch(() => null))?.providers.find((r) => r.id === CLI_PROVIDER[id]);
       if (this.state.cli[id].phase === "signing-in" && row?.signed_in !== true) {
         this.fail(id, "signin", "code-refused");
       }
@@ -265,7 +265,7 @@ export class ApiSetupBackend implements SetupBackend {
     const provider = CLI_PROVIDER[id];
     let goneFor = 0;
     this.poll(`cli-${id}`, async () => {
-      const status = await api.llmStatus();
+      const status = await api.llmStatus(true);
       const row = status.providers.find((r) => r.id === provider);
       const facts = cliFacts(row, id);
       const phase = this.state.cli[id].phase;
@@ -327,7 +327,7 @@ export class ApiSetupBackend implements SetupBackend {
     const provider = CLI_PROVIDER[id];
     this.poll(`cli-${id}`, async () => {
       if (this.state.cli[id].phase !== "signin-failed") return true;
-      const row = (await api.llmStatus()).providers.find((r) => r.id === provider);
+      const row = (await api.llmStatus(true)).providers.find((r) => r.id === provider);
       if (row?.signed_in === true) {
         this.setCli(id, cliFacts(row, id));
         this.test(id);

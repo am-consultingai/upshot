@@ -812,8 +812,14 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ values }),
     }),
-  llmStatus: () =>
-    request<{ active: string; providers: LlmProvider[]; fallback?: string }>("/api/llm/status"),
+  /**
+   * The server holds each CLI's answer a few minutes, since asking runs the CLI.
+   * `fresh` asks again: for Settings opening, and for a sign-in being watched.
+   */
+  llmStatus: (fresh = false) =>
+    request<{ active: string; providers: LlmProvider[]; fallback?: string }>(
+      fresh ? "/api/llm/status?fresh=true" : "/api/llm/status",
+    ),
   secretStatus: () =>
     request<{ secrets: Record<string, boolean> }>("/api/settings/secrets"),
   putSecrets: (values: Record<string, string>) =>

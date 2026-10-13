@@ -23,7 +23,7 @@ test("setup asks once, just before the sound check, with nothing chosen for the 
 }) => {
   await seedBody({ setup_done: false, reports_available: true });
   // Neither CLI on this machine, whatever is really installed on it (as welcome.spec.ts).
-  await page.route("**/api/llm/status", async (route) => {
+  await page.route("**/api/llm/status*", async (route) => {
     const response = await route.fetch();
     const body = await response.json();
     body.providers = body.providers.map((p: { needs: string }) =>
