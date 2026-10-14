@@ -178,7 +178,7 @@ def test_commands_for_each_app(monkeypatch: pytest.MonkeyPatch) -> None:
     assert json.loads(found["mcp_json"]) == {
         "mcpServers": {"upshot": {"command": bridge, "args": []}}
     }
-    assert json.loads(found["vscode_json"])["servers"]["upshot"]["type"] == "stdio"
+    assert "vscode_json" not in found and "gemini" not in found
     assert ai_apps.commands(None) == {}
 
 

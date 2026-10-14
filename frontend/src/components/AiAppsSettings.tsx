@@ -14,13 +14,11 @@ type CommandKey = keyof AiApps["commands"];
 const BY_COMMAND: { id: string; label: MessageKey; windows: CommandKey; wsl?: CommandKey }[] = [
   { id: "codex", label: "settings.aiAppsCodex", windows: "codex", wsl: "codex_wsl" },
   { id: "antigravity", label: "settings.aiAppsAntigravity", windows: "antigravity", wsl: "antigravity_wsl" },
-  { id: "gemini", label: "settings.aiAppsGemini", windows: "gemini" },
 ];
 
-/** An app added by a file of its own, given as a snippet. */
+/** Apps added by a file of their own (Cursor, VS Code, LM Studio…), given as a snippet. */
 const BY_FILE: { id: string; label: MessageKey; hint: MessageKey; key: CommandKey }[] = [
   { id: "mcp-json", label: "settings.aiAppsOthers", hint: "settings.aiAppsOthersHint", key: "mcp_json" },
-  { id: "vscode", label: "settings.aiAppsVsCode", hint: "settings.aiAppsVsCodeHint", key: "vscode_json" },
 ];
 
 function CommandRow({
@@ -75,11 +73,12 @@ function CommandRow({
 }
 
 /**
- * Settings → AI apps (D98): the user's own AI tools reading their meetings. The switch,
- * the access key, and how to add Upshot to each app: its own command, or a snippet for
- * its own file. Upshot never edits another app's configuration.
+ * Settings → AI apps (D98): the user's own AI tools reading their meetings. `part`
+ * "access" is the switch and the access key, first in the section; "apps" is how to add
+ * Upshot to each app but Claude (its own command, or a snippet for its own file), after
+ * the Claude card. Upshot never edits another app's configuration.
  */
-export default function AiAppsSettings() {
+export default function AiAppsSettings({ part }: { part: "access" | "apps" }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const overview = useQuery({ queryKey: ["ai-apps"], queryFn: api.aiApps });
@@ -110,8 +109,8 @@ export default function AiAppsSettings() {
   const info = overview.data;
   const on = enabled ?? info?.meetings_enabled ?? true;
 
-  return (
-    <>
+  if (part === "access") {
+    return (
       <SettingGroup>
         <SettingRow
           label={t("settings.aiAppsSwitch")}
@@ -184,8 +183,11 @@ export default function AiAppsSettings() {
           </span>
         </SettingRow>
       </SettingGroup>
+    );
+  }
 
-      <SettingGroup title={t("settings.aiAppsConnect")}>
+  return (
+      <SettingGroup>
         {BY_COMMAND.map((app) => (
           <CommandRow key={app.id} id={app.id} label={app.label} windows={app.windows} wsl={app.wsl} info={info} />
         ))}
@@ -236,6 +238,5 @@ export default function AiAppsSettings() {
           {info && <CopyButton text={info.urls.local} testid="ai-apps-url-copy" />}
         </SettingRow>
       </SettingGroup>
-    </>
   );
 }
