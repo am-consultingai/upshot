@@ -30,7 +30,7 @@ const SCREENS = [
   { path: "/m/m-onboarding", ready: "summary-html" },
   { path: "/actions", ready: "action-group" },
   { path: "/search?q=activation", ready: "search-result" },
-  { path: "/transcriptions", ready: "transcriptions-page" },
+  { path: "/settings#requests", ready: "transcriptions-page" },
   { path: "/settings", ready: "settings-nav" },
 ] as const;
 
