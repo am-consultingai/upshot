@@ -304,6 +304,15 @@ def test_a_configured_device_is_taken_at_its_word(tmp_path: Path) -> None:
     assert (insisted.device, insisted.reason) == ("cuda", "configured")
 
 
+@pytest.fixture
+def no_gpu_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No PATH or LD_LIBRARY_PATH changes, and no ctranslate2 asked about a real GPU."""
+    import app.asr.local as local
+
+    monkeypatch.setattr(local, "register_cuda_dirs", lambda dirs: [str(d) for d in dirs])
+    monkeypatch.setattr(local, "supported_compute_type", lambda memory: "int8_float16")
+
+
 def _probe(tmp_path: Path, memory: int, role: str, env: dict[str, str], **settings: Any) -> Any:
     cuda = tmp_path / "Scripts"
     cuda.mkdir(exist_ok=True)
@@ -325,6 +334,7 @@ def test_a_gpu_too_small_for_any_model_is_hidden_at_probe_time(tmp_path: Path) -
     assert env["CUDA_VISIBLE_DEVICES"] == ""
 
 
+@pytest.mark.usefixtures("no_gpu_side_effects")
 def test_a_gpu_too_small_for_one_model_stays_visible_for_the_others(tmp_path: Path) -> None:
     """CUDA reads CUDA_VISIBLE_DEVICES once per process: an English meeting on the CPU
     must not hide the GPU from the Hebrew meeting after it."""
@@ -357,6 +367,7 @@ def test_the_compute_type_follows_the_gpus_memory(
     assert supported_compute_type(memory, supported) == expected
 
 
+@pytest.mark.usefixtures("no_gpu_side_effects")
 def test_a_configured_compute_type_wins_on_a_small_gpu(tmp_path: Path) -> None:
     device, compute, _ = _probe(tmp_path, 2048, HEBREW, {}, asr__compute_type="float16")
     assert (device, compute) == ("cuda", "float16")
@@ -367,6 +378,7 @@ def test_the_probe_picks_the_compute_type_by_memory(
 ) -> None:
     import app.asr.local as local
 
+    monkeypatch.setattr(local, "register_cuda_dirs", lambda dirs: [str(d) for d in dirs])
     asked: list[int | None] = []
     monkeypatch.setattr(local, "supported_compute_type", lambda m: asked.append(m) or "x")
     assert _probe(tmp_path, 2048, HEBREW, {})[:2] == ("cuda", "x")
