@@ -786,6 +786,24 @@
         "title": "TagsPut",
         "type": "object"
       },
+      "TerminalPost": {
+        "properties": {
+          "app": {
+            "title": "App",
+            "type": "string"
+          },
+          "side": {
+            "default": "windows",
+            "title": "Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app"
+        ],
+        "title": "TerminalPost",
+        "type": "object"
+      },
       "TestCalendar": {
         "properties": {
           "events": {
@@ -1166,6 +1184,27 @@
         "summary": "Clear Activity"
       }
     },
+    "/api/ai-apps/found": {
+      "get": {
+        "description": "Which AI apps are on this computer, on Windows and in a running WSL distribution.\nAsked when the page opens or comes back into view, apart from the overview: asking\nWSL takes a moment. Nothing of the apps' own is read.",
+        "operationId": "found_api_ai_apps_found_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Found Api Ai Apps Found Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Found"
+      }
+    },
     "/api/ai-apps/key": {
       "post": {
         "description": "The access key, for an app that takes a URL and a key (Open WebUI).",
@@ -1210,6 +1249,47 @@
           }
         },
         "summary": "New Key"
+      }
+    },
+    "/api/ai-apps/terminal": {
+      "post": {
+        "description": "A terminal with the app's own command to add Upshot typed in; the user presses\nEnter (D98: Upshot edits no other app's files). The line is built here from the same\ncommands the page shows, never taken from the request.",
+        "operationId": "open_terminal_api_ai_apps_terminal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TerminalPost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Open Terminal Api Ai Apps Terminal Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Terminal"
       }
     },
     "/api/assistant/chat": {
