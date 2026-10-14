@@ -163,9 +163,18 @@ uv run pyinstaller --noconfirm --clean --distpath dist\upshot --workpath build\u
 Assert-Exit "PyInstaller (upshot-mcp)"
 $bridge = Join-Path $root "dist\upshot\mcp\upshot-mcp.exe"
 # A real MCP handshake against the freeze: the answer must name the server.
-$answer = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' | & $bridge
-if (-not ($answer -match '"name":"upshot-transcribe"')) { throw "the frozen upshot-mcp did not answer initialize: $answer" }
-Write-Host "[ok  ] upshot-mcp answers initialize"
+# Then tools/list, which must carry the meeting tools from the frozen copy (D98): no
+# Upshot is asked for here, so this is the list an AI app sees before Upshot starts.
+$answer = @(
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}',
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+) | & $bridge --url http://127.0.0.1:9
+$answer = $answer -join "`n"
+if (-not ($answer -match '"name":"upshot"')) { throw "the frozen upshot-mcp did not answer initialize: $answer" }
+if (-not ($answer -match '"get_summary"' -and $answer -match '"transcribe_file"')) {
+    throw "the frozen upshot-mcp did not list the meeting and transcription tools: $answer"
+}
+Write-Host "[ok  ] upshot-mcp answers initialize and lists its tools"
 
 Write-Host "== selftest against the freeze =="
 # upshot.exe is a windowed program (console=False): `& upshot.exe` returns at once and
