@@ -78,7 +78,7 @@ def h(tmp_path: Path, app_home: Path) -> ApiHarness:
     return build_harness(tmp_path)
 
 
-async def test_the_official_client_sees_four_tools(h: ApiHarness) -> None:
+async def test_the_official_client_sees_the_transcription_tools(h: ApiHarness) -> None:
     with running(h) as url:
         async with (
             stdio_client(params(url)) as (read, write),
@@ -86,13 +86,13 @@ async def test_the_official_client_sees_four_tools(h: ApiHarness) -> None:
         ):
             init = await session.initialize()
             listed = await session.list_tools()
-    assert init.server_info.name == "upshot-transcribe"
-    assert sorted(t.name for t in listed.tools) == [
+    assert init.server_info.name == "upshot"
+    assert {
         "cancel_transcription",
         "get_transcription",
         "list_transcriptions",
         "transcribe_file",
-    ]
+    } <= {t.name for t in listed.tools}
 
 
 async def test_a_file_is_transcribed_in_one_call(h: ApiHarness, tmp_path: Path) -> None:
@@ -168,9 +168,7 @@ def test_the_bridge_exits_as_soon_as_its_input_closes() -> None:
     assert process.stdin is not None and process.stdout is not None
     process.stdin.write(b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n')
     process.stdin.flush()
-    assert (
-        json.loads(process.stdout.readline())["result"]["serverInfo"]["name"] == "upshot-transcribe"
-    )
+    assert json.loads(process.stdout.readline())["result"]["serverInfo"]["name"] == "upshot"
     started = time.monotonic()
     process.stdin.close()
     assert process.wait(timeout=5) == 0

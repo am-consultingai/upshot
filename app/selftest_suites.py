@@ -568,7 +568,9 @@ def _transcription(args: argparse.Namespace) -> list[Check]:
         srt = ""
         try:
             base = f"http://127.0.0.1:{cfg.server_port}/api/v1"
-            with httpx.Client(base_url=base, timeout=30.0) as client:
+            # A program, as any other: it needs the access key (D98).
+            key = {"Authorization": f"Bearer {services.auth.access_key}"}
+            with httpx.Client(base_url=base, timeout=30.0, headers=key) as client:
                 info = client.get("/info").json()
                 with source.open("rb") as handle:
                     created = client.post(

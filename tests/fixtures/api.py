@@ -99,6 +99,17 @@ def serve(harness: ApiHarness) -> Any:
         server.stop()
 
 
+def _auth() -> Any:
+    """Fresh credentials; the access key also written to the test's app home, when it has
+    one, where the bridge looks for it (D98)."""
+    import os
+
+    from app.api.security import AuthState, load_access_key
+
+    home = os.environ.get("UP_HOME")
+    return AuthState(access_key=load_access_key(Path(home))) if home else AuthState()
+
+
 def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
     from app.audio.fake import SyntheticCapture
     from app.audio.recorder import Recorder
@@ -119,7 +130,7 @@ def build_harness(tmp_path: Path, **overrides: Any) -> ApiHarness:
         queue=queue,
         meetings=MeetingService(config, dao, queue, clock=clock),
         events=events,
-        auth=__import__("app.api.security", fromlist=["AuthState"]).AuthState(),
+        auth=_auth(),
         clock=clock,
         mailer=Mailer(config),
         notifier=FakeNotifier(clock=clock),

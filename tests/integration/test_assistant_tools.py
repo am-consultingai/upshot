@@ -163,3 +163,93 @@ def test_related_meetings_and_a_missing_meeting(tools: AssistantTools) -> None:
 def test_search_names_the_kind_and_only_transcripts_have_a_moment(tools: AssistantTools) -> None:
     hits = data(tools.search("marketing"))["results"]
     assert [(h["kind"], h["at_ms"]) for h in hits] == [("summary", None)]
+
+
+# ----------------------------------------------------------------------- D98: sizes, summaries
+
+
+def test_every_list_stops_at_the_cap_and_says_how_to_see_the_rest(tools: AssistantTools) -> None:
+    from app.assistant.tools import fit
+
+    rows = [{"what": f"item {i} " + "x" * 200} for i in range(500)]
+    out = fit({"count": 500, "action_items": rows}, "action_items", "filter by person")
+    size = len(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+    assert size <= MAX_CHARS
+    shown = len(out["action_items"])
+    assert 0 < shown < 500 and out["action_items"] == rows[:shown]
+    assert out["truncated"] == f"{500 - shown} more not shown: filter by person"
+    small = {"count": 1, "action_items": rows[:1]}
+    assert fit(small, "action_items", "x") == small, "what fits is left alone"
+
+
+def test_search_results_fit_the_cap(tools: AssistantTools) -> None:
+    dao = tools.svc.dao
+    dao.index_turns(
+        "m-1on1",
+        [Turn(i, "ME", i * 1000, "zebra " + "word " * 400) for i in range(60)],
+    )
+    found = tools.search("zebra", limit=50)
+    assert len(found) <= MAX_CHARS + 200
+    assert "truncated" in data(found)
+
+
+def test_get_summary_returns_all_of_a_long_summary(tools: AssistantTools) -> None:
+    whole = "".join(f"Point {i}: the budget moves. " for i in range(3000))
+    tools.svc.dao.index_summary("m-q4", whole)
+    meeting = data(tools.get_meeting("m-q4"))
+    assert meeting["summary_truncated"] is True and "get_summary" in meeting["summary_rest"]
+    parts = []
+    part = 1
+    while True:
+        got = data(tools.get_summary("m-q4", part))
+        parts.append(got["summary"])
+        if "next" not in got:
+            break
+        part += 1
+    assert "".join(parts) == whole.strip()
+    assert got["parts"] == part
+
+
+def test_get_summary_of_a_meeting_without_one(tools: AssistantTools) -> None:
+    empty = data(tools.get_summary("m-1on1"))
+    assert empty["summary"] is None and empty["parts"] == 1 and empty["chapters"] == []
+    assert "no summary" in empty["note"]
+    assert "error" in data(tools.get_summary("nope"))
+
+
+def test_get_summary_with_many_chapters_still_fits(tools: AssistantTools) -> None:
+    meeting = tools.svc.dao.visible_meeting("m-q4")
+    assert meeting is not None
+    meeting.path.mkdir(parents=True, exist_ok=True)
+    chapters = [{"title": f"Topic {i} " + "word " * 12, "start_ms": i * 60_000} for i in range(100)]
+    (meeting.path / "notes.json").write_text(json.dumps({"chapters": chapters}), encoding="utf-8")
+    whole = "".join(f"Point {i}: the budget moves. " for i in range(3000))
+    tools.svc.dao.index_summary("m-q4", whole)
+    parts, part = [], 1
+    while True:
+        reply = tools.get_summary("m-q4", part)
+        assert len(reply) <= MAX_CHARS, f"part {part} is {len(reply)} characters"
+        got = data(reply)
+        parts.append(got["summary"])
+        if "next" not in got:
+            break
+        part += 1
+    assert (
+        "".join(parts) == whole.strip() and len(data(tools.get_summary("m-q4"))["chapters"]) == 100
+    )
+
+
+def test_get_summary_counts_escapes_against_the_cap(tools: AssistantTools) -> None:
+    """Short quoted lines double in JSON: each part must still fit."""
+    whole = '"a"\n' * 12_000
+    tools.svc.dao.index_summary("m-q4", whole)
+    parts, part = [], 1
+    while True:
+        reply = tools.get_summary("m-q4", part)
+        assert len(reply) <= MAX_CHARS, f"part {part} is {len(reply)} characters"
+        got = data(reply)
+        parts.append(got["summary"])
+        if "next" not in got:
+            break
+        part += 1
+    assert "".join(parts) == whole.strip()

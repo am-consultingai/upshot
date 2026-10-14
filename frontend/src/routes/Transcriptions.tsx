@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
 import TranscriptionDropzone from "../components/TranscriptionDropzone";
 import TranscriptionRow from "../components/TranscriptionRow";
 import { toast } from "../components/Toaster";
+import AiActivity from "../components/AiActivity";
 import { Loading, Skeleton } from "../components/Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
 import { LIST_KEY, loadOptions, saveOptions, upload, type UploadOptions } from "../lib/transcriptions";
@@ -18,12 +19,63 @@ interface Uploading {
 
 let nextKey = 1;
 
+const TABS = ["transcriptions", "activity"] as const;
+type Tab = (typeof TABS)[number];
+
+/**
+ * AI apps (D98): the transcriptions of files, and what the user's own AI tools asked.
+ * The address stays /transcriptions, so links and the T key still land here;
+ * `?tab=activity` opens the second tab.
+ */
+export default function AiAppsPage() {
+  const { t } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = params.get("tab") === "activity" ? "activity" : "transcriptions";
+  return (
+    <section data-testid="ai-apps-page">
+      <h1 className="display mb-4 text-2xl">{t("aiApps.title")}</h1>
+      <div data-testid="ai-apps-tabs" role="tablist" className="mb-6 flex w-max gap-0.5 rounded-md bg-surface-3 p-0.5">
+        {TABS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            id={`ai-apps-tab-${value}`}
+            aria-controls="ai-apps-panel"
+            tabIndex={tab === value ? 0 : -1}
+            data-testid={`ai-apps-tab-${value}`}
+            aria-selected={tab === value}
+            onKeyDown={(event) => {
+              // Arrow keys move between the tabs, as a tab list should.
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              const next = TABS[(TABS.indexOf(value) + 1) % TABS.length];
+              setParams(next === "activity" ? { tab: next } : {}, { replace: true });
+              document.getElementById(`ai-apps-tab-${next}`)?.focus();
+            }}
+            onClick={() => setParams(value === "activity" ? { tab: value } : {}, { replace: true })}
+            className={`flex h-control-sm items-center rounded-sm px-3 text-sm ${
+              tab === value
+                ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
+                : "text-secondary hover:bg-a-200 hover:text-primary"
+            }`}
+          >
+            {t(value === "activity" ? "aiApps.tabActivity" : "aiApps.tabTranscriptions")}
+          </button>
+        ))}
+      </div>
+      <div id="ai-apps-panel" role="tabpanel" aria-labelledby={`ai-apps-tab-${tab}`}>
+        {tab === "activity" ? <AiActivity /> : <TranscriptionsTab />}
+      </div>
+    </section>
+  );
+}
+
 /**
  * Transcriptions of files, apart from meetings (D86, R4): what is added here, through
  * the API or by Claude never appears in the library, search or summaries. Rows update
  * live from `transcription` events, through the list's own cache only.
  */
-export default function TranscriptionsPage() {
+function TranscriptionsTab() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [options, setOptionsState] = useState<UploadOptions>(() => loadOptions());
@@ -63,8 +115,7 @@ export default function TranscriptionsPage() {
   const keepDays = connect.data?.keep_days;
 
   return (
-    <section data-testid="transcriptions-page">
-      <h1 className="display mb-1 text-2xl">{t("transcriptions.title")}</h1>
+    <div data-testid="transcriptions-page">
       <p className="mb-6 max-w-prose text-sm text-secondary">{t("transcriptions.intro")}</p>
 
       <TranscriptionDropzone options={options} onOptions={setOptions} onFiles={(files) => void addFiles(files)} />
@@ -128,6 +179,6 @@ export default function TranscriptionsPage() {
       {keepDays ? (
         <p className="mt-6 text-xs text-tertiary">{t("transcriptions.kept").replace("{n}", String(keepDays))}</p>
       ) : null}
-    </section>
+    </div>
   );
 }

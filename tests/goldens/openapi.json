@@ -1072,6 +1072,146 @@
         "summary": "Patch Action Item"
       }
     },
+    "/api/ai-apps": {
+      "get": {
+        "operationId": "overview_api_ai_apps_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Overview Api Ai Apps Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Overview"
+      }
+    },
+    "/api/ai-apps/activity": {
+      "get": {
+        "operationId": "activity_api_ai_apps_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Agent",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activity Api Ai Apps Activity Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activity"
+      }
+    },
+    "/api/ai-apps/activity/clear": {
+      "post": {
+        "operationId": "clear_activity_api_ai_apps_activity_clear_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Clear Activity Api Ai Apps Activity Clear Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Clear Activity"
+      }
+    },
+    "/api/ai-apps/key": {
+      "post": {
+        "description": "The access key, for an app that takes a URL and a key (Open WebUI).",
+        "operationId": "show_key_api_ai_apps_key_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Show Key Api Ai Apps Key Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show Key"
+      }
+    },
+    "/api/ai-apps/key/reset": {
+      "post": {
+        "description": "A new key at once: apps holding the old one are refused until given this one.\nThe bridge reads the file again by itself.",
+        "operationId": "new_key_api_ai_apps_key_reset_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response New Key Api Ai Apps Key Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "New Key"
+      }
+    },
     "/api/assistant/chat": {
       "post": {
         "operationId": "chat_api_assistant_chat_post",

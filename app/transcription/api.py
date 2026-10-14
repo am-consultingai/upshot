@@ -61,6 +61,10 @@ WRITE_BATCH = 1 << 20
 #: The largest a non-file form field may be (the prompt is 1000 characters).
 MAX_FIELD_BYTES = 16 * 1024
 OFF_DETAIL = "Transcription for other apps is off in Upshot's Settings"
+KEY_DETAIL = (
+    "Upshot needs its access key: send it as 'Authorization: Bearer <key>'. The key is in "
+    "Upshot's Settings, under AI apps, and in the file access.key in Upshot's folder."
+)
 
 
 def services_of(request: Request) -> Services:
@@ -77,18 +81,74 @@ def store_of(request: Request) -> TranscriptionStore:
 
 
 def is_page(request: Request, svc: Services) -> bool:
-    """The app's own page: it holds the ``up_csrf`` cookie, or sends it as a header."""
+    """The app's own page: it holds the ``up_csrf`` cookie, or sends it as a header.
+
+    Not a credential while D57 stands: the app hands that cookie to any caller that lacks
+    it, so a program that keeps cookies passes here without the access key."""
     return svc.auth.valid_csrf(request.cookies.get(CSRF_COOKIE)) or svc.auth.valid_csrf(
         request.headers.get(CSRF_HEADER)
     )
 
 
+#: What the activity log calls each route (D98). ``wait`` is left out: a long-poll is
+#: asked again and again for one job, and would bury everything else.
+ACTIONS = {
+    "create": "transcribe",
+    "list_transcriptions": "list",
+    "get_transcription": "get",
+    "result": "result",
+    "cancel": "cancel",
+    "retry": "retry",
+    "delete": "delete",
+}
+
+
+def agent_of(request: Request) -> str:
+    """What a program calls itself: the AI app's name the bridge passes on, else the
+    client header (``api``, ``mcp``), else its User-Agent."""
+    from app.access_log import AGENT_CHARS, clean
+
+    for name in ("x-upshot-agent", CLIENT_HEADER, "user-agent"):
+        value = request.headers.get(name)
+        if value:
+            return clean(value, AGENT_CHARS)
+    return ""
+
+
+def note(
+    request: Request, svc: Services, outcome: str = "ok", target: str = "", *, keyless: bool = False
+) -> None:
+    """One line in the activity log for a program's request (D98); none for the page."""
+    route = request.scope.get("route")
+    action = ACTIONS.get(getattr(route, "name", "") or "")
+    if action is None or svc.access_log is None:
+        return
+    if not target:
+        job_id = str(request.path_params.get("job_id") or "")
+        job = svc.transcriptions.get(job_id) if job_id and svc.transcriptions else None
+        target = job.source_name if job is not None else job_id
+    svc.access_log.record("api", agent_of(request), action, target, outcome, collapse=keyless)
+
+
+def require_caller(request: Request, svc: Services) -> bool:
+    """The page, or a program with the access key (D98); 401 for anyone else. Whether
+    it is the page."""
+    if is_page(request, svc):
+        return True
+    if not svc.auth.valid_access(request.headers.get("authorization")):
+        note(request, svc, "refused", keyless=True)
+        raise HTTPException(401, KEY_DETAIL, headers={"WWW-Authenticate": "Bearer"})
+    return False
+
+
 def require_enabled(request: Request) -> Services:
     svc = services_of(request)
-    if not bool(svc.config.get("transcription.service_enabled", True)) and not is_page(
-        request, svc
-    ):
+    page = require_caller(request, svc)
+    if not bool(svc.config.get("transcription.service_enabled", True)) and not page:
+        note(request, svc, "refused")
         raise HTTPException(403, OFF_DETAIL)
+    if not page and getattr(request.scope.get("route"), "name", "") != "create":
+        note(request, svc)  # a new job is noted once it exists, with its file's name
     return svc
 
 
@@ -266,6 +326,8 @@ async def create(request: Request) -> JSONResponse:
         job = await _from_path(request, svc)
     else:
         raise HTTPException(415, "send multipart/form-data with a file, or JSON with a path")
+    if not is_page(request, svc):
+        note(request, svc, target=job.source_name)
     return JSONResponse(describe(svc, job), status_code=202)
 
 
@@ -613,6 +675,8 @@ def info(request: Request) -> dict[str, Any]:
         "api": 1,
         "version": build_info().as_dict().get("version"),
         "enabled": bool(svc.config.get("transcription.service_enabled", True)),
+        # Every route but this one needs the access key (D98).
+        "key_required": True,
         "models_missing": missing,
         "device": svc.extras.get("transcription_device"),
         "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
@@ -632,7 +696,9 @@ ui_router = APIRouter(prefix="/api/transcription")
 
 BRIDGE_DIR = "mcp"
 BRIDGE_EXE = "upshot-mcp.exe"
-SERVER_NAME = "upshot-transcribe"
+#: The name the commands add the bridge under. Was ``upshot-transcribe`` before the
+#: bridge read meetings (D98); a client added under that name keeps working.
+SERVER_NAME = "upshot"
 #: A made-up install folder for the e2e server, so the copy buttons have a real shape.
 TEST_INSTALL_DIR = "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot"
 
@@ -697,7 +763,10 @@ def connect(request: Request) -> dict[str, Any]:
         "windows_command": (
             f'claude mcp add --scope user {SERVER_NAME} -- "{bridge}"' if bridge else None
         ),
-        "curl_example": f"curl -F file=@clip.mp4 {api_url}/transcriptions",
+        "curl_example": (
+            'curl -H "Authorization: Bearer $UPSHOT_KEY" '
+            f"-F file=@clip.mp4 {api_url}/transcriptions"
+        ),
         "keep_days": svc.config.get("transcription.keep_days"),
     }
 

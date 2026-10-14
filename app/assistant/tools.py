@@ -5,7 +5,8 @@ The same functions are served to the Claude Code and Codex CLIs over MCP
 (``app/assistant/mcp.py``), so a tool is written once whichever CLI calls it.
 
 Every result is capped (:data:`MAX_CHARS`, about 8k tokens) so one call cannot fill the
-model's context, and says so when it was cut, with what to ask for next.
+model's context, and says so when it was cut, with what to ask for next (D98). The cap
+protects the client's context window, not the data: the rest is a call away.
 """
 
 from __future__ import annotations
@@ -48,6 +49,42 @@ def clock(at_ms: int) -> str:
     return f"{hours}:{rest // 60:02d}:{rest % 60:02d}" if hours else f"{rest // 60}:{rest % 60:02d}"
 
 
+def _fits(text: str, start: int, budget: int) -> int:
+    """The end of the longest slice from ``start`` whose JSON (escapes counted: quotes,
+    line breaks) takes at most ``budget`` characters."""
+    low, high = start, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if _size(text[start:middle]) <= budget:
+            low = middle
+        else:
+            high = middle - 1
+    return max(low, start + 1) if start < len(text) else start
+
+
+def _split(text: str, first: int, rest: int) -> list[tuple[int, int]]:
+    """Where each part of ``text`` begins and ends: the first fits ``first``, the others
+    ``rest``. The same text always splits the same way, so part 3 means one thing."""
+    bounds: list[tuple[int, int]] = []
+    start, budget = 0, first
+    while True:
+        end = _fits(text, start, budget)
+        bounds.append((start, end))
+        if end >= len(text):
+            return bounds
+        start, budget = end, rest
+
+
+def _chapters(meeting: Meeting) -> list[dict[str, Any]]:
+    """The summarizer's chapters from ``notes.json``; [] when there are none."""
+    from app.llm.schema import chapters
+
+    try:
+        return chapters(json.loads((meeting.path / "notes.json").read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return []
+
+
 def _day(text: str | None) -> str | None:
     """A date the model may pass as ``2026-09-20`` or a full ISO time; None if neither."""
     if not text:
@@ -58,6 +95,28 @@ def _day(text: str | None) -> str | None:
     except ValueError:
         return None
     return text
+
+
+def _size(payload: Any) -> int:
+    return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+
+
+def fit(payload: dict[str, Any], key: str, hint: str) -> dict[str, Any]:
+    """``payload`` with its list ``key`` cut from the end to fit :data:`MAX_CHARS`, and
+    ``truncated`` saying how many rows were left out and how to see them."""
+    rows = payload[key]
+    if _size(payload) <= MAX_CHARS:
+        return payload
+    budget = MAX_CHARS - _size({**payload, key: []}) - 300  # the note itself
+    kept: list[Any] = []
+    used = 0
+    for row in rows:
+        size = _size(row) + 1
+        if kept and used + size > budget:
+            break
+        kept.append(row)
+        used += size
+    return {**payload, key: kept, "truncated": f"{len(rows) - len(kept)} more not shown: {hint}"}
 
 
 class AssistantTools:
@@ -109,7 +168,8 @@ class AssistantTools:
             }
             for hit in hits
         ]
-        return as_data({"query": query, "count": len(results), "results": results})
+        payload = {"query": query, "count": len(results), "results": results}
+        return as_data(fit(payload, "results", "search with more words, or a smaller limit"))
 
     def list_meetings(
         self,
@@ -123,7 +183,8 @@ class AssistantTools:
         meetings = self.svc.dao.list_meetings(
             frm=_day(date_from), to=_day(date_to), q=contains.strip() or None, limit=limit
         )
-        return as_data({"count": len(meetings), "meetings": [self._brief(m) for m in meetings]})
+        payload = {"count": len(meetings), "meetings": [self._brief(m) for m in meetings]}
+        return as_data(fit(payload, "meetings", "narrow the dates, or a smaller limit"))
 
     def get_meeting(self, meeting_id: str) -> str:
         """One meeting: details, the summary as text, and its action items."""
@@ -149,6 +210,41 @@ class AssistantTools:
             ],
             "transcript_lines": len(self.svc.dao.turns(meeting.id)),
         }
+        if payload["summary_truncated"]:
+            payload["summary_rest"] = "The summary goes on: get_summary returns all of it."
+        return as_data(fit(payload, "action_items", "call list_action_items with this meeting_id"))
+
+    def get_summary(self, meeting_id: str, part: int = 1) -> str:
+        """The whole summary, in parts that fit :data:`MAX_CHARS`, and its chapters with the
+        first part (D98). The first part is shorter by what the chapters take."""
+        meeting = self.svc.dao.visible_meeting(meeting_id)
+        if meeting is None:
+            return self._missing(meeting_id)
+        text = self.svc.dao.summary_text(meeting.id)
+        chapters = [
+            {"title": c["title"][:200], "start_ms": c["start_ms"], "time": clock(c["start_ms"])}
+            for c in _chapters(meeting)
+        ][:100]
+        room = MAX_CHARS - 1_500  # the rest of the reply: ids, title, the note on what follows
+        bounds = _split(text, max(2_000, room - _size(chapters)), room)
+        parts = len(bounds)
+        part = max(1, min(int(part or 1), parts))
+        begin, end = bounds[part - 1]
+        payload: dict[str, Any] = {
+            "meeting_id": meeting.id,
+            "title": meeting.title or "",
+            "started_at": meeting.started_at,
+            "part": part,
+            "parts": parts,
+            "summary": text[begin:end] or None,
+        }
+        if not text:
+            payload["note"] = "This meeting has no summary yet."
+        if part == 1:
+            # Where each topic starts: get_transcript with from_ms reads what was said.
+            payload["chapters"] = chapters
+        if part < parts:
+            payload["next"] = f"More follows. Call again with part={part + 1}."
         return as_data(payload)
 
     def get_transcript(self, meeting_id: str, from_ms: int = 0, to_ms: int = 0) -> str:
@@ -218,7 +314,8 @@ class AssistantTools:
             }
             for item in items[:limit]
         ]
-        return as_data({"count": len(rows), "more": len(items) > limit, "action_items": rows})
+        payload = {"count": len(rows), "more": len(items) > limit, "action_items": rows}
+        return as_data(fit(payload, "action_items", "filter by person or meeting_id"))
 
     def calendar_range(self, date_from: str, date_to: str = "") -> str:
         """Calendar events between two dates, and which were recorded."""
@@ -271,14 +368,13 @@ class AssistantTools:
             for event in dedupe(store.between(start, end, accounts=active))
             if event.status != "cancelled"
         ]
-        return as_data(
-            {
-                "from": start.isoformat(),
-                "to": end.isoformat(),
-                "count": len(events),
-                "events": events[:200],
-            }
-        )
+        payload = {
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "count": len(events),
+            "events": events[:200],
+        }
+        return as_data(fit(payload, "events", "ask for fewer days"))
 
     def related_meetings(self, meeting_id: str) -> str:
         """Meetings related to this one, and why: people, series, action items, a rare word."""
@@ -287,4 +383,5 @@ class AssistantTools:
         if self.svc.dao.visible_meeting(meeting_id) is None:
             return self._missing(meeting_id)
         found = related(self.svc.dao, meeting_id)
-        return as_data({"meeting_id": meeting_id, "related": [item.as_api() for item in found]})
+        payload = {"meeting_id": meeting_id, "related": [item.as_api() for item in found]}
+        return as_data(fit(payload, "related", "the closest come first"))

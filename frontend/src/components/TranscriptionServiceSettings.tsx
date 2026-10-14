@@ -9,7 +9,7 @@ import { toast } from "./Toaster";
 
 const CLAUDE_DOWNLOAD = "https://claude.ai/download";
 
-function CopyButton({ text, testid }: { text: string; testid: string }) {
+export function CopyButton({ text, testid }: { text: string; testid: string }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   return (
@@ -26,7 +26,7 @@ function CopyButton({ text, testid }: { text: string; testid: string }) {
   );
 }
 
-function Command({ text, testid }: { text: string; testid: string }) {
+export function Command({ text, testid }: { text: string; testid: string }) {
   return (
     <code
       data-testid={`${testid}-text`}
@@ -195,6 +195,9 @@ export default function TranscriptionServiceSettings() {
                   {command && <Command text={command} testid={`transcription-copy-${tab}`} />}
                   {tab === "wsl" && <span className="mt-1 block">{t("settings.transcriptionWslNote")}</span>}
                   <span className="mt-1 block">{t("settings.transcriptionCodeTry")}</span>
+                  <span className="mt-1 block text-tertiary" data-testid="claude-code-old-name">
+                    {t("settings.transcriptionCodeOld")}
+                  </span>
                 </>
               ) : (
                 <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>
