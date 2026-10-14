@@ -127,6 +127,75 @@ def _bring_browser_forward() -> None:
     log.info("after the link: %s", outcome)
 
 
+#: Windows Terminal's window, and the classic console's.
+TERMINAL_CLASSES = frozenset({"CASCADIA_HOSTING_WINDOW_CLASS", "ConsoleWindowClass"})
+
+
+def bring_terminal_forward(title: str) -> None:
+    """After the server opened a terminal (Settings → AI apps), put it in front, in the
+    background: the page has its answer already."""
+
+    def work() -> None:
+        try:
+            outcome = terminal_forward(title)
+        except Exception as exc:  # pywintypes.error: the window went while it was looked at
+            outcome = f"could not bring it forward: {exc}"
+        log.info("after opening a terminal: %s", outcome)
+
+    threading.Thread(target=work, name="terminal-forward", daemon=True).start()
+
+
+def terminal_forward(title: str, *, window_s: float = 5.0) -> str:
+    """Put the terminal this server just opened in front of Upshot's window.
+
+    The same reason as ``browser_forward``: Windows gives the foreground to the program
+    the user is in, Upshot's window, not this server, so the terminal opened behind it
+    (seen on machine A, 2026-10-14). The terminal is found by its title, which the server
+    set, and its class, which tells it from Upshot's own window of the same name. Only
+    while Upshot's window is in front: a window the user went to meanwhile stays.
+    """
+    if sys.platform != "win32":
+        return "not Windows"
+    try:
+        import win32api
+        import win32con
+        import win32gui
+    except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
+        return "no pywin32"
+    found: list[int] = []  # pragma: no cover - Windows only, from here on
+
+    def visit(hwnd: int, _: object) -> bool:
+        if (
+            win32gui.IsWindowVisible(hwnd)
+            and win32gui.GetClassName(hwnd) in TERMINAL_CLASSES
+            and win32gui.GetWindowText(hwnd) == title
+        ):
+            found.append(hwnd)
+        return True
+
+    target = None
+    for _ in range(max(1, round(window_s / POLL_S))):
+        found.clear()
+        win32gui.EnumWindows(visit, None)
+        if found:
+            target = found[0]
+            break
+        time.sleep(POLL_S)
+    if not target:
+        return "no terminal window"
+    front = win32gui.GetForegroundWindow()
+    if front == target:
+        return "the terminal came forward"
+    if not _is_ours(win32gui, front):
+        return "another window is in front"
+    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+    try:
+        win32gui.SetForegroundWindow(target)
+    finally:
+        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    return "brought the terminal forward"
+
+
 #: How long a browser has to take the foreground by itself once it has a link, and how
 #: long to wait for a window from one that was not running.
 BROWSER_OWN_S = 1.0
