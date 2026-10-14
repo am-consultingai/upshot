@@ -572,9 +572,7 @@ export interface AiApps {
       | "codex_wsl"
       | "antigravity"
       | "antigravity_wsl"
-      | "gemini"
-      | "mcp_json"
-      | "vscode_json",
+      | "mcp_json",
       string
     >
   >;
