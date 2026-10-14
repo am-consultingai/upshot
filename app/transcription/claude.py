@@ -110,13 +110,7 @@ def manifest(bridge: str, version: str) -> dict[str, Any]:
         "display_name": "Upshot",
         "version": _semver(version),
         "description": "Your Upshot meetings, and transcription of files on this computer.",
-        "long_description": (
-            "Lets Claude read your meetings in Upshot, the meeting recorder on this "
-            "computer: transcripts, summaries, action items and the calendar. What Claude "
-            "reads goes to Anthropic, as anything in a conversation does. It also "
-            "transcribes audio and video files with Upshot: files are read where they are "
-            "and never leave the computer. Upshot must be running."
-        ),
+        "long_description": "Your Upshot meetings, and transcription of files on this computer.",
         "author": {"name": "AM Consulting", "url": "https://github.com/am-consultingai/upshot"},
         "icon": "icon.png",
         "server": {
