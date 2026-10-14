@@ -200,7 +200,7 @@ def test_the_found_apps_and_the_terminal_on_a_source_checkout(h: ApiHarness) -> 
     page = h.client()
     apps = page.get("/api/ai-apps/found").json()["apps"]
     assert set(apps) == {"claude_code", "codex", "antigravity"}
-    assert all(side == {"windows": False, "wsl": None} for side in apps.values())
+    assert all((where["windows"], where["wsl"]) == (False, None) for where in apps.values())
     assert (
         page.post("/api/ai-apps/terminal", json={"app": "word", "side": "windows"}).status_code
         == 400
@@ -232,3 +232,105 @@ def test_the_terminal_never_runs_text_from_the_request(
     )
     assert reply["launched"] is False
     assert reply["command"].startswith('agy mcp add upshot -- "/mnt/c/Users/someone/')
+
+
+@pytest.mark.parametrize("side", ["windows", "wsl"])
+def test_the_launch_runs_only_the_line_built_here(
+    h: ApiHarness, monkeypatch: pytest.MonkeyPatch, side: str
+) -> None:
+    """The launch branch itself, as on Windows: the argv holds the line from commands()
+    and nothing from the request, and the terminals open before are passed on."""
+    from app import ai_apps, ai_terminal, window
+
+    bridge = "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe"
+    launched: list[list[str]] = []
+    forwarded: list[set[int]] = []
+    monkeypatch.setattr(ai_apps.sys, "platform", "win32")
+    monkeypatch.setattr(ai_apps, "_test_install", lambda: False)
+    monkeypatch.setattr(ai_apps, "bridge_path", lambda: bridge)
+    monkeypatch.setattr(ai_apps, "ai_terminal_windows", lambda title: {7})
+    monkeypatch.setattr(ai_terminal, "registry_path", lambda: "C:\\bin")
+    monkeypatch.setattr(
+        ai_terminal.shutil, "which", lambda program, path=None: "C:\\bin\\codex.exe"
+    )
+    monkeypatch.setattr(ai_terminal, "find_on_windows", lambda config: {"codex": "codex.exe"})
+    monkeypatch.setattr(ai_terminal, "find_in_wsl", lambda: {"codex": "Ubuntu-24.04"})
+    monkeypatch.setattr(ai_terminal, "launch", lambda argv, fresh: launched.append(argv))
+    monkeypatch.setattr(
+        window, "bring_terminal_forward", lambda title, before: forwarded.append(before)
+    )
+    reply = (
+        h.client()
+        .post("/api/ai-apps/terminal", json={"app": "codex", "side": side, "command": "rm -rf ~"})
+        .json()
+    )
+    expected = ai_apps.commands(bridge)["codex" if side == "windows" else "codex_wsl"]
+    assert reply == {"launched": True, "command": expected}
+    (argv,) = launched
+    assert "rm -rf" not in " ".join(argv)
+    if side == "windows":
+        assert argv[:2] == ["powershell.exe", "-NoExit"] and f"Insert('{expected}')" in argv[4]
+    else:
+        assert argv[:3] == ["wsl.exe", "-d", "Ubuntu-24.04"] and argv[-1] == expected
+    assert forwarded == [{7}]
+
+
+def test_a_distro_that_stopped_is_not_replaced_by_the_default(
+    h: ApiHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opening the default distro would start WSL, maybe one without the app."""
+    from app import ai_apps, ai_terminal
+
+    monkeypatch.setattr(ai_apps.sys, "platform", "win32")
+    monkeypatch.setattr(ai_apps, "_test_install", lambda: False)
+    monkeypatch.setattr(ai_apps, "bridge_path", lambda: "C:\\Upshot\\mcp\\upshot-mcp.exe")
+    monkeypatch.setattr(ai_terminal, "registry_path", lambda: None)
+    monkeypatch.setattr(ai_terminal, "find_in_wsl", lambda: {})
+    monkeypatch.setattr(ai_terminal, "launch", lambda argv, fresh: pytest.fail("launched"))
+    reply = h.client().post("/api/ai-apps/terminal", json={"app": "codex", "side": "wsl"}).json()
+    assert reply["launched"] is False and reply["command"].startswith("codex mcp add upshot --")
+
+
+def test_a_window_list_that_fails_does_not_fail_the_click(
+    h: ApiHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Listing the open terminals is a nicety: a window closing mid-list must not cost the
+    terminal (review round 2)."""
+    from app import ai_apps, ai_terminal, window
+
+    launched: list[list[str]] = []
+    monkeypatch.setattr(ai_apps.sys, "platform", "win32")
+    monkeypatch.setattr(ai_apps, "_test_install", lambda: False)
+    monkeypatch.setattr(ai_apps, "bridge_path", lambda: "C:\\Upshot\\mcp\\upshot-mcp.exe")
+    monkeypatch.setattr(ai_terminal, "registry_path", lambda: None)
+    monkeypatch.setattr(ai_terminal, "find_on_windows", lambda config: {})
+    monkeypatch.setattr(ai_terminal, "launch", lambda argv, fresh: launched.append(argv))
+    monkeypatch.setattr(window, "bring_terminal_forward", lambda title, before: None)
+
+    def win32gui_gone(title: str) -> set[int]:
+        raise OSError("the window went while it was looked at")
+
+    monkeypatch.setattr(window, "terminal_windows", win32gui_gone)
+    reply = h.client().post("/api/ai-apps/terminal", json={"app": "codex"})
+    assert reply.status_code == 200 and reply.json()["launched"] is True and launched
+
+
+def test_found_says_which_line_the_windows_terminal_types(
+    h: ApiHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import ai_apps, ai_terminal
+
+    bridge = "C:\\Upshot\\mcp\\upshot-mcp.exe"
+    monkeypatch.setattr(ai_apps, "bridge_path", lambda: bridge)
+    monkeypatch.setattr(ai_terminal, "registry_path", lambda: "C:\\npm")
+    monkeypatch.setattr(
+        ai_terminal.shutil, "which", lambda program, path=None: "C:\\npm\\codex.cmd"
+    )
+    monkeypatch.setattr(
+        ai_terminal,
+        "find",
+        lambda config, test=False: ai_terminal.Found(windows={"codex": "C:\\npm\\codex.cmd"}),
+    )
+    apps = h.client().get("/api/ai-apps/found").json()["apps"]
+    assert apps["codex"]["windows_line"] == f'codex.cmd mcp add upshot -- "{bridge}"'
+    assert apps["antigravity"]["windows"] is False
