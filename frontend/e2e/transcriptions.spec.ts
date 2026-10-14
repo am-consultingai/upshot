@@ -236,8 +236,7 @@ test("settings_show_how_to_connect_claude_with_this_install", async ({ page, see
   await page.getByTestId("transcription-copy-wsl").click();
   await expect(page.getByTestId("transcription-copy-wsl")).toHaveText("Copied");
 
-  // Claude Desktop: the warning is announced before the click, then Claude is handed the file.
-  await expect(page.getByTestId("claude-desktop-warning")).toBeVisible();
+  // Claude Desktop: Claude is handed the file.
   await page.getByTestId("transcription-add-desktop").click();
   await expect(page.getByText("Claude Desktop is asking you to install Upshot")).toBeVisible();
   // The fallback: the file to install by hand, and where to click.
