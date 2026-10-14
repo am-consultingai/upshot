@@ -7,29 +7,40 @@ import { confirmDialog } from "./ConfirmDialog";
 import SettingRow, { SettingGroup } from "./SettingRow";
 import { toast } from "./Toaster";
 import { Command, CopyButton } from "./TranscriptionServiceSettings";
+import { Globe } from "lucide-react";
+import { AppLabel, type AppId } from "../setup/logos";
+
 
 type CommandKey = keyof AiApps["commands"];
 
 /** An app added with its own command: on Windows, or inside WSL. */
-const BY_COMMAND: { id: string; label: MessageKey; windows: CommandKey; wsl?: CommandKey }[] = [
-  { id: "codex", label: "settings.aiAppsCodex", windows: "codex", wsl: "codex_wsl" },
-  { id: "antigravity", label: "settings.aiAppsAntigravity", windows: "antigravity", wsl: "antigravity_wsl" },
+const BY_COMMAND: { id: string; label: MessageKey; logo: AppId; windows: CommandKey; wsl?: CommandKey }[] = [
+  { id: "codex", label: "settings.aiAppsCodex", logo: "codex", windows: "codex", wsl: "codex_wsl" },
+  { id: "antigravity", label: "settings.aiAppsAntigravity", logo: "antigravity", windows: "antigravity", wsl: "antigravity_wsl" },
 ];
 
 /** Apps added by a file of their own (Cursor, VS Code, LM Studio…), given as a snippet. */
-const BY_FILE: { id: string; label: MessageKey; hint: MessageKey; key: CommandKey }[] = [
-  { id: "mcp-json", label: "settings.aiAppsOthers", hint: "settings.aiAppsOthersHint", key: "mcp_json" },
+const BY_FILE: { id: string; label: MessageKey; logos: AppId[]; hint: MessageKey; key: CommandKey }[] = [
+  {
+    id: "mcp-json",
+    label: "settings.aiAppsOthers",
+    logos: ["cursor", "lm-studio", "mcp"],
+    hint: "settings.aiAppsOthersHint",
+    key: "mcp_json",
+  },
 ];
 
 function CommandRow({
   id,
   label,
+  logo,
   windows,
   wsl,
   info,
 }: {
   id: string;
   label: MessageKey;
+  logo: AppId;
   windows: CommandKey;
   wsl?: CommandKey;
   info: AiApps | undefined;
@@ -39,7 +50,7 @@ function CommandRow({
   const text = info?.commands[tab === "wsl" && wsl ? wsl : windows];
   return (
     <SettingRow
-      label={t(label)}
+      label={<AppLabel apps={[logo]}>{t(label)}</AppLabel>}
       description={
         <span data-testid={`ai-app-${id}`}>
           {wsl && info?.bridge && (
@@ -189,14 +200,22 @@ export default function AiAppsSettings({ part }: { part: "access" | "apps" }) {
   return (
       <SettingGroup>
         {BY_COMMAND.map((app) => (
-          <CommandRow key={app.id} id={app.id} label={app.label} windows={app.windows} wsl={app.wsl} info={info} />
+          <CommandRow
+            key={app.id}
+            id={app.id}
+            label={app.label}
+            logo={app.logo}
+            windows={app.windows}
+            wsl={app.wsl}
+            info={info}
+          />
         ))}
         {BY_FILE.map((app) => {
           const text = info?.commands[app.key];
           return (
             <SettingRow
               key={app.id}
-              label={t(app.label)}
+              label={<AppLabel apps={app.logos}>{t(app.label)}</AppLabel>}
               description={
                 <span data-testid={`ai-app-${app.id}`}>
                   {t(app.hint)}
@@ -213,7 +232,12 @@ export default function AiAppsSettings({ part }: { part: "access" | "apps" }) {
           );
         })}
         <SettingRow
-          label={t("settings.aiAppsByUrl")}
+          label={
+            <span className="flex items-center gap-2">
+              <Globe size={18} aria-hidden="true" className="shrink-0 text-secondary" />
+              {t("settings.aiAppsByUrl")}
+            </span>
+          }
           description={
             <span data-testid="ai-app-url">
               {t("settings.aiAppsByUrlHint")}
