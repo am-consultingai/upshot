@@ -30,8 +30,16 @@ log = get(__name__)
 #: The apps added by a command of their own, and that command's program.
 PROGRAMS = {"claude_code": "claude", "codex": "codex", "antigravity": "agy"}
 
-#: The window's title, so the user can tell it from their own terminals.
-TITLE = "Upshot"
+#: Each app's name in its terminal's title.
+NAMES = {"claude_code": "Claude Code", "codex": "Codex", "antigravity": "Antigravity"}
+
+
+def title(app: str) -> str:
+    """The terminal's title: the user tells it from their own terminals, and the server
+    finds it by it to bring it forward. One per app, so two clicks for two apps, or a
+    terminal left open from before, are never taken for each other."""
+    return f"Upshot - {NAMES[app]}"
+
 
 #: Docker Desktop's own distributions hold no AI app of the user's.
 _SKIP_DISTROS = ("docker-desktop",)
@@ -227,7 +235,7 @@ def windows_line(command: str, program_path: str | None, fresh_path: str | None)
 _SINGLE_QUOTES = re.compile("(['\u2018\u2019\u201a\u201b])")
 
 
-def powershell_argv(line: str) -> list[str]:
+def powershell_argv(line: str, window_title: str) -> list[str]:
     """PowerShell with ``line`` at the prompt, not run: the user reads it and presses Enter.
 
     PSReadLine raises ``PowerShell.OnIdle`` while it waits for input; one handler inserts
@@ -241,8 +249,9 @@ def powershell_argv(line: str) -> list[str]:
     one on machine B.
     """
     quoted = _SINGLE_QUOTES.sub(r"\1\1", line)
+    named = _SINGLE_QUOTES.sub(r"\1\1", window_title)
     script = (
-        f"$Host.UI.RawUI.WindowTitle = '{TITLE}'; "
+        f"$Host.UI.RawUI.WindowTitle = '{named}'; "
         "Write-Host 'Press Enter to add Upshot. Empty line? Paste it with Ctrl+V.' "
         "-ForegroundColor DarkGray; "
         "Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -MaxTriggerCount 1 "
@@ -262,14 +271,14 @@ _WSL_SCRIPT = (
 )
 
 
-def wsl_argv(line: str, distro: str | None) -> list[str]:
+def wsl_argv(line: str, distro: str | None, window_title: str) -> list[str]:
     """A WSL shell with ``line`` ready at its prompt. ``-e``, not ``--``: the arguments go
     to bash as they are, not through the user's shell a second time; the line is bash's
     ``$1``, so nothing in it is quoted twice. Tested 2026-10-14 on machine A: started from
     Windows Python with ``CREATE_NEW_CONSOLE``, the window showed a line with ``"`` and
     ``$WSL_DISTRO_NAME`` intact, unexpanded (Enter was not pressed there)."""
     where = ["-d", distro] if distro else []
-    return ["wsl.exe", *where, "--cd", "~", "-e", "bash", "-lic", _WSL_SCRIPT, TITLE, line]
+    return ["wsl.exe", *where, "--cd", "~", "-e", "bash", "-lic", _WSL_SCRIPT, window_title, line]
 
 
 def launch(argv: list[str], fresh_path: str | None) -> None:

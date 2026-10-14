@@ -87,7 +87,9 @@ def test_the_windows_line_names_the_program_as_powershell_will_find_it(
 
 
 def test_powershell_types_the_line_and_runs_nothing() -> None:
-    argv = ai_terminal.powershell_argv('agy mcp add upshot "C:\\it\'s\\upshot-mcp.exe"')
+    argv = ai_terminal.powershell_argv(
+        'agy mcp add upshot "C:\\it\'s\\upshot-mcp.exe"', "Upshot - Codex"
+    )
     assert argv[:4] == ["powershell.exe", "-NoExit", "-NoProfile", "-Command"]
     script = argv[4]
     assert (
@@ -99,19 +101,21 @@ def test_powershell_types_the_line_and_runs_nothing() -> None:
 
 def test_every_quote_powershell_reads_as_a_single_quote_is_doubled() -> None:
     """A profile folder named O’Brien must not end the string early."""
-    script = ai_terminal.powershell_argv('agy mcp add upshot "C:\\Users\\O\u2019Brien\\x.exe"')[4]
+    script = ai_terminal.powershell_argv(
+        'agy mcp add upshot "C:\\Users\\O\u2019Brien\\x.exe"', "Upshot - Antigravity"
+    )[4]
     assert "O\u2019\u2019Brien" in script
     for quote in "\u2018\u201a\u201b'":
-        assert quote * 2 in ai_terminal.powershell_argv(f"a{quote}b")[4]
+        assert quote * 2 in ai_terminal.powershell_argv(f"a{quote}b", "Upshot - Codex")[4]
 
 
 def test_wsl_gets_the_line_as_an_argument_never_inside_the_script() -> None:
     line = 'codex mcp add upshot -- "/mnt/c/x/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"'
-    argv = ai_terminal.wsl_argv(line, "Ubuntu-24.04")
+    argv = ai_terminal.wsl_argv(line, "Ubuntu-24.04", "Upshot - Codex")
     assert argv[:6] == ["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "~", "-e"]
     assert argv[-1] == line and line not in argv[-3]
     assert 'read -e -i "$1"' in argv[-3]
-    assert ai_terminal.wsl_argv(line, None)[:3] == ["wsl.exe", "--cd", "~"]
+    assert ai_terminal.wsl_argv(line, None, "Upshot - Codex")[:3] == ["wsl.exe", "--cd", "~"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="looks things up on Windows")
@@ -125,3 +129,17 @@ def test_nothing_is_looked_up_off_windows() -> None:
 def test_the_path_is_read_again_from_the_registry() -> None:
     fresh = ai_terminal.registry_path()
     assert fresh, "the machine's and the user's PATH, joined"
+
+
+def test_each_app_has_its_own_title_and_the_terminal_carries_it() -> None:
+    titles = {ai_terminal.title(app) for app in ai_terminal.PROGRAMS}
+    assert titles == {"Upshot - Claude Code", "Upshot - Codex", "Upshot - Antigravity"}
+    assert "WindowTitle = 'Upshot - Codex'" in ai_terminal.powershell_argv("x", "Upshot - Codex")[4]
+    assert ai_terminal.wsl_argv("x", "Ubuntu-24.04", "Upshot - Codex")[-2] == "Upshot - Codex"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="lists real windows on Windows")
+def test_no_terminal_windows_are_listed_off_windows() -> None:
+    from app.window import terminal_windows
+
+    assert terminal_windows("Upshot - Codex") == set()
