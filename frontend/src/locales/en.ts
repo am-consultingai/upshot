@@ -1137,6 +1137,7 @@ export const en = {
   "settings.aiAppsOpenTerminal": "Open in terminal",
   "settings.aiAppsTerminalOpened": "Press Enter in the terminal to add Upshot.",
   "settings.aiAppsTerminalCopied": "Copied. Paste it in a terminal and press Enter.",
+  "settings.aiAppsTerminalNotCopied": "Couldn't copy it. Use Copy, then paste it in a terminal.",
   "settings.aiAppsChatGptSteps": "Or in the ChatGPT app: Settings → Plugins → MCPs → Add MCP server, then paste this path.",
   "settings.aiAppsMore": "More apps",
   "settings.aiAppsOthers": "Cursor, VS Code, LM Studio, mcphost and others",
