@@ -166,8 +166,11 @@ def max_hours(svc: Services) -> float:
     device = svc.extras.get("transcription_device")
     if device is None:
         from app.asr.local import planned_device
+        from app.asr.models import HEBREW
 
-        device = planned_device(svc.config)
+        # The Hebrew model's device (D99): on a 2 GB card an English file runs on the
+        # CPU under the GPU's limit.
+        device = planned_device(svc.config, role=HEBREW)
         svc.extras["transcription_device"] = device
     return 6.0 if device == "cuda" else 2.0
 

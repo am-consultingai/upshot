@@ -416,7 +416,14 @@ def test_the_gpu_libraries_are_refused_on_a_full_drive(
 
 @pytest.mark.parametrize(
     ("device", "memory", "want"),
-    [("auto", 8192, True), ("auto", 2048, False), ("auto", None, False), ("cpu", 8192, False)],
+    [
+        ("auto", 8192, True),
+        # A 2 GB card runs Hebrew on the GPU (D99); 2048 MiB is what machine B reports.
+        ("auto", 2048, True),
+        ("auto", 2047, False),
+        ("auto", None, False),
+        ("cpu", 8192, False),
+    ],
 )
 def test_the_libraries_are_wanted_only_where_the_gpu_would_be_used(
     device: str, memory: int | None, want: bool
@@ -584,6 +591,13 @@ def test_the_progress_text_is_in_the_installer_s_language(app_home: Path, tmp_pa
     # Only the text is translated: the keys and values the installer acts on are not.
     final = read_progress(tmp_path / "prepare.txt")
     assert final["stage"] == "done" and final["state"] == "ready" and final["percent"] == "100"
+
+
+def test_a_small_gpus_reason_is_one_the_installer_translates() -> None:
+    want, why = wanted(default_config(), vram=lambda: 1024)
+    assert not want
+    assert why == "the GPU has 1024 MB, under the 2048 MB the model needs"
+    assert prepare.reason(why, "he") != why
 
 
 def test_a_reason_for_no_gpu_libraries_is_translated() -> None:

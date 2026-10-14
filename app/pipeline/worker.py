@@ -151,8 +151,10 @@ class Worker:
         key = (self.config.get("asr.device", "auto"), self.config.get("asr.cuda_dir"))
         if self._auto_profile is None or self._auto_profile[0] != key:
             from app.asr.local import planned_device
+            from app.asr.models import HEBREW
 
-            device = planned_device(self.config)
+            # The Hebrew model's device, the default language's (D99).
+            device = planned_device(self.config, role=HEBREW)
             self._auto_profile = (key, "gpu-live" if device == "cuda" else "cpu-deferred")
         return self._auto_profile[1]
 
