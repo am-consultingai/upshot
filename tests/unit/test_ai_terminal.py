@@ -193,7 +193,68 @@ def test_a_list_that_fails_is_empty_not_an_error(monkeypatch: pytest.MonkeyPatch
 def test_two_clicks_for_one_app_bring_forward_two_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     from app import window
 
-    monkeypatch.setattr(window, "_CLAIMED", set())
-    assert window._claim({11, 12}) == 11
-    assert window._claim({11, 12}) == 12
-    assert window._claim({11, 12}) is None
+    monkeypatch.setattr(window, "_CLAIMED", {})
+    assert window._claim({11, 12}, now=100.0) == 11
+    assert window._claim({11, 12}, now=100.5) == 12
+    assert window._claim({11, 12}, now=101.0) is None
+
+
+def test_a_claim_lasts_only_while_the_clicks_look(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows Terminal may put every new tab into one window: it comes forward each time."""
+    from app import window
+
+    monkeypatch.setattr(window, "_CLAIMED", {})
+    assert window._claim({11}, now=100.0) == 11
+    assert window._claim({11}, now=100.0 + window.CLAIM_S + 1) == 11
+
+
+def _fake_desktop(
+    monkeypatch: pytest.MonkeyPatch, windows: dict[int, str], *, minimized: set[int]
+) -> list[tuple[str, int]]:
+    """Fake pywin32 for ``terminal_forward``: Upshot's window (99) in front, terminals by
+    title, and a record of what was done to which window."""
+    import types
+
+    from app import window
+
+    calls: list[tuple[str, int]] = []
+    win32gui = types.SimpleNamespace(
+        EnumWindows=lambda visit, extra: [visit(hwnd, extra) for hwnd in list(windows)],
+        IsWindowVisible=lambda hwnd: True,
+        GetClassName=lambda hwnd: "CASCADIA_HOSTING_WINDOW_CLASS",
+        GetWindowText=lambda hwnd: windows[hwnd],
+        GetForegroundWindow=lambda: 99,
+        IsIconic=lambda hwnd: hwnd in minimized,
+        ShowWindow=lambda hwnd, how: calls.append(("restore", hwnd)),
+        SetForegroundWindow=lambda hwnd: calls.append(("front", hwnd)),
+    )
+    win32con = types.SimpleNamespace(SW_RESTORE=9, VK_MENU=18, KEYEVENTF_KEYUP=2)
+    win32api = types.SimpleNamespace(keybd_event=lambda *args: None)
+    for name, module in (("win32gui", win32gui), ("win32con", win32con), ("win32api", win32api)):
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(window, "_is_ours", lambda gui, hwnd: hwnd == 99)
+    monkeypatch.setattr(window, "_CLAIMED", {})
+    return calls
+
+
+def test_a_window_open_before_the_click_never_comes_forward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It may be one the user kept for their own work, a command half typed in."""
+    from app import window
+
+    calls = _fake_desktop(monkeypatch, {5: "Upshot - Codex"}, minimized=set())
+    assert window.terminal_forward("Upshot - Codex", {5}, window_s=0.2) == "no terminal window"
+    assert calls == []
+
+
+def test_a_minimized_new_terminal_is_restored_then_brought_forward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import window
+
+    calls = _fake_desktop(monkeypatch, {5: "Upshot - Codex", 6: "Upshot - Codex"}, minimized={6})
+    outcome = window.terminal_forward("Upshot - Codex", {5}, window_s=0.2)
+    assert outcome == "brought the terminal forward"
+    assert calls == [("restore", 6), ("front", 6)]

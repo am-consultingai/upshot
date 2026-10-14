@@ -175,22 +175,30 @@ def bring_terminal_forward(title: str, before: set[int]) -> None:
     threading.Thread(target=work, name="terminal-forward", daemon=True).start()
 
 
-#: Terminals already brought forward: two quick clicks for one app open two windows of
-#: one title, and each click's thread takes the one the other has not.
-_CLAIMED: set[int] = set()
+#: Terminals being brought forward, and when each was taken: two quick clicks for one app
+#: open two windows of one title, and each click's thread takes the one the other has not.
+#: A claim lasts only while those threads look (``CLAIM_S``): Windows Terminal may put
+#: every new tab into the same window, and that window must come forward again next time.
+_CLAIMED: dict[int, float] = {}
 _CLAIMED_LOCK = threading.Lock()
+TERMINAL_WINDOW_S = 5.0
+CLAIM_S = 2 * TERMINAL_WINDOW_S
 
 
-def _claim(candidates: set[int]) -> int | None:
+def _claim(candidates: set[int], now: float | None = None) -> int | None:
+    now = time.monotonic() if now is None else now
     with _CLAIMED_LOCK:
-        free = sorted(candidates - _CLAIMED)
+        for hwnd, taken in list(_CLAIMED.items()):
+            if now - taken > CLAIM_S:
+                del _CLAIMED[hwnd]
+        free = sorted(candidates - _CLAIMED.keys())
         if not free:
             return None
-        _CLAIMED.add(free[0])
+        _CLAIMED[free[0]] = now
         return free[0]
 
 
-def terminal_forward(title: str, before: set[int], *, window_s: float = 5.0) -> str:
+def terminal_forward(title: str, before: set[int], *, window_s: float = TERMINAL_WINDOW_S) -> str:
     """Put the terminal this server just opened in front of Upshot's window.
 
     The same reason as ``browser_forward``: Windows gives the foreground to the program
