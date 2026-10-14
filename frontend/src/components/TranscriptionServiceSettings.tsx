@@ -39,13 +39,16 @@ export function Command({ text, testid }: { text: string; testid: string }) {
 }
 
 /**
+ * `part`: "claude" is the Connect Claude group alone, first in Settings → AI apps; "rest"
+ * is the transcription switch and the API, further down.
+ *
  * Settings → "Transcription for other apps" (D86, R3; plan revision 5): the switch, then
  * one card for each Claude. Upshot never edits Claude's files: Claude Desktop is handed the
  * extension and shows its own install window, and Claude Code is given a command to paste.
  * Whether Upshot is already added there is not shown: knowing would mean reading Claude's
  * own files.
  */
-export default function TranscriptionServiceSettings() {
+export default function TranscriptionServiceSettings({ part = "all" }: { part?: "claude" | "rest" | "all" }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const connect = useQuery({ queryKey: ["transcription-connect"], queryFn: api.transcriptionConnect });
@@ -83,6 +86,7 @@ export default function TranscriptionServiceSettings() {
 
   return (
     <>
+      {part !== "claude" && (
       <SettingGroup>
         <SettingRow
           label={t("settings.transcriptionSwitch")}
@@ -104,7 +108,9 @@ export default function TranscriptionServiceSettings() {
           />
         </SettingRow>
       </SettingGroup>
+      )}
 
+      {part !== "rest" && (
       <SettingGroup title={t("settings.transcriptionConnect")}>
         <SettingRow
           label={t("settings.transcriptionDesktop")}
@@ -211,7 +217,9 @@ export default function TranscriptionServiceSettings() {
           {installedApp && command && <CopyButton text={command} testid={`transcription-copy-${tab}`} />}
         </SettingRow>
       </SettingGroup>
+      )}
 
+      {part !== "claude" && (
       <SettingGroup title={t("settings.transcriptionDevelopers")}>
         <SettingRow
           label={t("settings.transcriptionApiUrl")}
@@ -226,6 +234,7 @@ export default function TranscriptionServiceSettings() {
           {info && <CopyButton text={info.curl_example} testid="transcription-copy-curl" />}
         </SettingRow>
       </SettingGroup>
+      )}
     </>
   );
 }
