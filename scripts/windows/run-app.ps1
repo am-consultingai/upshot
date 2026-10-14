@@ -320,10 +320,10 @@ try {
             }
         } catch { }
     }
-    # large-v3 is around 1.6 GB in int8, before activations and CUDA's own context. Below
-    # this it does not fit, and finding that out costs a 700 MB download and an OOM at the
-    # first transcription - so the question is not worth asking.
-    $gpuMinMB = 4096
+    # The Hebrew model's minimum (D99, MIN_VRAM_MB in app/asr/local.py): the ivrit turbo
+    # peaks at about 1.3 GB at int8_float16, so a 2 GB card runs Hebrew on the GPU. Other
+    # languages need 4 GB and run on the CPU below that.
+    $gpuMinMB = 2048
     $haveNvidia = $gpuMemMB -ge $gpuMinMB
     if ($gpuName -and -not $haveNvidia) {
         Write-Warn "$gpuName has ${gpuMemMB} MB - under the ${gpuMinMB} MB the model needs,"

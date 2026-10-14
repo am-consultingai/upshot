@@ -295,7 +295,8 @@ def probe_device(
         # Hidden only when no model would use the GPU: CUDA reads this once per process,
         # and on a 2 GB card an English meeting on the CPU may come before a Hebrew one
         # on the GPU.
-        if plan_device(config, dirs, vram=vram, role=CLASSIFIER).device == "cpu":
+        smallest = min(MIN_VRAM_MB, key=MIN_VRAM_MB.__getitem__)
+        if plan_device(config, dirs, vram=vram, role=smallest).device == "cpu":
             env["CUDA_VISIBLE_DEVICES"] = ""
         compute = configured_compute if configured_compute != "auto" else "int8"
         return "cpu", compute, []
