@@ -653,6 +653,7 @@ export const en = {
   "assistant.source": "Source",
   "assistant.tool.list_meetings": "Listed meetings",
   "assistant.tool.get_meeting": "Read a meeting's summary and action items",
+  "assistant.tool.get_summary": "Read a meeting's full summary",
   "assistant.tool.get_transcript": "Read a transcript",
   "assistant.tool.list_action_items": "Looked through action items",
   "assistant.tool.calendar_range": "Checked the calendar from {from}",
