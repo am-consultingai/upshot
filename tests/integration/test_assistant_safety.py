@@ -81,6 +81,7 @@ def test_every_tool_only_reads() -> None:
     assert sorted(names) == [
         "calendar_range",
         "get_meeting",
+        "get_summary",
         "get_transcript",
         "list_action_items",
         "list_meetings",

@@ -465,6 +465,7 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
     import re
     from pathlib import Path
 
+    from app.ai_apps import router as ai_apps_router
     from app.api.routes import router
     from app.assistant.api import router as assistant_router
     from app.diagnostics.api import router as diagnostics_router
@@ -487,6 +488,7 @@ def test_every_endpoint_the_ui_calls_exists() -> None:
         re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", route.path) + "$")  # type: ignore[attr-defined]
         for route in [
             *router.routes,
+            *ai_apps_router.routes,
             *assistant_router.routes,
             *legal_router.routes,
             *transcription_router.routes,
