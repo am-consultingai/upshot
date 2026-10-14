@@ -46,6 +46,10 @@ describe("catalogue parity", () => {
     "settings.transcriptionCode",
     "settings.transcriptionTabWindows",
     "settings.transcriptionTabWsl",
+    "settings.aiAppsCodex",
+    "settings.aiAppsAntigravity",
+    "settings.aiAppsGemini",
+    "settings.aiAppsVsCode",
     "meeting.exportMarkdown",
     "assistant.provider.anthropic",
     "assistant.provider.openai",
@@ -71,11 +75,11 @@ describe("catalogue parity", () => {
       "meeting.pause", "meetingInfo.hours", "meetingInfo.minutes", "calendar.google",
       "invite.links", "invite.optional", "feedback.title", "feedback.kind.problem",
       "updates.version", "updates.status", "common.minutes", "common.hours", "rail.in",
-      "firstRun.ai.code", "terms.ok",
+      "firstRun.ai.code", "terms.ok", "aiActivity.filter", "settings.aiAppsUrlDocker",
     ],
     es: [
       "meetingInfo.hours", "meetingInfo.minutes", "calendar.google", "feedback.kind.idea",
-      "common.minutes", "common.hours",
+      "common.minutes", "common.hours", "aiActivity.filter",
     ],
     fr: [
       "palette.do", "meeting.pause", "meetingInfo.description", "meetingInfo.hours",
@@ -84,6 +88,7 @@ describe("catalogue parity", () => {
       "assistant.open", "assistant.source", "meeting.sections", "firstRun.ai.code",
       "firstRun.audio.mic", "terms.ok", "nav.transcriptions", "transcriptions.title",
       "recording.pause", "detector.score", "settings.models.assistant",
+      "aiApps.tabTranscriptions", "aiActivity.filter",
     ],
   };
 
