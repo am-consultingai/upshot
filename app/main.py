@@ -72,6 +72,11 @@ def shell(path: Path) -> Response:
     )
 
 
+def _activity(svc: Services) -> Any:
+    """What ``/mcp/ext/`` tells the activity log (D98); nothing until the log exists."""
+    return None
+
+
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:
     svc = services or build(config)
     from app.assistant import mcp as assistant_mcp
@@ -85,6 +90,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     from app.version import build_info
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
+    ext_app, ext_server = assistant_mcp.mount_ext(svc, record=_activity(svc))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -100,7 +106,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
             svc.models.refresh_in_background(providers_to_list(svc.config))
         # The assistant's MCP server keeps its sessions in a task group that must be
         # running for as long as the app is; a mounted app's own lifespan never runs.
-        async with mcp_server.session_manager.run():
+        async with mcp_server.session_manager.run(), ext_server.session_manager.run():
             yield
 
     app = FastAPI(
@@ -119,6 +125,9 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(updates_router)
     app.include_router(diagnostics_router)
     app.include_router(feedback_router)
+    # The longer prefix first: a mount matches every path under it, and /mcp would take
+    # /mcp/ext/ too.
+    app.mount(assistant_mcp.EXT_PREFIX, ext_app)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())

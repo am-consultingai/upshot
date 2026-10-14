@@ -599,6 +599,7 @@ export const fr: Record<MessageKey, string> = {
   "assistant.source": "Source",
   "assistant.tool.list_meetings": "Liste des réunions consultée",
   "assistant.tool.get_meeting": "Lecture du résumé et des tâches d'une réunion",
+  "assistant.tool.get_summary": "Lecture du résumé complet d'une réunion",
   "assistant.tool.get_transcript": "Lecture d'une transcription",
   "assistant.tool.list_action_items": "Consultation des tâches",
   "assistant.tool.calendar_range": "Consultation de l'agenda à partir du {from}",

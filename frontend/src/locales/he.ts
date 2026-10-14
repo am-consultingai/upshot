@@ -647,6 +647,7 @@ export const he: Record<MessageKey, string> = {
   "assistant.source": "מקור",
   "assistant.tool.list_meetings": "רשימת פגישות",
   "assistant.tool.get_meeting": "קריאת הסיכום והמשימות של פגישה",
+  "assistant.tool.get_summary": "קריאת הסיכום המלא של פגישה",
   "assistant.tool.get_transcript": "קריאת תמליל",
   "assistant.tool.list_action_items": "מעבר על המשימות",
   "assistant.tool.calendar_range": "בדיקת היומן מ־{from}",

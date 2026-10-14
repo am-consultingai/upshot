@@ -599,6 +599,7 @@ export const es: Record<MessageKey, string> = {
   "assistant.source": "Fuente",
   "assistant.tool.list_meetings": "Enumeró las reuniones",
   "assistant.tool.get_meeting": "Leyó el resumen y las tareas de una reunión",
+  "assistant.tool.get_summary": "Leyó el resumen completo de una reunión",
   "assistant.tool.get_transcript": "Leyó una transcripción",
   "assistant.tool.list_action_items": "Revisó las tareas",
   "assistant.tool.calendar_range": "Consultó el calendario desde {from}",
