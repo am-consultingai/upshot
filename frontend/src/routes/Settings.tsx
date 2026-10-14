@@ -10,6 +10,7 @@ import AudioDeviceSettings from "../components/AudioDeviceSettings";
 import ActiveJobs from "../components/ActiveJobs";
 import TranscriptionServiceSettings from "../components/TranscriptionServiceSettings";
 import AiAppsSettings from "../components/AiAppsSettings";
+import AppRequests from "../components/AppRequests";
 import UpdateSettings from "../components/UpdateSettings";
 import PrivacySettings from "../components/PrivacySettings";
 import StorageSettings from "../components/StorageSettings";
@@ -49,6 +50,8 @@ const SECTIONS: SettingsSection[] = [
   { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents", purpose: "settings.purposeSummaries" },
   { id: "prompt", label: "settings.prompt", purpose: "settings.purposePrompt" },
   { id: "transcription", label: "settings.groupTranscription", purpose: "settings.purposeTranscription" },
+  // What the AI apps asked, and the files transcribed (D98); was a page of its own.
+  { id: "requests", label: "settings.groupRequests", purpose: "settings.purposeRequests" },
   { id: "storage", label: "settings.groupStorage", purpose: "settings.purposeStorage" },
   // Crash reports: the answer given in setup, and what was last sent (D87).
   { id: "privacy", label: "settings.groupPrivacy", purpose: "settings.purposePrivacy" },
@@ -271,6 +274,7 @@ export default function Settings() {
           <TranscriptionServiceSettings />
         </>
       )}
+      {section === "requests" && <AppRequests />}
       {section === "storage" && <StorageSettings />}
       {section === "privacy" && <PrivacySettings />}
       {section === "about" && <UpdateSettings />}
