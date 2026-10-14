@@ -72,13 +72,27 @@ def shell(path: Path) -> Response:
     )
 
 
+#: The meeting tools whose argument is a meeting id: the log shows the meeting's title.
+_BY_MEETING = frozenset({"get_meeting", "get_summary", "get_transcript", "related_meetings"})
+
+
 def _activity(svc: Services) -> Any:
-    """What ``/mcp/ext/`` tells the activity log (D98); nothing until the log exists."""
-    return None
+    """What ``/mcp/ext/`` tells the activity log (D98)."""
+    from app.access_log import agent_of
+
+    def record(tool: str, target: str, headers: Any, size: int, outcome: str) -> None:
+        if tool in _BY_MEETING and target:
+            meeting = svc.dao.get_meeting(target)
+            if meeting is not None and meeting.title:
+                target = meeting.title
+        svc.access_log.record("mcp", agent_of(headers), tool, target, outcome, size)
+
+    return record
 
 
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:
     svc = services or build(config)
+    from app.ai_apps import router as ai_apps_router
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
     from app.diagnostics.api import router as diagnostics_router
@@ -119,6 +133,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.state.services = svc
     app.include_router(router)
     app.include_router(assistant_router)
+    app.include_router(ai_apps_router)
     app.include_router(legal_router)
     app.include_router(transcription_router)
     app.include_router(transcription_ui_router)
