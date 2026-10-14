@@ -420,3 +420,74 @@ def test_save_to_refuses_a_network_path_and_a_wrong_name(tmp_path: Path) -> None
     assert not (tmp_path / "notes.docx").exists()
     bridge._save(_Done(), dict(_JOB), "srt", str(tmp_path / "new folder"))  # type: ignore[arg-type]
     assert (tmp_path / "new folder" / "talk.srt").exists()
+
+
+# ----------------------------------------------------------------------- the access key (D98)
+
+
+class KeyedApp:
+    """A stand-in Upshot on a socket that wants ``key`` and records what it was sent."""
+
+    def __init__(self, key: str) -> None:
+        import http.server
+
+        self.key = key
+        self.seen: list[dict[str, str]] = []
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                outer.seen.append(dict(self.headers))
+                ok = self.headers.get("Authorization") == f"Bearer {outer.key}"
+                body = json.dumps({"transcriptions": []} if ok else {"detail": "key"}).encode()
+                self.send_response(200 if ok else 401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_the_bridge_sends_the_key_and_reads_it_again_after_a_reset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    monkeypatch.delenv(upshot.KEY_ENV, raising=False)
+    (tmp_path / upshot.KEY_FILE).write_text("first-key\n", encoding="utf-8")
+    app = KeyedApp("first-key")
+    try:
+        client = upshot.Upshot(app.url)
+        client.agent = "claude-code"
+        assert client.recent(5) == []
+        assert app.seen[-1]["Authorization"] == "Bearer first-key"
+        assert app.seen[-1]["X-Upshot-Agent"] == "claude-code"
+        # Reset in Settings: the app wants a new key, and the file holds it.
+        app.key = "second-key"
+        (tmp_path / upshot.KEY_FILE).write_text("second-key", encoding="utf-8")
+        assert client.recent(5) == []
+        assert client.key == "second-key"
+        # A key nobody has: said in words a person can act on.
+        app.key = "nobody-has-this"
+        with pytest.raises(upshot.UpshotError, match="restart this AI app"):
+            client.recent(5)
+    finally:
+        app.close()
+
+
+def test_upshot_key_overrides_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    (tmp_path / upshot.KEY_FILE).write_text("from-file", encoding="utf-8")
+    monkeypatch.setenv(upshot.KEY_ENV, "from-env")
+    assert upshot.access_key() == "from-env"
+    monkeypatch.delenv(upshot.KEY_ENV)
+    assert upshot.access_key() == "from-file"
