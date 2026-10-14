@@ -151,6 +151,7 @@ def test_the_tool_server_opens_only_with_its_own_token(api) -> None:  # type: ig
     assert names == [
         "calendar_range",
         "get_meeting",
+        "get_summary",
         "get_transcript",
         "list_action_items",
         "list_meetings",
