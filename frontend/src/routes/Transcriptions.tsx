@@ -40,8 +40,18 @@ export default function AiAppsPage() {
             key={value}
             type="button"
             role="tab"
+            id={`ai-apps-tab-${value}`}
+            aria-controls="ai-apps-panel"
+            tabIndex={tab === value ? 0 : -1}
             data-testid={`ai-apps-tab-${value}`}
             aria-selected={tab === value}
+            onKeyDown={(event) => {
+              // Arrow keys move between the tabs, as a tab list should.
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              const next = TABS[(TABS.indexOf(value) + 1) % TABS.length];
+              setParams(next === "activity" ? { tab: next } : {}, { replace: true });
+              document.getElementById(`ai-apps-tab-${next}`)?.focus();
+            }}
             onClick={() => setParams(value === "activity" ? { tab: value } : {}, { replace: true })}
             className={`flex h-control-sm items-center rounded-sm px-3 text-sm ${
               tab === value
@@ -53,7 +63,9 @@ export default function AiAppsPage() {
           </button>
         ))}
       </div>
-      {tab === "activity" ? <AiActivity /> : <TranscriptionsTab />}
+      <div id="ai-apps-panel" role="tabpanel" aria-labelledby={`ai-apps-tab-${tab}`}>
+        {tab === "activity" ? <AiActivity /> : <TranscriptionsTab />}
+      </div>
     </section>
   );
 }

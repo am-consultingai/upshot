@@ -195,6 +195,9 @@ export default function TranscriptionServiceSettings() {
                   {command && <Command text={command} testid={`transcription-copy-${tab}`} />}
                   {tab === "wsl" && <span className="mt-1 block">{t("settings.transcriptionWslNote")}</span>}
                   <span className="mt-1 block">{t("settings.transcriptionCodeTry")}</span>
+                  <span className="mt-1 block text-tertiary" data-testid="claude-code-old-name">
+                    {t("settings.transcriptionCodeOld")}
+                  </span>
                 </>
               ) : (
                 <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>

@@ -92,7 +92,11 @@ export default function AiAppsSettings() {
       void queryClient.invalidateQueries({ queryKey: ["settings"] });
       void queryClient.invalidateQueries({ queryKey: ["ai-apps"] });
     },
-    onError: failed,
+    onError: (error) => {
+      // Show what the server still does, not the value that failed to save.
+      setEnabled(null);
+      failed(error);
+    },
   });
   const reveal = useMutation({ mutationFn: api.aiAppsKey, onSuccess: (data) => setKey(data.key), onError: failed });
   const reset = useMutation({

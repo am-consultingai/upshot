@@ -238,7 +238,8 @@ class TokenGuard:
             for key, value in scope.get("headers", []):
                 if key.lower() == b"authorization":
                     given = value.decode("latin-1")
-            if not secrets.compare_digest(given, f"Bearer {self.token()}"):
+            expected = f"Bearer {self.token()}".encode()
+            if not secrets.compare_digest(given.encode("latin-1"), expected):
                 await send(
                     {
                         "type": "http.response.start",
@@ -296,6 +297,20 @@ def mount_ext(svc: Services, record: Recorder | None = None) -> tuple[ASGIApp, A
         _streamable(server, docker=True), lambda: svc.auth.access_key, detail=EXT_KEY_DETAIL
     )
     return guarded, server
+
+
+class WithoutSlash:
+    """``/mcp/ext`` as ``/mcp/ext/``: a URL pasted without its slash would otherwise fall
+    to the ``/mcp`` mount, the assistant's, and be told its key is wrong. A class, so
+    Starlette's ``Route`` takes it as an ASGI app rather than an endpoint function."""
+
+    def __init__(self, ext_app: ASGIApp) -> None:
+        self.ext_app = ext_app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        root = str(scope.get("root_path", ""))
+        moved = {**scope, "root_path": root + EXT_PREFIX, "path": EXT_PREFIX + "/"}
+        await self.ext_app(moved, receive, send)
 
 
 def client_config(port: int, token: str) -> dict[str, Any]:

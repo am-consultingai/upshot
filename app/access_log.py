@@ -25,6 +25,8 @@ CHANNELS = frozenset({"mcp", "api"})
 OUTCOMES = frozenset({"ok", "refused", "error"})
 AGENT_CHARS = 64
 TARGET_CHARS = 200
+#: Refusals of callers without the key, collapsed to one line per this many seconds.
+COLLAPSE_S = 60
 
 
 @dataclass(frozen=True)
@@ -73,9 +75,24 @@ class AccessLog:
         target: str = "",
         outcome: str = "ok",
         size: int = 0,
+        *,
+        collapse: bool = False,
     ) -> None:
-        """Never raises: a request is not refused because its record could not be written."""
+        """Never raises: a request is not refused because its record could not be written.
+
+        ``collapse``: a request from a caller without the key, which anything that reaches
+        the port can send in a loop under any name. One such line per channel and action a
+        minute, so they cannot push the real requests out of the log."""
         try:
+            if collapse:
+                since = (self.clock.now() - timedelta(seconds=COLLAPSE_S)).isoformat()
+                recent = self.conn.execute(
+                    "SELECT 1 FROM access_log WHERE channel = ? AND action = ? "
+                    "AND outcome = ? AND at >= ? LIMIT 1",
+                    (channel, clean(action, 64), outcome, since),
+                ).fetchone()
+                if recent is not None:
+                    return
             self.conn.execute(
                 "INSERT INTO access_log (at, channel, agent, action, target, outcome, size) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",

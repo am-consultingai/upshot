@@ -189,30 +189,36 @@ class AssistantTools:
         return as_data(fit(payload, "action_items", "call list_action_items with this meeting_id"))
 
     def get_summary(self, meeting_id: str, part: int = 1) -> str:
-        """The whole summary, in parts of :data:`MAX_CHARS`, and its chapters (D98)."""
+        """The whole summary, in parts that fit :data:`MAX_CHARS`, and its chapters with the
+        first part (D98). The first part is shorter by what the chapters take."""
         meeting = self.svc.dao.visible_meeting(meeting_id)
         if meeting is None:
             return self._missing(meeting_id)
         text = self.svc.dao.summary_text(meeting.id)
-        size = MAX_CHARS - 2_000  # room for the chapters and the rest of the reply
-        parts = max(1, -(-len(text) // size))
+        chapters = [
+            {"title": c["title"][:200], "start_ms": c["start_ms"], "time": clock(c["start_ms"])}
+            for c in _chapters(meeting)
+        ][:100]
+        room = MAX_CHARS - 1_500  # the rest of the reply: ids, title, the note on what follows
+        first = max(2_000, room - _size(chapters))
+        rest = len(text) - first
+        parts = 1 if rest <= 0 else 1 + -(-rest // room)
         part = max(1, min(int(part or 1), parts))
+        begin = 0 if part == 1 else first + (part - 2) * room
+        end = first if part == 1 else begin + room
         payload: dict[str, Any] = {
             "meeting_id": meeting.id,
             "title": meeting.title or "",
             "started_at": meeting.started_at,
             "part": part,
             "parts": parts,
-            "summary": text[(part - 1) * size : part * size] or None,
+            "summary": text[begin:end] or None,
         }
         if not text:
             payload["note"] = "This meeting has no summary yet."
         if part == 1:
             # Where each topic starts: get_transcript with from_ms reads what was said.
-            payload["chapters"] = [
-                {"title": c["title"], "start_ms": c["start_ms"], "time": clock(c["start_ms"])}
-                for c in _chapters(meeting)
-            ][:100]
+            payload["chapters"] = chapters
         if part < parts:
             payload["next"] = f"More follows. Call again with part={part + 1}."
         return as_data(payload)

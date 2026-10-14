@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Route
 
 from app import paths
 from app.api.routes import router, test_router
@@ -142,6 +143,9 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(feedback_router)
     # The longer prefix first: a mount matches every path under it, and /mcp would take
     # /mcp/ext/ too.
+    app.router.routes.append(
+        Route(assistant_mcp.EXT_PREFIX, assistant_mcp.WithoutSlash(ext_app), methods=None)
+    )
     app.mount(assistant_mcp.EXT_PREFIX, ext_app)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():

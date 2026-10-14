@@ -22,6 +22,9 @@ CLIENT = "mcp"
 #: where 0.5 s read as "not running"), the fallback range less.
 RECORDED_TIMEOUT_S = 10.0
 PROBE_TIMEOUT_S = 2.0
+#: For a quick look (``candidates(quick=True)``): long enough for a busy Upshot to answer
+#: its info, short enough that a client listing tools is not kept waiting.
+QUICK_TIMEOUT_S = 3.0
 CHUNK = 1 << 20
 #: The access key's file in the app home (D98), and what overrides it.
 KEY_FILE = "access.key"
@@ -103,27 +106,31 @@ def access_key() -> str:
         return ""
 
 
-def candidates(url: str | None = None) -> Iterator[tuple[str, float]]:
+def candidates(url: str | None = None, *, quick: bool = False) -> Iterator[tuple[str, float]]:
     """Where to look, in order, and how long each may take: what was given, the port the
-    app recorded, then the usual ports."""
+    app recorded, then the usual ports. ``quick``: the first two only, briefly, for a
+    question the client waits on (D98: tools/list, before Upshot has started)."""
+    wait = QUICK_TIMEOUT_S if quick else RECORDED_TIMEOUT_S
     given = url or os.environ.get("UPSHOT_URL")
     if given:
-        yield given.rstrip("/"), RECORDED_TIMEOUT_S
+        yield given.rstrip("/"), wait
         return
     try:
         port = int((app_home() / "server.port").read_text(encoding="utf-8").strip())
-        yield f"http://127.0.0.1:{port}", RECORDED_TIMEOUT_S
+        yield f"http://127.0.0.1:{port}", wait
     except (OSError, ValueError):
         pass
+    if quick:
+        return
     for port in PORTS:
         yield f"http://127.0.0.1:{port}", PROBE_TIMEOUT_S
 
 
-def discover(url: str | None = None) -> Upshot:
+def discover(url: str | None = None, *, quick: bool = False) -> Upshot:
     """The running Upshot, or :class:`NotRunning`. A stale ``server.port`` or another
     program on the port is skipped: only an answer naming ``app: "upshot"`` counts."""
     seen: set[str] = set()
-    for base, timeout in candidates(url):
+    for base, timeout in candidates(url, quick=quick):
         if base in seen:
             continue
         seen.add(base)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import wave
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,7 @@ def wav(path: Path) -> Path:
     return path
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
 def test_program_requests_to_the_api_are_logged_and_the_page_is_not(
     h: ApiHarness, tmp_path: Path
 ) -> None:
@@ -178,3 +180,16 @@ def test_commands_for_each_app(monkeypatch: pytest.MonkeyPatch) -> None:
     }
     assert json.loads(found["vscode_json"])["servers"]["upshot"]["type"] == "stdio"
     assert ai_apps.commands(None) == {}
+
+
+def test_refusals_without_the_key_collapse_to_one_line_a_minute(h: ApiHarness) -> None:
+    """Anything that reaches the port can send them in a loop, under any name."""
+    program = h.client(authorized=False)
+    for _ in range(50):
+        program.cookies.clear()
+        program.get("/api/v1/transcriptions", headers={"X-Upshot-Agent": "Claude Desktop"})
+    assert len(h.services.access_log.recent()) == 1
+    h.services.clock.advance(61)  # type: ignore[attr-defined]
+    program.cookies.clear()
+    program.get("/api/v1/transcriptions")
+    assert len(h.services.access_log.recent()) == 2
