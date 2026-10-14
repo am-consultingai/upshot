@@ -269,11 +269,13 @@ def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(
         upshot,
         "candidates",
-        lambda url=None: iter([("http://127.0.0.1:43217", 2.0), ("http://127.0.0.1:43218", 2.0)]),
+        lambda url=None, **_: iter(
+            [("http://127.0.0.1:43217", 2.0), ("http://127.0.0.1:43218", 2.0)]
+        ),
     )
     assert upshot.discover().base == "http://127.0.0.1:43218"
     monkeypatch.setattr(
-        upshot, "candidates", lambda url=None: iter([("http://127.0.0.1:43217", 2.0)])
+        upshot, "candidates", lambda url=None, **_: iter([("http://127.0.0.1:43217", 2.0)])
     )
     with pytest.raises(upshot.NotRunning, match="Start Upshot"):
         upshot.discover()
@@ -316,7 +318,7 @@ def test_the_bridge_keeps_the_upshot_it_found(monkeypatch: pytest.MonkeyPatch) -
         def refresh(self) -> None:
             found.append("refresh")
 
-    def discover(url: str | None = None) -> App:
+    def discover(url: str | None = None, **_: object) -> App:
         found.append("discover")
         return App()
 
@@ -533,3 +535,22 @@ def test_the_agent_name_is_cleaned_for_a_header() -> None:
     assert bridge.agent.startswith("claude-codeX-Evil: 1") and len(bridge.agent) == 64
     bridge.initialized({"clientInfo": "nonsense"})
     assert bridge.agent == ""
+
+
+def test_listing_tools_before_upshot_starts_is_quick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The client waits on tools/list: no scan of every port, only the recorded one."""
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    monkeypatch.delenv("UPSHOT_URL", raising=False)
+    (tmp_path / "server.port").write_text("43217", encoding="utf-8")
+    asked: list[tuple[str, float]] = []
+
+    def fake(url: str, timeout: float) -> dict:  # type: ignore[type-arg]
+        asked.append((url, timeout))
+        raise OSError("refused")
+
+    monkeypatch.setattr(upshot, "_get_json", fake)
+    listed = tools.Bridge().meeting_tools()
+    assert asked == [("http://127.0.0.1:43217/api/v1/info", upshot.QUICK_TIMEOUT_S)]
+    assert {tool["name"] for tool in listed} >= {"search", "get_transcript", "get_summary"}

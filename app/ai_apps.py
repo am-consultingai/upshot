@@ -2,7 +2,9 @@
 user's own AI tools to Upshot, and to show what they asked.
 
 Under ``/api``, not ``/api/v1``: these are the page's routes, behind CSRF like the rest.
-The key is shown only on a POST, which a page on another site cannot make.
+The key is shown only on a POST, which a page on another site cannot make. A program on
+this computer can, while the page's own API answers anyone (D57): the key keeps other
+callers out of ``/mcp/ext/`` and ``/api/v1`` fully only once that is fixed.
 """
 
 from __future__ import annotations

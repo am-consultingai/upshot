@@ -161,3 +161,20 @@ def test_websites_are_refused(api: ApiHarness) -> None:
         for extra in ({"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}):
             refused = client.post("/mcp/ext/", json=INIT, headers={**key(api), **extra})
             assert refused.status_code == 403, extra
+
+
+def test_the_address_without_its_slash_reaches_the_same_server(api: ApiHarness) -> None:
+    """A pasted URL loses its slash; it must not land on the assistant's door."""
+    with serve(api) as client:
+        opened = client.post("/mcp/ext", json=INIT, headers=key(api))
+        assert opened.status_code == 200, opened.text
+        assert opened.json()["result"]["serverInfo"]["name"] == "upshot"
+        assert client.post("/mcp/ext", json=INIT, headers=ACCEPT).status_code == 401
+
+
+def test_a_key_with_other_than_ascii_is_refused_not_a_crash(api: ApiHarness) -> None:
+    odd = {**ACCEPT, "Authorization": "Bearer ключ".encode()}  # type: ignore[dict-item]
+    with serve(api) as client:
+        assert client.post("/mcp/ext/", json=INIT, headers=odd).status_code == 401
+    program = api.client(authorized=False)  # no cookie: not the page
+    assert program.get("/api/v1/transcriptions", headers=odd).status_code == 401

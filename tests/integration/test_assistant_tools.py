@@ -215,3 +215,25 @@ def test_get_summary_of_a_meeting_without_one(tools: AssistantTools) -> None:
     assert empty["summary"] is None and empty["parts"] == 1 and empty["chapters"] == []
     assert "no summary" in empty["note"]
     assert "error" in data(tools.get_summary("nope"))
+
+
+def test_get_summary_with_many_chapters_still_fits(tools: AssistantTools) -> None:
+    meeting = tools.svc.dao.visible_meeting("m-q4")
+    assert meeting is not None
+    meeting.path.mkdir(parents=True, exist_ok=True)
+    chapters = [{"title": f"Topic {i} " + "word " * 12, "start_ms": i * 60_000} for i in range(100)]
+    (meeting.path / "notes.json").write_text(json.dumps({"chapters": chapters}), encoding="utf-8")
+    whole = "".join(f"Point {i}: the budget moves. " for i in range(3000))
+    tools.svc.dao.index_summary("m-q4", whole)
+    parts, part = [], 1
+    while True:
+        reply = tools.get_summary("m-q4", part)
+        assert len(reply) <= MAX_CHARS, f"part {part} is {len(reply)} characters"
+        got = data(reply)
+        parts.append(got["summary"])
+        if "next" not in got:
+            break
+        part += 1
+    assert (
+        "".join(parts) == whole.strip() and len(data(tools.get_summary("m-q4"))["chapters"]) == 100
+    )
