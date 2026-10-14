@@ -6,6 +6,7 @@ import { api, reason } from "../api";
 import { useI18n } from "../i18n";
 import SettingRow, { SettingGroup } from "./SettingRow";
 import { toast } from "./Toaster";
+import { AppLabel } from "../setup/logos";
 
 const CLAUDE_DOWNLOAD = "https://claude.ai/download";
 
@@ -113,7 +114,7 @@ export default function TranscriptionServiceSettings({ part = "all" }: { part?: 
       {part !== "rest" && (
       <SettingGroup title={t("settings.transcriptionConnect")}>
         <SettingRow
-          label={t("settings.transcriptionDesktop")}
+          label={<AppLabel apps={["claude"]}>{t("settings.transcriptionDesktop")}</AppLabel>}
           description={
             <span data-testid="claude-desktop-card">
               {!installedApp ? (
@@ -173,7 +174,7 @@ export default function TranscriptionServiceSettings({ part = "all" }: { part?: 
         </SettingRow>
 
         <SettingRow
-          label={t("settings.transcriptionCode")}
+          label={<AppLabel apps={["claude-code"]}>{t("settings.transcriptionCode")}</AppLabel>}
           description={
             <span data-testid="claude-code-card">
               {t("settings.transcriptionCodeHint")}
