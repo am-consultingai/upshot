@@ -26,6 +26,16 @@ def test_only_paths_that_command_v_printed_count_as_found() -> None:
     assert ai_terminal.apps_in("bash: no job control in this shell\n") == []
 
 
+def test_a_windows_install_on_wsls_path_is_not_found_in_wsl() -> None:
+    """WSL appends Windows's PATH by default, and npm leaves an extensionless shim."""
+    out = (
+        "/mnt/c/Users/someone/AppData/Roaming/npm/codex\n"
+        "/MNT/D/tools/agy\n"
+        "/home/someone/.local/bin/claude\n"
+    )
+    assert ai_terminal.apps_in(out) == ["claude_code"]
+
+
 def test_the_first_running_distro_with_the_app_is_the_one(monkeypatch: pytest.MonkeyPatch) -> None:
     answers = {"Ubuntu": "/home/a/.local/bin/agy\n", "Debian": "/usr/bin/agy\n/usr/bin/codex\n"}
 
@@ -63,6 +73,8 @@ def test_found_reports_both_sides_for_every_app() -> None:
             "C:\\Users\\someone\\AppData\\Roaming\\npm\\codex.CMD",
             f'codex.cmd mcp add upshot -- "{BRIDGE}"',
         ),
+        # A .bat shim keeps its own extension.
+        ("C:\\tools\\codex.bat", f'codex.bat mcp add upshot -- "{BRIDGE}"'),
         # Found only where its installer leaves it, not on the PATH: the full path.
         (None, f'& "C:\\winget\\codex.exe" mcp add upshot -- "{BRIDGE}"'),
     ],
@@ -75,7 +87,9 @@ def test_the_windows_line_names_the_program_as_powershell_will_find_it(
 
 
 def test_powershell_types_the_line_and_runs_nothing() -> None:
-    argv = ai_terminal.powershell_argv('agy mcp add upshot "C:\\it\'s\\upshot-mcp.exe"')
+    argv = ai_terminal.powershell_argv(
+        'agy mcp add upshot "C:\\it\'s\\upshot-mcp.exe"', "Upshot - Codex"
+    )
     assert argv[:4] == ["powershell.exe", "-NoExit", "-NoProfile", "-Command"]
     script = argv[4]
     assert (
@@ -85,13 +99,23 @@ def test_powershell_types_the_line_and_runs_nothing() -> None:
     assert "EncodedCommand" not in " ".join(argv)
 
 
+def test_every_quote_powershell_reads_as_a_single_quote_is_doubled() -> None:
+    """A profile folder named O’Brien must not end the string early."""
+    script = ai_terminal.powershell_argv(
+        'agy mcp add upshot "C:\\Users\\O\u2019Brien\\x.exe"', "Upshot - Antigravity"
+    )[4]
+    assert "O\u2019\u2019Brien" in script
+    for quote in "\u2018\u201a\u201b'":
+        assert quote * 2 in ai_terminal.powershell_argv(f"a{quote}b", "Upshot - Codex")[4]
+
+
 def test_wsl_gets_the_line_as_an_argument_never_inside_the_script() -> None:
     line = 'codex mcp add upshot -- "/mnt/c/x/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"'
-    argv = ai_terminal.wsl_argv(line, "Ubuntu-24.04")
+    argv = ai_terminal.wsl_argv(line, "Ubuntu-24.04", "Upshot - Codex")
     assert argv[:6] == ["wsl.exe", "-d", "Ubuntu-24.04", "--cd", "~", "-e"]
     assert argv[-1] == line and line not in argv[-3]
     assert 'read -e -i "$1"' in argv[-3]
-    assert ai_terminal.wsl_argv(line, None)[:3] == ["wsl.exe", "--cd", "~"]
+    assert ai_terminal.wsl_argv(line, None, "Upshot - Codex")[:3] == ["wsl.exe", "--cd", "~"]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="looks things up on Windows")
@@ -105,3 +129,132 @@ def test_nothing_is_looked_up_off_windows() -> None:
 def test_the_path_is_read_again_from_the_registry() -> None:
     fresh = ai_terminal.registry_path()
     assert fresh, "the machine's and the user's PATH, joined"
+
+
+def test_each_app_has_its_own_title_and_the_terminal_carries_it() -> None:
+    titles = {ai_terminal.title(app) for app in ai_terminal.PROGRAMS}
+    assert titles == {"Upshot - Claude Code", "Upshot - Codex", "Upshot - Antigravity"}
+    assert "WindowTitle = 'Upshot - Codex'" in ai_terminal.powershell_argv("x", "Upshot - Codex")[4]
+    assert ai_terminal.wsl_argv("x", "Ubuntu-24.04", "Upshot - Codex")[-2] == "Upshot - Codex"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="lists real windows on Windows")
+def test_no_terminal_windows_are_listed_off_windows() -> None:
+    from app.window import terminal_windows
+
+    assert terminal_windows("Upshot - Codex") == set()
+
+
+class _Gone(Exception):
+    """What pywin32 raises when a window closed while it was looked at."""
+
+
+def _fake_win32gui(monkeypatch: pytest.MonkeyPatch, *, list_fails: bool = False) -> None:
+    """Three windows: Upshot's terminal, one that closes mid-list, and another app's."""
+    import types
+
+    windows = {1: ("CASCADIA_HOSTING_WINDOW_CLASS", "Upshot - Codex"), 3: ("Notepad", "x")}
+
+    def enum(visit: Any, extra: object) -> None:
+        if list_fails:
+            raise _Gone("EnumWindows")
+        for hwnd in (1, 2, 3):
+            visit(hwnd, extra)
+
+    def class_name(hwnd: int) -> str:
+        if hwnd not in windows:
+            raise _Gone("GetClassName")
+        return windows[hwnd][0]
+
+    fake = types.SimpleNamespace(
+        EnumWindows=enum,
+        IsWindowVisible=lambda hwnd: True,
+        GetClassName=class_name,
+        GetWindowText=lambda hwnd: windows[hwnd][1],
+    )
+    monkeypatch.setitem(sys.modules, "win32gui", fake)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+
+def test_a_window_closing_mid_list_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.window import terminal_windows
+
+    _fake_win32gui(monkeypatch)
+    assert terminal_windows("Upshot - Codex") == {1}
+
+
+def test_a_list_that_fails_is_empty_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.window import terminal_windows
+
+    _fake_win32gui(monkeypatch, list_fails=True)
+    assert terminal_windows("Upshot - Codex") == set()
+
+
+def test_two_clicks_for_one_app_bring_forward_two_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import window
+
+    monkeypatch.setattr(window, "_CLAIMED", {})
+    assert window._claim({11, 12}, now=100.0) == 11
+    assert window._claim({11, 12}, now=100.5) == 12
+    assert window._claim({11, 12}, now=101.0) is None
+
+
+def test_a_claim_lasts_only_while_the_clicks_look(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windows Terminal may put every new tab into one window: it comes forward each time."""
+    from app import window
+
+    monkeypatch.setattr(window, "_CLAIMED", {})
+    assert window._claim({11}, now=100.0) == 11
+    assert window._claim({11}, now=100.0 + window.CLAIM_S + 1) == 11
+
+
+def _fake_desktop(
+    monkeypatch: pytest.MonkeyPatch, windows: dict[int, str], *, minimized: set[int]
+) -> list[tuple[str, int]]:
+    """Fake pywin32 for ``terminal_forward``: Upshot's window (99) in front, terminals by
+    title, and a record of what was done to which window."""
+    import types
+
+    from app import window
+
+    calls: list[tuple[str, int]] = []
+    win32gui = types.SimpleNamespace(
+        EnumWindows=lambda visit, extra: [visit(hwnd, extra) for hwnd in list(windows)],
+        IsWindowVisible=lambda hwnd: True,
+        GetClassName=lambda hwnd: "CASCADIA_HOSTING_WINDOW_CLASS",
+        GetWindowText=lambda hwnd: windows[hwnd],
+        GetForegroundWindow=lambda: 99,
+        IsIconic=lambda hwnd: hwnd in minimized,
+        ShowWindow=lambda hwnd, how: calls.append(("restore", hwnd)),
+        SetForegroundWindow=lambda hwnd: calls.append(("front", hwnd)),
+    )
+    win32con = types.SimpleNamespace(SW_RESTORE=9, VK_MENU=18, KEYEVENTF_KEYUP=2)
+    win32api = types.SimpleNamespace(keybd_event=lambda *args: None)
+    for name, module in (("win32gui", win32gui), ("win32con", win32con), ("win32api", win32api)):
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(window, "_is_ours", lambda gui, hwnd: hwnd == 99)
+    monkeypatch.setattr(window, "_CLAIMED", {})
+    return calls
+
+
+def test_a_window_open_before_the_click_never_comes_forward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """It may be one the user kept for their own work, a command half typed in."""
+    from app import window
+
+    calls = _fake_desktop(monkeypatch, {5: "Upshot - Codex"}, minimized=set())
+    assert window.terminal_forward("Upshot - Codex", {5}, window_s=0.2) == "no terminal window"
+    assert calls == []
+
+
+def test_a_minimized_new_terminal_is_restored_then_brought_forward(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import window
+
+    calls = _fake_desktop(monkeypatch, {5: "Upshot - Codex", 6: "Upshot - Codex"}, minimized={6})
+    outcome = window.terminal_forward("Upshot - Codex", {5}, window_s=0.2)
+    assert outcome == "brought the terminal forward"
+    assert calls == [("restore", 6), ("front", 6)]
