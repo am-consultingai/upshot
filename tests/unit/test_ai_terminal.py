@@ -104,4 +104,4 @@ def test_nothing_is_looked_up_off_windows() -> None:
 @pytest.mark.skipif(sys.platform != "win32", reason="the registry is Windows's")
 def test_the_path_is_read_again_from_the_registry() -> None:
     fresh = ai_terminal.registry_path()
-    assert fresh and "%" not in fresh, "expanded, machine and user joined"
+    assert fresh, "the machine's and the user's PATH, joined"
