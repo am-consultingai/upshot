@@ -270,6 +270,38 @@ def test_a_small_gpu_runs_the_classifier_on_the_cpu_too(
     assert classifier.classify(INPUTS).device == "cpu" and built == ["cpu"]
 
 
+def test_the_classifier_has_its_own_gate_under_the_hebrew_models(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """1.5 GB: too small for the Hebrew model, room for small (1 GB). It runs on the GPU,
+    in place, not in a child process."""
+    import app.asr.local as local
+    from app.asr.classify import IsolatedClassifier
+
+    place_classifier(app_home)
+    cublas = tmp_path / "cuda"
+    cublas.mkdir()
+    (cublas / "cublas64_12.dll").write_bytes(b"")
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 1536)
+    monkeypatch.setattr(local, "register_cuda_dirs", lambda dirs: [str(d) for d in dirs])
+    config = default_config(asr__cuda_dir=str(cublas))
+    assert local.planned_device(config) == "cpu", "the Hebrew model's plan"
+    built: list[str] = []
+
+    def factory(**kwargs: Any) -> StubModel:
+        built.append(str(kwargs["device"]))
+        return StubModel([{"he": 0.9}])
+
+    monkeypatch.setattr(
+        classify_module, "WhisperClassifier",
+        lambda cfg: WhisperClassifier(
+            cfg, model_factory=factory, read_speech=lambda t, w: speech(t, 100)
+        ),
+    )  # fmt: skip
+    classifier = IsolatedClassifier(config, run_child=lambda *a: pytest.fail("no child"))
+    assert classifier.classify(INPUTS).device == "cuda" and built == ["cuda"]
+
+
 def test_a_missing_classifier_is_a_broken_installation_not_a_download(app_home: Path) -> None:
     classifier = make([{"he": 0.9}], {"me": 100, "them": 100}, [])
     with pytest.raises(ModelNotInstalled, match="classifier"):
