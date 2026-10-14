@@ -269,8 +269,9 @@ export default function Settings() {
       {/* What is running and waiting comes first, above how other apps connect. */}
       {section === "transcription" && (
         <>
+          <AiAppsSettings part="access" />
           <TranscriptionServiceSettings part="claude" />
-          <AiAppsSettings />
+          <AiAppsSettings part="apps" />
           <ActiveJobs />
           <TranscriptionServiceSettings part="rest" />
         </>
