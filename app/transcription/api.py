@@ -115,7 +115,9 @@ def agent_of(request: Request) -> str:
     return ""
 
 
-def note(request: Request, svc: Services, outcome: str = "ok", target: str = "") -> None:
+def note(
+    request: Request, svc: Services, outcome: str = "ok", target: str = "", *, keyless: bool = False
+) -> None:
     """One line in the activity log for a program's request (D98); none for the page."""
     route = request.scope.get("route")
     action = ACTIONS.get(getattr(route, "name", "") or "")
@@ -125,7 +127,7 @@ def note(request: Request, svc: Services, outcome: str = "ok", target: str = "")
         job_id = str(request.path_params.get("job_id") or "")
         job = svc.transcriptions.get(job_id) if job_id and svc.transcriptions else None
         target = job.source_name if job is not None else job_id
-    svc.access_log.record("api", agent_of(request), action, target, outcome)
+    svc.access_log.record("api", agent_of(request), action, target, outcome, collapse=keyless)
 
 
 def require_caller(request: Request, svc: Services) -> bool:
@@ -134,7 +136,7 @@ def require_caller(request: Request, svc: Services) -> bool:
     if is_page(request, svc):
         return True
     if not svc.auth.valid_access(request.headers.get("authorization")):
-        note(request, svc, "refused")
+        note(request, svc, "refused", keyless=True)
         raise HTTPException(401, KEY_DETAIL, headers={"WWW-Authenticate": "Bearer"})
     return False
 

@@ -7,6 +7,7 @@ routing.**
 from __future__ import annotations
 
 import contextlib
+import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -82,8 +83,10 @@ class AuthState:
 
     def valid_access(self, authorization: str | None) -> bool:
         """An ``Authorization: Bearer <access key>`` header."""
+        # As bytes: compare_digest refuses a str with anything but ASCII in it.
         return bool(authorization) and secrets.compare_digest(
-            str(authorization), f"Bearer {self.access_key}"
+            str(authorization).encode("utf-8", "surrogateescape"),
+            f"Bearer {self.access_key}".encode(),
         )
 
     def valid_csrf(self, value: str | None) -> bool:
@@ -263,10 +266,14 @@ def write_launcher_key(auth: AuthState, home: Path) -> Path:
 
 
 def _write_private(path: Path, text: str) -> None:
+    """Whole or not at all: the bridge reads the file at any moment, and must never see
+    half a key."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    partial = path.with_name(f"{path.name}.{secrets.token_hex(4)}.partial")
+    partial.write_text(text, encoding="utf-8")
     with contextlib.suppress(OSError):
-        path.chmod(0o600)
+        partial.chmod(0o600)
+    os.replace(partial, path)
 
 
 def _usable_key(text: str) -> bool:
@@ -276,16 +283,24 @@ def _usable_key(text: str) -> bool:
 def load_access_key(home: Path) -> str:
     """The access key in ``home``, made and written there the first time (D98).
 
-    What it is for, and what not: it keeps out what can reach Upshot's port but cannot read
-    this user's files, which is other Windows accounts and Docker containers (Docker Desktop
-    forwards ``host.docker.internal`` to Windows's loopback). A program running as this
+    What it is for, and what not: it is meant to keep out what can reach Upshot's port but
+    cannot read this user's files, which is other Windows accounts and Docker containers
+    (Docker Desktop forwards ``host.docker.internal`` to Windows's loopback). It does so
+    only once the page's own API is closed to them too (D57): until then a caller can take
+    the page's CSRF cookie and ask ``/api/ai-apps/key`` for it. A program running as this
     user can read the file, and the database beside it, so it is no defense against one.
+
+    A key that cannot be read for another reason than its absence (a locked file) is not
+    replaced: that would silently break every app the user pasted it into.
     """
     path = home / ACCESS_KEY_FILE
     try:
         key = path.read_text(encoding="utf-8").strip()
-    except OSError:
+    except FileNotFoundError:
         key = ""
+    except OSError as exc:
+        log.warning("could not read %s, using a key for this run only: %s", path, exc)
+        return secrets.token_urlsafe(32)
     if _usable_key(key):
         return key
     key = secrets.token_urlsafe(32)

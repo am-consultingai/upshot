@@ -110,10 +110,14 @@ class Bridge:
     def meeting_tools(self) -> list[dict[str, Any]]:
         """What Upshot's ``/mcp/ext/`` lists; when it cannot be asked (Upshot is not
         running yet), the copy made from it when this bridge was built, so an AI app
-        started before Upshot still knows the tools."""
+        started before Upshot still knows the tools. Only a quick look: the client waits
+        on this, and a scan of every port can take a minute on Windows."""
         try:
-            listed = self._find().mcp("tools/list", {}, timeout=RECORDED_LIST_S).get("tools")
-        except (ToolError, NotRunning, Busy, UpshotError):
+            app = self._app or discover(self.url, quick=True)
+            app.agent = self.agent
+            self._app = app
+            listed = app.mcp("tools/list", {}, timeout=RECORDED_LIST_S).get("tools")
+        except (ToolError, NotRunning, Busy, UpshotError, OSError):
             listed = None
         if isinstance(listed, list) and listed:
             return [tool for tool in listed if isinstance(tool, dict)]
