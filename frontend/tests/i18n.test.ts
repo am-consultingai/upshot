@@ -86,7 +86,7 @@ describe("catalogue parity", () => {
       "meetingInfo.minutes", "settings.microphone", "calendar.google", "updates.version",
       "updates.versionValue", "common.minutes", "common.hours", "assistant.title",
       "assistant.open", "assistant.source", "meeting.sections", "firstRun.ai.code",
-      "firstRun.audio.mic", "terms.ok", "nav.transcriptions", "transcriptions.title",
+      "firstRun.audio.mic", "terms.ok", "transcriptions.title",
       "recording.pause", "detector.score", "settings.models.assistant",
       "aiApps.tabTranscriptions", "aiActivity.filter",
     ],

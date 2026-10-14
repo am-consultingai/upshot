@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../src/api";
-import TranscriptionsPage from "../src/routes/Transcriptions";
+import AppRequests from "../src/components/AppRequests";
 import { LIST_KEY } from "../src/lib/transcriptions";
 import { scrollKeyTakesOver } from "../src/components/Transcript";
 
@@ -46,7 +46,7 @@ async function render() {
     root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <TranscriptionsPage />
+          <AppRequests />
         </MemoryRouter>
       </QueryClientProvider>,
     );

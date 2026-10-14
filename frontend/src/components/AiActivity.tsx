@@ -75,7 +75,6 @@ export default function AiActivity() {
 
   return (
     <div data-testid="ai-activity">
-      <p className="mb-4 max-w-prose text-sm text-secondary">{t("aiActivity.intro")}</p>
       {(entries.length > 0 || agent) && (
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm">

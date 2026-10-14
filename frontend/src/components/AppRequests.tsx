@@ -3,12 +3,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n } from "../i18n";
-import TranscriptionDropzone from "../components/TranscriptionDropzone";
-import TranscriptionRow from "../components/TranscriptionRow";
-import { toast } from "../components/Toaster";
-import AiActivity from "../components/AiActivity";
-import { Loading, Skeleton } from "../components/Skeleton";
-import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "../components/EmptyState";
+import TranscriptionDropzone from "./TranscriptionDropzone";
+import TranscriptionRow from "./TranscriptionRow";
+import { toast } from "./Toaster";
+import AiActivity from "./AiActivity";
+import { Loading, Skeleton } from "./Skeleton";
+import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "./EmptyState";
 import { LIST_KEY, loadOptions, saveOptions, upload, type UploadOptions } from "../lib/transcriptions";
 
 interface Uploading {
@@ -23,17 +23,18 @@ const TABS = ["transcriptions", "activity"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
- * AI apps (D98): the transcriptions of files, and what the user's own AI tools asked.
- * The address stays /transcriptions, so links and the T key still land here;
- * `?tab=activity` opens the second tab.
+ * Settings → App requests (D98): what the user's AI apps asked of Upshot, and the files
+ * transcribed for them or dropped here. `?tab=activity` opens the second tab; the old
+ * address, /transcriptions, leads here.
  */
-export default function AiAppsPage() {
+export default function AppRequests() {
   const { t } = useI18n();
-  const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get("tab") === "activity" ? "activity" : "transcriptions";
+  const [params] = useSearchParams();
+  // Local state, not the URL: Settings keeps its section in the hash, which a search
+  // parameter change would drop.
+  const [tab, setTab] = useState<Tab>(params.get("tab") === "activity" ? "activity" : "transcriptions");
   return (
-    <section data-testid="ai-apps-page">
-      <h1 className="display mb-4 text-2xl">{t("aiApps.title")}</h1>
+    <section data-testid="app-requests">
       <div data-testid="ai-apps-tabs" role="tablist" className="mb-6 flex w-max gap-0.5 rounded-md bg-surface-3 p-0.5">
         {TABS.map((value) => (
           <button
@@ -49,10 +50,10 @@ export default function AiAppsPage() {
               // Arrow keys move between the tabs, as a tab list should.
               if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
               const next = TABS[(TABS.indexOf(value) + 1) % TABS.length];
-              setParams(next === "activity" ? { tab: next } : {}, { replace: true });
+              setTab(next);
               document.getElementById(`ai-apps-tab-${next}`)?.focus();
             }}
-            onClick={() => setParams(value === "activity" ? { tab: value } : {}, { replace: true })}
+            onClick={() => setTab(value)}
             className={`flex h-control-sm items-center rounded-sm px-3 text-sm ${
               tab === value
                 ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
