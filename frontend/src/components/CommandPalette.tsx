@@ -267,13 +267,13 @@ export default function CommandPalette() {
         run: go("/actions"),
       },
       {
-        id: "nav.transcriptions",
+        id: "nav.requests",
         group: "palette.navigate",
-        label: t("nav.transcriptions"),
+        label: t("settings.groupRequests"),
         icon: "file",
         aliases: aka("palette.aliasTranscriptions"),
         keys: "G T",
-        run: go("/transcriptions"),
+        run: go("/settings#requests"),
       },
       {
         id: "assistant",
