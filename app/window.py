@@ -131,13 +131,43 @@ def _bring_browser_forward() -> None:
 TERMINAL_CLASSES = frozenset({"CASCADIA_HOSTING_WINDOW_CLASS", "ConsoleWindowClass"})
 
 
-def bring_terminal_forward(title: str) -> None:
+def terminal_windows(title: str) -> set[int]:
+    """The visible terminal windows titled ``title``: taken before a launch, so the
+    window that opens is told from Upshot's terminals already open."""
+    if sys.platform != "win32":
+        return set()
+    try:  # pragma: no cover - Windows only
+        import win32gui
+    except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
+        return set()
+    found: set[int] = set()  # pragma: no cover - Windows only, from here on
+
+    def visit(hwnd: int, _: object) -> bool:
+        # A window can close between two of these calls; it is skipped, not the click.
+        with contextlib.suppress(Exception):
+            if (
+                win32gui.IsWindowVisible(hwnd)
+                and win32gui.GetClassName(hwnd) in TERMINAL_CLASSES
+                and win32gui.GetWindowText(hwnd) == title
+            ):
+                found.add(hwnd)
+        return True
+
+    try:
+        win32gui.EnumWindows(visit, None)
+    except Exception as exc:  # pywintypes.error: the list is a nicety, not the terminal
+        log.info("could not list the terminal windows: %s", exc)
+    return found
+
+
+def bring_terminal_forward(title: str, before: set[int]) -> None:
     """After the server opened a terminal (Settings → AI apps), put it in front, in the
-    background: the page has its answer already."""
+    background: the page has its answer already. ``before``: the windows of that title
+    that were open already, which are left where they are."""
 
     def work() -> None:
         try:
-            outcome = terminal_forward(title)
+            outcome = terminal_forward(title, before)
         except Exception as exc:  # pywintypes.error: the window went while it was looked at
             outcome = f"could not bring it forward: {exc}"
         log.info("after opening a terminal: %s", outcome)
@@ -145,13 +175,37 @@ def bring_terminal_forward(title: str) -> None:
     threading.Thread(target=work, name="terminal-forward", daemon=True).start()
 
 
-def terminal_forward(title: str, *, window_s: float = 5.0) -> str:
+#: Terminals being brought forward, and when each was taken: two quick clicks for one app
+#: open two windows of one title, and each click's thread takes the one the other has not.
+#: A claim lasts only while those threads look (``CLAIM_S``): Windows Terminal may put
+#: every new tab into the same window, and that window must come forward again next time.
+_CLAIMED: dict[int, float] = {}
+_CLAIMED_LOCK = threading.Lock()
+TERMINAL_WINDOW_S = 5.0
+CLAIM_S = 2 * TERMINAL_WINDOW_S
+
+
+def _claim(candidates: set[int], now: float | None = None) -> int | None:
+    now = time.monotonic() if now is None else now
+    with _CLAIMED_LOCK:
+        for hwnd, taken in list(_CLAIMED.items()):
+            if now - taken > CLAIM_S:
+                del _CLAIMED[hwnd]
+        free = sorted(candidates - _CLAIMED.keys())
+        if not free:
+            return None
+        _CLAIMED[free[0]] = now
+        return free[0]
+
+
+def terminal_forward(title: str, before: set[int], *, window_s: float = TERMINAL_WINDOW_S) -> str:
     """Put the terminal this server just opened in front of Upshot's window.
 
     The same reason as ``browser_forward``: Windows gives the foreground to the program
     the user is in, Upshot's window, not this server, so the terminal opened behind it
     (seen on machine A, 2026-10-14). The terminal is found by its title, which the server
-    set, and its class, which tells it from Upshot's own window of the same name. Only
+    set, and its class, which tells it from Upshot's own window of the same name; a
+    terminal of that title open before the launch (``before``) is not the new one. Only
     while Upshot's window is in front: a window the user went to meanwhile stays.
     """
     if sys.platform != "win32":
@@ -162,23 +216,14 @@ def terminal_forward(title: str, *, window_s: float = 5.0) -> str:
         import win32gui
     except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
         return "no pywin32"
-    found: list[int] = []  # pragma: no cover - Windows only, from here on
-
-    def visit(hwnd: int, _: object) -> bool:
-        if (
-            win32gui.IsWindowVisible(hwnd)
-            and win32gui.GetClassName(hwnd) in TERMINAL_CLASSES
-            and win32gui.GetWindowText(hwnd) == title
-        ):
-            found.append(hwnd)
-        return True
-
-    target = None
+    # No window that was there before the launch is ever brought forward: an old one of
+    # the same title may be one the user kept for their own work, half a command typed
+    # in (review round 3). When Windows Terminal puts the new tab into such a window,
+    # nothing comes forward and the log says so.
+    target = None  # pragma: no cover - Windows only, from here on
     for _ in range(max(1, round(window_s / POLL_S))):
-        found.clear()
-        win32gui.EnumWindows(visit, None)
-        if found:
-            target = found[0]
+        target = _claim(terminal_windows(title) - before)
+        if target:
             break
         time.sleep(POLL_S)
     if not target:
@@ -188,6 +233,8 @@ def terminal_forward(title: str, *, window_s: float = 5.0) -> str:
         return "the terminal came forward"
     if not _is_ours(win32gui, front):
         return "another window is in front"
+    if win32gui.IsIconic(target):
+        win32gui.ShowWindow(target, win32con.SW_RESTORE)
     win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
     try:
         win32gui.SetForegroundWindow(target)

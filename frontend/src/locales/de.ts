@@ -1072,6 +1072,7 @@ export const de: Record<MessageKey, string> = {
   "settings.aiAppsOpenTerminal": "Im Terminal öffnen",
   "settings.aiAppsTerminalOpened": "Drücken Sie im Terminal die Eingabetaste, um Upshot hinzuzufügen.",
   "settings.aiAppsTerminalCopied": "Kopiert. In ein Terminal einfügen und die Eingabetaste drücken.",
+  "settings.aiAppsTerminalNotCopied": "Kopieren nicht möglich. Verwenden Sie „Kopieren“ und fügen Sie es in ein Terminal ein.",
   "settings.aiAppsChatGptSteps": "Oder in der ChatGPT-App: Einstellungen → Plugins → MCPs → MCP-Server hinzufügen, dann diesen Pfad einfügen.",
   "settings.aiAppsMore": "Weitere Apps",
   "settings.aiAppsOthers": "Cursor, VS Code, LM Studio, mcphost und andere",

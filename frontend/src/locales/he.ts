@@ -1130,6 +1130,7 @@ export const he: Record<MessageKey, string> = {
   "settings.aiAppsOpenTerminal": "פתיחה בטרמינל",
   "settings.aiAppsTerminalOpened": "הקישו Enter בטרמינל כדי להוסיף את Upshot.",
   "settings.aiAppsTerminalCopied": "הועתק. הדביקו בטרמינל והקישו Enter.",
+  "settings.aiAppsTerminalNotCopied": "לא ניתן להעתיק. השתמשו ב\"העתקה\" והדביקו בטרמינל.",
   "settings.aiAppsChatGptSteps": "או באפליקציית ChatGPT: Settings ← Plugins ← MCPs ← Add MCP server, והדביקו את הנתיב הזה.",
   "settings.aiAppsMore": "עוד אפליקציות",
   "settings.aiAppsOthers": "Cursor, VS Code, LM Studio, mcphost ואחרות",

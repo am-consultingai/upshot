@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { api, reason, type AiAppId, type AiApps, type AiAppsFound } from "../api";
+import { api, reason, type AiAppId, type AiApps, type AiAppsFound, type AiAppWhere } from "../api";
+import { lineToCopy, terminalToast } from "../lib/aiTerminal";
 import { useI18n, type MessageKey } from "../i18n";
 import { buttonClass } from "./Button";
 import { confirmDialog } from "./ConfirmDialog";
@@ -34,20 +35,50 @@ const BY_FILE: { id: string; label: MessageKey; logos: AppId[]; hint: MessageKey
   },
 ];
 
+/** Copy ``text``; false when the browser refused (no clipboard, or no permission). */
+async function copy(text: string): Promise<boolean> {
+  if (!navigator.clipboard) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Opens a terminal with the app's own command typed in; the user presses Enter and the
- * app writes its own file (D98). The command is copied too, for where it cannot be typed
- * in (a source checkout, or PowerShell that blocks it): the toast says to paste it.
+ * app writes its own file (D98). The line is copied too, for where it cannot be typed in
+ * (a source checkout, or PowerShell that blocks it): the toast says to paste it. When no
+ * terminal opened, which apps are found is asked again: a WSL distribution may have
+ * stopped.
  */
-function OpenInTerminal({ app, side, text, testid }: { app: AiAppId; side: Side; text: string; testid: string }) {
+function OpenInTerminal({
+  app,
+  side,
+  text,
+  where,
+  testid,
+}: {
+  app: AiAppId;
+  side: Side;
+  text: string;
+  where: AiAppWhere | undefined;
+  testid: string;
+}) {
   const { t } = useI18n();
+  const queryClient = useQueryClient();
   const open = useMutation({
     mutationFn: async () => {
-      await navigator.clipboard?.writeText(text).catch(() => undefined);
-      return api.aiAppsTerminal(app, side);
+      const copied = await copy(lineToCopy(side, text, where));
+      const data = await api.aiAppsTerminal(app, side);
+      return { ...data, copied };
     },
-    onSuccess: (data) =>
-      toast({ title: t(data.launched ? "settings.aiAppsTerminalOpened" : "settings.aiAppsTerminalCopied") }),
+    onSuccess: (data) => {
+      const { key, danger } = terminalToast(data.launched, data.copied);
+      toast({ title: t(key), ...(danger ? { tone: "danger" as const } : {}) });
+      if (!data.launched) void queryClient.invalidateQueries({ queryKey: ["ai-apps-found"] });
+    },
     onError: (error) => toast({ title: reason(error), tone: "danger" }),
   });
   return (
@@ -70,7 +101,7 @@ function CommandRow({
 }: {
   row: (typeof BY_COMMAND)[number];
   info: AiApps | undefined;
-  where: { windows: boolean; wsl: string | null } | undefined;
+  where: AiAppWhere | undefined;
 }) {
   const { t } = useI18n();
   // Opens on the side the app was found on, Windows first; the user's click wins.
@@ -135,7 +166,9 @@ function CommandRow({
     >
       {text && (
         <span className="flex flex-wrap justify-end gap-2">
-          {here && <OpenInTerminal app={row.app} side={tab} text={text} testid={`ai-app-${id}-terminal`} />}
+          {here && (
+            <OpenInTerminal app={row.app} side={tab} text={text} where={where} testid={`ai-app-${id}-terminal`} />
+          )}
           <CopyButton text={text} testid={`ai-app-${id}-copy`} />
         </span>
       )}
