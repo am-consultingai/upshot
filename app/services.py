@@ -110,6 +110,14 @@ class Services:
         self.conn.close()
 
 
+def _access_key() -> str:
+    """The access key kept in the app home (D98)."""
+    from app import paths
+    from app.api.security import load_access_key
+
+    return load_access_key(paths.app_home())
+
+
 def build(
     config: Config | None = None,
     *,
@@ -145,7 +153,7 @@ def build(
         queue=queue,
         meetings=MeetingService(cfg, dao, queue, clock=clock, source=source),
         events=events,
-        auth=AuthState(),
+        auth=AuthState(access_key=_access_key()),
         clock=clock,
         mailer=Mailer(cfg),
         calendar=calendar,
