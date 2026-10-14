@@ -10,14 +10,19 @@ callers out of ``/mcp/ext/`` and ``/api/v1`` fully only once that is fixed.
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from app.api.security import DOCKER_HOST, EXT_MCP_PREFIX, reset_access_key
 from app.config import DEFAULT_PORT
+from app.log import get
 from app.services import Services
-from app.transcription.api import SERVER_NAME, bridge_path, wsl_path
+from app.transcription.api import SERVER_NAME, TEST_INSTALL_DIR, bridge_path, install_dir, wsl_path
+
+log = get(__name__)
 
 router = APIRouter(prefix="/api/ai-apps")
 
@@ -67,6 +72,62 @@ def overview(request: Request) -> dict[str, Any]:
         "bridge": bridge_path(),
         "commands": commands(bridge_path()),
     }
+
+
+def _test_install() -> bool:
+    """The e2e server: a made-up install, and no real lookup of the user's apps."""
+    return install_dir() == TEST_INSTALL_DIR
+
+
+@router.get("/found")
+def found(request: Request) -> dict[str, Any]:
+    """Which AI apps are on this computer, on Windows and in a running WSL distribution.
+    Asked when the page opens or comes back into view, apart from the overview: asking
+    WSL takes a moment. Nothing of the apps' own is read."""
+    from app.ai_terminal import find
+
+    return {"apps": find(services_of(request).config, test=_test_install()).as_dict()}
+
+
+class TerminalPost(BaseModel):
+    app: str
+    side: str = "windows"
+
+
+@router.post("/terminal")
+def open_terminal(request: Request, body: TerminalPost) -> dict[str, Any]:
+    """A terminal with the app's own command to add Upshot typed in; the user presses
+    Enter (D98: Upshot edits no other app's files). The line is built here from the same
+    commands the page shows, never taken from the request."""
+    from app import ai_terminal
+
+    if body.app not in ai_terminal.PROGRAMS or body.side not in ("windows", "wsl"):
+        raise HTTPException(400, "Unknown app.")
+    key = body.app if body.side == "windows" else f"{body.app}_wsl"
+    command = commands(bridge_path()).get(key)
+    if command is None:
+        raise HTTPException(409, "Available in the installed app.")
+    if sys.platform != "win32" or _test_install():
+        # Nowhere to open it: the page has copied the command and says to paste it.
+        return {"launched": False, "command": command}
+    fresh = ai_terminal.registry_path()
+    if body.side == "windows":
+        program = ai_terminal.find_on_windows(services_of(request).config).get(body.app)
+        line = ai_terminal.windows_line(command, program, fresh)
+        argv = ai_terminal.powershell_argv(line)
+    else:
+        line = command
+        argv = ai_terminal.wsl_argv(line, ai_terminal.find_in_wsl().get(body.app))
+    try:
+        ai_terminal.launch(argv, fresh)
+    except OSError as exc:
+        log.error("could not open a terminal for %s (%s): %s", body.app, body.side, exc)
+        raise HTTPException(500, f"Could not open a terminal: {exc}") from exc
+    log.info("opened a terminal to add Upshot to %s (%s)", body.app, body.side)
+    from app.window import bring_terminal_forward
+
+    bring_terminal_forward(ai_terminal.TITLE)
+    return {"launched": True, "command": line}
 
 
 @router.post("/key")
