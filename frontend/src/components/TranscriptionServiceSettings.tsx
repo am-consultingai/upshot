@@ -110,15 +110,11 @@ export default function TranscriptionServiceSettings() {
           label={t("settings.transcriptionDesktop")}
           description={
             <span data-testid="claude-desktop-card">
-              {t("settings.transcriptionDesktopFor")}
               {!installedApp ? (
-                <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>
+                <span className="block">{t("settings.transcriptionInstalledOnly")}</span>
               ) : info?.claude_desktop ? (
                 <>
-                  <span className="mt-1 block">{t("settings.transcriptionDesktopHint")}</span>
-                  <span className="mt-1 block text-tertiary" data-testid="claude-desktop-warning">
-                    {t("settings.transcriptionWarning")}
-                  </span>
+                  <span className="block">{t("settings.transcriptionDesktopHint")}</span>
                   <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5">
                     <span>{t("settings.transcriptionDidntOpen")}</span>
                     <button
@@ -194,7 +190,6 @@ export default function TranscriptionServiceSettings() {
                   </span>
                   {command && <Command text={command} testid={`transcription-copy-${tab}`} />}
                   {tab === "wsl" && <span className="mt-1 block">{t("settings.transcriptionWslNote")}</span>}
-                  <span className="mt-1 block">{t("settings.transcriptionCodeTry")}</span>
                   <span className="mt-1 block text-tertiary" data-testid="claude-code-old-name">
                     {t("settings.transcriptionCodeOld")}
                   </span>
