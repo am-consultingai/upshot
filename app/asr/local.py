@@ -25,7 +25,16 @@ from typing import Any
 
 from app import paths
 from app.asr.backend import Segment, Word, track_of
-from app.asr.models import HEBREW, HEBREW_LANGUAGE, MODELS, ModelChoice, require, resolve
+from app.asr.models import (
+    CLASSIFIER,
+    HEBREW,
+    HEBREW_LANGUAGE,
+    MODELS,
+    OTHER,
+    ModelChoice,
+    require,
+    resolve,
+)
 from app.config import Config
 from app.log import get
 
@@ -156,11 +165,17 @@ def register_cuda_dirs(dirs: Sequence[Path]) -> list[str]:
     return registered
 
 
-#: The least GPU memory the automatic choice will run Whisper on (ClickUp z8tj1had07).
-#: large-v3 holds ~1.6 GB of weights at int8 and ~3 GB at float16, plus activations and
-#: whatever the desktop and the meeting app already keep on the card; a 2-3 GB laptop GPU
-#: ran out mid-meeting instead of failing at load, where the CPU fallback would catch it.
-MIN_VRAM_MB = 4096
+#: The least GPU memory the automatic choice will run each model on (D99, superseding
+#: D65's single 4 GB). Measured on a 2 GB MX450 (research 2026-10-14-low-vram-gpu): the
+#: ivrit turbo at int8_float16 peaks at about 1.3 GB on clips of 2 to 42 minutes, and
+#: about 1.8 GB of the card is usable, so a card that reports 2048 MB qualifies for
+#: Hebrew. large-v3 needs about 2.55 GB of its own and stays at 4 GB. Every overflow seen
+#: was an out-of-memory error at load, which the CPU fallback catches; none came partway
+#: through a track.
+MIN_VRAM_MB: dict[str, int] = {CLASSIFIER: 1024, HEBREW: 2048, OTHER: 4096}
+#: Under this, quantized weights only: the turbo at float16 runs out of memory at load on
+#: 2 GB, at int8_float16 it fits.
+SMALL_GPU_MB = 4096
 
 NVIDIA_SMI = ("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits")
 
@@ -221,19 +236,25 @@ class DevicePlan:
 
     device: str  # cpu|cuda
     #: configured: asr.device says so · no_cuda: no CUDA libraries anywhere ·
-    #: low_vram: the GPU is under MIN_VRAM_MB · vram_unknown: its memory could not be
-    #: read · gpu: CUDA libraries and enough memory
+    #: low_vram: the GPU is under the model's MIN_VRAM_MB · vram_unknown: its memory
+    #: could not be read · gpu: CUDA libraries and enough memory
     reason: str
     vram_mb: int | None = None
 
 
 def plan_device(
-    config: Config | None, dirs: Sequence[Path], *, vram: VramQuery | None = None
+    config: Config | None,
+    dirs: Sequence[Path],
+    *,
+    vram: VramQuery | None = None,
+    role: str = HEBREW,
 ) -> DevicePlan:
-    """The one decision ``probe_device`` and ``planned_device`` share.
+    """The one decision ``probe_device`` and ``planned_device`` share, for one model.
 
-    Only the automatic choice is gated on memory. ``asr.device = "cuda"`` is the user
-    insisting, and the load-time fallback still catches a card that cannot cope.
+    Only the automatic choice is gated on memory, and per model: a 2 GB card runs Hebrew
+    on the GPU and other languages straight on the CPU, with no GPU attempt that fails.
+    ``asr.device = "cuda"`` is the user insisting, and the load-time fallback still
+    catches a card that cannot cope.
     """
     configured = str(config.get("asr.device", "auto")) if config else "auto"
     if configured == "cpu":
@@ -245,7 +266,7 @@ def plan_device(
     memory = (vram or cached_gpu_memory_mb)()
     if memory is None:
         return DevicePlan("cpu", "vram_unknown")
-    if memory < MIN_VRAM_MB:
+    if memory < MIN_VRAM_MB[role]:
         return DevicePlan("cpu", "low_vram", memory)
     return DevicePlan("cuda", "gpu", memory)
 
@@ -258,8 +279,9 @@ def probe_device(
     system_dirs: Sequence[str] = SYSTEM_CUDA_DIRS,
     environ: dict[str, str] | None = None,
     vram: VramQuery | None = None,
+    role: str = HEBREW,
 ) -> tuple[str, str, list[str]]:
-    """(device, compute_type, registered dirs). No CUDA anywhere → CPU, int8."""
+    """(device, compute_type, registered dirs) for one model. No CUDA → CPU, int8."""
     env = environ if environ is not None else os.environ
     configured_compute = str(config.get("asr.compute_type", "auto")) if config else "auto"
     dirs = cuda_library_dirs(
@@ -268,35 +290,57 @@ def probe_device(
         search_path=search_path,
         system_dirs=system_dirs,
     )
-    if plan_device(config, dirs, vram=vram).device == "cpu":
-        env["CUDA_VISIBLE_DEVICES"] = ""
+    plan = plan_device(config, dirs, vram=vram, role=role)
+    if plan.device == "cpu":
+        # Hidden only when no model would use the GPU: CUDA reads this once per process,
+        # and on a 2 GB card an English meeting on the CPU may come before a Hebrew one
+        # on the GPU.
+        if plan_device(config, dirs, vram=vram, role=CLASSIFIER).device == "cpu":
+            env["CUDA_VISIBLE_DEVICES"] = ""
         compute = configured_compute if configured_compute != "auto" else "int8"
         return "cpu", compute, []
     registered = register_cuda_dirs(dirs)
-    compute = configured_compute if configured_compute != "auto" else supported_compute_type()
-    return "cuda", compute, registered
+    if configured_compute != "auto":
+        return "cuda", configured_compute, registered
+    # A configured "cuda" did not ask for the memory; the compute type needs it.
+    memory = plan.vram_mb if plan.vram_mb is not None else (vram or cached_gpu_memory_mb)()
+    return "cuda", supported_compute_type(memory), registered
 
 
-def device_plan(config: Config, *, vram: VramQuery | None = None) -> DevicePlan:
+def device_plan(config: Config, *, vram: VramQuery | None = None, role: str = HEBREW) -> DevicePlan:
     """What ``probe_device`` would choose, without its side effects (it registers DLL
-    folders and sets CUDA_VISIBLE_DEVICES): which model to fetch depends on it."""
+    folders and sets CUDA_VISIBLE_DEVICES): which model to fetch depends on it.
+
+    The machine-wide questions (the setup screen, the auto profile, a file's length limit)
+    ask about the Hebrew model, the product's main language and default (D99)."""
     dirs = cuda_library_dirs(configured=config.get("asr.cuda_dir"))
-    return plan_device(config, dirs, vram=vram)
+    return plan_device(config, dirs, vram=vram, role=role)
 
 
-def planned_device(config: Config, *, vram: VramQuery | None = None) -> str:
-    return device_plan(config, vram=vram).device
+def planned_device(config: Config, *, vram: VramQuery | None = None, role: str = HEBREW) -> str:
+    return device_plan(config, vram=vram, role=role).device
 
 
-def supported_compute_type() -> str:
-    """float16 → int8_float32 → int8. On Pascal (GTX 1080) int8 is the right answer."""
-    try:
-        import ctranslate2
+#: The compute types tried in order, by the card's memory. On Pascal (GTX 1080) neither
+#: float16 type is supported, so int8_float32 is the answer at any size.
+COMPUTE_ORDER = ("float16", "int8_float32", "int8")
+SMALL_GPU_COMPUTE_ORDER = ("int8_float16", "int8_float32", "int8")
 
-        supported = set(ctranslate2.get_supported_compute_types("cuda"))
-    except Exception:  # pragma: no cover - no ctranslate2 or no GPU
-        return "int8"
-    for candidate in ("float16", "int8_float32", "int8"):
+
+def supported_compute_type(
+    vram_mb: int | None = None, supported: Sequence[str] | None = None
+) -> str:
+    """The first of ``COMPUTE_ORDER`` the GPU supports; under ``SMALL_GPU_MB`` of memory,
+    the first of ``SMALL_GPU_COMPUTE_ORDER``, never float16."""
+    if supported is None:
+        try:
+            import ctranslate2
+
+            supported = list(ctranslate2.get_supported_compute_types("cuda"))
+        except Exception:  # pragma: no cover - no ctranslate2 or no GPU
+            return "int8"
+    small = vram_mb is not None and vram_mb < SMALL_GPU_MB
+    for candidate in SMALL_GPU_COMPUTE_ORDER if small else COMPUTE_ORDER:
         if candidate in supported:
             return candidate
     return "int8"
@@ -435,7 +479,7 @@ class LocalAsr:
     def load(self) -> Any:
         if self.model is not None:
             return self.model
-        device, compute, registered = probe_device(self.config)
+        device, compute, registered = probe_device(self.config, role=self.role)
         self.registered_dll_dirs = registered
         # The installed model or ModelNotInstalled: never a download (R12). A repo id
         # handed to faster-whisper would fetch it unseen into the Hugging Face cache.

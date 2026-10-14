@@ -228,7 +228,7 @@ def test_a_gpu_that_fails_falls_back_to_the_cpu(
     import app.asr.local as local
 
     place_classifier(app_home)
-    monkeypatch.setattr(local, "probe_device", lambda config: ("cuda", "int8", []))
+    monkeypatch.setattr(local, "probe_device", lambda config, **_: ("cuda", "int8", []))
     built: list[str] = []
     model = StubModel([{"en": 0.99}])
 
@@ -248,14 +248,14 @@ def test_a_gpu_that_fails_falls_back_to_the_cpu(
 def test_a_small_gpu_runs_the_classifier_on_the_cpu_too(
     app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The VRAM gate (under 4 GB -> CPU) holds for the classifier as for the large model."""
+    """The classifier's own VRAM gate (under 1 GB -> CPU), as for the large models."""
     import app.asr.local as local
 
     place_classifier(app_home)
     cublas = tmp_path / "cuda"
     cublas.mkdir()
     (cublas / "cublas64_12.dll").write_bytes(b"")
-    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 2048)
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 768)
     built: list[str] = []
 
     def factory(**kwargs: Any) -> StubModel:
@@ -263,7 +263,7 @@ def test_a_small_gpu_runs_the_classifier_on_the_cpu_too(
         return StubModel([{"he": 0.9}])
 
     config = default_config(asr__cuda_dir=str(cublas))
-    assert local.plan_device(config, [cublas]).reason == "low_vram"
+    assert local.plan_device(config, [cublas], role=CLASSIFIER).reason == "low_vram"
     classifier = WhisperClassifier(
         config, model_factory=factory, read_speech=lambda t, w: speech(t, 100)
     )
@@ -303,7 +303,7 @@ def test_on_the_gpu_it_runs_in_place(app_home: Path, monkeypatch: pytest.MonkeyP
     from app.asr.classify import IsolatedClassifier
 
     place_classifier(app_home)
-    monkeypatch.setattr(local, "planned_device", lambda config: "cuda")
+    monkeypatch.setattr(local, "planned_device", lambda config, **_: "cuda")
     ran: list[str] = []
     monkeypatch.setattr(
         classify_module.WhisperClassifier, "classify",

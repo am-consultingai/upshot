@@ -364,11 +364,11 @@ class WhisperClassifier:
         )  # fmt: skip
 
     def _load(self) -> tuple[Any, str]:
-        """On the device transcription plans for, int8, with the same CUDA → CPU fallback."""
+        """On the GPU if it has room for small, int8, with the same CUDA → CPU fallback."""
         from app.asr.local import LocalAsr, probe_device
 
         choice = require(self.config, CLASSIFIER)
-        device, _compute, _dirs = probe_device(self.config)
+        device, _compute, _dirs = probe_device(self.config, role=CLASSIFIER)
         threads = max(1, (os.cpu_count() or 4) - 2)
         try:
             model = self.model_factory(
@@ -446,7 +446,7 @@ class IsolatedClassifier:
         from app.asr.local import planned_device
 
         require(self.config, CLASSIFIER)  # a missing model is said here, not in the child
-        if planned_device(self.config) != "cpu":
+        if planned_device(self.config, role=CLASSIFIER) != "cpu":
             return self._in_place(inputs)
         try:
             answer = self.run_child(
