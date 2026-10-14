@@ -270,10 +270,9 @@ export default function Settings() {
       {section === "transcription" && (
         <>
           <AiAppsSettings part="access" />
-          <TranscriptionServiceSettings part="claude" />
           <AiAppsSettings part="apps" />
           <ActiveJobs />
-          <TranscriptionServiceSettings part="rest" />
+          <TranscriptionServiceSettings />
         </>
       )}
       {section === "requests" && <AppRequests />}

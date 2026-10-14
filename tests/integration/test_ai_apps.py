@@ -193,3 +193,42 @@ def test_refusals_without_the_key_collapse_to_one_line_a_minute(h: ApiHarness) -
     program.cookies.clear()
     program.get("/api/v1/transcriptions")
     assert len(h.services.access_log.recent()) == 2
+
+
+def test_the_found_apps_and_the_terminal_on_a_source_checkout(h: ApiHarness) -> None:
+    """Off Windows, nothing is looked up and nothing opens: the page copies the command."""
+    page = h.client()
+    apps = page.get("/api/ai-apps/found").json()["apps"]
+    assert set(apps) == {"claude_code", "codex", "antigravity"}
+    assert all(side == {"windows": False, "wsl": None} for side in apps.values())
+    assert (
+        page.post("/api/ai-apps/terminal", json={"app": "word", "side": "windows"}).status_code
+        == 400
+    )
+    assert (
+        page.post("/api/ai-apps/terminal", json={"app": "codex", "side": "mac"}).status_code == 400
+    )
+    # A source checkout has no installed bridge to name.
+    assert page.post("/api/ai-apps/terminal", json={"app": "codex"}).status_code == 409
+    assert (
+        h.client(authorized=False).post("/api/ai-apps/terminal", json={"app": "codex"}).status_code
+        == 403
+    )
+
+
+def test_the_terminal_never_runs_text_from_the_request(
+    h: ApiHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.main import test_mode  # noqa: F401  (install_dir reads it)
+
+    monkeypatch.setenv("UP_TEST_MODE", "1")
+    reply = (
+        h.client()
+        .post(
+            "/api/ai-apps/terminal",
+            json={"app": "antigravity", "side": "wsl", "command": "rm -rf ~"},
+        )
+        .json()
+    )
+    assert reply["launched"] is False
+    assert reply["command"].startswith('agy mcp add upshot -- "/mnt/c/Users/someone/')

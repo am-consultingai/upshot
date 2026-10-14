@@ -553,6 +553,14 @@ export interface TranscriptionConnect {
   keep_days: number | null;
 }
 
+/** An AI app added by a command of its own (epic z8tj1hjg3v). */
+export type AiAppId = "claude_code" | "codex" | "antigravity";
+
+/** Where each app was found: on Windows, and the running WSL distribution that has it. */
+export interface AiAppsFound {
+  apps: Record<AiAppId, { windows: boolean; wsl: string | null }>;
+}
+
 /** Settings → AI apps (D98): connecting the user's own AI tools to the meetings. */
 export interface AiApps {
   meetings_enabled: boolean;
@@ -1067,6 +1075,13 @@ export const api = {
     }),
   transcriptionConnect: () => request<TranscriptionConnect>("/api/transcription/connect"),
   aiApps: () => request<AiApps>("/api/ai-apps"),
+  aiAppsFound: () => request<AiAppsFound>("/api/ai-apps/found"),
+  /** A terminal with the app's own add command typed in; `launched` false: paste it. */
+  aiAppsTerminal: (app: AiAppId, side: "windows" | "wsl") =>
+    request<{ launched: boolean; command: string }>("/api/ai-apps/terminal", {
+      method: "POST",
+      body: JSON.stringify({ app, side }),
+    }),
   /** A POST, so only this page can read the key. */
   aiAppsKey: () => request<{ key: string }>("/api/ai-apps/key", { method: "POST" }),
   aiAppsResetKey: () => request<{ key: string }>("/api/ai-apps/key/reset", { method: "POST" }),
