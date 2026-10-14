@@ -132,7 +132,7 @@ test("the_page_works_in_hebrew", async ({ page, seedBody }) => {
   });
   await gotoApp(page, "/transcriptions");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { name: "אפליקציות AI" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "בקשות מאפליקציות" })).toBeVisible();
   await expect(page.getByTestId("ai-apps-tab-transcriptions")).toHaveText("תמלולים");
   await expect(page.getByTestId("transcription-state")).toHaveText("הושלם");
 });
@@ -195,15 +195,18 @@ test("file_transcriptions_never_reach_the_library", async ({ page, seedBody }) =
   await expect(page.getByText("ראיון.mp4")).toHaveCount(0);
 });
 
-test("g_t_and_the_sidebar_lead_here", async ({ page, seedBody }) => {
+test("g_t_and_the_old_address_lead_to_app_requests_in_settings", async ({ page, seedBody }) => {
   await seedBody({});
   await gotoApp(page, "/");
   await page.keyboard.press("g");
   await page.keyboard.press("t");
   await expect(page.getByTestId("transcriptions-page")).toBeVisible();
-  await gotoApp(page, "/");
-  await page.getByTestId("nav-transcriptions").click();
-  await expect(page).toHaveURL(/\/transcriptions$/);
+  await expect(page).toHaveURL(/\/settings#requests$/);
+  // Not in the sidebar any more: it is a section of Settings.
+  await expect(page.getByTestId("nav-transcriptions")).toHaveCount(0);
+  await gotoApp(page, "/transcriptions?tab=activity");
+  await expect(page).toHaveURL(/\/settings\?tab=activity#requests$/);
+  await expect(page.getByTestId("ai-activity")).toBeVisible();
 });
 
 test("a_meeting_waiting_behind_files_says_so", async ({ page, seedBody }) => {

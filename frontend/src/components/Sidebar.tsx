@@ -21,7 +21,7 @@ import { Loading, Skeleton, SkeletonRows } from "./Skeleton";
 import EmptyState, { EMPTY_BUTTON, EMPTY_ICON } from "./EmptyState";
 import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
-import { Calendar, Check, ChevronDown, FileChartColumn, Search, Settings, type LucideIcon } from "lucide-react";
+import { Calendar, Check, ChevronDown, Search, Settings, type LucideIcon } from "lucide-react";
 import { Icon } from "./Icon";
 
 /**
@@ -49,13 +49,6 @@ const NAV: { to: string; key: MessageKey; hint: MessageKey; testid: string; icon
     icon: Calendar,
   },
   { to: "/actions", key: "nav.actions", hint: "help.actions", testid: "nav-actions", icon: Check },
-  {
-    to: "/transcriptions",
-    key: "nav.transcriptions",
-    hint: "help.transcriptions",
-    testid: "nav-transcriptions",
-    icon: FileChartColumn,
-  },
   {
     to: "/search",
     key: "nav.search",

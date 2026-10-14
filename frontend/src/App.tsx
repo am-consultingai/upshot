@@ -9,7 +9,6 @@ import Library from "./routes/Library";
 import MeetingPage from "./routes/Meeting";
 import SearchPage from "./routes/Search";
 import ActionsPage from "./routes/Actions";
-import TranscriptionsPage from "./routes/Transcriptions";
 import { applyEvent, type TranscriptionEvent } from "./lib/transcriptions";
 import { applyFileEvent, applyJobProgress, type JobProgressEvent } from "./lib/activeJobs";
 import Settings from "./routes/Settings";
@@ -70,7 +69,7 @@ function useShortcuts(onRecord: () => void) {
       if (pendingG.current !== null) {
         window.clearTimeout(pendingG.current);
         pendingG.current = null;
-        const to = { l: "/", a: "/actions", t: "/transcriptions", s: "/search", ",": "/settings" }[key];
+        const to = { l: "/", a: "/actions", t: "/settings#requests", s: "/search", ",": "/settings" }[key];
         if (to) {
           event.preventDefault();
           navigate(to);
@@ -363,7 +362,8 @@ export default function App() {
               </Route>
               {/* The inbox carries its own bar and rail, like a meeting, so it is not in a Full column. */}
               <Route path="/actions" element={<ActionsPage />} />
-              <Route path="/transcriptions" element={<Full><TranscriptionsPage /></Full>} />
+              {/* The old address of App requests, now in Settings (D98). */}
+              <Route path="/transcriptions" element={<ToRequests />} />
               <Route path="/search" element={<Full><SearchPage /></Full>} />
               <Route path="/settings" element={<Full wide><Settings /></Full>} />
               {/*
@@ -384,4 +384,10 @@ export default function App() {
       </div>
     </I18nContext.Provider>
   );
+}
+
+/** /transcriptions?tab=… → Settings → App requests, with the same tab. */
+function ToRequests() {
+  const { search } = useLocation();
+  return <Navigate to={`/settings${search}#requests`} replace />;
 }

@@ -15,7 +15,7 @@ const SCREENS = [
   { path: "/", ready: "calendar-timegrid" },
   { path: "/m/m-onboarding", ready: "summary-html" },
   { path: "/actions", ready: "action-group" },
-  { path: "/transcriptions", ready: "transcriptions-page" },
+  { path: "/settings#requests", ready: "transcriptions-page" },
   { path: "/settings#calendar", ready: "settings-nav" },
   { path: "/settings#transcription", ready: "settings-nav" },
 ] as const;
