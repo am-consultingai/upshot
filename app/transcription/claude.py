@@ -30,6 +30,8 @@ from app.log import get
 
 log = get(__name__)
 
+#: The extension's id. Kept from when it only transcribed: a new id would install a
+#: second Upshot beside the first in Claude Desktop.
 EXTENSION_NAME = "upshot-transcribe"
 BUNDLE_NAME = f"{EXTENSION_NAME}.mcpb"
 #: The Store package's family name starts with this, then ``_`` and the publisher hash.
@@ -43,6 +45,15 @@ TOOLS = (
     ("get_transcription", "A transcription's progress, or its transcript once done."),
     ("list_transcriptions", "Recent file transcriptions in Upshot."),
     ("cancel_transcription", "Stop a waiting or running transcription."),
+    # The meeting tools, served by the app and passed through by the bridge (D98).
+    ("search", "Search the user's meetings by words."),
+    ("list_meetings", "List meetings, newest first."),
+    ("get_meeting", "One meeting: its summary and action items."),
+    ("get_summary", "The whole summary Upshot wrote of a meeting, with its chapters."),
+    ("get_transcript", "A meeting's transcript, in parts."),
+    ("list_action_items", "Action items across meetings, or one meeting's."),
+    ("calendar_range", "The user's calendar events between two dates."),
+    ("related_meetings", "Meetings related to one meeting, and why."),
 )
 
 
@@ -96,13 +107,15 @@ def manifest(bridge: str, version: str) -> dict[str, Any]:
     return {
         "manifest_version": "0.2",
         "name": EXTENSION_NAME,
-        "display_name": "Upshot transcription",
+        "display_name": "Upshot",
         "version": _semver(version),
-        "description": "Transcribe audio and video files on this computer with Upshot.",
+        "description": "Your Upshot meetings, and transcription of files on this computer.",
         "long_description": (
-            "Lets Claude transcribe audio and video files with Upshot, which runs on this "
-            "computer: files are read where they are and never leave it. Upshot must be "
-            "running."
+            "Lets Claude read your meetings in Upshot, the meeting recorder on this "
+            "computer: transcripts, summaries, action items and the calendar. What Claude "
+            "reads goes to Anthropic, as anything in a conversation does. It also "
+            "transcribes audio and video files with Upshot: files are read where they are "
+            "and never leave the computer. Upshot must be running."
         ),
         "author": {"name": "AM Consulting", "url": "https://github.com/am-consultingai/upshot"},
         "icon": "icon.png",

@@ -65,9 +65,7 @@ def _read_only() -> Any:
     return ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
 
 
-def build_server(
-    svc: Services, *, outside: bool = False, record: Recorder | None = None
-) -> Any:
+def build_server(svc: Services, *, outside: bool = False, record: Recorder | None = None) -> Any:
     """The tool server. ``outside``: the one for the user's own AI tools, which the switch
     turns off and ``record`` hears of."""
     from mcp.server.mcpserver import MCPServer
@@ -150,9 +148,7 @@ def build_server(
         annotations=read_only,
     )
     def get_summary(meeting_id: str, part: int = 1, ctx: Context | None = None) -> str:
-        return answer(
-            ctx, "get_summary", meeting_id, lambda: tools.get_summary(meeting_id, part)
-        )
+        return answer(ctx, "get_summary", meeting_id, lambda: tools.get_summary(meeting_id, part))
 
     @server.tool(
         description=(
