@@ -89,6 +89,14 @@ def found(request: Request) -> dict[str, Any]:
     return {"apps": find(services_of(request).config, test=_test_install()).as_dict()}
 
 
+def ai_terminal_windows() -> set[int]:
+    """Upshot's terminals already open, so the one about to open is told from them."""
+    from app import ai_terminal
+    from app.window import terminal_windows
+
+    return terminal_windows(ai_terminal.TITLE)
+
+
 class TerminalPost(BaseModel):
     app: str
     side: str = "windows"
@@ -117,7 +125,13 @@ def open_terminal(request: Request, body: TerminalPost) -> dict[str, Any]:
         argv = ai_terminal.powershell_argv(line)
     else:
         line = command
-        argv = ai_terminal.wsl_argv(line, ai_terminal.find_in_wsl().get(body.app))
+        distro = ai_terminal.find_in_wsl().get(body.app)
+        if distro is None:
+            # Stopped since the page asked, or never there: opening the default distro
+            # would start WSL, maybe one without the app. The page has copied the line.
+            return {"launched": False, "command": line}
+        argv = ai_terminal.wsl_argv(line, distro)
+    before = ai_terminal_windows()
     try:
         ai_terminal.launch(argv, fresh)
     except OSError as exc:
@@ -126,7 +140,7 @@ def open_terminal(request: Request, body: TerminalPost) -> dict[str, Any]:
     log.info("opened a terminal to add Upshot to %s (%s)", body.app, body.side)
     from app.window import bring_terminal_forward
 
-    bring_terminal_forward(ai_terminal.TITLE)
+    bring_terminal_forward(ai_terminal.TITLE, before)
     return {"launched": True, "command": line}
 
 

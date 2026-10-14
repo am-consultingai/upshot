@@ -26,6 +26,16 @@ def test_only_paths_that_command_v_printed_count_as_found() -> None:
     assert ai_terminal.apps_in("bash: no job control in this shell\n") == []
 
 
+def test_a_windows_install_on_wsls_path_is_not_found_in_wsl() -> None:
+    """WSL appends Windows's PATH by default, and npm leaves an extensionless shim."""
+    out = (
+        "/mnt/c/Users/someone/AppData/Roaming/npm/codex\n"
+        "/MNT/D/tools/agy\n"
+        "/home/someone/.local/bin/claude\n"
+    )
+    assert ai_terminal.apps_in(out) == ["claude_code"]
+
+
 def test_the_first_running_distro_with_the_app_is_the_one(monkeypatch: pytest.MonkeyPatch) -> None:
     answers = {"Ubuntu": "/home/a/.local/bin/agy\n", "Debian": "/usr/bin/agy\n/usr/bin/codex\n"}
 
@@ -63,6 +73,8 @@ def test_found_reports_both_sides_for_every_app() -> None:
             "C:\\Users\\someone\\AppData\\Roaming\\npm\\codex.CMD",
             f'codex.cmd mcp add upshot -- "{BRIDGE}"',
         ),
+        # A .bat shim keeps its own extension.
+        ("C:\\tools\\codex.bat", f'codex.bat mcp add upshot -- "{BRIDGE}"'),
         # Found only where its installer leaves it, not on the PATH: the full path.
         (None, f'& "C:\\winget\\codex.exe" mcp add upshot -- "{BRIDGE}"'),
     ],
@@ -83,6 +95,14 @@ def test_powershell_types_the_line_and_runs_nothing() -> None:
     )
     assert "-MaxTriggerCount 1" in script and "PowerShell.OnIdle" in script
     assert "EncodedCommand" not in " ".join(argv)
+
+
+def test_every_quote_powershell_reads_as_a_single_quote_is_doubled() -> None:
+    """A profile folder named O’Brien must not end the string early."""
+    script = ai_terminal.powershell_argv('agy mcp add upshot "C:\\Users\\O\u2019Brien\\x.exe"')[4]
+    assert "O\u2019\u2019Brien" in script
+    for quote in "\u2018\u201a\u201b'":
+        assert quote * 2 in ai_terminal.powershell_argv(f"a{quote}b")[4]
 
 
 def test_wsl_gets_the_line_as_an_argument_never_inside_the_script() -> None:

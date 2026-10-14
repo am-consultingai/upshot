@@ -1072,6 +1072,7 @@ export const es: Record<MessageKey, string> = {
   "settings.aiAppsOpenTerminal": "Abrir en el terminal",
   "settings.aiAppsTerminalOpened": "Pulse Intro en el terminal para añadir Upshot.",
   "settings.aiAppsTerminalCopied": "Copiado. Péguelo en un terminal y pulse Intro.",
+  "settings.aiAppsTerminalNotCopied": "No se pudo copiar. Use Copiar y péguelo en un terminal.",
   "settings.aiAppsChatGptSteps": "O en la app de ChatGPT: Ajustes → Plugins → MCPs → Añadir servidor MCP, y pegue esta ruta.",
   "settings.aiAppsMore": "Más apps",
   "settings.aiAppsOthers": "Cursor, VS Code, LM Studio, mcphost y otras",

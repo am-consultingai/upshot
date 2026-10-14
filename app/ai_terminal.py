@@ -15,6 +15,7 @@ Research: ``internal/research/2026-10-14-openai-desktop-mcp.md`` §4.2–4.3 and
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -174,14 +175,22 @@ def find_in_wsl(distros: list[str] | None = None) -> dict[str, str]:
     return found
 
 
+#: A Windows drive inside WSL. WSL appends the Windows PATH to its own by default
+#: (``appendWindowsPath``), and npm on Windows leaves an extensionless shim beside
+#: ``codex.cmd``: found there, it is the Windows install, not one in WSL.
+_WINDOWS_DRIVE = re.compile(r"^/mnt/[a-z]/", re.IGNORECASE)
+
+
 def apps_in(command_v: str) -> list[str]:
-    """The apps whose program ``command -v`` printed as a path (an alias or a function
-    prints something else, and is left out)."""
+    """The apps whose program ``command -v`` printed as a path inside WSL (an alias or a
+    function prints something else, and a Windows drive is Windows's install)."""
     names = {program: app for app, program in PROGRAMS.items()}
     return [
         names[line.rsplit("/", 1)[-1]]
         for line in command_v.splitlines()
-        if line.startswith("/") and line.rsplit("/", 1)[-1] in names
+        if line.startswith("/")
+        and not _WINDOWS_DRIVE.match(line)
+        and line.rsplit("/", 1)[-1] in names
     ]
 
 
@@ -197,7 +206,8 @@ def windows_line(command: str, program_path: str | None, fresh_path: str | None)
 
     - Found on the PATH as an ``.exe``: the command as shown.
     - An npm install (``codex.cmd`` beside ``codex.ps1``): PowerShell would pick the
-      ``.ps1``, which a machine that blocks scripts refuses; ``codex.cmd`` always runs.
+      ``.ps1``, which a machine that blocks scripts refuses; the ``.cmd`` (or ``.bat``)
+      always runs.
     - Not on the PATH at all (a winget install without its link): the full path.
     """
     program, _, rest = command.partition(" ")
@@ -206,9 +216,15 @@ def windows_line(command: str, program_path: str | None, fresh_path: str | None)
     on_path = shutil.which(program, path=fresh_path) if fresh_path else None
     if on_path is None:
         return f'& "{program_path}" {rest}'
-    if on_path.lower().endswith((".cmd", ".bat")):
-        return f"{program}.cmd {rest}"
+    extension = os.path.splitext(on_path)[1].lower()
+    if extension in (".cmd", ".bat"):
+        return f"{program}{extension} {rest}"
     return command
+
+
+#: What PowerShell takes as a single quote: ASCII's, and the typographic ones (a profile
+#: folder named O’Brien). Each is doubled inside a single-quoted string.
+_SINGLE_QUOTES = re.compile("(['\u2018\u2019\u201a\u201b])")
 
 
 def powershell_argv(line: str) -> list[str]:
@@ -224,7 +240,7 @@ def powershell_argv(line: str) -> list[str]:
     has flagged encoded scripts of ours (known-issues K4). Defender stayed silent on this
     one on machine B.
     """
-    quoted = line.replace("'", "''")
+    quoted = _SINGLE_QUOTES.sub(r"\1\1", line)
     script = (
         f"$Host.UI.RawUI.WindowTitle = '{TITLE}'; "
         "Write-Host 'Press Enter to add Upshot. Empty line? Paste it with Ctrl+V.' "
@@ -249,7 +265,9 @@ _WSL_SCRIPT = (
 def wsl_argv(line: str, distro: str | None) -> list[str]:
     """A WSL shell with ``line`` ready at its prompt. ``-e``, not ``--``: the arguments go
     to bash as they are, not through the user's shell a second time; the line is bash's
-    ``$1``, so nothing in it is quoted twice."""
+    ``$1``, so nothing in it is quoted twice. Tested 2026-10-14 on machine A: started from
+    Windows Python with ``CREATE_NEW_CONSOLE``, the window showed a line with ``"`` and
+    ``$WSL_DISTRO_NAME`` intact, unexpanded (Enter was not pressed there)."""
     where = ["-d", distro] if distro else []
     return ["wsl.exe", *where, "--cd", "~", "-e", "bash", "-lic", _WSL_SCRIPT, TITLE, line]
 

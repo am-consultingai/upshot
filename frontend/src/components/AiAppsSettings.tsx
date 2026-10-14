@@ -34,20 +34,40 @@ const BY_FILE: { id: string; label: MessageKey; logos: AppId[]; hint: MessageKey
   },
 ];
 
+/** Copy ``text``; false when the browser refused (no clipboard, or no permission). */
+async function copy(text: string): Promise<boolean> {
+  if (!navigator.clipboard) return false;
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Opens a terminal with the app's own command typed in; the user presses Enter and the
  * app writes its own file (D98). The command is copied too, for where it cannot be typed
- * in (a source checkout, or PowerShell that blocks it): the toast says to paste it.
+ * in (a source checkout, or PowerShell that blocks it): the toast says to paste it. The
+ * shown command is copied at the click, while the browser allows it; the server's line
+ * replaces it when it differs (``codex.cmd …``, or the program's full path), since that
+ * is what works in a terminal on this computer.
  */
 function OpenInTerminal({ app, side, text, testid }: { app: AiAppId; side: Side; text: string; testid: string }) {
   const { t } = useI18n();
   const open = useMutation({
     mutationFn: async () => {
-      await navigator.clipboard?.writeText(text).catch(() => undefined);
-      return api.aiAppsTerminal(app, side);
+      let copied = await copy(text);
+      const data = await api.aiAppsTerminal(app, side);
+      if (data.command !== text) copied = await copy(data.command);
+      return { ...data, copied };
     },
     onSuccess: (data) =>
-      toast({ title: t(data.launched ? "settings.aiAppsTerminalOpened" : "settings.aiAppsTerminalCopied") }),
+      data.launched
+        ? toast({ title: t("settings.aiAppsTerminalOpened") })
+        : data.copied
+          ? toast({ title: t("settings.aiAppsTerminalCopied") })
+          : toast({ title: t("settings.aiAppsTerminalNotCopied"), tone: "danger" }),
     onError: (error) => toast({ title: reason(error), tone: "danger" }),
   });
   return (
