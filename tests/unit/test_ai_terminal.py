@@ -143,3 +143,57 @@ def test_no_terminal_windows_are_listed_off_windows() -> None:
     from app.window import terminal_windows
 
     assert terminal_windows("Upshot - Codex") == set()
+
+
+class _Gone(Exception):
+    """What pywin32 raises when a window closed while it was looked at."""
+
+
+def _fake_win32gui(monkeypatch: pytest.MonkeyPatch, *, list_fails: bool = False) -> None:
+    """Three windows: Upshot's terminal, one that closes mid-list, and another app's."""
+    import types
+
+    windows = {1: ("CASCADIA_HOSTING_WINDOW_CLASS", "Upshot - Codex"), 3: ("Notepad", "x")}
+
+    def enum(visit: Any, extra: object) -> None:
+        if list_fails:
+            raise _Gone("EnumWindows")
+        for hwnd in (1, 2, 3):
+            visit(hwnd, extra)
+
+    def class_name(hwnd: int) -> str:
+        if hwnd not in windows:
+            raise _Gone("GetClassName")
+        return windows[hwnd][0]
+
+    fake = types.SimpleNamespace(
+        EnumWindows=enum,
+        IsWindowVisible=lambda hwnd: True,
+        GetClassName=class_name,
+        GetWindowText=lambda hwnd: windows[hwnd][1],
+    )
+    monkeypatch.setitem(sys.modules, "win32gui", fake)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+
+def test_a_window_closing_mid_list_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.window import terminal_windows
+
+    _fake_win32gui(monkeypatch)
+    assert terminal_windows("Upshot - Codex") == {1}
+
+
+def test_a_list_that_fails_is_empty_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.window import terminal_windows
+
+    _fake_win32gui(monkeypatch, list_fails=True)
+    assert terminal_windows("Upshot - Codex") == set()
+
+
+def test_two_clicks_for_one_app_bring_forward_two_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import window
+
+    monkeypatch.setattr(window, "_CLAIMED", set())
+    assert window._claim({11, 12}) == 11
+    assert window._claim({11, 12}) == 12
+    assert window._claim({11, 12}) is None
