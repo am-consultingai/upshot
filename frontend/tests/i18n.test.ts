@@ -48,8 +48,6 @@ describe("catalogue parity", () => {
     "settings.transcriptionTabWsl",
     "settings.aiAppsCodex",
     "settings.aiAppsAntigravity",
-    "settings.aiAppsGemini",
-    "settings.aiAppsVsCode",
     "meeting.exportMarkdown",
     "assistant.provider.anthropic",
     "assistant.provider.openai",
