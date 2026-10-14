@@ -90,23 +90,63 @@ def is_page(request: Request, svc: Services) -> bool:
     )
 
 
+#: What the activity log calls each route (D98). ``wait`` is left out: a long-poll is
+#: asked again and again for one job, and would bury everything else.
+ACTIONS = {
+    "create": "transcribe",
+    "list_transcriptions": "list",
+    "get_transcription": "get",
+    "result": "result",
+    "cancel": "cancel",
+    "retry": "retry",
+    "delete": "delete",
+}
+
+
+def agent_of(request: Request) -> str:
+    """What a program calls itself: the AI app's name the bridge passes on, else the
+    client header (``api``, ``mcp``), else its User-Agent."""
+    from app.access_log import AGENT_CHARS, clean
+
+    for name in ("x-upshot-agent", CLIENT_HEADER, "user-agent"):
+        value = request.headers.get(name)
+        if value:
+            return clean(value, AGENT_CHARS)
+    return ""
+
+
+def note(request: Request, svc: Services, outcome: str = "ok", target: str = "") -> None:
+    """One line in the activity log for a program's request (D98); none for the page."""
+    route = request.scope.get("route")
+    action = ACTIONS.get(getattr(route, "name", "") or "")
+    if action is None or svc.access_log is None:
+        return
+    if not target:
+        job_id = str(request.path_params.get("job_id") or "")
+        job = svc.transcriptions.get(job_id) if job_id and svc.transcriptions else None
+        target = job.source_name if job is not None else job_id
+    svc.access_log.record("api", agent_of(request), action, target, outcome)
+
+
 def require_caller(request: Request, svc: Services) -> bool:
     """The page, or a program with the access key (D98); 401 for anyone else. Whether
     it is the page."""
     if is_page(request, svc):
         return True
     if not svc.auth.valid_access(request.headers.get("authorization")):
+        note(request, svc, "refused")
         raise HTTPException(401, KEY_DETAIL, headers={"WWW-Authenticate": "Bearer"})
     return False
 
 
 def require_enabled(request: Request) -> Services:
     svc = services_of(request)
-    require_caller(request, svc)
-    if not bool(svc.config.get("transcription.service_enabled", True)) and not is_page(
-        request, svc
-    ):
+    page = require_caller(request, svc)
+    if not bool(svc.config.get("transcription.service_enabled", True)) and not page:
+        note(request, svc, "refused")
         raise HTTPException(403, OFF_DETAIL)
+    if not page and getattr(request.scope.get("route"), "name", "") != "create":
+        note(request, svc)  # a new job is noted once it exists, with its file's name
     return svc
 
 
@@ -284,6 +324,8 @@ async def create(request: Request) -> JSONResponse:
         job = await _from_path(request, svc)
     else:
         raise HTTPException(415, "send multipart/form-data with a file, or JSON with a path")
+    if not is_page(request, svc):
+        note(request, svc, target=job.source_name)
     return JSONResponse(describe(svc, job), status_code=202)
 
 

@@ -338,6 +338,10 @@ def sweep(
 
 def sweep_services(services: Any) -> SweepResult:
     """The sweep as the running application calls it."""
+    access_log = getattr(services, "access_log", None)
+    if access_log is not None:
+        # The AI apps activity log (D98): kept unless a number of days is set (D92).
+        access_log.sweep(days_of(services.config.get("retention.access_log_days")))
     return sweep(
         dao=services.dao,
         queue=services.queue,
