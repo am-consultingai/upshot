@@ -260,6 +260,7 @@ def test_any_failure_to_read_vram_is_none(runner: FakeRunner) -> None:
 def test_each_model_has_its_own_vram_minimum() -> None:
     """Measured on a 2 GB MX450 (D99): the turbo fits, large-v3 does not."""
     assert MIN_VRAM_MB == {CLASSIFIER: 1024, HEBREW: 2048, OTHER: 4096}
+    assert set(MIN_VRAM_MB) == set(ROLES), "a model without a minimum would be a KeyError"
 
 
 @pytest.mark.parametrize("role", [CLASSIFIER, HEBREW, OTHER])
@@ -454,3 +455,19 @@ def test_a_model_the_caller_chose_survives_the_fallback(tmp_path: Path) -> None:
     config = default_config(asr__device="cuda", asr__compute_type="int8")
     LocalAsr(config, model_factory=factory, choice=mine).load()
     assert built == [mine.reference, mine.reference]
+
+
+def test_the_self_test_reports_the_compute_type_for_the_gpus_memory(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    import app.asr.local as local
+    from app import selftest_suites
+
+    monkeypatch.setattr(local, "cuda_library_dirs", lambda **_: [tmp_path / "cuda"])
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 2048)
+    monkeypatch.setattr(local, "supported_compute_type", lambda m: f"for {m} MB")
+    checks = selftest_suites._asr(argparse.Namespace())
+    cuda = next(check for check in checks if check.name == "asr_cuda")
+    assert "compute for 2048 MB" in cuda.detail
