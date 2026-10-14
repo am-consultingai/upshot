@@ -270,10 +270,16 @@ def _write_private(path: Path, text: str) -> None:
     half a key."""
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(f"{path.name}.{secrets.token_hex(4)}.partial")
-    partial.write_text(text, encoding="utf-8")
-    with contextlib.suppress(OSError):
-        partial.chmod(0o600)
-    os.replace(partial, path)
+    try:
+        partial.write_text(text, encoding="utf-8")
+        with contextlib.suppress(OSError):
+            partial.chmod(0o600)
+        os.replace(partial, path)
+    finally:
+        # Never leave a copy of a key behind: os.replace fails on Windows while another
+        # process holds the file open.
+        with contextlib.suppress(OSError):
+            partial.unlink(missing_ok=True)
 
 
 def _usable_key(text: str) -> bool:

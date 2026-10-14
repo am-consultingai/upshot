@@ -500,3 +500,19 @@ def test_fifty_waiting_clients_do_not_block_the_app(h: ApiHarness, tmp_path: Pat
                 return elapsed
 
         assert asyncio.run(scenario()) < 2.0
+
+
+def test_a_failed_key_write_leaves_no_copy_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from app.api import security
+
+    def refuse(*_: object) -> None:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(os, "replace", refuse)
+    with pytest.raises(PermissionError):
+        security._write_private(tmp_path / "access.key", "k" * 40)
+    assert list(tmp_path.iterdir()) == []

@@ -49,6 +49,32 @@ def clock(at_ms: int) -> str:
     return f"{hours}:{rest // 60:02d}:{rest % 60:02d}" if hours else f"{rest // 60}:{rest % 60:02d}"
 
 
+def _fits(text: str, start: int, budget: int) -> int:
+    """The end of the longest slice from ``start`` whose JSON (escapes counted: quotes,
+    line breaks) takes at most ``budget`` characters."""
+    low, high = start, len(text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if _size(text[start:middle]) <= budget:
+            low = middle
+        else:
+            high = middle - 1
+    return max(low, start + 1) if start < len(text) else start
+
+
+def _split(text: str, first: int, rest: int) -> list[tuple[int, int]]:
+    """Where each part of ``text`` begins and ends: the first fits ``first``, the others
+    ``rest``. The same text always splits the same way, so part 3 means one thing."""
+    bounds: list[tuple[int, int]] = []
+    start, budget = 0, first
+    while True:
+        end = _fits(text, start, budget)
+        bounds.append((start, end))
+        if end >= len(text):
+            return bounds
+        start, budget = end, rest
+
+
 def _chapters(meeting: Meeting) -> list[dict[str, Any]]:
     """The summarizer's chapters from ``notes.json``; [] when there are none."""
     from app.llm.schema import chapters
@@ -200,12 +226,10 @@ class AssistantTools:
             for c in _chapters(meeting)
         ][:100]
         room = MAX_CHARS - 1_500  # the rest of the reply: ids, title, the note on what follows
-        first = max(2_000, room - _size(chapters))
-        rest = len(text) - first
-        parts = 1 if rest <= 0 else 1 + -(-rest // room)
+        bounds = _split(text, max(2_000, room - _size(chapters)), room)
+        parts = len(bounds)
         part = max(1, min(int(part or 1), parts))
-        begin = 0 if part == 1 else first + (part - 2) * room
-        end = first if part == 1 else begin + room
+        begin, end = bounds[part - 1]
         payload: dict[str, Any] = {
             "meeting_id": meeting.id,
             "title": meeting.title or "",

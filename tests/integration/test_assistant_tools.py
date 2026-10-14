@@ -237,3 +237,19 @@ def test_get_summary_with_many_chapters_still_fits(tools: AssistantTools) -> Non
     assert (
         "".join(parts) == whole.strip() and len(data(tools.get_summary("m-q4"))["chapters"]) == 100
     )
+
+
+def test_get_summary_counts_escapes_against_the_cap(tools: AssistantTools) -> None:
+    """Short quoted lines double in JSON: each part must still fit."""
+    whole = '"a"\n' * 12_000
+    tools.svc.dao.index_summary("m-q4", whole)
+    parts, part = [], 1
+    while True:
+        reply = tools.get_summary("m-q4", part)
+        assert len(reply) <= MAX_CHARS, f"part {part} is {len(reply)} characters"
+        got = data(reply)
+        parts.append(got["summary"])
+        if "next" not in got:
+            break
+        part += 1
+    assert "".join(parts) == whole.strip()
