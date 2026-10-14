@@ -556,9 +556,16 @@ export interface TranscriptionConnect {
 /** An AI app added by a command of its own (epic z8tj1hjg3v). */
 export type AiAppId = "claude_code" | "codex" | "antigravity";
 
-/** Where each app was found: on Windows, and the running WSL distribution that has it. */
+/** Where an app was found: on Windows, and the running WSL distribution that has it. */
+export interface AiAppWhere {
+  windows: boolean;
+  wsl: string | null;
+  /** The line a terminal types on Windows: the command, or `codex.cmd …` or a full path. */
+  windows_line: string | null;
+}
+
 export interface AiAppsFound {
-  apps: Record<AiAppId, { windows: boolean; wsl: string | null }>;
+  apps: Record<AiAppId, AiAppWhere>;
 }
 
 /** Settings → AI apps (D98): connecting the user's own AI tools to the meetings. */
