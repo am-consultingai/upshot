@@ -186,9 +186,7 @@ class AssistantTools:
         }
         if payload["summary_truncated"]:
             payload["summary_rest"] = "The summary goes on: get_summary returns all of it."
-        return as_data(
-            fit(payload, "action_items", "call list_action_items with this meeting_id")
-        )
+        return as_data(fit(payload, "action_items", "call list_action_items with this meeting_id"))
 
     def get_summary(self, meeting_id: str, part: int = 1) -> str:
         """The whole summary, in parts of :data:`MAX_CHARS`, and its chapters (D98)."""

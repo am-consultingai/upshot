@@ -281,6 +281,24 @@ class Upshot:
         listed = self._request("GET", "/api/v1/transcriptions", query={"limit": limit})
         return list(listed.get("transcriptions", []))
 
+    def mcp(self, method: str, params: dict[str, Any], timeout: float = 45) -> dict[str, Any]:
+        """One JSON-RPC request to the app's MCP server for the user's own tools,
+        ``/mcp/ext/`` (D98): stateless, so no session is opened first."""
+        body = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, ensure_ascii=False
+        ).encode("utf-8")
+        reply = self._request(
+            "POST", "/mcp/ext/", body=body, timeout=timeout,
+            headers={"Content-Type": "application/json",
+                     "Accept": "application/json, text/event-stream"},
+        )  # fmt: skip
+        if not isinstance(reply, dict):
+            raise UpshotError(502, "Upshot answered in a way this program does not understand")
+        if "error" in reply:
+            error = reply["error"] if isinstance(reply["error"], dict) else {}
+            raise UpshotError(400, str(error.get("message") or "Upshot refused the request"))
+        return reply.get("result") or {}
+
     def cancel(self, job_id: str) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/transcriptions/{_q(job_id)}/cancel", body=b"")  # type: ignore[no-any-return]
 

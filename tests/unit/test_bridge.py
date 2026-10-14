@@ -491,3 +491,45 @@ def test_upshot_key_overrides_the_file(tmp_path: Path, monkeypatch: pytest.Monke
     assert upshot.access_key() == "from-env"
     monkeypatch.delenv(upshot.KEY_ENV)
     assert upshot.access_key() == "from-file"
+
+
+def test_tools_from_elsewhere_are_listed_after_and_called_through() -> None:
+    """D98: the meeting tools are Upshot's, passed through as they are."""
+    seen: list[tuple[str, dict]] = []  # type: ignore[type-arg]
+    told: list[dict] = []  # type: ignore[type-arg]
+    out = io.StringIO()
+    server = Server(
+        "t", "0", "hi",
+        [Tool("own", "mine", {"type": "object"}, lambda call: "own")],
+        stdin=io.StringIO(), stdout=out,
+        more_tools=lambda: [{"name": "search", "inputSchema": {}}, {"name": "own"}],
+        call_more=lambda name, call: (
+            seen.append((name, call.arguments))
+            or {"content": [{"type": "text", "text": "found"}], "isError": False}
+        ),
+        on_initialize=told.append,
+    )  # fmt: skip
+    for line in (
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"clientInfo": {"name": "codex"}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+         "params": {"name": "search", "arguments": {"query": "x"}}},
+    ):  # fmt: skip
+        server.handle_line(json.dumps(line))
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread() and thread.daemon:
+            thread.join(timeout=5)
+    answers = {a["id"]: a for a in map(json.loads, out.getvalue().splitlines())}
+    assert told == [{"clientInfo": {"name": "codex"}}]
+    assert [t["name"] for t in answers[2]["result"]["tools"]] == ["own", "search"]
+    assert answers[3]["result"]["content"][0]["text"] == "found"
+    assert seen == [("search", {"query": "x"})]
+
+
+def test_the_agent_name_is_cleaned_for_a_header() -> None:
+    bridge = tools.Bridge()
+    bridge.initialized({"clientInfo": {"name": "claude-code\r\nX-Evil: 1" + "a" * 100}})
+    assert bridge.agent.startswith("claude-codeX-Evil: 1") and len(bridge.agent) == 64
+    bridge.initialized({"clientInfo": "nonsense"})
+    assert bridge.agent == ""

@@ -226,11 +226,11 @@ test("settings_show_how_to_connect_claude_with_this_install", async ({ page, see
   await gotoSettings(page, "transcription");
   // Claude Code: a command per platform, with this install's real path and --scope user.
   await expect(page.getByTestId("transcription-copy-windows-text")).toHaveText(
-    'claude mcp add --scope user upshot-transcribe -- "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe"',
+    'claude mcp add --scope user upshot -- "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe"',
   );
   await page.getByTestId("claude-code-tab-wsl").click();
   await expect(page.getByTestId("transcription-copy-wsl-text")).toHaveText(
-    'claude mcp add --scope user upshot-transcribe -- "/mnt/c/Users/someone/AppData/Local/Programs/Upshot/mcp/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"',
+    'claude mcp add --scope user upshot -- "/mnt/c/Users/someone/AppData/Local/Programs/Upshot/mcp/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"',
   );
   await page.getByTestId("transcription-copy-wsl").click();
   await expect(page.getByTestId("transcription-copy-wsl")).toHaveText("Copied");

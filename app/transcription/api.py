@@ -652,7 +652,9 @@ ui_router = APIRouter(prefix="/api/transcription")
 
 BRIDGE_DIR = "mcp"
 BRIDGE_EXE = "upshot-mcp.exe"
-SERVER_NAME = "upshot-transcribe"
+#: The name the commands add the bridge under. Was ``upshot-transcribe`` before the
+#: bridge read meetings (D98); a client added under that name keeps working.
+SERVER_NAME = "upshot"
 #: A made-up install folder for the e2e server, so the copy buttons have a real shape.
 TEST_INSTALL_DIR = "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot"
 
