@@ -186,7 +186,7 @@ describe("Settings: running and waiting", () => {
       "Waiting · position 2",
     );
     expect(second.querySelector('[data-testid="active-job-link"]')?.getAttribute("href")).toBe(
-      "/transcriptions",
+      "/settings#requests",
     );
     expect(second.querySelector('[data-testid="active-job-cancel"]')).not.toBeNull();
   });

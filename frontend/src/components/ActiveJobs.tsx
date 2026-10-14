@@ -24,7 +24,7 @@ function Row({ job }: { job: ActiveJob }) {
     onError: (error) => toast({ title: reason(error), tone: "danger" }),
   });
   const left = job.state === "running" ? timeLeft(job.eta_s, t) : null;
-  const to = job.kind === "meeting" ? `/m/${job.id}` : "/transcriptions";
+  const to = job.kind === "meeting" ? `/m/${job.id}` : "/settings#requests";
   return (
     <li
       data-testid="active-job"
