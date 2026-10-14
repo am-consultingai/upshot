@@ -143,15 +143,20 @@ def terminal_windows(title: str) -> set[int]:
     found: set[int] = set()  # pragma: no cover - Windows only, from here on
 
     def visit(hwnd: int, _: object) -> bool:
-        if (
-            win32gui.IsWindowVisible(hwnd)
-            and win32gui.GetClassName(hwnd) in TERMINAL_CLASSES
-            and win32gui.GetWindowText(hwnd) == title
-        ):
-            found.add(hwnd)
+        # A window can close between two of these calls; it is skipped, not the click.
+        with contextlib.suppress(Exception):
+            if (
+                win32gui.IsWindowVisible(hwnd)
+                and win32gui.GetClassName(hwnd) in TERMINAL_CLASSES
+                and win32gui.GetWindowText(hwnd) == title
+            ):
+                found.add(hwnd)
         return True
 
-    win32gui.EnumWindows(visit, None)
+    try:
+        win32gui.EnumWindows(visit, None)
+    except Exception as exc:  # pywintypes.error: the list is a nicety, not the terminal
+        log.info("could not list the terminal windows: %s", exc)
     return found
 
 
@@ -195,6 +200,10 @@ def terminal_forward(title: str, before: set[int], *, window_s: float = 5.0) -> 
             target = min(new)
             break
         time.sleep(POLL_S)
+    if not target and len(before) == 1:
+        # Windows Terminal set to open new tabs in an existing window put it in the one
+        # already showing this app's terminal: that window is the one to bring forward.
+        (target,) = before
     if not target:
         return "no terminal window"
     front = win32gui.GetForegroundWindow()

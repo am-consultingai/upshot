@@ -84,17 +84,34 @@ def found(request: Request) -> dict[str, Any]:
     """Which AI apps are on this computer, on Windows and in a running WSL distribution.
     Asked when the page opens or comes back into view, apart from the overview: asking
     WSL takes a moment. Nothing of the apps' own is read."""
-    from app.ai_terminal import find
-
-    return {"apps": find(services_of(request).config, test=_test_install()).as_dict()}
-
-
-def ai_terminal_windows() -> set[int]:
-    """Upshot's terminals already open, so the one about to open is told from them."""
     from app import ai_terminal
+
+    found = ai_terminal.find(services_of(request).config, test=_test_install())
+    apps = found.as_dict()
+    # The line the terminal will type on Windows (codex.cmd, or a full path, where that
+    # is what runs), so the page copies that one at the click.
+    lines = commands(bridge_path())
+    fresh = None if _test_install() else ai_terminal.registry_path()
+    for app, where in apps.items():
+        command = lines.get(app)
+        where["windows_line"] = (
+            ai_terminal.windows_line(command, found.windows.get(app), fresh)
+            if command and where["windows"] and not _test_install()
+            else command
+        )
+    return {"apps": apps}
+
+
+def ai_terminal_windows(window_title: str) -> set[int]:
+    """Upshot's terminals of that title already open, so the one about to open is told
+    from them."""
     from app.window import terminal_windows
 
-    return terminal_windows(ai_terminal.TITLE)
+    try:
+        return terminal_windows(window_title)
+    except Exception as exc:  # a nicety: without it, the old window may come forward
+        log.info("could not list the terminal windows: %s", exc)
+        return set()
 
 
 class TerminalPost(BaseModel):
@@ -119,10 +136,11 @@ def open_terminal(request: Request, body: TerminalPost) -> dict[str, Any]:
         # Nowhere to open it: the page has copied the command and says to paste it.
         return {"launched": False, "command": command}
     fresh = ai_terminal.registry_path()
+    window_title = ai_terminal.title(body.app)
     if body.side == "windows":
         program = ai_terminal.find_on_windows(services_of(request).config).get(body.app)
         line = ai_terminal.windows_line(command, program, fresh)
-        argv = ai_terminal.powershell_argv(line)
+        argv = ai_terminal.powershell_argv(line, window_title)
     else:
         line = command
         distro = ai_terminal.find_in_wsl().get(body.app)
@@ -130,8 +148,8 @@ def open_terminal(request: Request, body: TerminalPost) -> dict[str, Any]:
             # Stopped since the page asked, or never there: opening the default distro
             # would start WSL, maybe one without the app. The page has copied the line.
             return {"launched": False, "command": line}
-        argv = ai_terminal.wsl_argv(line, distro)
-    before = ai_terminal_windows()
+        argv = ai_terminal.wsl_argv(line, distro, window_title)
+    before = ai_terminal_windows(window_title)
     try:
         ai_terminal.launch(argv, fresh)
     except OSError as exc:
@@ -140,7 +158,7 @@ def open_terminal(request: Request, body: TerminalPost) -> dict[str, Any]:
     log.info("opened a terminal to add Upshot to %s (%s)", body.app, body.side)
     from app.window import bring_terminal_forward
 
-    bring_terminal_forward(ai_terminal.TITLE, before)
+    bring_terminal_forward(window_title, before)
     return {"launched": True, "command": line}
 
 
