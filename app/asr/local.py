@@ -192,8 +192,7 @@ def gpu_memory_mb(runner: Runner | None = None, *, timeout: float = 5.0) -> int 
     ``PATH`` wherever an NVIDIA driver is. The first line is the one that counts: that
     is device 0, which is the one faster-whisper loads onto. Any failure — no tool, a
     hung driver, output that is not a number — is None, which the caller reads as "not
-    enough": the CPU is slow, but a GPU that runs out of memory halfway through a
-    meeting loses the meeting.
+    enough": the CPU is slow, but a card too small for the model is a failed load first.
     """
     run = runner or subprocess.run
     try:
