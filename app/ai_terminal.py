@@ -100,7 +100,7 @@ def find_on_windows(config: Any) -> dict[str, str]:
     from app.llm.codex_cli import CodexCliClient
 
     fresh = registry_path()
-    clients = {
+    clients: dict[str, Any] = {
         "claude_code": ClaudeCliClient,
         "codex": CodexCliClient,
         "antigravity": AntigravityCliClient,
