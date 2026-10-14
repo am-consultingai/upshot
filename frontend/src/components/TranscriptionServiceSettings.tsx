@@ -9,7 +9,7 @@ import { toast } from "./Toaster";
 
 const CLAUDE_DOWNLOAD = "https://claude.ai/download";
 
-function CopyButton({ text, testid }: { text: string; testid: string }) {
+export function CopyButton({ text, testid }: { text: string; testid: string }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   return (
@@ -26,7 +26,7 @@ function CopyButton({ text, testid }: { text: string; testid: string }) {
   );
 }
 
-function Command({ text, testid }: { text: string; testid: string }) {
+export function Command({ text, testid }: { text: string; testid: string }) {
   return (
     <code
       data-testid={`${testid}-text`}
