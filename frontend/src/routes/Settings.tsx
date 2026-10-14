@@ -9,6 +9,7 @@ import CalendarSettings from "../components/CalendarSettings";
 import AudioDeviceSettings from "../components/AudioDeviceSettings";
 import ActiveJobs from "../components/ActiveJobs";
 import TranscriptionServiceSettings from "../components/TranscriptionServiceSettings";
+import AiAppsSettings from "../components/AiAppsSettings";
 import UpdateSettings from "../components/UpdateSettings";
 import PrivacySettings from "../components/PrivacySettings";
 import StorageSettings from "../components/StorageSettings";
@@ -265,6 +266,7 @@ export default function Settings() {
       {/* What is running and waiting comes first, above how other apps connect. */}
       {section === "transcription" && (
         <>
+          <AiAppsSettings />
           <ActiveJobs />
           <TranscriptionServiceSettings />
         </>

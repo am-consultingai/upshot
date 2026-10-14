@@ -269,11 +269,13 @@ def test_only_an_answer_naming_upshot_counts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(
         upshot,
         "candidates",
-        lambda url=None: iter([("http://127.0.0.1:43217", 2.0), ("http://127.0.0.1:43218", 2.0)]),
+        lambda url=None, **_: iter(
+            [("http://127.0.0.1:43217", 2.0), ("http://127.0.0.1:43218", 2.0)]
+        ),
     )
     assert upshot.discover().base == "http://127.0.0.1:43218"
     monkeypatch.setattr(
-        upshot, "candidates", lambda url=None: iter([("http://127.0.0.1:43217", 2.0)])
+        upshot, "candidates", lambda url=None, **_: iter([("http://127.0.0.1:43217", 2.0)])
     )
     with pytest.raises(upshot.NotRunning, match="Start Upshot"):
         upshot.discover()
@@ -316,7 +318,7 @@ def test_the_bridge_keeps_the_upshot_it_found(monkeypatch: pytest.MonkeyPatch) -
         def refresh(self) -> None:
             found.append("refresh")
 
-    def discover(url: str | None = None) -> App:
+    def discover(url: str | None = None, **_: object) -> App:
         found.append("discover")
         return App()
 
@@ -420,3 +422,135 @@ def test_save_to_refuses_a_network_path_and_a_wrong_name(tmp_path: Path) -> None
     assert not (tmp_path / "notes.docx").exists()
     bridge._save(_Done(), dict(_JOB), "srt", str(tmp_path / "new folder"))  # type: ignore[arg-type]
     assert (tmp_path / "new folder" / "talk.srt").exists()
+
+
+# ----------------------------------------------------------------------- the access key (D98)
+
+
+class KeyedApp:
+    """A stand-in Upshot on a socket that wants ``key`` and records what it was sent."""
+
+    def __init__(self, key: str) -> None:
+        import http.server
+
+        self.key = key
+        self.seen: list[dict[str, str]] = []
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                outer.seen.append(dict(self.headers))
+                ok = self.headers.get("Authorization") == f"Bearer {outer.key}"
+                body = json.dumps({"transcriptions": []} if ok else {"detail": "key"}).encode()
+                self.send_response(200 if ok else 401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_the_bridge_sends_the_key_and_reads_it_again_after_a_reset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    monkeypatch.delenv(upshot.KEY_ENV, raising=False)
+    (tmp_path / upshot.KEY_FILE).write_text("first-key\n", encoding="utf-8")
+    app = KeyedApp("first-key")
+    try:
+        client = upshot.Upshot(app.url)
+        client.agent = "claude-code"
+        assert client.recent(5) == []
+        assert app.seen[-1]["Authorization"] == "Bearer first-key"
+        assert app.seen[-1]["X-Upshot-Agent"] == "claude-code"
+        # Reset in Settings: the app wants a new key, and the file holds it.
+        app.key = "second-key"
+        (tmp_path / upshot.KEY_FILE).write_text("second-key", encoding="utf-8")
+        assert client.recent(5) == []
+        assert client.key == "second-key"
+        # A key nobody has: said in words a person can act on.
+        app.key = "nobody-has-this"
+        with pytest.raises(upshot.UpshotError, match="restart this AI app"):
+            client.recent(5)
+    finally:
+        app.close()
+
+
+def test_upshot_key_overrides_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    (tmp_path / upshot.KEY_FILE).write_text("from-file", encoding="utf-8")
+    monkeypatch.setenv(upshot.KEY_ENV, "from-env")
+    assert upshot.access_key() == "from-env"
+    monkeypatch.delenv(upshot.KEY_ENV)
+    assert upshot.access_key() == "from-file"
+
+
+def test_tools_from_elsewhere_are_listed_after_and_called_through() -> None:
+    """D98: the meeting tools are Upshot's, passed through as they are."""
+    seen: list[tuple[str, dict]] = []  # type: ignore[type-arg]
+    told: list[dict] = []  # type: ignore[type-arg]
+    out = io.StringIO()
+    server = Server(
+        "t", "0", "hi",
+        [Tool("own", "mine", {"type": "object"}, lambda call: "own")],
+        stdin=io.StringIO(), stdout=out,
+        more_tools=lambda: [{"name": "search", "inputSchema": {}}, {"name": "own"}],
+        call_more=lambda name, call: (
+            seen.append((name, call.arguments))
+            or {"content": [{"type": "text", "text": "found"}], "isError": False}
+        ),
+        on_initialize=told.append,
+    )  # fmt: skip
+    for line in (
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"clientInfo": {"name": "codex"}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+         "params": {"name": "search", "arguments": {"query": "x"}}},
+    ):  # fmt: skip
+        server.handle_line(json.dumps(line))
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread() and thread.daemon:
+            thread.join(timeout=5)
+    answers = {a["id"]: a for a in map(json.loads, out.getvalue().splitlines())}
+    assert told == [{"clientInfo": {"name": "codex"}}]
+    assert [t["name"] for t in answers[2]["result"]["tools"]] == ["own", "search"]
+    assert answers[3]["result"]["content"][0]["text"] == "found"
+    assert seen == [("search", {"query": "x"})]
+
+
+def test_the_agent_name_is_cleaned_for_a_header() -> None:
+    bridge = tools.Bridge()
+    bridge.initialized({"clientInfo": {"name": "claude-code\r\nX-Evil: 1" + "a" * 100}})
+    assert bridge.agent.startswith("claude-codeX-Evil: 1") and len(bridge.agent) == 64
+    bridge.initialized({"clientInfo": "nonsense"})
+    assert bridge.agent == ""
+
+
+def test_listing_tools_before_upshot_starts_is_quick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The client waits on tools/list: no scan of every port, only the recorded one."""
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    monkeypatch.delenv("UPSHOT_URL", raising=False)
+    (tmp_path / "server.port").write_text("43217", encoding="utf-8")
+    asked: list[tuple[str, float]] = []
+
+    def fake(url: str, timeout: float) -> dict:  # type: ignore[type-arg]
+        asked.append((url, timeout))
+        raise OSError("refused")
+
+    monkeypatch.setattr(upshot, "_get_json", fake)
+    listed = tools.Bridge().meeting_tools()
+    assert asked == [("http://127.0.0.1:43217/api/v1/info", upshot.QUICK_TIMEOUT_S)]
+    assert {tool["name"] for tool in listed} >= {"search", "get_transcript", "get_summary"}

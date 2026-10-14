@@ -23,7 +23,10 @@ a = Analysis(
     pathex=[str(CLIENT)],
     binaries=[],
     datas=[],
-    hiddenimports=["upshot_mcp.cli", "upshot_mcp.tools", "upshot_mcp.protocol", "upshot_mcp.upshot"],
+    hiddenimports=[
+        "upshot_mcp.cli", "upshot_mcp.tools", "upshot_mcp.protocol", "upshot_mcp.upshot",
+        "upshot_mcp.meeting_tools",
+    ],
     hookspath=[],
     runtime_hooks=[],
     # Nothing of the app's, and none of the large standard-library corners it never uses.

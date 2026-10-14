@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Route
 
 from app import paths
 from app.api.routes import router, test_router
@@ -72,8 +73,27 @@ def shell(path: Path) -> Response:
     )
 
 
+#: The meeting tools whose argument is a meeting id: the log shows the meeting's title.
+_BY_MEETING = frozenset({"get_meeting", "get_summary", "get_transcript", "related_meetings"})
+
+
+def _activity(svc: Services) -> Any:
+    """What ``/mcp/ext/`` tells the activity log (D98)."""
+    from app.access_log import agent_of
+
+    def record(tool: str, target: str, headers: Any, size: int, outcome: str) -> None:
+        if tool in _BY_MEETING and target:
+            meeting = svc.dao.get_meeting(target)
+            if meeting is not None and meeting.title:
+                target = meeting.title
+        svc.access_log.record("mcp", agent_of(headers), tool, target, outcome, size)
+
+    return record
+
+
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:
     svc = services or build(config)
+    from app.ai_apps import router as ai_apps_router
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router
     from app.diagnostics.api import router as diagnostics_router
@@ -85,6 +105,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     from app.version import build_info
 
     mcp_app, mcp_server = assistant_mcp.mount(svc)
+    ext_app, ext_server = assistant_mcp.mount_ext(svc, record=_activity(svc))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -100,7 +121,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
             svc.models.refresh_in_background(providers_to_list(svc.config))
         # The assistant's MCP server keeps its sessions in a task group that must be
         # running for as long as the app is; a mounted app's own lifespan never runs.
-        async with mcp_server.session_manager.run():
+        async with mcp_server.session_manager.run(), ext_server.session_manager.run():
             yield
 
     app = FastAPI(
@@ -113,12 +134,19 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.state.services = svc
     app.include_router(router)
     app.include_router(assistant_router)
+    app.include_router(ai_apps_router)
     app.include_router(legal_router)
     app.include_router(transcription_router)
     app.include_router(transcription_ui_router)
     app.include_router(updates_router)
     app.include_router(diagnostics_router)
     app.include_router(feedback_router)
+    # The longer prefix first: a mount matches every path under it, and /mcp would take
+    # /mcp/ext/ too.
+    app.router.routes.append(
+        Route(assistant_mcp.EXT_PREFIX, assistant_mcp.WithoutSlash(ext_app), methods=None)
+    )
+    app.mount(assistant_mcp.EXT_PREFIX, ext_app)
     app.mount(assistant_mcp.PREFIX, mcp_app)
     if test_mode():
         app.include_router(test_router())

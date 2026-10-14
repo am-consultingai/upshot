@@ -83,6 +83,12 @@ class Server:
     tools: list[Tool]
     stdin: IO[str] = field(default_factory=lambda: sys.stdin)
     stdout: IO[str] = field(default_factory=lambda: sys.stdout)
+    #: Tools served elsewhere and passed through (D98): their descriptions, and how to
+    #: call one, given its name and a :class:`Call`; it returns the ``tools/call`` result.
+    more_tools: Callable[[], list[dict[str, Any]]] | None = None
+    call_more: Callable[[str, Call], dict[str, Any]] | None = None
+    #: Told the client's ``initialize`` parameters (its name, for Upshot's activity log).
+    on_initialize: Callable[[dict[str, Any]], None] | None = None
     _write_lock: threading.Lock = field(default_factory=threading.Lock)
     _running: dict[Any, threading.Event] = field(default_factory=dict)
 
@@ -155,6 +161,8 @@ class Server:
 
     def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         if method == "initialize":
+            if self.on_initialize is not None:
+                self.on_initialize(params)
             asked = params.get("protocolVersion")
             version = asked if asked in SUPPORTED_VERSIONS else SUPPORTED_VERSIONS[0]
             return {
@@ -166,7 +174,11 @@ class Server:
         if method == "ping":
             return {}
         if method == "tools/list":
-            return {"tools": [tool.describe() for tool in self.tools]}
+            listed = [tool.describe() for tool in self.tools]
+            if self.more_tools is not None:
+                own = {tool["name"] for tool in listed}
+                listed += [tool for tool in self.more_tools() if tool.get("name") not in own]
+            return {"tools": listed}
         if method in ("prompts/list", "resources/list", "resources/templates/list"):
             key = {"prompts/list": "prompts", "resources/list": "resources"}.get(
                 method, "resourceTemplates"
@@ -180,7 +192,7 @@ class Server:
         try:
             name = params.get("name")
             tool = next((t for t in self.tools if t.name == name), None)
-            if tool is None:
+            if tool is None and (self.call_more is None or not isinstance(name, str)):
                 self._error(request_id, INVALID_PARAMS, f"unknown tool {name!r}")
                 return
             arguments = params.get("arguments") or {}
@@ -199,8 +211,13 @@ class Server:
                 self.send({"jsonrpc": "2.0", "method": "notifications/progress", "params": note})
 
             try:
-                text = tool.run(Call(arguments, progress, cancelled))
-                result = {"content": [{"type": "text", "text": text}], "isError": False}
+                call = Call(arguments, progress, cancelled)
+                if tool is None:
+                    assert self.call_more is not None and isinstance(name, str)
+                    result = self.call_more(name, call)
+                else:
+                    text = tool.run(call)
+                    result = {"content": [{"type": "text", "text": text}], "isError": False}
             except ToolError as exc:
                 result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
             except Cancelled:
