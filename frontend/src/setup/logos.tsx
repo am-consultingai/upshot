@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 /**
  * The AI vendors' own marks, for setup's "which do you pay for?" screen (D75).
  *
@@ -40,5 +42,51 @@ export function VendorLogo({ vendor, size = 28 }: { vendor: VendorId; size?: num
       </defs>
       <path d={GEMINI} fill="url(#vendor-gemini)" />
     </svg>
+  );
+}
+
+// AI apps (D98), for Settings → AI apps: each app's own mark, from the same Simple Icons
+// release (CC0). Antigravity has none there and wears Gemini's, as in setup; VS Code and
+// Open WebUI have none either, so the shared rows show the marks that exist.
+const CLAUDE_CODE = "M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z";
+const CURSOR = "M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23";
+const LM_STUDIO = "M14.025 0c3.492 0 5.237 0 6.571.68a6.24 6.24 0 0 1 2.725 2.724C24 4.738 24 6.484 24 9.975v4.05c0 3.492 0 5.237-.68 6.571a6.24 6.24 0 0 1-2.724 2.725c-1.334.679-3.08.679-6.571.679h-4.05c-3.492 0-5.237 0-6.571-.68A6.24 6.24 0 0 1 .68 20.597C0 19.262 0 17.516 0 14.025v-4.05c0-3.492 0-5.237.68-6.571A6.23 6.23 0 0 1 3.404.68C4.738 0 6.484 0 9.975 0zM7.688 16.313a1.313 1.313 0 0 0 0 2.625h11.625a1.313 1.313 0 0 0 0-2.625zm-3-3.75a1.313 1.313 0 0 0 0 2.624h11.625a1.313 1.313 0 0 0 0-2.624zm3-3.75a1.313 1.313 0 0 0 0 2.624h11.625a1.313 1.313 0 0 0 0-2.624zm-3-3.75a1.313 1.313 0 0 0 0 2.625h11.625a1.313 1.313 0 0 0 0-2.625z";
+const MCP = "M13.85 0a4.16 4.16 0 0 0-2.95 1.217L1.456 10.66a.835.835 0 0 0 0 1.18.835.835 0 0 0 1.18 0l9.442-9.442a2.49 2.49 0 0 1 3.541 0 2.49 2.49 0 0 1 0 3.541L8.59 12.97l-.1.1a.835.835 0 0 0 0 1.18.835.835 0 0 0 1.18 0l.1-.098 7.03-7.034a2.49 2.49 0 0 1 3.542 0l.049.05a2.49 2.49 0 0 1 0 3.54l-8.54 8.54a1.96 1.96 0 0 0 0 2.755l1.753 1.753a.835.835 0 0 0 1.18 0 .835.835 0 0 0 0-1.18l-1.753-1.753a.266.266 0 0 1 0-.394l8.54-8.54a4.185 4.185 0 0 0 0-5.9l-.05-.05a4.16 4.16 0 0 0-2.95-1.218c-.2 0-.401.02-.6.048a4.17 4.17 0 0 0-1.17-3.552A4.16 4.16 0 0 0 13.85 0m0 3.333a.84.84 0 0 0-.59.245L6.275 10.56a4.186 4.186 0 0 0 0 5.902 4.186 4.186 0 0 0 5.902 0L19.16 9.48a.835.835 0 0 0 0-1.18.835.835 0 0 0-1.18 0l-6.985 6.984a2.49 2.49 0 0 1-3.54 0 2.49 2.49 0 0 1 0-3.54l6.983-6.985a.835.835 0 0 0 0-1.18.84.84 0 0 0-.59-.245";
+
+export type AppId = "claude" | "claude-code" | "codex" | "antigravity" | "cursor" | "lm-studio" | "mcp";
+
+/** One-colour marks (black in the brand books) take the text colour, for dark mode. */
+const MONO: Partial<Record<AppId, string>> = { cursor: CURSOR, "lm-studio": LM_STUDIO, mcp: MCP };
+
+export function AppLogo({ app, size = 18 }: { app: AppId; size?: number }) {
+  if (app === "claude-code") {
+    return (
+      <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+        <path d={CLAUDE_CODE} fill="#D97757" />
+      </svg>
+    );
+  }
+  const mono = MONO[app];
+  if (mono) {
+    return (
+      <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" className="text-primary">
+        <path d={mono} fill="currentColor" />
+      </svg>
+    );
+  }
+  return <VendorLogo vendor={app === "antigravity" ? "antigravity" : app === "codex" ? "codex" : "claude"} size={size} />;
+}
+
+/** An app's name with its mark (or marks, for a row several apps share) before it. */
+export function AppLabel({ apps, children }: { apps: AppId[]; children: ReactNode }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className="flex shrink-0 items-center gap-1">
+        {apps.map((app) => (
+          <AppLogo key={app} app={app} />
+        ))}
+      </span>
+      {children}
+    </span>
   );
 }
