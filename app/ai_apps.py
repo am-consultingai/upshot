@@ -29,7 +29,8 @@ def services_of(request: Request) -> Services:
 
 
 def commands(bridge: str | None) -> dict[str, Any]:
-    """How to add the bridge to each AI app, by its own command or its own file. Upshot
+    """How to add the bridge to each AI app, by its own command or its own file (Claude's
+    are in the transcription section's connect card). Upshot
     edits no other app's configuration (D98): the user runs these."""
     if bridge is None:
         return {}
@@ -42,11 +43,9 @@ def commands(bridge: str | None) -> dict[str, Any]:
         "codex_wsl": f'codex mcp add {SERVER_NAME} -- "{wsl}" {WSL_ARGS}',
         "antigravity": f'agy mcp add {SERVER_NAME} "{bridge}"',
         "antigravity_wsl": f'agy mcp add {SERVER_NAME} -- "{wsl}" {WSL_ARGS}',
-        "gemini": f'gemini mcp add --scope user {SERVER_NAME} "{bridge}"',
-        # Cursor, LM Studio, mcphost and most others: an mcpServers entry.
+        # Cursor, VS Code, LM Studio, mcphost and most others: an mcpServers entry. VS Code
+        # nests the same entry under "servers"; the page says so in its one line.
         "mcp_json": json.dumps({"mcpServers": {SERVER_NAME: stdio}}, indent=2),
-        # VS Code's own shape.
-        "vscode_json": json.dumps({"servers": {SERVER_NAME: {"type": "stdio", **stdio}}}, indent=2),
     }
 
 
