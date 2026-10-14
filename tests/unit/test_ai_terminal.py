@@ -3,6 +3,7 @@ command typed in (ClickUp epic z8tj1hjg3v). Upshot edits no other app's files (D
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
@@ -93,7 +94,14 @@ def test_wsl_gets_the_line_as_an_argument_never_inside_the_script() -> None:
     assert ai_terminal.wsl_argv(line, None)[:3] == ["wsl.exe", "--cd", "~"]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="looks things up on Windows")
 def test_nothing_is_looked_up_off_windows() -> None:
     assert ai_terminal.registry_path() is None
     assert ai_terminal.find_on_windows(None) == {}
     assert ai_terminal.running_distros() == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the registry is Windows's")
+def test_the_path_is_read_again_from_the_registry() -> None:
+    fresh = ai_terminal.registry_path()
+    assert fresh and "%" not in fresh, "expanded, machine and user joined"
