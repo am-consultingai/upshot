@@ -62,6 +62,8 @@ class Services:
     #: app.llm.cli_status.CliStatusCache: what each CLI said about itself, held a while.
     cli_status: Any = None
     keep_awake: Any = None  # app.power.KeepAwake, started with the worker
+    #: app.access_log.AccessLog: what the user's own AI tools and programs asked (D98).
+    access_log: Any = None
     extras: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -82,6 +84,10 @@ class Services:
             from app.transcription.scheduler import Scheduler
 
             self.scheduler = Scheduler(self.queue, self.transcriptions)
+        if self.access_log is None:
+            from app.access_log import AccessLog
+
+            self.access_log = AccessLog(self.conn, self.clock)
         if self.progress is None:
             from app.pipeline.progress import MeetingProgress
 
