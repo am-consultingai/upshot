@@ -553,6 +553,45 @@ export interface TranscriptionConnect {
   keep_days: number | null;
 }
 
+/** Settings → AI apps (D98): connecting the user's own AI tools to the meetings. */
+export interface AiApps {
+  meetings_enabled: boolean;
+  transcription_enabled: boolean;
+  port: number;
+  usual_port: number;
+  /** The port is not the usual one: a URL given to an app breaks when it moves. */
+  port_moved: boolean;
+  urls: { local: string; docker: string };
+  bridge: string | null;
+  /** Commands and files by app; empty outside the installed app. */
+  commands: Partial<
+    Record<
+      | "claude_code"
+      | "claude_code_wsl"
+      | "codex"
+      | "codex_wsl"
+      | "antigravity"
+      | "antigravity_wsl"
+      | "gemini"
+      | "mcp_json"
+      | "vscode_json",
+      string
+    >
+  >;
+}
+
+/** One request from an AI app or a program (D98). `agent` is the name it gives itself. */
+export interface AiActivityEntry {
+  id: number;
+  at: string;
+  channel: "mcp" | "api";
+  agent: string;
+  action: string;
+  target: string;
+  outcome: "ok" | "refused" | "error";
+  size: number;
+}
+
 export function csrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)up_csrf=([^;]+)/);
   return match ? decodeURIComponent(match[1]) : "";
@@ -1029,6 +1068,15 @@ export const api = {
       method: "DELETE",
     }),
   transcriptionConnect: () => request<TranscriptionConnect>("/api/transcription/connect"),
+  aiApps: () => request<AiApps>("/api/ai-apps"),
+  /** A POST, so only this page can read the key. */
+  aiAppsKey: () => request<{ key: string }>("/api/ai-apps/key", { method: "POST" }),
+  aiAppsResetKey: () => request<{ key: string }>("/api/ai-apps/key/reset", { method: "POST" }),
+  aiActivity: (agent = "") =>
+    request<{ entries: AiActivityEntry[]; agents: string[] }>(
+      `/api/ai-apps/activity?limit=300${agent ? `&agent=${encodeURIComponent(agent)}` : ""}`,
+    ),
+  clearAiActivity: () => request<{ cleared: number }>("/api/ai-apps/activity/clear", { method: "POST" }),
   addToClaudeDesktop: () =>
     request<{ opened: boolean }>("/api/transcription/add-to-claude-desktop", { method: "POST" }),
   /** The fallback: the extension copied to Downloads and shown in Explorer. */
