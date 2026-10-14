@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { BASE_URL, CSRF, SESSION } from "../playwright.config";
-import { expect, gotoApp, gotoSettings, minutesAgo, test } from "./fixtures";
+import { accessKey, expect, gotoApp, gotoSettings, minutesAgo, test } from "./fixtures";
 
 /**
  * The Transcriptions page and its Settings section (D86): files apart from meetings,
@@ -132,7 +132,8 @@ test("the_page_works_in_hebrew", async ({ page, seedBody }) => {
   });
   await gotoApp(page, "/transcriptions");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
-  await expect(page.getByRole("heading", { name: "תמלולים" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "אפליקציות AI" })).toBeVisible();
+  await expect(page.getByTestId("ai-apps-tab-transcriptions")).toHaveText("תמלולים");
   await expect(page.getByTestId("transcription-state")).toHaveText("הושלם");
 });
 
@@ -226,11 +227,11 @@ test("settings_show_how_to_connect_claude_with_this_install", async ({ page, see
   await gotoSettings(page, "transcription");
   // Claude Code: a command per platform, with this install's real path and --scope user.
   await expect(page.getByTestId("transcription-copy-windows-text")).toHaveText(
-    'claude mcp add --scope user upshot-transcribe -- "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe"',
+    'claude mcp add --scope user upshot -- "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe"',
   );
   await page.getByTestId("claude-code-tab-wsl").click();
   await expect(page.getByTestId("transcription-copy-wsl-text")).toHaveText(
-    'claude mcp add --scope user upshot-transcribe -- "/mnt/c/Users/someone/AppData/Local/Programs/Upshot/mcp/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"',
+    'claude mcp add --scope user upshot -- "/mnt/c/Users/someone/AppData/Local/Programs/Upshot/mcp/upshot-mcp.exe" --wsl-distro "$WSL_DISTRO_NAME"',
   );
   await page.getByTestId("transcription-copy-wsl").click();
   await expect(page.getByTestId("transcription-copy-wsl")).toHaveText("Copied");
@@ -248,8 +249,11 @@ test("settings_show_how_to_connect_claude_with_this_install", async ({ page, see
   await page.getByTestId("transcription-enabled").uncheck();
   await page.reload();
   await expect(page.getByTestId("transcription-enabled")).not.toBeChecked();
-  // A program: its own request context, so no cookie of the page's.
-  const program = await playwright.request.newContext({ baseURL: BASE_URL });
+  // A program: its own request context, so no cookie of the page's, and the access key.
+  const program = await playwright.request.newContext({
+    baseURL: BASE_URL,
+    extraHTTPHeaders: { Authorization: `Bearer ${await accessKey(page)}` },
+  });
   expect((await program.get("/api/v1/transcriptions")).status()).toBe(403);
   await program.dispose();
   await gotoApp(page, "/transcriptions");
@@ -267,7 +271,7 @@ test("settings_list_a_job_claude_sends_live_and_cancel_it", async ({ page, seedB
   // page's. The e2e worker does not run by itself, so the job waits.
   const program = await playwright.request.newContext({ baseURL: BASE_URL });
   const created = await program.post("/api/v1/transcriptions", {
-    headers: { "X-Upshot-Client": "mcp" },
+    headers: { "X-Upshot-Client": "mcp", Authorization: `Bearer ${await accessKey(page)}` },
     multipart: { file: { name: "from-claude.wav", mimeType: "audio/wav", buffer: wav(2) } },
   });
   expect(created.status()).toBe(202);

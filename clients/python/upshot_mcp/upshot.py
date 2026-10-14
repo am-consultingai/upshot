@@ -22,7 +22,17 @@ CLIENT = "mcp"
 #: where 0.5 s read as "not running"), the fallback range less.
 RECORDED_TIMEOUT_S = 10.0
 PROBE_TIMEOUT_S = 2.0
+#: For a quick look (``candidates(quick=True)``): long enough for a busy Upshot to answer
+#: its info, short enough that a client listing tools is not kept waiting.
+QUICK_TIMEOUT_S = 3.0
 CHUNK = 1 << 20
+#: The access key's file in the app home (D98), and what overrides it.
+KEY_FILE = "access.key"
+KEY_ENV = "UPSHOT_KEY"
+NO_KEY = (
+    "Upshot refused this program's access key. Make sure Upshot is up to date, then "
+    "restart this AI app. If the key was reset in Upshot's Settings, restarting is enough."
+)
 BUSY = (
     "Upshot is busy and did not answer in time; anything it is transcribing carries on. "
     "Ask again in a moment."
@@ -84,27 +94,43 @@ def _known_local_appdata() -> str | None:  # pragma: no cover - Windows only
         ctypes.windll.ole32.CoTaskMemFree(out)
 
 
-def candidates(url: str | None = None) -> Iterator[tuple[str, float]]:
+def access_key() -> str:
+    """The access key: ``UPSHOT_KEY``, else the file the app keeps in its home. Read on
+    every start and again after a refusal, so a key reset in Settings needs nothing here."""
+    given = os.environ.get(KEY_ENV, "").strip()
+    if given:
+        return given
+    try:
+        return (app_home() / KEY_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def candidates(url: str | None = None, *, quick: bool = False) -> Iterator[tuple[str, float]]:
     """Where to look, in order, and how long each may take: what was given, the port the
-    app recorded, then the usual ports."""
+    app recorded, then the usual ports. ``quick``: the first two only, briefly, for a
+    question the client waits on (D98: tools/list, before Upshot has started)."""
+    wait = QUICK_TIMEOUT_S if quick else RECORDED_TIMEOUT_S
     given = url or os.environ.get("UPSHOT_URL")
     if given:
-        yield given.rstrip("/"), RECORDED_TIMEOUT_S
+        yield given.rstrip("/"), wait
         return
     try:
         port = int((app_home() / "server.port").read_text(encoding="utf-8").strip())
-        yield f"http://127.0.0.1:{port}", RECORDED_TIMEOUT_S
+        yield f"http://127.0.0.1:{port}", wait
     except (OSError, ValueError):
         pass
+    if quick:
+        return
     for port in PORTS:
         yield f"http://127.0.0.1:{port}", PROBE_TIMEOUT_S
 
 
-def discover(url: str | None = None) -> Upshot:
+def discover(url: str | None = None, *, quick: bool = False) -> Upshot:
     """The running Upshot, or :class:`NotRunning`. A stale ``server.port`` or another
     program on the port is skipped: only an answer naming ``app: "upshot"`` counts."""
     seen: set[str] = set()
-    for base, timeout in candidates(url):
+    for base, timeout in candidates(url, quick=quick):
         if base in seen:
             continue
         seen.add(base)
@@ -122,10 +148,46 @@ class Upshot:
         self.base = base.rstrip("/")
         self.info = info or {}
         self.timeout = timeout
+        self.key = access_key()
+        #: What the AI app calls itself (``clientInfo.name``), for Upshot's activity log.
+        self.agent = ""
 
     # -- plumbing
 
     def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        body: bytes | Iterator[bytes] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+        raw: bool = False,
+    ) -> Any:
+        try:
+            return self._send(method, path, query=query, body=body, headers=headers,
+                              timeout=timeout, raw=raw)  # fmt: skip
+        except UpshotError as exc:
+            # The key was reset in Settings since this started: read it again, once. A
+            # streamed upload cannot be sent twice, so it is told to start over instead.
+            if exc.status != 401:
+                raise
+            fresh = access_key()
+            if not fresh or fresh == self.key:
+                raise UpshotError(401, NO_KEY) from None
+            self.key = fresh
+            if body is not None and not isinstance(body, bytes):
+                raise UpshotError(401, "Upshot's access key was just reset; ask again.") from None
+            try:
+                return self._send(method, path, query=query, body=body, headers=headers,
+                                  timeout=timeout, raw=raw)  # fmt: skip
+            except UpshotError as again:
+                if again.status == 401:
+                    raise UpshotError(401, NO_KEY) from None
+                raise
+
+    def _send(
         self,
         method: str,
         path: str,
@@ -141,6 +203,10 @@ class Upshot:
             url += "?" + urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
         request = urllib.request.Request(url, data=body, method=method)  # type: ignore[arg-type]
         request.add_header("X-Upshot-Client", CLIENT)
+        if self.key:
+            request.add_header("Authorization", f"Bearer {self.key}")
+        if self.agent:
+            request.add_header("X-Upshot-Agent", self.agent)
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         try:
@@ -221,6 +287,24 @@ class Upshot:
     def recent(self, limit: int) -> list[dict[str, Any]]:
         listed = self._request("GET", "/api/v1/transcriptions", query={"limit": limit})
         return list(listed.get("transcriptions", []))
+
+    def mcp(self, method: str, params: dict[str, Any], timeout: float = 45) -> dict[str, Any]:
+        """One JSON-RPC request to the app's MCP server for the user's own tools,
+        ``/mcp/ext/`` (D98): stateless, so no session is opened first."""
+        body = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}, ensure_ascii=False
+        ).encode("utf-8")
+        reply = self._request(
+            "POST", "/mcp/ext/", body=body, timeout=timeout,
+            headers={"Content-Type": "application/json",
+                     "Accept": "application/json, text/event-stream"},
+        )  # fmt: skip
+        if not isinstance(reply, dict):
+            raise UpshotError(502, "Upshot answered in a way this program does not understand")
+        if "error" in reply:
+            error = reply["error"] if isinstance(reply["error"], dict) else {}
+            raise UpshotError(400, str(error.get("message") or "Upshot refused the request"))
+        return reply.get("result") or {}
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         return self._request("POST", f"/api/v1/transcriptions/{_q(job_id)}/cancel", body=b"")  # type: ignore[no-any-return]

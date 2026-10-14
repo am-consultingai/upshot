@@ -7,6 +7,7 @@ routing.**
 from __future__ import annotations
 
 import contextlib
+import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,10 @@ MUTATING = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 LINK_PATH = "/api/auth/link"
 LAUNCHER_HEADER = "x-upshot-launcher"
 LAUNCHER_KEY_FILE = "launcher.key"
+#: The access key (D98): opens ``/api/v1`` and ``/mcp/ext/`` to the user's own programs.
+#: Kept across starts, unlike the launcher key, because an AI app holds it in its settings;
+#: Settings makes a new one on request. The bridge reads the file itself.
+ACCESS_KEY_FILE = "access.key"
 #: A toast button's action, carried here by the short-lived ``upshot:`` process
 #: (app/actions.py). It proves itself with the launcher key and has no cookie to
 #: double-submit, so CSRF lets exactly this path through on that key and nothing else.
@@ -46,6 +51,9 @@ class AuthState:
     #: Opens the assistant's MCP server (``/mcp/``) and nothing else. Handed only to the
     #: CLI the app spawns, in its ``--mcp-config``; see ``app/assistant/mcp.py``.
     mcp_token: str = field(default_factory=lambda: secrets.token_urlsafe(32))
+    #: Opens ``/api/v1`` and ``/mcp/ext/`` (D98). Read from :data:`ACCESS_KEY_FILE` when
+    #: the app starts (:func:`load_access_key`); a fresh one otherwise, as in tests.
+    access_key: str = field(default_factory=lambda: secrets.token_urlsafe(32))
     _tokens: set[str] = field(default_factory=set)
     _used: set[str] = field(default_factory=set)
 
@@ -73,6 +81,14 @@ class AuthState:
     def valid_launcher(self, value: str | None) -> bool:
         return bool(value) and secrets.compare_digest(str(value), self.launcher_key)
 
+    def valid_access(self, authorization: str | None) -> bool:
+        """An ``Authorization: Bearer <access key>`` header."""
+        # As bytes: compare_digest refuses a str with anything but ASCII in it.
+        return bool(authorization) and secrets.compare_digest(
+            str(authorization).encode("utf-8", "surrogateescape"),
+            f"Bearer {self.access_key}".encode(),
+        )
+
     def valid_csrf(self, value: str | None) -> bool:
         return bool(value) and secrets.compare_digest(str(value), self.csrf_secret)
 
@@ -94,6 +110,17 @@ class AuthState:
             path="/",
         )
         return response
+
+
+#: Where Docker Desktop's containers reach Windows's loopback (tested 2026-10-14). Allowed
+#: as a Host on :data:`EXT_MCP_PREFIX` only, which the access key guards (D98).
+DOCKER_HOST = "host.docker.internal"
+#: The MCP endpoint for the user's own AI tools (D98); see ``app/assistant/mcp.py``.
+EXT_MCP_PREFIX = "/mcp/ext"
+
+
+def is_ext_mcp(path: str) -> bool:
+    return path == EXT_MCP_PREFIX or path.startswith(EXT_MCP_PREFIX + "/")
 
 
 def allowed_hosts(port: int) -> frozenset[str]:
@@ -137,13 +164,16 @@ class HostHeaderMiddleware:
     def __init__(self, app: ASGIApp, port: int = DEFAULT_PORT) -> None:
         self.app = app
         self.allowed = allowed_hosts(port)
+        self.docker = frozenset({DOCKER_HOST, f"{DOCKER_HOST}:{port}"})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
         host = _header(scope, "host").lower()
-        if host not in self.allowed:
+        if host not in self.allowed and not (
+            is_ext_mcp(str(scope.get("path", ""))) and host in self.docker
+        ):
             log.warning("rejected request with Host: %r", host)
             response = JSONResponse({"detail": f"host {host!r} is not allowed"}, status_code=421)
             await response(scope, receive, send)
@@ -235,8 +265,69 @@ def write_launcher_key(auth: AuthState, home: Path) -> Path:
     return path
 
 
-#: The file transcription service (D86): open to any local program, with no key. It is
-#: exempt from CSRF, which a program has no cookie for, and behind the Origin guard instead.
+def _write_private(path: Path, text: str) -> None:
+    """Whole or not at all: the bridge reads the file at any moment, and must never see
+    half a key."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f"{path.name}.{secrets.token_hex(4)}.partial")
+    try:
+        partial.write_text(text, encoding="utf-8")
+        with contextlib.suppress(OSError):
+            partial.chmod(0o600)
+        os.replace(partial, path)
+    finally:
+        # Never leave a copy of a key behind: os.replace fails on Windows while another
+        # process holds the file open.
+        with contextlib.suppress(OSError):
+            partial.unlink(missing_ok=True)
+
+
+def _usable_key(text: str) -> bool:
+    return len(text) >= 32 and all(c.isalnum() or c in "-_" for c in text)
+
+
+def load_access_key(home: Path) -> str:
+    """The access key in ``home``, made and written there the first time (D98).
+
+    What it is for, and what not: it is meant to keep out what can reach Upshot's port but
+    cannot read this user's files, which is other Windows accounts and Docker containers
+    (Docker Desktop forwards ``host.docker.internal`` to Windows's loopback). It does so
+    only once the page's own API is closed to them too (D57): until then a caller can take
+    the page's CSRF cookie and ask ``/api/ai-apps/key`` for it. A program running as this
+    user can read the file, and the database beside it, so it is no defense against one.
+
+    A key that cannot be read for another reason than its absence (a locked file) is not
+    replaced: that would silently break every app the user pasted it into.
+    """
+    path = home / ACCESS_KEY_FILE
+    try:
+        key = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        key = ""
+    except OSError as exc:
+        log.warning("could not read %s, using a key for this run only: %s", path, exc)
+        return secrets.token_urlsafe(32)
+    if _usable_key(key):
+        return key
+    key = secrets.token_urlsafe(32)
+    try:
+        _write_private(path, key)
+    except OSError as exc:  # a read-only home: the key lives for this run only
+        log.warning("could not write %s: %s", path, exc)
+    return key
+
+
+def reset_access_key(auth: AuthState, home: Path) -> str:
+    """A new access key, at once: every program holding the old one is refused."""
+    key = secrets.token_urlsafe(32)
+    _write_private(home / ACCESS_KEY_FILE, key)
+    auth.access_key = key
+    return key
+
+
+#: The file transcription service (D86). Programs need the access key (D98); the page
+#: proves itself with its CSRF credentials. It is exempt from the CSRF check, which a
+#: program has no cookie for, and behind the Origin guard instead.
 OPEN_API_PREFIX = "/api/v1"
 
 
@@ -245,7 +336,7 @@ def is_open_api(path: str) -> bool:
 
 
 class OriginGuardMiddleware:
-    """Keeps websites out of the open API without a key (D86).
+    """Keeps websites out of the open API and ``/mcp/ext/`` (D86, D98).
 
     The Host check stops DNS rebinding, but a cross-site ``<form>`` POST to
     ``127.0.0.1:<port>`` carries a good Host header. Browsers say where a request comes
@@ -260,7 +351,8 @@ class OriginGuardMiddleware:
         self.own = frozenset({f"http://127.0.0.1:{port}", f"http://localhost:{port}"})
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and is_open_api(str(scope.get("path", ""))):
+        path = str(scope.get("path", ""))
+        if scope["type"] == "http" and (is_open_api(path) or is_ext_mcp(path)):
             site = _header(scope, "sec-fetch-site").lower()
             origin = _header(scope, "origin")
             if site in ("cross-site", "same-site") or (origin and origin not in self.own):

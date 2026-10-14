@@ -12,6 +12,10 @@ from upshot_mcp.protocol import Call, Server, ToolError
 from upshot_mcp.tools import EXTENSIONS, INSTRUCTIONS, Bridge, tools
 from upshot_mcp.upshot import NotRunning, UpshotError, discover
 
+#: What the server calls itself. It was ``upshot-transcribe`` before it read meetings
+#: (D98); a client keeps whatever name it was added under, so nothing breaks.
+SERVER_NAME = "upshot"
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="upshot-mcp", description=__doc__)
@@ -36,7 +40,15 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdin.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[attr-defined]
     bridge = Bridge(url=args.url, wsl_distro=args.wsl_distro)
-    Server("upshot-transcribe", __version__, INSTRUCTIONS, tools(bridge)).serve()
+    Server(
+        SERVER_NAME,
+        __version__,
+        INSTRUCTIONS,
+        tools(bridge),
+        more_tools=bridge.meeting_tools,
+        call_more=bridge.call_meeting_tool,
+        on_initialize=bridge.initialized,
+    ).serve()
     return 0
 
 

@@ -48,11 +48,15 @@ def video(path: Path, seconds: int, *, audio: bool = True) -> Path:
 
 
 class Program:
-    """A local program: no cookie, no CSRF header. The app hands every caller the cookie
-    (D57), so a program that keeps it would count as the page; this one never does."""
+    """A local program: no cookie, no CSRF header, the access key (D98). The app hands
+    every caller the cookie (D57), so a program that keeps it would count as the page;
+    this one never does."""
 
-    def __init__(self, h: ApiHarness) -> None:
+    def __init__(self, h: ApiHarness, *, key: str | None = None) -> None:
         self.client = h.client(authorized=False)
+        given = h.services.auth.access_key if key is None else key
+        if given:
+            self.client.headers["Authorization"] = f"Bearer {given}"
 
     def __getattr__(self, method: str):  # type: ignore[no-untyped-def]
         call = getattr(self.client, method)
@@ -255,6 +259,48 @@ def test_on_windows_a_posix_path_points_to_the_bridge(monkeypatch: pytest.Monkey
         api.check_path("/mnt/c/Users/someone/clip.wav")
 
 
+# ----------------------------------------------------------------------- the access key
+
+
+def test_a_program_without_the_key_is_refused(h: ApiHarness, tmp_path: Path) -> None:
+    """D98: Docker containers reach the loopback port, so no key means no service."""
+    source = str(wav(tmp_path / "a.wav", 3))
+    for key in ("", "not-the-key", h.services.auth.access_key + "x"):
+        program = Program(h, key=key)
+        refused = program.post("/api/v1/transcriptions", json={"path": source})
+        assert refused.status_code == 401, key
+        assert "access key" in refused.json()["detail"]
+        assert refused.headers["www-authenticate"] == "Bearer"
+        assert program.get("/api/v1/transcriptions").status_code == 401
+    assert h.services.transcriptions.recent() == []
+
+
+def test_info_is_open_and_says_the_key_is_needed(h: ApiHarness) -> None:
+    info = Program(h, key="").get("/api/v1/info")
+    assert info.status_code == 200
+    assert info.json()["app"] == "upshot" and info.json()["key_required"] is True
+
+
+def test_the_page_needs_no_key(h: ApiHarness) -> None:
+    assert h.client().get("/api/v1/transcriptions").status_code == 200
+
+
+def test_the_key_is_kept_across_starts_and_reset_at_once(tmp_path: Path) -> None:
+    from app.api.security import ACCESS_KEY_FILE, AuthState, load_access_key, reset_access_key
+
+    home = tmp_path / "keyhome"
+    first = load_access_key(home)
+    assert (home / ACCESS_KEY_FILE).read_text(encoding="utf-8") == first
+    assert load_access_key(home) == first, "a restart keeps the key"
+    auth = AuthState(access_key=first)
+    second = reset_access_key(auth, home)
+    assert second != first and auth.access_key == second
+    assert load_access_key(home) == second
+    assert not auth.valid_access(f"Bearer {first}") and auth.valid_access(f"Bearer {second}")
+    (home / ACCESS_KEY_FILE).write_text("short", encoding="utf-8")
+    assert load_access_key(home) not in ("short", second), "a damaged file gets a new key"
+
+
 # ----------------------------------------------------------------------- websites, CSRF
 
 
@@ -454,3 +500,19 @@ def test_fifty_waiting_clients_do_not_block_the_app(h: ApiHarness, tmp_path: Pat
                 return elapsed
 
         assert asyncio.run(scenario()) < 2.0
+
+
+def test_a_failed_key_write_leaves_no_copy_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from app.api import security
+
+    def refuse(*_: object) -> None:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(os, "replace", refuse)
+    with pytest.raises(PermissionError):
+        security._write_private(tmp_path / "access.key", "k" * 40)
+    assert list(tmp_path.iterdir()) == []

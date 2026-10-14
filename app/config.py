@@ -277,6 +277,8 @@ DEFAULTS: dict[str, Any] = {
         "audio_days": None,
         "transcript_days": None,
         "sweep_hours": 6,  # how often the worker looks; 0 disables the sweep entirely
+        # Days to keep the AI apps activity log (D98); null keeps it, up to its row cap.
+        "access_log_days": None,
     },
     # File transcription for other programs on this computer (D86).
     "transcription": {
@@ -289,6 +291,12 @@ DEFAULTS: dict[str, Any] = {
         # null: 6 hours on a GPU, 2 on the CPU, where large-v3 runs at about 4× the
         # audio's length and a longer file would hold the worker for most of a day.
         "max_hours": None,
+    },
+    # The user's own AI tools reading meetings over MCP, at /mcp/ext/ (D98).
+    "mcp": {
+        # The Settings switch "Let AI apps read my meetings". The access key is what keeps
+        # other accounts and containers out; this is the user's own on/off.
+        "meetings_enabled": True,
     },
     "enrichment": {"source": "google", "timeout_s": 2.0},  # google|null|fake
     "assistant": {

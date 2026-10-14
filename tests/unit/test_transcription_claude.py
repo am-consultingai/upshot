@@ -29,6 +29,8 @@ def test_the_extension_holds_no_program_and_runs_the_installed_bridge(tmp_path: 
     assert manifest["compatibility"] == {"platforms": ["win32"]}
     assert [tool["name"] for tool in manifest["tools"]] == [
         "transcribe_file", "get_transcription", "list_transcriptions", "cancel_transcription",
+        "search", "list_meetings", "get_meeting", "get_summary", "get_transcript",
+        "list_action_items", "calendar_range", "related_meetings",
     ]  # fmt: skip
     assert icon.size == (512, 512) and icon.mode == "RGBA"
     assert not (tmp_path / "x.partial").exists()

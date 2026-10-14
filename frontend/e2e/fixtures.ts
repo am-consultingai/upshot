@@ -303,3 +303,11 @@ export function dateFromToday(days: number): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
+
+/** The access key a program needs for /api/v1 and /mcp/ext/ (D98), as Settings shows it. */
+export async function accessKey(page: Page): Promise<string> {
+  const response = await page.request.post("/api/ai-apps/key", {
+    headers: { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` },
+  });
+  return ((await response.json()) as { key: string }).key;
+}
