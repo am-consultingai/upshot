@@ -31,8 +31,24 @@ test("settings_show_the_key_the_commands_and_the_urls", async ({ page, seedBody 
   // Each app by its own command, on Windows or in WSL.
   const bridge = "C:\\Users\\someone\\AppData\\Local\\Programs\\Upshot\\mcp\\upshot-mcp.exe";
   await expect(page.getByTestId("ai-app-codex-text")).toHaveText(`codex mcp add upshot -- "${bridge}"`);
+  // ChatGPT reads Codex's file: its own form takes the bridge's path.
+  await expect(page.getByTestId("ai-app-codex-steps")).toContainText("Add MCP server");
+  await expect(page.getByTestId("ai-app-codex-path-text")).toHaveText(bridge);
+  // Found on this computer: a terminal with the command typed in. The e2e server has no
+  // terminal to open, so the command is copied and the toast says to paste it.
+  await page.getByTestId("ai-app-codex-terminal").click();
+  await expect(page.getByText("Copied. Paste it in a terminal and press Enter.")).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`codex mcp add upshot -- "${bridge}"`);
   await page.getByTestId("ai-app-antigravity-tab-wsl").click();
   await expect(page.getByTestId("ai-app-antigravity-text")).toContainText("agy mcp add upshot -- \"/mnt/c/");
+  await expect(page.getByTestId("ai-app-antigravity-terminal")).toBeVisible();
+  // Claude Code is found on Windows only here: no terminal button on its WSL tab.
+  await page.getByTestId("ai-app-claude-code-tab-wsl").click();
+  await expect(page.getByTestId("ai-app-claude-code-terminal")).toHaveCount(0);
+
+  // The rows nothing can detect wait under More apps, closed while apps were found.
+  await expect(page.getByTestId("ai-app-mcp-json-text")).toHaveCount(0);
+  await page.getByTestId("ai-apps-more").click();
   await expect(page.getByTestId("ai-app-mcp-json-text")).toContainText('"mcpServers"');
   // Apps that take a web address: here, and from Docker.
   await expect(page.getByTestId("ai-apps-url-docker-text")).toHaveText(/^http:\/\/host\.docker\.internal:\d+\/mcp\/ext\/$/);
