@@ -175,6 +175,21 @@ def bring_terminal_forward(title: str, before: set[int]) -> None:
     threading.Thread(target=work, name="terminal-forward", daemon=True).start()
 
 
+#: Terminals already brought forward: two quick clicks for one app open two windows of
+#: one title, and each click's thread takes the one the other has not.
+_CLAIMED: set[int] = set()
+_CLAIMED_LOCK = threading.Lock()
+
+
+def _claim(candidates: set[int]) -> int | None:
+    with _CLAIMED_LOCK:
+        free = sorted(candidates - _CLAIMED)
+        if not free:
+            return None
+        _CLAIMED.add(free[0])
+        return free[0]
+
+
 def terminal_forward(title: str, before: set[int], *, window_s: float = 5.0) -> str:
     """Put the terminal this server just opened in front of Upshot's window.
 
@@ -193,17 +208,16 @@ def terminal_forward(title: str, before: set[int], *, window_s: float = 5.0) -> 
         import win32gui
     except ImportError:  # pragma: no cover - pywin32 ships with the Windows build
         return "no pywin32"
+    # No window that was there before the launch is ever brought forward: an old one of
+    # the same title may be one the user kept for their own work, half a command typed
+    # in (review round 3). When Windows Terminal puts the new tab into such a window,
+    # nothing comes forward and the log says so.
     target = None  # pragma: no cover - Windows only, from here on
     for _ in range(max(1, round(window_s / POLL_S))):
-        new = terminal_windows(title) - before
-        if new:
-            target = min(new)
+        target = _claim(terminal_windows(title) - before)
+        if target:
             break
         time.sleep(POLL_S)
-    if not target and len(before) == 1:
-        # Windows Terminal set to open new tabs in an existing window put it in the one
-        # already showing this app's terminal: that window is the one to bring forward.
-        (target,) = before
     if not target:
         return "no terminal window"
     front = win32gui.GetForegroundWindow()
@@ -211,6 +225,8 @@ def terminal_forward(title: str, before: set[int], *, window_s: float = 5.0) -> 
         return "the terminal came forward"
     if not _is_ours(win32gui, front):
         return "another window is in front"
+    if win32gui.IsIconic(target):
+        win32gui.ShowWindow(target, win32con.SW_RESTORE)
     win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
     try:
         win32gui.SetForegroundWindow(target)
