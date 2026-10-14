@@ -23,6 +23,13 @@ CLIENT = "mcp"
 RECORDED_TIMEOUT_S = 10.0
 PROBE_TIMEOUT_S = 2.0
 CHUNK = 1 << 20
+#: The access key's file in the app home (D98), and what overrides it.
+KEY_FILE = "access.key"
+KEY_ENV = "UPSHOT_KEY"
+NO_KEY = (
+    "Upshot refused this program's access key. Make sure Upshot is up to date, then "
+    "restart this AI app. If the key was reset in Upshot's Settings, restarting is enough."
+)
 BUSY = (
     "Upshot is busy and did not answer in time; anything it is transcribing carries on. "
     "Ask again in a moment."
@@ -84,6 +91,18 @@ def _known_local_appdata() -> str | None:  # pragma: no cover - Windows only
         ctypes.windll.ole32.CoTaskMemFree(out)
 
 
+def access_key() -> str:
+    """The access key: ``UPSHOT_KEY``, else the file the app keeps in its home. Read on
+    every start and again after a refusal, so a key reset in Settings needs nothing here."""
+    given = os.environ.get(KEY_ENV, "").strip()
+    if given:
+        return given
+    try:
+        return (app_home() / KEY_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def candidates(url: str | None = None) -> Iterator[tuple[str, float]]:
     """Where to look, in order, and how long each may take: what was given, the port the
     app recorded, then the usual ports."""
@@ -122,10 +141,46 @@ class Upshot:
         self.base = base.rstrip("/")
         self.info = info or {}
         self.timeout = timeout
+        self.key = access_key()
+        #: What the AI app calls itself (``clientInfo.name``), for Upshot's activity log.
+        self.agent = ""
 
     # -- plumbing
 
     def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: dict[str, Any] | None = None,
+        body: bytes | Iterator[bytes] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+        raw: bool = False,
+    ) -> Any:
+        try:
+            return self._send(method, path, query=query, body=body, headers=headers,
+                              timeout=timeout, raw=raw)  # fmt: skip
+        except UpshotError as exc:
+            # The key was reset in Settings since this started: read it again, once. A
+            # streamed upload cannot be sent twice, so it is told to start over instead.
+            if exc.status != 401:
+                raise
+            fresh = access_key()
+            if not fresh or fresh == self.key:
+                raise UpshotError(401, NO_KEY) from None
+            self.key = fresh
+            if body is not None and not isinstance(body, bytes):
+                raise UpshotError(401, "Upshot's access key was just reset; ask again.") from None
+            try:
+                return self._send(method, path, query=query, body=body, headers=headers,
+                                  timeout=timeout, raw=raw)  # fmt: skip
+            except UpshotError as again:
+                if again.status == 401:
+                    raise UpshotError(401, NO_KEY) from None
+                raise
+
+    def _send(
         self,
         method: str,
         path: str,
@@ -141,6 +196,10 @@ class Upshot:
             url += "?" + urllib.parse.urlencode({k: v for k, v in query.items() if v is not None})
         request = urllib.request.Request(url, data=body, method=method)  # type: ignore[arg-type]
         request.add_header("X-Upshot-Client", CLIENT)
+        if self.key:
+            request.add_header("Authorization", f"Bearer {self.key}")
+        if self.agent:
+            request.add_header("X-Upshot-Agent", self.agent)
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         try:

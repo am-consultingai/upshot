@@ -61,6 +61,10 @@ WRITE_BATCH = 1 << 20
 #: The largest a non-file form field may be (the prompt is 1000 characters).
 MAX_FIELD_BYTES = 16 * 1024
 OFF_DETAIL = "Transcription for other apps is off in Upshot's Settings"
+KEY_DETAIL = (
+    "Upshot needs its access key: send it as 'Authorization: Bearer <key>'. The key is in "
+    "Upshot's Settings, under AI apps, and in the file access.key in Upshot's folder."
+)
 
 
 def services_of(request: Request) -> Services:
@@ -77,14 +81,28 @@ def store_of(request: Request) -> TranscriptionStore:
 
 
 def is_page(request: Request, svc: Services) -> bool:
-    """The app's own page: it holds the ``up_csrf`` cookie, or sends it as a header."""
+    """The app's own page: it holds the ``up_csrf`` cookie, or sends it as a header.
+
+    Not a credential while D57 stands: the app hands that cookie to any caller that lacks
+    it, so a program that keeps cookies passes here without the access key."""
     return svc.auth.valid_csrf(request.cookies.get(CSRF_COOKIE)) or svc.auth.valid_csrf(
         request.headers.get(CSRF_HEADER)
     )
 
 
+def require_caller(request: Request, svc: Services) -> bool:
+    """The page, or a program with the access key (D98); 401 for anyone else. Whether
+    it is the page."""
+    if is_page(request, svc):
+        return True
+    if not svc.auth.valid_access(request.headers.get("authorization")):
+        raise HTTPException(401, KEY_DETAIL, headers={"WWW-Authenticate": "Bearer"})
+    return False
+
+
 def require_enabled(request: Request) -> Services:
     svc = services_of(request)
+    require_caller(request, svc)
     if not bool(svc.config.get("transcription.service_enabled", True)) and not is_page(
         request, svc
     ):
@@ -613,6 +631,8 @@ def info(request: Request) -> dict[str, Any]:
         "api": 1,
         "version": build_info().as_dict().get("version"),
         "enabled": bool(svc.config.get("transcription.service_enabled", True)),
+        # Every route but this one needs the access key (D98).
+        "key_required": True,
         "models_missing": missing,
         "device": svc.extras.get("transcription_device"),
         "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
@@ -697,7 +717,10 @@ def connect(request: Request) -> dict[str, Any]:
         "windows_command": (
             f'claude mcp add --scope user {SERVER_NAME} -- "{bridge}"' if bridge else None
         ),
-        "curl_example": f"curl -F file=@clip.mp4 {api_url}/transcriptions",
+        "curl_example": (
+            'curl -H "Authorization: Bearer $UPSHOT_KEY" '
+            f"-F file=@clip.mp4 {api_url}/transcriptions"
+        ),
         "keep_days": svc.config.get("transcription.keep_days"),
     }
 
