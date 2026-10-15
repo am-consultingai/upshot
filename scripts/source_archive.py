@@ -57,6 +57,8 @@ class Source:
 
 
 def needs_source(licence: str) -> bool:
+    # Any LGPL or MPL in the expression, a dual licence ("MIT OR MPL-2.0") included: shipping
+    # the source of one that could be taken as MIT costs nothing.
     return any(family in licence for family in notices.SOURCE_OFFERED)
 
 
@@ -96,7 +98,10 @@ def ffmpeg_source(licence: str, vendor: Path) -> Source:
         raise SourceError(
             "FFmpeg: no release marker or SHA256SUMS in vendor/ (run build.ps1's ffmpeg step)"
         )
-    tag = marker.read_text(encoding="utf-8").split()[0]
+    words = marker.read_text(encoding="utf-8").split()
+    if not words:
+        raise SourceError("FFmpeg: vendor/ffmpeg.source.txt is empty (run build.ps1's ffmpeg step)")
+    tag = words[0]
     hashes = {}
     for line in sums.read_text(encoding="utf-8").splitlines():
         if line.strip():
@@ -130,8 +135,11 @@ def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type
 
 
 def fetch(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=120) as response:
-        return response.read()  # type: ignore[no-any-return]
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response:
+            return response.read()  # type: ignore[no-any-return]
+    except OSError as exc:  # URLError, HTTPError and timeouts are all OSErrors
+        raise SourceError(f"{url}: {exc}") from exc
 
 
 def readme(sources: list[Source]) -> str:
@@ -141,7 +149,8 @@ def readme(sources: list[Source]) -> str:
         "THIRD-PARTY-NOTICES.txt, installed with Upshot and shown in the app under",
         "Settings > About and updates > Open-source licences.",
         "",
-        "AM Consulting will also provide this source on request at office@amconsultingai.com.",
+        "AM Consulting will also provide this source on request at office@amconsultingai.com,",
+        "for at least three years after this release.",
         "",
     ]
     for s in sources:
@@ -157,13 +166,17 @@ def readme(sources: list[Source]) -> str:
 
 def build(out: Path, sources: list[Source], get=fetch) -> None:  # type: ignore[no-untyped-def]
     partial = out.with_name(out.name + ".partial")
-    with zipfile.ZipFile(partial, "w", zipfile.ZIP_STORED) as archive:
-        for source in sources:
-            data = get(source.url)
-            if hashlib.sha256(data).hexdigest() != source.sha256:
-                raise SourceError(f"{source.url}: SHA-256 is not the pinned {source.sha256}")
-            archive.writestr(source.file, data)
-        archive.writestr("README.txt", readme(sources))
+    try:
+        with zipfile.ZipFile(partial, "w", zipfile.ZIP_STORED) as archive:
+            for source in sources:
+                data = get(source.url)
+                if hashlib.sha256(data).hexdigest() != source.sha256:
+                    raise SourceError(f"{source.url}: SHA-256 is not the pinned {source.sha256}")
+                archive.writestr(source.file, data)
+            archive.writestr("README.txt", readme(sources))
+    except BaseException:
+        partial.unlink(missing_ok=True)  # nothing half-written is left beside the installer
+        raise
     partial.replace(out)
 
 
@@ -172,9 +185,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("out", type=Path)
     parser.add_argument("--notices", type=Path, default=VENDOR / "THIRD-PARTY-NOTICES.json")
     args = parser.parse_args(argv)
-    entries = json.loads(args.notices.read_text(encoding="utf-8"))["entries"]
-    lock = tomllib.loads(LOCK.read_text(encoding="utf-8"))
     try:
+        try:
+            entries = json.loads(args.notices.read_text(encoding="utf-8"))["entries"]
+            lock = tomllib.loads(LOCK.read_text(encoding="utf-8"))
+        except (OSError, ValueError, KeyError) as exc:
+            raise SourceError(f"cannot read {args.notices.name} or uv.lock: {exc}") from exc
         sources = plan(entries, lock, args.notices.parent)
         build(args.out, sources)
     except SourceError as exc:
