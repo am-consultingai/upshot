@@ -199,6 +199,19 @@ def test_packaging_files_exist() -> None:
     # {userstartup} shortcut), so there is nothing for the uninstaller to remove.
     assert "schtasks" not in installer
     assert "AppId=" in installer, "an upgrade finds the installed copy by its AppId"
+    # An upgrade must not keep files a newer build dropped (PyAV's GPL x264 and x265 did).
+    # Only where Upshot is installed already: never a folder the user chose for a first
+    # install, which could hold an "mcp" of theirs.
+    clean = installer.split("[InstallDelete]", 1)[1].split("\n[", 1)[0]
+    for folder in ("_internal", "mcp"):
+        entry = f'Type: filesandordirs; Name: "{{app}}\\{folder}"; Check: IsUpshotInstall'
+        assert entry in clean, folder
+    guard = installer.split("function IsUpshotInstall", 1)[1].split("\nend;", 1)[0]
+    assert installer.split("AppId={", 1)[1].split("\n", 1)[0].rstrip("}") in guard, (
+        "the guard reads this AppId's uninstall entry"
+    )
+    assert "FileExists(ExpandConstant('{app}\\{#AppExe}'))" in guard
+    assert "RegQueryStringValue(HKA," in guard, "HKLM for an all-users install, HKCU otherwise"
 
     build = Path("packaging/build.ps1").read_text(encoding="utf-8")
     assert '"--selftest", $suite' in build and '"imports"' in build, (
