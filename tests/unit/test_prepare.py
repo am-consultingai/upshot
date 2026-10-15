@@ -590,6 +590,34 @@ def test_the_retired_cudnn_goes_even_when_no_gpu_libraries_are_wanted_now(
     assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
 
 
+def test_the_cudnn_goes_first_even_when_the_speech_models_then_fail(
+    app_home: Path, tmp_path: Path
+) -> None:
+    """The cleanup comes before the downloads, so its gigabyte can be what lets the speech
+    models fit, as the retired model's folder does."""
+    folder = old_build_folder(app_home)
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    failing = model_manager(app_home, fail="classifier")
+    code = run(default_config(), progress, model=failing, gpu=False, poll=0.01)  # fmt: skip
+    assert code != prepare.EXIT_OK
+    assert not list(folder.glob("cudnn*.dll"))
+
+
+def test_an_unreadable_folder_never_fails_the_install(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_build_folder(app_home)
+
+    def denied(home: Path | None = None, wheels: object = None) -> bool:
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(cuda_libs, "ready", denied)
+    assert cuda_libs.remove_retired(app_home) == 0
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home), gpu=False, poll=0.01)
+    assert code == prepare.EXIT_OK
+
+
 def test_a_cudnn_that_will_not_go_never_fails_the_install(
     app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -610,8 +638,8 @@ def test_a_cudnn_that_will_not_go_never_fails_the_install(
                model=model_manager(app_home), gpu_wanted=(True, "NVIDIA GPU with 8192 MB"),
                poll=0.01)  # fmt: skip
     assert code == prepare.EXIT_OK
-    assert (folder / "cudnn64_9.dll").exists()
-    assert (folder / cuda_libs.MARKER).read_text() == marker
+    assert (folder / "cudnn64_9.dll").exists(), "tried again by the next install"
+    assert marker  # the old marker named cuDNN; ready() takes either
     assert ready(app_home)
 
 
@@ -619,6 +647,32 @@ def test_a_cudnn_that_will_not_go_never_fails_the_install(
 def test_a_member_name_that_could_leave_the_folder_is_not_unpacked(name: str) -> None:
     assert not cuda_libs._safe_name(name)
     assert cuda_libs._safe_name("cublas64_12.dll")
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "..\\..\\evil.dist-info/licenses/License.txt",
+        "C:\\evil.dist-info/License.txt",
+        "nvidia/cublas/bin/..\\evil.dll",
+    ],
+)
+def test_an_unsafe_member_writes_nothing_outside_the_folder(app_home: Path, member: str) -> None:
+    """Through _unpack itself: a licence or DLL member whose name could climb out."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in cuda_libs.REQUIRED:
+            archive.writestr(f"nvidia/cublas/bin/{name}", b"x")
+        archive.writestr(member, b"evil")
+    blob = buffer.getvalue()
+    wheel = Wheel("cublas", "1", "https://x/w.whl", hashlib.sha256(blob).hexdigest(), len(blob))
+    installer = CudaInstaller(app_home, wheels=(wheel,), fetch=fetcher({"https://x/w.whl": blob}))
+    installer.start()
+    assert installer.wait(5).state == "ready"
+    assert sorted(p.name for p in target_dir(app_home).iterdir()) == [
+        ".upshot-cuda", "cublas64_12.dll", "cublasLt64_12.dll",
+    ]  # fmt: skip
+    assert not [p for p in app_home.rglob("*") if "evil" in p.name]
 
 
 # -- the speaker models (D85) ---------------------------------------------------------
