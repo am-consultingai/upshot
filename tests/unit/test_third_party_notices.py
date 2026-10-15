@@ -71,6 +71,13 @@ def test_licence_names_become_spdx(declared: str, expected: str) -> None:
     assert notices.spdx(declared) == expected
 
 
+def test_a_python_runtime_licence_without_openssl_s_or_libffi_s_text_fails_strict() -> None:
+    python = notices.Entry("Python", "3.13", "PSF-2.0", texts=["PSF LICENSE AGREEMENT ..."])
+    assert len(notices.missing_texts([python])) == 2
+    python.texts = ["PSF ... libffi - Copyright (c) ... Apache License Version 2.0 ..."]
+    assert notices.missing_texts([python]) == []
+
+
 def test_a_vague_declaration_is_named_from_the_package_s_own_files() -> None:
     """No "only" is invented for "LGPLv3": pystray's header says "or any later version"."""
     assert notices.DECLARED_IN_FILE["pystray"] == "LGPL-3.0-or-later"
