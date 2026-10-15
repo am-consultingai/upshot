@@ -95,6 +95,22 @@ def test_a_gpl_package_fails_and_says_what_pulls_it_in(monkeypatch: pytest.Monke
     assert "uv tree --invert --package copyleft" in problems[0]
 
 
+def test_absurd_nesting_fails_instead_of_raising() -> None:
+    assert gate.allowed("(" * 5000 + "MIT" + ")" * 5000, "x", POLICY) is False
+
+
+def test_the_javascript_check_fails_without_source_maps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    monkeypatch.setattr(gate.notices, "ROOT", tmp_path)
+    monkeypatch.setattr(gate.notices, "extra_entries", lambda: [])
+    assert gate.licence_problems({"javascript"}, POLICY) == [
+        "the interface has no source maps: run npm run build first"
+    ]
+
+
 def test_the_javascript_check_fails_when_it_has_nothing_to_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -111,6 +127,7 @@ def test_a_bundled_package_missing_from_node_modules_fails(
     (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
     monkeypatch.setattr(gate, "ROOT", tmp_path)
     monkeypatch.setattr(gate.notices, "extra_entries", lambda: [])
+    monkeypatch.setattr(gate.notices, "source_map_packages", lambda: {"left-pad"})
 
     def packages() -> list[Path]:
         gate.notices.MISSING.append("left-pad (in the bundle, not in node_modules)")

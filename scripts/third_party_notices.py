@@ -421,7 +421,7 @@ def extra_entries() -> list[Entry]:
 
 def _apache() -> str:
     """Apache-2.0's text (``packaging/licenses/apache-2.0.txt``, below its header)."""
-    return licence_file("apache-2.0.txt")[0].split("\n\n", 1)[1]
+    return licence_file("apache-2.0.txt")[0].split("\n\n", 1)[1].strip("\n")
 
 
 # ------------------------------------------------------------------ the files

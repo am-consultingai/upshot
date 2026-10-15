@@ -50,7 +50,8 @@ class BadExpression(ValueError):
 def parse(licence: str) -> object:
     """An SPDX expression as a tree: a str (an identifier, "X WITH Y" kept whole) or
     ("OR"|"AND", [children]). OR binds loosest, then AND; parentheses group. Operators are
-    case-insensitive, as the SPDX spec says; anything malformed raises BadExpression."""
+    read in any case (SPDX allows all-upper or all-lower; mixed is accepted, which is only
+    more lenient about spelling); anything malformed raises BadExpression."""
     tokens = [t for t in re.split(r"(\(|\)|\s+)", licence) if t and not t.isspace()]
     position = 0
 
@@ -103,7 +104,7 @@ def allowed(licence: str, name: str, policy: dict) -> bool:  # type: ignore[type
             return True
     try:
         tree = parse(licence)
-    except BadExpression:
+    except (BadExpression, RecursionError):  # malformed, or nested past any real licence
         return False
     permitted = {i.casefold() for i in policy.get("allowed", [])}
     conditional = {k.casefold(): v for k, v in policy.get("conditional", {}).items()}
@@ -135,6 +136,8 @@ def licence_problems(kinds: set[str], policy: dict) -> list[str]:  # type: ignor
     if "javascript" in kinds:
         if not (ROOT / "frontend" / "node_modules").is_dir():
             problems.append("frontend/node_modules is missing: run npm ci (and npm run build)")
+        elif notices.source_map_packages() is None:
+            problems.append("the interface has no source maps: run npm run build first")
         else:
             notices.MISSING.clear()
             items += [notices.js_entry(folder) for folder in notices.js_packages()]
