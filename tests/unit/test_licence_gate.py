@@ -48,6 +48,22 @@ POLICY = {
         ("GPL-2.0-or-later WITH Bootloader-exception", "another", False),
         ("see the licence text below", "x", False),
         ("", "x", False),
+        # grouped expressions (review of PR #46): OR binds loosest, parentheses group
+        ("(MIT OR Apache-2.0) AND (GPL-2.0-only OR GPL-3.0-only)", "x", False),
+        ("(Apache-2.0 OR MIT) AND (AGPL-3.0-only)", "x", False),
+        ("MIT AND (GPL-3.0-only OR Apache-2.0)", "x", True),
+        ("(MIT) AND (Apache-2.0)", "x", True),
+        ("(MIT AND BSD-3-Clause) OR (GPL-3.0-only)", "x", True),
+        ("MIT OR GPL-3.0-only AND AGPL-3.0-only", "x", True),  # MIT OR (GPL AND AGPL)
+        ("GPL-3.0-only OR MIT AND AGPL-3.0-only", "x", False),  # GPL OR (MIT AND AGPL)
+        ("((MIT))", "x", True),
+        ("mit", "x", True),  # SPDX identifiers and operators are case-insensitive
+        ("MIT or Apache-2.0", "x", True),
+        ("(MIT", "x", False),
+        ("MIT)", "x", False),
+        ("MIT AND", "x", False),
+        ("MIT WITH", "x", False),
+        ("LGPL-3.0-only AND MIT", "pystray", True),
     ],
 )
 def test_the_policy_decides(licence: str, name: str, ok: bool) -> None:
@@ -79,14 +95,57 @@ def test_a_gpl_package_fails_and_says_what_pulls_it_in(monkeypatch: pytest.Monke
     assert "uv tree --invert --package copyleft" in problems[0]
 
 
+def test_the_javascript_check_fails_when_it_has_nothing_to_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    monkeypatch.setattr(gate.notices, "extra_entries", lambda: [])
+    assert gate.licence_problems({"javascript"}, POLICY) == [
+        "frontend/node_modules is missing: run npm ci (and npm run build)"
+    ]
+
+
+def test_a_bundled_package_missing_from_node_modules_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
+    monkeypatch.setattr(gate, "ROOT", tmp_path)
+    monkeypatch.setattr(gate.notices, "extra_entries", lambda: [])
+
+    def packages() -> list[Path]:
+        gate.notices.MISSING.append("left-pad (in the bundle, not in node_modules)")
+        return []
+
+    monkeypatch.setattr(gate.notices, "js_packages", packages)
+    assert gate.licence_problems({"javascript"}, POLICY) == [
+        "left-pad (in the bundle, not in node_modules): not checked"
+    ]
+
+
+def test_no_assertion_is_skipped_for_ffmpeg_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = gate.notices.Entry
+    other = entry("some-package", "1", "NOASSERTION")  # no note: must not crash either
+    monkeypatch.setattr(gate.notices, "extra_entries", lambda: [other])
+    (problem,) = gate.licence_problems({"other"}, POLICY)
+    assert problem.startswith("some-package 1: 'NOASSERTION' is not allowed.")
+
+
 def test_a_component_with_no_known_licence_is_skipped_only_when_it_is_absent(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     entry = gate.notices.Entry
-    absent = entry("FFmpeg", "", "NOASSERTION", note="vendor\\ffmpeg.exe is not on this machine.")
+    absent = entry(gate.NEEDS_ITS_BINARY, "", "NOASSERTION", note="vendor\\ffmpeg.exe is absent.")
     monkeypatch.setattr(gate.notices, "extra_entries", lambda: [absent])
     assert gate.licence_problems({"other"}, POLICY) == []
     assert "[skip] FFmpeg" in capsys.readouterr().out
+
+
+def test_a_package_without_a_record_cannot_be_scanned_and_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dist = SimpleNamespace(metadata={"Name": "opaque"}, files=None, locate_file=lambda f: f)
+    monkeypatch.setattr(gate.notices, "python_packages", lambda: [dist])
+    assert gate.binary_problems() == ["opaque: no RECORD, so its files cannot be scanned"]
 
 
 def test_a_gpl_binary_in_a_run_time_package_fails(
@@ -96,13 +155,24 @@ def test_a_gpl_binary_in_a_run_time_package_fails(
     (tmp_path / "pkg.libs" / "libx264-165.dll").write_bytes(b"MZ")
     (tmp_path / "pkg.libs" / "avcodec.dll").write_bytes(b"MZ --enable-version3 --enable-libx265")
     (tmp_path / "pkg.libs" / "fine.dll").write_bytes(b"MZ --enable-version3")
+    (tmp_path / "av.libs").mkdir()
+    (tmp_path / "av.libs" / "anything.dll").write_bytes(b"MZ")
+    (tmp_path / "libfoo.so.1").write_bytes(b"ELF --enable-gpl")
     dist = SimpleNamespace(
         metadata={"Name": "pkg"},
-        files=["pkg.libs/libx264-165.dll", "pkg.libs/avcodec.dll", "pkg.libs/fine.dll"],
+        files=[
+            "pkg.libs/libx264-165.dll",
+            "pkg.libs/avcodec.dll",
+            "pkg.libs/fine.dll",
+            "av.libs/anything.dll",
+            "libfoo.so.1",
+        ],
         locate_file=lambda f: tmp_path / f,
     )
     monkeypatch.setattr(gate.notices, "python_packages", lambda: [dist])
     assert gate.binary_problems() == [
         "pkg: pkg.libs/libx264-165.dll is a GPL component",
         "pkg: pkg.libs/avcodec.dll is built with --enable-libx265",
+        "pkg: av.libs/anything.dll is a GPL component",  # the folder's name counts too
+        "pkg: libfoo.so.1 is built with --enable-gpl",  # Linux libraries are read as well
     ]
