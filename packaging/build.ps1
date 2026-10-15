@@ -22,7 +22,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 # Windows PowerShell 5.1 redraws Invoke-WebRequest's progress bar for every chunk, which
-# made the 100 MB ffmpeg download take most of an hour on machine A.
+# once made a 100 MB download (BtbN's ffmpeg) take most of an hour on machine A.
 $ProgressPreference = "SilentlyContinue"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -99,32 +99,47 @@ Assert-Exit "reading the Terms version"
 Write-Host "terms $termsVersion"
 
 Write-Host "== ffmpeg =="
-# An LGPL build (D84): Upshot only decodes imported files to WAV, which needs nothing from
-# FFmpeg's GPL-only parts (x264, x265 and similar encoders), and the LGPL's obligations are
-# lighter. The marker names the build the cached ffmpeg.exe came from, so a cache filled
-# by an earlier, different build is replaced instead of shipped.
-$ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip"
-$ffmpeg = Join-Path $root "vendor\ffmpeg.exe"
-$ffmpegMarker = Join-Path $root "vendor\ffmpeg.source.txt"
-$ffmpegLicence = Join-Path $root "vendor\ffmpeg-LICENSE.txt"
-$cachedFrom = if (Test-Path $ffmpegMarker) { (Get-Content $ffmpegMarker -Raw).Trim() } else { "" }
-if (-not (Test-Path $ffmpeg) -or $cachedFrom -ne $ffmpegUrl) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $root "vendor") | Out-Null
-    $zip = Join-Path $env:TEMP "ffmpeg-lgpl.zip"
-    $unpacked = Join-Path $env:TEMP "ffmpeg-lgpl"
-    if (Test-Path $unpacked) { Remove-Item -Recurse -Force $unpacked }
-    Invoke-WebRequest -UseBasicParsing -Uri $ffmpegUrl -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath $unpacked -Force
-    $found = Get-ChildItem -Path $unpacked -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-    Copy-Item $found.FullName $ffmpeg -Force
-    $licence = Get-ChildItem -Path $unpacked -Recurse -Filter LICENSE.txt | Select-Object -First 1
-    if ($licence) { Copy-Item $licence.FullName $ffmpegLicence -Force }
-    [System.IO.File]::WriteAllText($ffmpegMarker, $ffmpegUrl)
+# Upshot's own audio-only build (licence epic S3): FFmpeg's LGPL audio decoders, the
+# demuxers ingest whitelists and zlib, built by packaging\ffmpeg\build.sh in the ffmpeg
+# workflow and published, with its sources, as a pre-release. Measured against the BtbN
+# build it replaced on 175 real files: the same files convert, every sample within 1 LSB.
+# The release's SHA256SUMS is pinned here, and every file taken is checked against it;
+# the marker names the release, so a cache from another one is replaced, never shipped.
+$ffmpegRelease = "ffmpeg-8.1.3-audio-1"
+$ffmpegSums = "61a9f586459e79bd9f8691d606995ef990fe2e21f4b827b951018c17a44fb69e"
+$ffmpegBase = "https://github.com/am-consultingai/upshot/releases/download/$ffmpegRelease"
+$vendor = Join-Path $root "vendor"
+$ffmpeg = Join-Path $vendor "ffmpeg.exe"
+$ffmpegMarker = Join-Path $vendor "ffmpeg.source.txt"
+$ffmpegFiles = @("ffmpeg.exe", "LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
+# The release's SHA256SUMS, kept beside the files (not named ffmpeg*, so the purge below
+# leaves it), so every build checks them again, cached or not.
+$sumsPath = Join-Path $vendor "release-ffmpeg.SHA256SUMS"
+$cachedFrom = if (Test-Path $ffmpegMarker) { "$(Get-Content $ffmpegMarker -Raw)".Trim() } else { "" }
+$cached = $cachedFrom -eq "$ffmpegRelease $ffmpegSums" -and (Test-Path $sumsPath) -and
+    -not ($ffmpegFiles | Where-Object { -not (Test-Path (Join-Path $vendor $_)) })
+if (-not $cached) {
+    New-Item -ItemType Directory -Force -Path $vendor | Out-Null
+    Get-ChildItem $vendor -File -Filter "ffmpeg*" | Remove-Item -Force
+    foreach ($name in $ffmpegFiles) { Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $vendor $name) }
+    Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/SHA256SUMS" -OutFile $sumsPath
+    foreach ($name in $ffmpegFiles) {
+        Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/$name" -OutFile (Join-Path $vendor $name)
+    }
 }
-# Whatever the cache says, refuse to ship a GPL build.
+if ((Get-FileHash $sumsPath -Algorithm SHA256).Hash.ToLower() -ne $ffmpegSums) { throw "the ffmpeg release's SHA256SUMS is not the pinned one" }
+$sums = @{}
+foreach ($line in Get-Content $sumsPath) { $hash, $name = $line -split "\s+", 2; $sums[$name.Trim()] = $hash }
+foreach ($name in $ffmpegFiles) {
+    $file = Join-Path $vendor $name
+    if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLower() -ne $sums[$name]) { throw "vendor\$name does not match the ffmpeg release's SHA256SUMS" }
+}
+[System.IO.File]::WriteAllText($ffmpegMarker, "$ffmpegRelease $ffmpegSums")
+# Whatever the cache says, refuse to ship a GPL or non-free build.
 $ffmpegConfig = (& $ffmpeg -hide_banner -version) -join " "
-if ($ffmpegConfig -match "--enable-gpl") { throw "vendor\ffmpeg.exe is a GPL build; delete it and build again" }
-Write-Host "ffmpeg: LGPL build from $ffmpegUrl"
+if (-not $ffmpegConfig) { throw "vendor\ffmpeg.exe does not run" }
+if ($ffmpegConfig -match "--enable-(gpl|nonfree)") { throw "vendor\ffmpeg.exe is a GPL or non-free build; delete it and build again" }
+Write-Host "ffmpeg: $ffmpegRelease ($((& $ffmpeg -hide_banner -version | Select-Object -First 1)))"
 
 Write-Host "== frontend =="
 Push-Location (Join-Path $root "frontend")
