@@ -39,17 +39,19 @@ test("settings_show_the_key_the_commands_and_the_urls", async ({ page, seedBody 
   await page.getByTestId("ai-app-codex-terminal").click();
   await expect(page.getByText("Copied. Paste it in a terminal and press Enter.")).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`codex mcp add upshot -- "${bridge}"`);
-  await page.getByTestId("ai-app-antigravity-tab-wsl").click();
+  // Antigravity is found in WSL only: its WSL command, no tabs, and its button.
+  await expect(page.getByTestId("ai-app-antigravity-tab-windows")).toHaveCount(0);
   await expect(page.getByTestId("ai-app-antigravity-text")).toContainText("agy mcp add upshot -- \"/mnt/c/");
   await expect(page.getByTestId("ai-app-antigravity-terminal")).toBeVisible();
-  // Claude Code is found on Windows only here: no terminal button on its WSL tab.
-  await page.getByTestId("ai-app-claude-code-tab-wsl").click();
-  await expect(page.getByTestId("ai-app-claude-code-terminal")).toHaveCount(0);
+  // Codex is found on Windows only here: its Windows command, no WSL tab.
+  await expect(page.getByTestId("ai-app-codex-tab-wsl")).toHaveCount(0);
+  await expect(page.getByTestId("ai-app-claude-code-tab-wsl")).toBeVisible();
 
-  // The rows nothing can detect wait under More apps, closed while apps were found.
-  await expect(page.getByTestId("ai-app-mcp-json-text")).toHaveCount(0);
-  await page.getByTestId("ai-apps-more").click();
+  // VS Code is here, so the mcp.json row is with the apps found; the row that takes a
+  // URL waits under More apps, closed while apps were found.
   await expect(page.getByTestId("ai-app-mcp-json-text")).toContainText('"mcpServers"');
+  await expect(page.getByTestId("ai-apps-url-docker-text")).toHaveCount(0);
+  await page.getByTestId("ai-apps-more").click();
   // Apps that take a web address: here, and from Docker.
   await expect(page.getByTestId("ai-apps-url-docker-text")).toHaveText(/^http:\/\/host\.docker\.internal:\d+\/mcp\/ext\/$/);
 });

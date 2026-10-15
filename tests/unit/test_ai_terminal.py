@@ -258,3 +258,56 @@ def test_a_minimized_new_terminal_is_restored_then_brought_forward(
     outcome = window.terminal_forward("Upshot - Codex", {5}, window_s=0.2)
     assert outcome == "brought the terminal forward"
     assert calls == [("restore", 6), ("front", 6)]
+
+
+def test_the_mcp_json_row_counts_any_of_its_apps(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """VS Code by its installer's folder, Cursor by its command on the PATH: either is
+    enough to list the row with the apps found. A folder variable that is not set counts
+    as not installed."""
+    code = tmp_path / "Programs" / "Microsoft VS Code" / "Code.exe"
+    code.parent.mkdir(parents=True)
+    code.write_text("")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setattr(ai_terminal, "registry_path", lambda: "C:\\bin")
+    monkeypatch.setattr(
+        ai_terminal.shutil,
+        "which",
+        lambda program, path=None: "C:\\bin\\cursor.cmd" if program == "cursor" else None,
+    )
+    assert ai_terminal.find_mcp_json_apps() == ["VS Code", "Cursor"]
+    monkeypatch.setattr(ai_terminal.shutil, "which", lambda program, path=None: None)
+    code.unlink()
+    assert ai_terminal.find_mcp_json_apps() == []
+    lms = tmp_path / "home" / ".lmstudio" / "bin" / "lms.exe"
+    lms.parent.mkdir(parents=True)
+    lms.write_text("")
+    assert ai_terminal.find_mcp_json_apps() == ["LM Studio"]
+
+
+def test_the_mcp_json_row_off_windows_and_in_the_e2e_server() -> None:
+    assert ai_terminal.find_mcp_json_apps(test=True) == ["VS Code"]
+    if sys.platform != "win32":
+        assert ai_terminal.find_mcp_json_apps() == []
+
+
+def test_the_terminal_gets_the_users_gpu_choice_not_upshots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upshot sets CUDA_VISIBLE_DEVICES="" for itself without a usable GPU, over any value
+    of the user's: the terminal gets the user's value as Windows keeps it, or none."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    monkeypatch.setattr(ai_terminal, "registry_values", lambda name: [])
+    env = ai_terminal.terminal_env("C:\\fresh")
+    assert "CUDA_VISIBLE_DEVICES" not in env and env["PATH"] == "C:\\fresh"
+    # The user chose GPU 1 in Windows (machine 0, user 1); Upshot's "" is not inherited.
+    monkeypatch.setattr(
+        ai_terminal,
+        "registry_values",
+        lambda name: ["0", "1"] if name == "CUDA_VISIBLE_DEVICES" else [],
+    )
+    assert ai_terminal.terminal_env(None)["CUDA_VISIBLE_DEVICES"] == "1"

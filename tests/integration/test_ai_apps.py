@@ -201,6 +201,7 @@ def test_the_found_apps_and_the_terminal_on_a_source_checkout(h: ApiHarness) -> 
     apps = page.get("/api/ai-apps/found").json()["apps"]
     assert set(apps) == {"claude_code", "codex", "antigravity"}
     assert all((where["windows"], where["wsl"]) == (False, None) for where in apps.values())
+    assert page.get("/api/ai-apps/found").json()["mcp_json"] == []
     assert (
         page.post("/api/ai-apps/terminal", json={"app": "word", "side": "windows"}).status_code
         == 400
