@@ -199,6 +199,11 @@ def test_packaging_files_exist() -> None:
     # {userstartup} shortcut), so there is nothing for the uninstaller to remove.
     assert "schtasks" not in installer
     assert "AppId=" in installer, "an upgrade finds the installed copy by its AppId"
+    # An upgrade must not keep files a newer build dropped (PyAV's GPL x264 and x265 did).
+    clean = installer.split("[InstallDelete]", 1)[1].split("\n[", 1)[0]
+    assert 'Type: filesandordirs; Name: "{app}\\_internal"' in clean
+    assert 'Type: filesandordirs; Name: "{app}\\mcp"' in clean
+    assert installer.index("[InstallDelete]") < installer.index("[Files]")
 
     build = Path("packaging/build.ps1").read_text(encoding="utf-8")
     assert '"--selftest", $suite' in build and '"imports"' in build, (
