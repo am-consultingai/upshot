@@ -320,7 +320,7 @@ def _audio(args: argparse.Namespace) -> list[Check]:
 @suite("asr")
 def _asr(args: argparse.Namespace) -> list[Check]:
     """Which backend is wired, and whether a local model and CUDA are actually present."""
-    from app.asr.local import cuda_library_dirs, supported_compute_type
+    from app.asr.local import cached_gpu_memory_mb, cuda_library_dirs, supported_compute_type
     from app.asr.models import resolve_all
     from app.config import Config
 
@@ -334,7 +334,11 @@ def _asr(args: argparse.Namespace) -> list[Check]:
             "asr_cuda",
             True,
             f"{len(cuda_dirs)} CUDA library dir(s)"
-            + (f"; compute {supported_compute_type()}" if cuda_dirs else "; running on CPU"),
+            + (
+                f"; compute {supported_compute_type(cached_gpu_memory_mb())}"
+                if cuda_dirs
+                else "; running on CPU"
+            ),
             {"cuda_dirs": len(cuda_dirs), "device": "cuda" if cuda_dirs else "cpu"},
         ),
         *(

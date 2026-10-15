@@ -129,16 +129,22 @@ def usable_elsewhere(
 
 
 def wanted(config: Config, vram: VramQuery | None = None) -> tuple[bool, str]:
-    """Would this machine transcribe on its GPU once it had the libraries? And why not."""
+    """Would this machine transcribe on its GPU once it had the libraries? And why not.
+
+    Yes when the Hebrew model would run there (D99): on a 2 GB card other languages stay
+    on the CPU, and Hebrew alone is worth the download. The "the GPU has N MB" reason is
+    matched by ``prepare._REASONS`` for the installer's own words: keep them in step."""
     from app.asr.local import MIN_VRAM_MB, gpu_memory_mb
+    from app.asr.models import HEBREW
 
     if str(config.get("asr.device", "auto")) == "cpu":
         return False, "transcription is set to run on the CPU"
     memory = (vram or gpu_memory_mb)()
     if memory is None:
         return False, "no NVIDIA GPU found"
-    if memory < MIN_VRAM_MB:
-        return False, f"the GPU has {memory} MB, under the {MIN_VRAM_MB} MB the model needs"
+    needed = MIN_VRAM_MB[HEBREW]
+    if memory < needed:
+        return False, f"the GPU has {memory} MB, under the {needed} MB the model needs"
     return True, f"NVIDIA GPU with {memory} MB"
 
 

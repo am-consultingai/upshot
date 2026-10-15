@@ -22,9 +22,10 @@ from app.asr.local import (
     gpu_memory_mb,
     plan_device,
     probe_device,
+    supported_compute_type,
 )
 from app.asr.model_manager import VERIFIED, target_for
-from app.asr.models import HEBREW, MODELS, OTHER, RETIRED_REPOS, ROLES, resolve
+from app.asr.models import CLASSIFIER, HEBREW, MODELS, OTHER, RETIRED_REPOS, ROLES, resolve
 from app.config import Config, default_config
 
 # ------------------------------------------------------------------ the setup flag
@@ -199,7 +200,8 @@ def test_the_model_api_names_the_three_models_and_says_where_they_run(
     assert model["expected_bytes"] > 5_100_000_000
     assert model["free_bytes"] > 0
     assert (model["device"], model["device_reason"]) == ("cpu", "configured")
-    assert model["min_vram_mb"] == MIN_VRAM_MB
+    # The Hebrew model's, which the screen's "CPU or GPU" describes (D99).
+    assert model["min_vram_mb"] == MIN_VRAM_MB[HEBREW] == 2048
 
     client.put("/api/settings", json={"values": {"asr.device": "cuda"}})
     again = client.get("/api/model").json()
@@ -255,15 +257,36 @@ def test_any_failure_to_read_vram_is_none(runner: FakeRunner) -> None:
     assert gpu_memory_mb(runner) is None
 
 
-def test_the_automatic_choice_needs_enough_vram(tmp_path: Path) -> None:
+def test_each_model_has_its_own_vram_minimum() -> None:
+    """Measured on a 2 GB MX450 (D99): the turbo fits, large-v3 does not."""
+    assert MIN_VRAM_MB == {CLASSIFIER: 1024, HEBREW: 2048, OTHER: 4096}
+    assert set(MIN_VRAM_MB) == set(ROLES), "a model without a minimum would be a KeyError"
+
+
+@pytest.mark.parametrize("role", [CLASSIFIER, HEBREW, OTHER])
+def test_the_automatic_choice_needs_enough_vram_for_the_model(tmp_path: Path, role: str) -> None:
     dirs = [tmp_path / "cuda"]
     auto = default_config()
-    assert plan_device(auto, dirs, vram=lambda: 8192).device == "cuda"
-    assert plan_device(auto, dirs, vram=lambda: MIN_VRAM_MB).device == "cuda"
-    small = plan_device(auto, dirs, vram=lambda: MIN_VRAM_MB - 1)
-    assert (small.device, small.reason, small.vram_mb) == ("cpu", "low_vram", MIN_VRAM_MB - 1)
-    unknown = plan_device(auto, dirs, vram=lambda: None)
+    least = MIN_VRAM_MB[role]
+    assert plan_device(auto, dirs, vram=lambda: 8192, role=role).device == "cuda"
+    assert plan_device(auto, dirs, vram=lambda: least, role=role).device == "cuda"
+    small = plan_device(auto, dirs, vram=lambda: least - 1, role=role)
+    assert (small.device, small.reason, small.vram_mb) == ("cpu", "low_vram", least - 1)
+    unknown = plan_device(auto, dirs, vram=lambda: None, role=role)
     assert (unknown.device, unknown.reason) == ("cpu", "vram_unknown")
+
+
+def test_a_2_gb_card_runs_hebrew_on_the_gpu_and_other_languages_on_the_cpu(
+    tmp_path: Path,
+) -> None:
+    dirs = [tmp_path / "cuda"]
+    mx450 = lambda: 2048  # noqa: E731 - nvidia-smi's answer on machine B
+    assert plan_device(default_config(), dirs, vram=mx450, role=HEBREW).device == "cuda"
+    assert plan_device(default_config(), dirs, vram=mx450, role=CLASSIFIER).device == "cuda"
+    other = plan_device(default_config(), dirs, vram=mx450, role=OTHER)
+    assert (other.device, other.reason) == ("cpu", "low_vram")
+    # The machine-wide questions are the Hebrew model's.
+    assert plan_device(default_config(), dirs, vram=mx450).device == "cuda"
 
 
 def test_no_cuda_is_cpu_without_asking_the_gpu(tmp_path: Path) -> None:
@@ -281,22 +304,93 @@ def test_a_configured_device_is_taken_at_its_word(tmp_path: Path) -> None:
     assert (insisted.device, insisted.reason) == ("cuda", "configured")
 
 
-def test_a_small_gpu_runs_on_the_cpu_at_probe_time(tmp_path: Path) -> None:
+@pytest.fixture
+def no_gpu_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No PATH or LD_LIBRARY_PATH changes, and no ctranslate2 asked about a real GPU."""
+    import app.asr.local as local
+
+    monkeypatch.setattr(local, "register_cuda_dirs", lambda dirs: [str(d) for d in dirs])
+    monkeypatch.setattr(local, "supported_compute_type", lambda memory: "int8_float16")
+
+
+def _probe(tmp_path: Path, memory: int, role: str, env: dict[str, str], **settings: Any) -> Any:
     cuda = tmp_path / "Scripts"
-    cuda.mkdir()
+    cuda.mkdir(exist_ok=True)
     (cuda / "cublas64_12.dll").touch()
-    config = default_config(asr__cuda_dir=str(cuda))
-    env: dict[str, str] = {}
-    device, compute, registered = probe_device(
-        config,
+    return probe_device(
+        default_config(asr__cuda_dir=str(cuda), **settings),
         app_home=tmp_path / "home",
         search_path=[],
         system_dirs=(),
         environ=env,
-        vram=lambda: 2048,
+        vram=lambda: memory,
+        role=role,
     )
-    assert (device, compute, registered) == ("cpu", "int8", [])
+
+
+def test_a_gpu_too_small_for_any_model_is_hidden_at_probe_time(tmp_path: Path) -> None:
+    env: dict[str, str] = {}
+    assert _probe(tmp_path, 768, HEBREW, env) == ("cpu", "int8", [])
     assert env["CUDA_VISIBLE_DEVICES"] == ""
+
+
+@pytest.mark.usefixtures("no_gpu_side_effects")
+def test_a_gpu_too_small_for_one_model_stays_visible_for_the_others(tmp_path: Path) -> None:
+    """CUDA reads CUDA_VISIBLE_DEVICES once per process: an English meeting on the CPU
+    must not hide the GPU from the Hebrew meeting after it."""
+    env: dict[str, str] = {}
+    assert _probe(tmp_path, 2048, OTHER, env) == ("cpu", "int8", [])
+    assert "CUDA_VISIBLE_DEVICES" not in env
+    device, _compute, registered = _probe(tmp_path, 2048, HEBREW, env)
+    assert device == "cuda" and registered
+
+
+@pytest.mark.parametrize(
+    ("memory", "supported", "expected"),
+    [
+        # Turing 2 GB (machine B's MX450): float16 runs out of memory at load.
+        (2048, ["float32", "float16", "int8_float16", "int8_float32", "int8"], "int8_float16"),
+        # Pascal (machine A's GTX 1080) has no float16 types, at any size.
+        (2048, ["float32", "int8_float32", "int8"], "int8_float32"),
+        (8192, ["float32", "int8_float32", "int8"], "int8_float32"),
+        (3072, ["float32", "int8"], "int8"),
+        # 4 GB and more keep float16.
+        (4096, ["float32", "float16", "int8_float16", "int8_float32", "int8"], "float16"),
+        (8192, ["float32", "float16", "int8_float16", "int8_float32", "int8"], "float16"),
+        # Memory unknown (a configured "cuda" where nvidia-smi failed): as before.
+        (None, ["float32", "float16", "int8_float16", "int8_float32", "int8"], "float16"),
+    ],
+)
+def test_the_compute_type_follows_the_gpus_memory(
+    memory: int | None, supported: list[str], expected: str
+) -> None:
+    assert supported_compute_type(memory, supported) == expected
+
+
+@pytest.mark.usefixtures("no_gpu_side_effects")
+def test_a_configured_compute_type_wins_on_a_small_gpu(tmp_path: Path) -> None:
+    device, compute, _ = _probe(tmp_path, 2048, HEBREW, {}, asr__compute_type="float16")
+    assert (device, compute) == ("cuda", "float16")
+
+
+def test_the_probe_picks_the_compute_type_by_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.asr.local as local
+
+    monkeypatch.setattr(local, "register_cuda_dirs", lambda dirs: [str(d) for d in dirs])
+    asked: list[int | None] = []
+    monkeypatch.setattr(local, "supported_compute_type", lambda m: asked.append(m) or "x")
+    assert _probe(tmp_path, 2048, HEBREW, {})[:2] == ("cuda", "x")
+    # A configured "cuda" skips the gate, but the compute type still asks the memory.
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 2048)
+    cuda = tmp_path / "Scripts"
+    device, compute, _ = probe_device(
+        default_config(asr__device="cuda", asr__cuda_dir=str(cuda)),
+        app_home=tmp_path / "home", search_path=[], system_dirs=(), environ={},
+    )  # fmt: skip
+    assert (device, compute) == ("cuda", "x")
+    assert asked == [2048, 2048]
 
 
 # ------------------------------------------------------------------ CPU fallback
@@ -330,6 +424,34 @@ def test_a_gpu_that_fails_to_load_falls_back_to_the_same_model_on_the_cpu(
     assert (described["role"], described["revision"]) == (HEBREW, MODELS[HEBREW].revision)
 
 
+def test_on_a_2_gb_card_only_the_hebrew_model_tries_the_gpu(
+    installed_models: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """English goes straight to the CPU: on machine B a failed GPU attempt cost English
+    413 s against about 270 s on the CPU alone (D99)."""
+    import app.asr.local as local
+
+    cuda = tmp_path / "Scripts"
+    cuda.mkdir()
+    (cuda / "cublas64_12.dll").touch()
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 2048)
+    monkeypatch.setattr(local, "register_cuda_dirs", lambda dirs: [str(d) for d in dirs])
+    monkeypatch.setattr(local, "supported_compute_type", lambda memory: "int8_float16")
+    built: list[tuple[str, str]] = []
+
+    def factory(**kwargs: Any) -> Model:
+        built.append((str(kwargs["device"]), str(kwargs["compute_type"])))
+        return Model()
+
+    config = default_config(asr__cuda_dir=str(cuda))
+    other = LocalAsr(config, role=OTHER, model_factory=factory)
+    other.load()
+    hebrew = LocalAsr(config, role=HEBREW, model_factory=factory)
+    hebrew.load()
+    assert built == [("cpu", "int8"), ("cuda", "int8_float16")]
+    assert not other.fell_back and not hebrew.fell_back
+
+
 def test_a_model_the_caller_chose_survives_the_fallback(tmp_path: Path) -> None:
     from app.asr.models import ModelChoice
 
@@ -345,3 +467,19 @@ def test_a_model_the_caller_chose_survives_the_fallback(tmp_path: Path) -> None:
     config = default_config(asr__device="cuda", asr__compute_type="int8")
     LocalAsr(config, model_factory=factory, choice=mine).load()
     assert built == [mine.reference, mine.reference]
+
+
+def test_the_self_test_reports_the_compute_type_for_the_gpus_memory(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    import app.asr.local as local
+    from app import selftest_suites
+
+    monkeypatch.setattr(local, "cuda_library_dirs", lambda **_: [tmp_path / "cuda"])
+    monkeypatch.setattr(local, "cached_gpu_memory_mb", lambda: 2048)
+    monkeypatch.setattr(local, "supported_compute_type", lambda m: f"for {m} MB")
+    checks = selftest_suites._asr(argparse.Namespace())
+    cuda = next(check for check in checks if check.name == "asr_cuda")
+    assert "compute for 2048 MB" in cuda.detail
