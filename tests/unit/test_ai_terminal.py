@@ -258,3 +258,46 @@ def test_a_minimized_new_terminal_is_restored_then_brought_forward(
     outcome = window.terminal_forward("Upshot - Codex", {5}, window_s=0.2)
     assert outcome == "brought the terminal forward"
     assert calls == [("restore", 6), ("front", 6)]
+
+
+def test_the_mcp_json_row_counts_any_of_its_apps(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """VS Code by its installer's folder, Cursor by its command on the PATH: either is
+    enough to list the row with the apps found."""
+    code = tmp_path / "Programs" / "Microsoft VS Code" / "Code.exe"
+    code.parent.mkdir(parents=True)
+    code.write_text("")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr(
+        ai_terminal.os.path,
+        "expandvars",
+        lambda text: text.replace("%LOCALAPPDATA%", str(tmp_path)).replace("\\", "/"),
+    )
+    monkeypatch.setattr(ai_terminal, "registry_path", lambda: "C:\\bin")
+    monkeypatch.setattr(
+        ai_terminal.shutil,
+        "which",
+        lambda program, path=None: "C:\\bin\\cursor.cmd" if program == "cursor" else None,
+    )
+    assert ai_terminal.find_mcp_json_apps() == ["VS Code", "Cursor"]
+    monkeypatch.setattr(ai_terminal.shutil, "which", lambda program, path=None: None)
+    code.unlink()
+    assert ai_terminal.find_mcp_json_apps() == []
+
+
+def test_the_mcp_json_row_off_windows_and_in_the_e2e_server() -> None:
+    assert ai_terminal.find_mcp_json_apps(test=True) == ["VS Code"]
+    if sys.platform != "win32":
+        assert ai_terminal.find_mcp_json_apps() == []
+
+
+def test_the_terminal_does_not_inherit_upshots_hidden_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Upshot sets CUDA_VISIBLE_DEVICES="" for itself without a usable GPU; the user's
+    terminal must still see the GPU. A value of the user's own stays."""
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    env = ai_terminal.terminal_env("C:\\fresh")
+    assert "CUDA_VISIBLE_DEVICES" not in env and env["PATH"] == "C:\\fresh"
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    assert ai_terminal.terminal_env(None)["CUDA_VISIBLE_DEVICES"] == "1"
