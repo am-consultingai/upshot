@@ -696,11 +696,11 @@ def test_the_marker_is_replaced_whole(app_home: Path, monkeypatch: pytest.Monkey
     def refused(source: object, target: object) -> None:
         raise PermissionError(13, "in use")
 
-    monkeypatch.setattr(cuda_libs.os, "replace", refused)
-    assert cuda_libs.remove_retired(app_home) == 0
+    with monkeypatch.context() as patched:  # only this patch; the fixtures' stay
+        patched.setattr(cuda_libs.os, "replace", refused)
+        assert cuda_libs.remove_retired(app_home) == 0
     assert (folder / cuda_libs.MARKER).read_text() == before
     assert ready(app_home)
-    monkeypatch.undo()
     cuda_libs.remove_retired(app_home)
     assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
     assert not list(folder.glob("*.tmp"))
