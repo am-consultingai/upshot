@@ -21,3 +21,18 @@ describe("Open in terminal", () => {
     expect(terminalToast(false, false)).toEqual({ key: "settings.aiAppsTerminalNotCopied", danger: true });
   });
 });
+
+describe("the sides a row offers", () => {
+  it("only those where the app was found, Windows first", async () => {
+    const { sidesToShow } = await import("../src/lib/aiTerminal");
+    expect(sidesToShow({ windows: true, wsl: null, windows_line: null })).toEqual(["windows"]);
+    expect(sidesToShow({ windows: false, wsl: "Ubuntu", windows_line: null })).toEqual(["wsl"]);
+    expect(sidesToShow({ windows: true, wsl: "Ubuntu", windows_line: null })).toEqual(["windows", "wsl"]);
+  });
+
+  it("both when found nowhere, or before the answer is in", async () => {
+    const { sidesToShow } = await import("../src/lib/aiTerminal");
+    expect(sidesToShow({ windows: false, wsl: null, windows_line: null })).toEqual(["windows", "wsl"]);
+    expect(sidesToShow(undefined)).toEqual(["windows", "wsl"]);
+  });
+});
