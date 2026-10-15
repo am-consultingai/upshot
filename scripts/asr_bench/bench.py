@@ -39,6 +39,7 @@ from common import (
     assemble,
     cache_dir,
     config_for,
+    decode,
     environment,
     has_fleurs,
     load_fleurs,
@@ -73,9 +74,7 @@ class CountingFactory:
 
 
 def d60_recordings(folder: Path) -> dict[str, tuple[np.ndarray, str]]:
-    from faster_whisper import decode_audio
-
-    mixed = decode_audio(str(folder / "mixed-he-en-he.wav"), sampling_rate=SR)
+    mixed = decode(folder / "mixed-he-en-he.wav")
     return {
         "d60-mixed": (mixed, "he"),
         "d60-hebrew": (mixed[: 25 * SR], "he"),

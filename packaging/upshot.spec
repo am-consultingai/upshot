@@ -89,7 +89,9 @@ a = Analysis(
     runtime_hooks=[],
     # pydantic's hook collects its mypy plugin, which pulls in mypy itself from a build
     # venv that also holds the dev tools; nothing at run time uses either.
-    excludes=["tkinter", "matplotlib", "torch", "tests", "mypy", "pydantic.mypy", "pydantic.v1.mypy"],
+    # "av": PyAV is never installed (pyproject.toml); should a venv still hold it, its GPL
+    # x264 and x265 must not be collected (scripts/check_dist.py would refuse them anyway).
+    excludes=["tkinter", "matplotlib", "torch", "tests", "mypy", "pydantic.mypy", "pydantic.v1.mypy", "av"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

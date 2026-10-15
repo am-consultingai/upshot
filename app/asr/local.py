@@ -35,6 +35,7 @@ from app.asr.models import (
     require,
     resolve,
 )
+from app.asr.wav import read_audio
 from app.config import Config
 from app.log import get
 
@@ -541,7 +542,7 @@ class LocalAsr:
     ) -> list[Any]:
         model = self.model if self.model is not None else self.load()
         segments, _info = model.transcribe(
-            str(wav),
+            read_audio(wav),  # an array: given a path, faster-whisper decodes with PyAV
             language=language,
             multilingual=multilingual,
             initial_prompt=initial_prompt,
