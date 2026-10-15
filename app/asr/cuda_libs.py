@@ -103,16 +103,33 @@ def ready(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> bool:
 
 def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
     """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
-    rewrite the marker to name only the current wheels. Returns the bytes freed."""
+    rewrite the marker to name only the current wheels. Returns the bytes freed.
+
+    Only in this app's own, ready folder. Never raises: a file that will not go now (held
+    by a scanner, say) is tried again by the next install, and ``ready`` accepts the old
+    marker meanwhile.
+    """
     folder = target_dir(home)
     if not ready(home, wheels):
         return 0
     freed = 0
     for pattern in RETIRED_GLOBS:
         for path in folder.glob(pattern):
-            freed += path.stat().st_size
-            path.unlink()
-    (folder / MARKER).write_text(json.dumps(_versions(wheels)), encoding="utf-8")
+            try:
+                size = path.stat().st_size
+                path.unlink()
+            except OSError as exc:
+                log.warning("could not remove the retired GPU library %s: %s", path, exc)
+                continue
+            freed += size
+    marker = folder / MARKER
+    current = json.dumps(_versions(wheels))
+    try:
+        leftover = any(next(folder.glob(pattern), None) for pattern in RETIRED_GLOBS)
+        if not leftover and marker.read_text(encoding="utf-8") != current:
+            marker.write_text(current, encoding="utf-8")
+    except OSError as exc:
+        log.warning("could not rewrite %s: %s", marker, exc)
     if freed:
         log.info("removed %.0f MB of retired GPU libraries from %s", freed / 1e6, folder)
     return freed
@@ -163,6 +180,11 @@ def wanted(config: Config, vram: VramQuery | None = None) -> tuple[bool, str]:
     if memory < needed:
         return False, f"the GPU has {memory} MB, under the {needed} MB the model needs"
     return True, f"NVIDIA GPU with {memory} MB"
+
+
+def _safe_name(name: str) -> bool:
+    """A plain file name, which cannot land outside the folder it is written into."""
+    return bool(name) and name not in (".", "..") and not any(c in name for c in "\\:/")
 
 
 def _sha256(path: Path) -> str:
@@ -300,6 +322,8 @@ class CudaInstaller:
             with zipfile.ZipFile(wheel) as archive:
                 for member in archive.infolist():
                     parts = member.filename.split("/")
+                    if not _safe_name(parts[-1]):
+                        continue
                     if (
                         len(parts) == 4
                         and parts[0] == "nvidia"
