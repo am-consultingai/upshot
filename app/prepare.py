@@ -261,16 +261,18 @@ def run(
     if code != EXIT_OK:
         return code
 
-    if gpu:
-        from app.asr import cuda_libs
+    from app.asr import cuda_libs
 
+    # An earlier build's cuDNN (about 1 GB, loaded by nothing) goes on every upgrade,
+    # whether or not this machine still wants GPU libraries; it never fails the install.
+    cuda_libs.remove_retired()
+    if gpu:
         want, why = gpu_wanted if gpu_wanted is not None else cuda_libs.wanted(config)
         elsewhere = cuda_libs.usable_elsewhere(config) if cuda is None and want else None
         if elsewhere is not None:
             progress.write(stage="gpu", state="skipped", percent=100, text=present)
             log.info("prepare: CUDA libraries already usable in %s; nothing to download", elsewhere)
         elif cuda is None and want and cuda_libs.ready():
-            cuda_libs.remove_retired()  # an earlier build's cuDNN, which nothing loads
             progress.write(stage="gpu", state="skipped", percent=100, text=present)
         elif not want:
             progress.write(
