@@ -201,7 +201,7 @@ def _model_set(svc: Services) -> Any:
 
 def _model_payload(svc: Services, models: Any = None) -> dict[str, Any]:
     from app.asr.local import MIN_VRAM_MB, device_plan
-    from app.asr.models import TOTAL_BYTES
+    from app.asr.models import HEBREW, TOTAL_BYTES
 
     models = models or _model_set(svc)
     payload: dict[str, Any] = models.status().as_dict()
@@ -213,7 +213,7 @@ def _model_payload(svc: Services, models: Any = None) -> dict[str, Any]:
         device=plan.device,
         device_reason=plan.reason,
         vram_mb=plan.vram_mb,
-        min_vram_mb=MIN_VRAM_MB,
+        min_vram_mb=MIN_VRAM_MB[HEBREW],
     )
     return payload
 

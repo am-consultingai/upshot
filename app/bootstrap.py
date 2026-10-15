@@ -71,8 +71,9 @@ def choose_profile(config: Config) -> tuple[str, str]:
 
     configured = config.profile
     # The same decision the backend makes at load, VRAM gate included, so the profile
-    # and the model named here are the ones that will actually run.
-    device = planned_device(config)
+    # and the model named here are the ones that will actually run. Hebrew's: on a 2 GB
+    # card other languages run on the CPU under a GPU profile (D99).
+    device = planned_device(config, role=HEBREW)
     profile = (
         configured if configured != "auto" else ("gpu-live" if device == "cuda" else "cpu-deferred")
     )
