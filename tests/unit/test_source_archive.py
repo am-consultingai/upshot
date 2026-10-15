@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import importlib.util
 import json
 import sys
@@ -176,6 +177,27 @@ def test_a_network_error_is_a_clean_failure_with_nothing_left(
     assert archive.main([str(out), "--notices", str(notices_file)]) == 1
     assert "source archive: https://" in capsys.readouterr().err
     assert list(tmp_path.glob("Upshot-*")) == []
+
+
+def test_a_connection_cut_mid_download_is_a_clean_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Cut:
+        def __enter__(self) -> Cut:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            raise http.client.IncompleteRead(b"part", 100)
+
+    monkeypatch.setattr(archive.urllib.request, "urlopen", lambda url, timeout: Cut())
+    with pytest.raises(archive.SourceError, match=r"files\.example/x: IncompleteRead"):
+        archive.fetch("https://files.example/x")
+
+
+def test_notices_without_any_lgpl_or_mpl_entry_are_the_wrong_file(vendor: Path) -> None:
+    with pytest.raises(archive.SourceError, match="not a build's notices file"):
+        archive.plan([entry("numpy", "2.5.2", "BSD-3-Clause")], LOCK, vendor)
 
 
 def test_a_missing_notices_file_is_a_clean_failure(
