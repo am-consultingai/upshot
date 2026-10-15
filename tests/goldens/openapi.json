@@ -2687,6 +2687,69 @@
         "summary": "Decline"
       }
     },
+    "/api/legal/notices": {
+      "get": {
+        "description": "Every third-party component and its licence, without the licence texts.",
+        "operationId": "notices_list_api_legal_notices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Notices List Api Legal Notices Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Notices List"
+      }
+    },
+    "/api/legal/notices/{index}": {
+      "get": {
+        "description": "One component's licence and notice texts.",
+        "operationId": "notice_texts_api_legal_notices__index__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "index",
+            "required": true,
+            "schema": {
+              "title": "Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Notice Texts Api Legal Notices  Index  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notice Texts"
+      }
+    },
     "/api/legal/terms": {
       "get": {
         "description": "One version of the Terms, rendered: the one in effect unless ``version`` names another.",
