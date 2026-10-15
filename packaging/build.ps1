@@ -176,6 +176,12 @@ if (-not ($answer -match '"get_summary"' -and $answer -match '"transcribe_file"'
 }
 Write-Host "[ok  ] upshot-mcp answers initialize and lists its tools"
 
+Write-Host "== no GPL component in the freeze =="
+# PyAV's bundled x264 and x265 shipped in every build until PyAV was removed; whatever
+# brings such a library in next, the build stops here (scripts/check_dist.py).
+uv run python scripts/check_dist.py dist\upshot
+Assert-Exit "a GPL component is in dist\upshot"
+
 Write-Host "== selftest against the freeze =="
 # upshot.exe is a windowed program (console=False): `& upshot.exe` returns at once and
 # prints nothing. Wait for it, and read the verdict from the report file it writes.
