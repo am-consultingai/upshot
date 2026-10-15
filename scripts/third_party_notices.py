@@ -176,9 +176,21 @@ def python_licence_texts(dist: metadata.Distribution) -> list[str]:
     return unique or fallback(dist.metadata["Name"])
 
 
+def upshot_version() -> str:
+    """The version being built (pyproject.toml), which names its release and sources zip."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return str(project["project"]["version"])
+
+
 def source_line(name: str, version: str, licence: str) -> str:
     if any(family in licence for family in SOURCE_OFFERED):
-        return f"https://pypi.org/project/{name}/{version}/#files (the source distribution)"
+        # scripts/source_archive.py puts it in the release's sources zip, beside the installer.
+        upshot = upshot_version()
+        return (
+            f"Upshot-{upshot}-sources.zip at"
+            f" https://github.com/am-consultingai/upshot/releases/tag/v{upshot}; also"
+            f" https://pypi.org/project/{name}/{version}/#files"
+        )
     return ""
 
 
@@ -364,7 +376,8 @@ def ffmpeg_entry() -> Entry:
         " holds FFmpeg's own audio decoders, zlib, and the MinGW-w64 runtime.",
         texts=texts,
         source=f"{where}: FFmpeg's and zlib's source and the exact build. AM Consulting will"
-        " also provide it on request at office@amconsultingai.com.",
+        " also provide it on request at office@amconsultingai.com, for at least three years"
+        " after each release.",
         kind="other",
     )  # fmt: skip
 

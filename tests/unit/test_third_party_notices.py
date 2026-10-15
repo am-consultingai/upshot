@@ -145,9 +145,10 @@ def test_each_fallback_s_pinned_version_is_the_one_installed() -> None:
 
 
 def test_lgpl_and_mpl_entries_say_where_their_source_is() -> None:
-    assert "pypi.org/project/soxr/1.1.0" in notices.source_line(
-        "soxr", "1.1.0", "LGPL-2.1-or-later"
-    )
+    line = notices.source_line("soxr", "1.1.0", "LGPL-2.1-or-later")
+    version = notices.upshot_version()
+    assert f"Upshot-{version}-sources.zip" in line and f"/releases/tag/v{version}" in line
+    assert "pypi.org/project/soxr/1.1.0" in line
     assert notices.source_line("certifi", "1", "MPL-2.0")
     assert notices.source_line("numpy", "2", "BSD-3-Clause") == ""
 
