@@ -172,6 +172,12 @@ def test_pyavs_ffmpeg_fails_although_it_never_says_enable_gpl(tmp_path: Path) ->
     assert check_dist.problems(tmp_path) == ["avcodec-62.dll: built with --enable-libx264"]
 
 
+@pytest.mark.parametrize("flag", ["--enable-librubberband", "--enable-frei0r", "--enable-postproc"])
+def test_any_gpl_only_library_fails_without_enable_gpl(tmp_path: Path, flag: str) -> None:
+    (tmp_path / "avfilter.dll").write_bytes(b"--enable-version3 " + flag.encode() + b" --x")
+    assert check_dist.problems(tmp_path) == [f"avfilter.dll: built with {flag}"]
+
+
 def test_our_lgpl_ffmpeg_passes(tmp_path: Path) -> None:
     """BtbN's LGPL build names the GPL libraries only to disable them."""
     (tmp_path / "ffmpeg.exe").write_bytes(
