@@ -345,3 +345,40 @@ def test_the_release_settings_are_found_where_build_ps1_finds_them(
     assert publish_release.release_local_path() == home_copy
     monkeypatch.setenv("UPSHOT_RELEASE_LOCAL", str(tmp_path / "named.json"))
     assert publish_release.release_local_path() == tmp_path / "named.json"
+
+
+def publish_stubbed(
+    release: Release, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> list[tuple[str, ...]]:
+    """A real (not dry-run) publish with every command and network step recorded instead."""
+    ran: list[tuple[str, ...]] = []
+    monkeypatch.setattr(publish_release, "SITE_UPDATES", tmp_path / "site-updates")
+    monkeypatch.setattr(publish_release, "check_repository", lambda tag: ran.append(("checked",)))
+    monkeypatch.setattr(publish_release, "run", lambda *c, capture=False: ran.append(c) or "")
+    monkeypatch.setattr(publish_release, "upload_sourcemaps", lambda *a: "skipped")
+    monkeypatch.setattr(publish_release, "publish_manifest", lambda *a: ran.append(("push",)))
+    monkeypatch.setattr(publish_release, "sentry_release", lambda *a: "skipped")
+    monkeypatch.setattr(publish_release, "read_back", lambda *a: None)
+    return ran
+
+
+def test_the_release_carries_the_source_archive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release = Release(tmp_path, monkeypatch, "0.3.0")
+    sources = tmp_path / "Upshot-0.3.0-sources.zip"
+    sources.write_bytes(b"PK")
+    ran = publish_stubbed(release, tmp_path, monkeypatch)
+    assert publish_release.main(["--installer", str(release.installer)]) == 0
+    create = next(c for c in ran if c[:3] == ("gh", "release", "create"))
+    assert str(sources) in create and str(release.installer) in create
+
+
+def test_a_release_without_its_source_archive_is_refused_before_anything_happens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    release = Release(tmp_path, monkeypatch, "0.3.0")
+    ran = publish_stubbed(release, tmp_path, monkeypatch)
+    assert publish_release.main(["--installer", str(release.installer)]) == 1
+    assert "no Upshot-0.3.0-sources.zip beside the installer" in capsys.readouterr().err
+    assert ran == [], "nothing checked, tagged, released or pushed"
