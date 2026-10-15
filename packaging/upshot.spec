@@ -93,10 +93,10 @@ a = Analysis(
     # x264 and x265 must not be collected (scripts/check_dist.py would refuse them anyway).
     excludes=["tkinter", "matplotlib", "torch", "tests", "mypy", "pydantic.mypy", "pydantic.v1.mypy", "av"],
     noarchive=False,
-    # pystray is LGPL-3.0, which lets the user run Upshot with a pystray of their own: so
-    # it ships as plain .py files in _internal\pystray, not inside the archive, where it
-    # could not be replaced.
-    module_collection_mode={"pystray": "py"},
+    # The LGPL lets the user run Upshot with their own copy of an LGPL library: pystray
+    # (LGPL-3.0) and python-soxr's wrapper (LGPL-2.1, beside its soxr_ext.pyd) ship as
+    # plain .py files in _internal, not inside the archive, where they could not be swapped.
+    module_collection_mode={"pystray": "py", "soxr": "py"},
 )
 pyz = PYZ(a.pure)
 
