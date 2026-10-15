@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import sys
+import urllib.error
 import zipfile
 from pathlib import Path
 
@@ -155,4 +157,29 @@ def test_a_download_that_does_not_match_its_hash_leaves_no_archive(
     out = tmp_path / "Upshot-0.3.0-sources.zip"
     with pytest.raises(archive.SourceError, match="SHA-256"):
         archive.build(out, sources, get=lambda url: b"tampered")
-    assert not out.exists()
+    assert not out.exists() and not out.with_name(out.name + ".partial").exists()
+
+
+def test_a_network_error_is_a_clean_failure_with_nothing_left(
+    tmp_path: Path, vendor: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    def down(url: str, timeout: float) -> None:
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(archive.urllib.request, "urlopen", down)
+    notices_file = vendor / "THIRD-PARTY-NOTICES.json"
+    notices_file.write_text(
+        json.dumps({"entries": [entry("soxr", "1.1.0", "LGPL-2.1-or-later")]}), encoding="utf-8"
+    )
+    out = tmp_path / "Upshot-0.3.0-sources.zip"
+    assert archive.main([str(out), "--notices", str(notices_file)]) == 1
+    assert "source archive: https://" in capsys.readouterr().err
+    assert list(tmp_path.glob("Upshot-*")) == []
+
+
+def test_a_missing_notices_file_is_a_clean_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert archive.main([str(tmp_path / "out.zip"), "--notices", str(tmp_path / "none.json")]) == 1
+    assert "source archive: cannot read none.json" in capsys.readouterr().err
