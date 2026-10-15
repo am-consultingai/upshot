@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, reason, type AiAppId, type AiApps, type AiAppsFound, type AiAppWhere } from "../api";
@@ -109,6 +109,12 @@ function CommandRow({
   const sides = sidesToShow(where);
   const [chosen, setChosen] = useState<Side | null>(null);
   const tab: Side = chosen && sides.includes(chosen) ? chosen : sides[0];
+  // A side that goes (its WSL distribution stopped) takes the click with it: it does not
+  // come back by itself when the side does.
+  const shown = sides.join();
+  useEffect(() => {
+    if (chosen && !shown.split(",").includes(chosen)) setChosen(null);
+  }, [chosen, shown]);
   const text = info?.commands[tab === "wsl" ? row.wsl : row.windows];
   const here = tab === "windows" ? Boolean(where?.windows) : Boolean(where?.wsl);
   const id = row.id;

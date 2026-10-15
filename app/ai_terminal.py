@@ -63,11 +63,38 @@ class Found:
         return {app: {"windows": app in self.windows, "wsl": self.wsl.get(app)} for app in PROGRAMS}
 
 
-#: What the e2e server reports: no real lookup, and one of each case the page draws.
+#: What the e2e server reports: no real lookup, and an app on each side: Claude Code on
+#: both (tabs), Codex on Windows only, Antigravity in WSL only (no tabs either).
 TEST_FOUND = Found(
-    windows={"claude_code": "claude.exe", "codex": "codex.exe", "antigravity": "agy.exe"},
+    windows={"claude_code": "claude.exe", "codex": "codex.exe"},
     wsl={"claude_code": "Ubuntu", "antigravity": "Ubuntu"},
 )
+
+
+_MACHINE_ENV = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+
+
+def registry_values(name: str) -> list[str]:
+    """A variable as Windows keeps it for new programs: the machine's value, then the
+    user's, each expanded. Upshot's own environment may have changed since logon (the
+    PATH grew, ``CUDA_VISIBLE_DEVICES`` set by Upshot), so it is not the source."""
+    if sys.platform != "win32":
+        return []
+    import winreg
+
+    found: list[str] = []
+    for hive, key in (
+        (winreg.HKEY_LOCAL_MACHINE, _MACHINE_ENV),
+        (winreg.HKEY_CURRENT_USER, "Environment"),
+    ):
+        try:
+            with winreg.OpenKey(hive, key) as handle:
+                value, _ = winreg.QueryValueEx(handle, name)
+        except OSError:
+            continue
+        if isinstance(value, str):
+            found.append(winreg.ExpandEnvironmentStrings(value))
+    return found
 
 
 def registry_path() -> str | None:
@@ -77,26 +104,7 @@ def registry_path() -> str | None:
     this process never saw (D46). The ChatGPT desktop app puts ``codex`` in
     ``%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`` and adds that folder to the user's PATH.
     """
-    if sys.platform != "win32":
-        return None
-    import winreg
-
-    parts: list[str] = []
-    for hive, key in (
-        (
-            winreg.HKEY_LOCAL_MACHINE,
-            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
-        ),
-        (winreg.HKEY_CURRENT_USER, "Environment"),
-    ):
-        try:
-            with winreg.OpenKey(hive, key) as handle:
-                value, _ = winreg.QueryValueEx(handle, "Path")
-        except OSError:
-            continue
-        if isinstance(value, str) and value:
-            parts.append(winreg.ExpandEnvironmentStrings(value))
-    return ";".join(parts) or None
+    return ";".join(value for value in registry_values("Path") if value) or None
 
 
 def find_on_windows(config: Any) -> dict[str, str]:
@@ -210,25 +218,46 @@ def find(config: Any, *, test: bool = False) -> Found:
 
 #: The apps added by an ``mcpServers`` entry in a file of their own: one row on the page,
 #: since that entry is the same for all of them. Each by its command on the PATH, and by
-#: where its installer puts it (``%LOCALAPPDATA%`` per user, ``%ProgramFiles%`` per machine).
-MCP_JSON_APPS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+#: where its installer puts it: a folder of the user's (``LOCALAPPDATA``, the profile) or
+#: the machine's (``ProgramFiles``), then the path inside it.
+MCP_JSON_APPS: dict[str, tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]] = {
     "VS Code": (
-        ("code",),
+        ("code", "code-insiders"),
         (
-            r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe",
-            r"%ProgramFiles%\Microsoft VS Code\Code.exe",
+            ("LOCALAPPDATA", "Programs", "Microsoft VS Code", "Code.exe"),
+            ("ProgramFiles", "Microsoft VS Code", "Code.exe"),
+            ("LOCALAPPDATA", "Programs", "Microsoft VS Code Insiders", "Code - Insiders.exe"),
+            ("ProgramFiles", "Microsoft VS Code Insiders", "Code - Insiders.exe"),
         ),
     ),
-    "Cursor": (("cursor",), (r"%LOCALAPPDATA%\Programs\cursor\Cursor.exe",)),
+    "Cursor": (
+        ("cursor",),
+        (
+            ("LOCALAPPDATA", "Programs", "cursor", "Cursor.exe"),
+            ("ProgramFiles", "cursor", "Cursor.exe"),
+        ),
+    ),
+    # LM Studio's own folder, and its command, which is on the PATH only after LM Studio
+    # has set it up once (``lms bootstrap``).
     "LM Studio": (
         ("lms",),
         (
-            r"%LOCALAPPDATA%\Programs\LM Studio\LM Studio.exe",
-            r"%LOCALAPPDATA%\Programs\lm-studio\LM Studio.exe",
+            ("LOCALAPPDATA", "Programs", "LM Studio", "LM Studio.exe"),
+            ("USERPROFILE", ".lmstudio", "bin", "lms.exe"),
         ),
     ),
     "mcphost": (("mcphost",), ()),
 }
+
+
+def _installed(where: tuple[str, ...]) -> bool:
+    """Whether the installer's program is there: a file exists, nothing in it is read."""
+    variable, *parts = where
+    base = os.environ.get(variable)
+    if not base:
+        return False
+    return Path(base, *parts).is_file()
+
 
 #: What the e2e server reports for that row.
 TEST_MCP_JSON = ["VS Code"]
@@ -245,7 +274,7 @@ def find_mcp_json_apps(*, test: bool = False) -> list[str]:
     found: list[str] = []
     for name, (programs, folders) in MCP_JSON_APPS.items():
         on_path = fresh is not None and any(shutil.which(p, path=fresh) for p in programs)
-        installed = any(Path(os.path.expandvars(folder)).is_file() for folder in folders)
+        installed = any(_installed(folder) for folder in folders)
         if on_path or installed:
             found.append(name)
     return found
@@ -335,12 +364,15 @@ def launch(argv: list[str], fresh_path: str | None) -> None:
 
 def terminal_env(fresh_path: str | None) -> dict[str, str]:
     """The user's environment for their terminal, not Upshot's: the PATH read again, and
-    no ``CUDA_VISIBLE_DEVICES=""``, which Upshot sets for itself when it cannot use the
-    GPU (``app/asr/local.py``) and which would hide the GPU from whatever the user runs
-    there (a local model, Ollama). A value the user set themselves is kept."""
+    ``CUDA_VISIBLE_DEVICES`` as the user set it in Windows, or none. Upshot sets it to ""
+    for itself when it cannot use the GPU (``app/asr/local.py``), over any value of the
+    user's; inherited, it would hide the GPU from whatever the user runs there (a local
+    model, Ollama)."""
     env = dict(os.environ)
     if fresh_path:
         env["PATH"] = fresh_path
-    if env.get("CUDA_VISIBLE_DEVICES") == "":
-        del env["CUDA_VISIBLE_DEVICES"]
+    env.pop("CUDA_VISIBLE_DEVICES", None)
+    users = registry_values("CUDA_VISIBLE_DEVICES")
+    if users:
+        env["CUDA_VISIBLE_DEVICES"] = users[-1]  # the user's over the machine's
     return env
