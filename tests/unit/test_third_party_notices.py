@@ -71,6 +71,12 @@ def test_licence_names_become_spdx(declared: str, expected: str) -> None:
     assert notices.spdx(declared) == expected
 
 
+def test_an_unknown_licence_without_a_note_is_reported_not_a_traceback() -> None:
+    assert notices.missing_texts([notices.Entry("x", "", "NOASSERTION", texts=["t"])]) == [
+        "x: licence unknown (no note)"
+    ]
+
+
 def test_a_python_runtime_licence_without_openssl_s_or_libffi_s_text_fails_strict() -> None:
     python = notices.Entry("Python", "3.13", "PSF-2.0", texts=["PSF LICENSE AGREEMENT ..."])
     assert len(notices.missing_texts([python])) == 2
@@ -78,10 +84,21 @@ def test_a_python_runtime_licence_without_openssl_s_or_libffi_s_text_fails_stric
     assert notices.missing_texts([python]) == []
 
 
+def fake_distribution(name: str, version: str, declared: str) -> SimpleNamespace:
+    return SimpleNamespace(metadata={"Name": name, "License": declared}, version=version)
+
+
 def test_a_vague_declaration_is_named_from_the_package_s_own_files() -> None:
     """No "only" is invented for "LGPLv3": pystray's header says "or any later version"."""
-    assert notices.DECLARED_IN_FILE["pystray"] == "LGPL-3.0-or-later"
-    assert notices.DECLARED_IN_FILE["colorama"] == "BSD-3-Clause"
+    pystray = fake_distribution("pystray", "0.19.5", "LGPLv3")
+    assert notices.python_licence(pystray) == "LGPL-3.0-or-later"
+    colorama = fake_distribution("colorama", "0.4.6", "BSD")
+    assert notices.python_licence(colorama) == "BSD-3-Clause"
+
+
+def test_another_version_of_such_a_package_is_read_afresh() -> None:
+    """The table holds only for the version its claim was checked at."""
+    assert notices.python_licence(fake_distribution("pystray", "0.20.0", "GPLv3")) == "GPLv3"
 
 
 def test_apache_2_s_full_text_is_added_where_only_its_header_ships() -> None:
@@ -99,7 +116,8 @@ def test_each_fallback_s_pinned_version_is_the_one_installed() -> None:
 
     for file, package in (("ctranslate2.txt", "ctranslate2"), ("tokenizers.txt", "tokenizers"),
                           ("sherpa-onnx-core.txt", "sherpa-onnx-core"),
-                          ("flatbuffers.txt", "flatbuffers")):  # fmt: skip
+                          ("flatbuffers.txt", "flatbuffers"), ("winrt.txt", "winrt-runtime"),
+                          ("pyinstaller.txt", "pyinstaller")):  # fmt: skip
         try:
             installed = metadata.version(package)
         except metadata.PackageNotFoundError:
@@ -172,6 +190,7 @@ def test_a_bundled_file_is_credited_to_the_package_folder_it_came_from(
     [("ffmpeg version n8.1\nconfiguration: --enable-version3 --disable-x\n", "LGPL-3.0-or-later"),
      ("ffmpeg version n8.1\nconfiguration: --disable-debug\n", "LGPL-2.1-or-later"),
      ("ffmpeg version n8.1\nconfiguration: --enable-gpl --enable-libx264\n", "GPL"),
+     ("ffmpeg version n8.1\nconfiguration: --enable-nonfree\n", "LicenseRef-FFmpeg-nonfree"),
      ("ffmpeg version n8.1\n", "NOASSERTION"),
      ("", "NOASSERTION")],
 )  # fmt: skip
