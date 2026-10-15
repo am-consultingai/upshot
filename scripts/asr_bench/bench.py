@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tier", type=int, choices=(1, 2), default=1)
     parser.add_argument("--langs", nargs="*", help="instead of the tier's languages")
     parser.add_argument("--device", default="auto", choices=("auto", "cpu", "cuda"))
-    parser.add_argument("--cuda-dir", nargs="*", help="folders holding cuBLAS/cuDNN")
+    parser.add_argument("--cuda-dir", nargs="*", help="folders holding cuBLAS")
     parser.add_argument("--classify-only", action="store_true")
     parser.add_argument("--clips", help="folder with the D60 clips (Tier 1)")
     parser.add_argument("--cache", help="data cache (default: .cache/asr_bench)")

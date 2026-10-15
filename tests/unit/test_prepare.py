@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -309,6 +310,9 @@ def wheel_bytes(package: str, dlls: dict[str, bytes]) -> bytes:
             archive.writestr(f"nvidia/{package}/bin/{name}", content)
         archive.writestr(f"nvidia/{package}/include/header.h", b"not a dll")
         archive.writestr(f"nvidia_{package}-1.dist-info/METADATA", b"meta")
+        archive.writestr(
+            f"nvidia_{package}-1.dist-info/licenses/License.txt", b"EULA " + package.encode()
+        )
     return buffer.getvalue()
 
 
@@ -358,9 +362,11 @@ def test_the_gpu_libraries_land_in_one_folder_the_app_registers(
         "cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll",
     ]  # fmt: skip
     assert not list(folder.glob("*.h"))
+    # NVIDIA's terms travel with the DLLs.
+    assert (folder / "nvidia_cublas-1-License.txt").read_bytes() == b"EULA cublas"
     assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"cublas": "1", "cudnn": "2"}
     assert ready(app_home, WHEELS)
-    # cuDNN sits beside cuBLAS, so the one folder the app registers carries both.
+    # Every wheel's DLLs land in one folder, which the app registers as a whole.
     # Off Windows cuda_library_dirs looks in lib/, not bin/.
     if sys.platform == "win32":
         assert folder in cuda_library_dirs(app_home=app_home, search_path=[], system_dirs=())
@@ -463,29 +469,62 @@ def test_no_gpu_libraries_where_the_gpu_is_too_small(app_home: Path, tmp_path: P
 
 
 def test_the_pinned_wheels_are_the_ones_proven_on_a_gpu() -> None:
-    """cuBLAS 12.9.1.4 and cuDNN 9.1.1.17: byte for byte the DLLs that transcribe on the
-    author's GTX 1080 (Pascal) with this ctranslate2. Changing them needs that check again."""
-    assert {w.name: w.version for w in cuda_libs.WHEELS} == {
-        "nvidia-cublas-cu12": "12.9.1.4",
-        "nvidia-cudnn-cu12": "9.1.1.17",
-    }
+    """cuBLAS 12.9.1.4 alone: byte for byte the DLLs that transcribe on a GTX 1080 (Pascal)
+    and an MX450 (Turing) with this ctranslate2, which needs no cuDNN (licence epic, P4).
+    Changing them needs that check again."""
+    assert {w.name: w.version for w in cuda_libs.WHEELS} == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert not any("cudnn" in name for name in cuda_libs.REQUIRED)
     for wheel in cuda_libs.WHEELS:
         assert wheel.url.startswith("https://files.pythonhosted.org/")
         assert wheel.url.endswith("win_amd64.whl") and len(wheel.sha256) == 64
 
 
 def test_libraries_already_on_the_machine_are_used_not_downloaded_again(tmp_path: Path) -> None:
-    """A CUDA Toolkit, or a folder named in asr.cuda_dir, with cuBLAS and cuDNN: no 1.2 GB."""
+    """A CUDA Toolkit, or a folder named in asr.cuda_dir, with cuBLAS: no 550 MB."""
     toolkit = tmp_path / "toolkit" / "bin"
     toolkit.mkdir(parents=True)
     (toolkit / "cublas64_12.dll").write_bytes(b"x")
     config = default_config()
     config.set("asr.cuda_dir", str(toolkit))
     assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) is None, (
-        "cuBLAS without cuDNN is not enough"
+        "cuBLAS without cuBLASLt is not enough"
     )
-    (toolkit / "cudnn64_9.dll").write_bytes(b"x")
+    (toolkit / "cublasLt64_12.dll").write_bytes(b"x")
     assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) == toolkit
+
+
+def test_an_earlier_builds_cudnn_is_removed_and_its_cublas_kept(app_home: Path) -> None:
+    """Builds before the licence epic fetched cuDNN too (about 1 GB unpacked, loaded by
+    nothing). Such a folder counts as ready, and --prepare clears the cuDNN out of it."""
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll"):
+        (folder / name).write_bytes(b"x" * 10)
+    (folder / cuda_libs.MARKER).write_text(
+        json.dumps({"nvidia-cublas-cu12": "12.9.1.4", "nvidia-cudnn-cu12": "9.1.1.17"})
+    )
+    assert ready(app_home), "the cuBLAS it holds is the one wanted"
+    assert cuda_libs.remove_retired(app_home) == 20
+    assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
+    assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert ready(app_home)
+    assert cuda_libs.remove_retired(app_home) == 0
+
+
+def test_another_cublas_version_is_not_ready(app_home: Path) -> None:
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in cuda_libs.REQUIRED:
+        (folder / name).write_bytes(b"x")
+    (folder / "cudnn64_9.dll").write_bytes(b"x")
+    marker = json.dumps({"nvidia-cublas-cu12": "12.4.0"})
+    (folder / cuda_libs.MARKER).write_text(marker)
+    assert not ready(app_home)
+    assert cuda_libs.remove_retired(app_home) == 0, "only a ready folder is touched"
+    assert (folder / "cudnn64_9.dll").exists()
+    assert (folder / cuda_libs.MARKER).read_text() == marker
+    (folder / cuda_libs.MARKER).write_text("[]")
+    assert not ready(app_home)
 
 
 def test_prepare_skips_the_download_when_the_libraries_are_already_there(
@@ -501,6 +540,209 @@ def test_prepare_skips_the_download_when_the_libraries_are_already_there(
     assert code == prepare.EXIT_OK
     assert "GPU libraries: already on this computer" in texts
     assert not target_dir(app_home).exists()
+
+
+def test_prepare_on_an_upgrade_clears_the_retired_cudnn(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An install of an earlier build holds cuBLAS and cuDNN; the upgrade's --prepare keeps
+    the cuBLAS, downloads nothing, and frees the cuDNN."""
+    monkeypatch.setattr(cuda_libs, "usable_elsewhere", lambda config: None)
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll"):
+        (folder / name).write_bytes(b"x")
+    (folder / cuda_libs.MARKER).write_text(
+        json.dumps({"nvidia-cublas-cu12": "12.9.1.4", "nvidia-cudnn-cu12": "9.1.1.17"})
+    )
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home),
+               gpu_wanted=(True, "NVIDIA GPU with 8192 MB"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
+    assert not (app_home / "cuda" / ".download").exists(), "nothing was downloaded"
+
+
+def old_build_folder(app_home: Path) -> Path:
+    """What an install of an earlier build left: cuBLAS and cuDNN, both in the marker."""
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll"):
+        (folder / name).write_bytes(b"x")
+    (folder / cuda_libs.MARKER).write_text(
+        json.dumps({"nvidia-cublas-cu12": "12.9.1.4", "nvidia-cudnn-cu12": "9.1.1.17"})
+    )
+    return folder
+
+
+@pytest.mark.parametrize(
+    ("gpu", "wanted_now"),
+    [(True, (False, "transcription is set to run on the CPU")), (False, None)],
+)
+def test_the_retired_cudnn_goes_even_when_no_gpu_libraries_are_wanted_now(
+    app_home: Path, tmp_path: Path, gpu: bool, wanted_now: tuple[bool, str] | None
+) -> None:
+    """Set to the CPU since, or --prepare --no-gpu: the 1 GB still goes."""
+    folder = old_build_folder(app_home)
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home), gpu=gpu,
+               gpu_wanted=wanted_now, poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
+
+
+def test_the_cudnn_goes_first_even_when_the_speech_models_then_fail(
+    app_home: Path, tmp_path: Path
+) -> None:
+    """The cleanup comes before the downloads, so its gigabyte can be what lets the speech
+    models fit, as the retired model's folder does."""
+    folder = old_build_folder(app_home)
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    failing = model_manager(app_home, fail="classifier")
+    code = run(default_config(), progress, model=failing, gpu=False, poll=0.01)  # fmt: skip
+    assert code != prepare.EXIT_OK
+    assert not list(folder.glob("cudnn*.dll"))
+
+
+def test_an_unreadable_folder_never_fails_the_install(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old_build_folder(app_home)
+
+    def denied(home: Path | None = None, wheels: object = None) -> bool:
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(cuda_libs, "ready", denied)
+    assert cuda_libs.remove_retired(app_home) == 0
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home), gpu=False, poll=0.01)
+    assert code == prepare.EXIT_OK
+
+
+def test_a_cudnn_that_will_not_go_never_fails_the_install(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scanner holding the file: the install succeeds, the file stays and is globbed
+    again by the next install; the marker already names only cuBLAS."""
+    folder = old_build_folder(app_home)
+    marker = (folder / cuda_libs.MARKER).read_text()
+    real_unlink = Path.unlink
+
+    def held(self: Path, missing_ok: bool = False) -> None:
+        if self.name.startswith("cudnn"):
+            raise PermissionError(13, "in use", str(self))
+        real_unlink(self, missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held)
+    monkeypatch.setattr(cuda_libs, "usable_elsewhere", lambda config: None)
+    code = run(default_config(), ProgressFile(tmp_path / "prepare.txt"),
+               model=model_manager(app_home), gpu_wanted=(True, "NVIDIA GPU with 8192 MB"),
+               poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert (folder / "cudnn64_9.dll").exists(), "tried again by the next install"
+    assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert marker != (folder / cuda_libs.MARKER).read_text()
+    assert ready(app_home)
+    assert cuda_libs.remove_retired(app_home) == 0, "still held: nothing freed, nothing raised"
+
+
+def test_an_earlier_builds_folder_gets_nvidias_licence_without_a_download(
+    app_home: Path, tmp_path: Path
+) -> None:
+    """Earlier builds kept the DLLs only. The app ships the pinned wheel's License.txt,
+    byte for byte, and --prepare puts it beside them."""
+    folder = old_build_folder(app_home)
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home), gpu=False, poll=0.01)
+    assert code == prepare.EXIT_OK
+    (wheel,) = cuda_libs.WHEELS
+    placed = folder / cuda_libs.licence_name(wheel)
+    assert placed.name == "nvidia_cublas_cu12-12.9.1.4-License.txt"
+    assert placed.read_bytes().startswith(b"End User License Agreement")
+    assert cuda_libs.add_missing_licences(app_home) == 0, "only when missing"
+
+
+#: From nvidia_cublas_cu12-12.9.1.4.dist-info/RECORD, the line for licenses/License.txt.
+RECORD_SHA256_OF_LICENSE = "rW9YU_ugyg0VnQ9Y1JrkmDDC-Mk_epJki5zpCttMbM0"
+
+
+def test_the_shipped_licence_is_the_wheels_own() -> None:
+    """The SHA-256 the cuBLAS 12.9.1.4 wheel's RECORD lists for its License.txt."""
+    from app import paths
+
+    (wheel,) = cuda_libs.WHEELS
+    text = paths.resource("app", "asr", "licenses", cuda_libs.licence_name(wheel)).read_bytes()
+    digest = base64.urlsafe_b64encode(hashlib.sha256(text).digest()).rstrip(b"=").decode()
+    assert digest == RECORD_SHA256_OF_LICENSE
+
+
+def test_a_missing_bundled_licence_is_logged_not_raised(
+    app_home: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    old_build_folder(app_home)
+    from app import paths
+
+    monkeypatch.setattr(paths, "resource", lambda *parts: app_home / "nowhere" / parts[-1])
+    assert cuda_libs.add_missing_licences(app_home) == 0
+    assert "carries no nvidia_cublas_cu12-12.9.1.4-License.txt" in caplog.text
+
+
+def test_the_marker_is_replaced_whole(app_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Written beside and moved over: when the move fails, the old marker is still whole
+    (and still ready), never half-written. On success no .tmp is left."""
+    folder = old_build_folder(app_home)
+    before = (folder / cuda_libs.MARKER).read_text()
+
+    def refused(source: object, target: object) -> None:
+        raise PermissionError(13, "in use")
+
+    with monkeypatch.context() as patched:  # only this patch; the fixtures' stay
+        patched.setattr(cuda_libs.os, "replace", refused)
+        assert cuda_libs.remove_retired(app_home) == 0
+    assert (folder / cuda_libs.MARKER).read_text() == before
+    assert ready(app_home)
+    cuda_libs.remove_retired(app_home)
+    assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert not list(folder.glob("*.tmp"))
+
+
+def test_a_licence_is_added_only_to_a_ready_folder(app_home: Path) -> None:
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    assert cuda_libs.add_missing_licences(app_home) == 0
+    assert not list(folder.iterdir())
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "..\\evil.dll", "C:evil.dll", "a/b.dll"])
+def test_a_member_name_that_could_leave_the_folder_is_not_unpacked(name: str) -> None:
+    assert not cuda_libs._safe_name(name)
+    assert cuda_libs._safe_name("cublas64_12.dll")
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "..\\..\\evil.dist-info/licenses/License.txt",
+        "C:\\evil.dist-info/License.txt",
+        "nvidia/cublas/bin/..\\evil.dll",
+    ],
+)
+def test_an_unsafe_member_writes_nothing_outside_the_folder(app_home: Path, member: str) -> None:
+    """Through _unpack itself: a licence or DLL member whose name could climb out."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in cuda_libs.REQUIRED:
+            archive.writestr(f"nvidia/cublas/bin/{name}", b"x")
+        archive.writestr(member, b"evil")
+    blob = buffer.getvalue()
+    wheel = Wheel("cublas", "1", "https://x/w.whl", hashlib.sha256(blob).hexdigest(), len(blob))
+    installer = CudaInstaller(app_home, wheels=(wheel,), fetch=fetcher({"https://x/w.whl": blob}))
+    installer.start()
+    assert installer.wait(5).state == "ready"
+    assert sorted(p.name for p in target_dir(app_home).iterdir()) == [
+        ".upshot-cuda", "cublas64_12.dll", "cublasLt64_12.dll",
+    ]  # fmt: skip
+    assert not [p for p in app_home.rglob("*") if "evil" in p.name]
 
 
 # -- the speaker models (D85) ---------------------------------------------------------
@@ -637,7 +879,7 @@ def test_an_installed_build_does_not_count_a_configured_cuda_dir(
 
     folder = tmp_path / "Scripts"
     folder.mkdir()
-    for name in ("cublas64_12.dll", "cudnn64_9.dll"):
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll"):
         (folder / name).write_bytes(b"x")
     config = default_config()
     config.set("asr.cuda_dir", str(folder))

@@ -8,3 +8,5 @@ packaging/terms.txt -text
 # are kept with CRLF exactly as committed, never converted.
 *.cmd -text
 *.bat -text
+# NVIDIA's licence, byte for byte as in the pinned cuBLAS wheel (its RECORD hash).
+app/asr/licenses/*.txt -text

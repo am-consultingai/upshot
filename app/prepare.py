@@ -8,7 +8,8 @@ install, in the open. It fetches, in order:
    turbo for Hebrew, then stock large-v3 for every other language, ~5.2 GB), through
    the same ``ModelSet`` the app uses: pinned revisions, resumable, checked file by file,
    refused up front when the drive cannot hold all of them. The folders of models an
-   earlier build used and this one does not (``models.RETIRED_REPOS``) are removed first;
+   earlier build used and this one does not (``models.RETIRED_REPOS``) are removed first,
+   with an earlier build's cuDNN (``cuda_libs.remove_retired``);
 2. the two speaker-diarization models (``models.download_diarization``, ~34 MB, D85),
    reported under the ``model`` stage so the installer needs no new page;
 3. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
@@ -232,6 +233,13 @@ def run(
     configured = config.get("asr.model_path")
     keep = Path(str(configured)).expanduser() if configured else None
     remove_retired(keep=keep)
+    # And an earlier build's cuDNN (about 1 GB, loaded by nothing), on every install,
+    # whatever the GPU step decides later; its cuBLAS gets NVIDIA's licence beside it if
+    # that build left none. Neither ever fails the install.
+    from app.asr import cuda_libs
+
+    cuda_libs.remove_retired()
+    cuda_libs.add_missing_licences()
     # An installed build replaces an unpinned model_path with its own copy, but the old
     # one transcribes until then: a retired folder it names goes only once the turbo is
     # in place, so a failed download leaves what worked (z8tj1hfr6w).
@@ -262,8 +270,6 @@ def run(
         return code
 
     if gpu:
-        from app.asr import cuda_libs
-
         want, why = gpu_wanted if gpu_wanted is not None else cuda_libs.wanted(config)
         elsewhere = cuda_libs.usable_elsewhere(config) if cuda is None and want else None
         if elsewhere is not None:
