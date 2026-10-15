@@ -66,4 +66,19 @@ def test_the_installed_app_ignores_the_override(
     other.write_text(json.dumps({"entries": ENTRIES}), encoding="utf-8")
     monkeypatch.setenv(notices.NOTICES_ENV, str(other))
     monkeypatch.setattr(paths, "is_frozen", lambda: True)
-    assert notices.notices_path() != other
+    found = notices.notices_path()
+    assert found != other
+    assert found is None or found.parent in (paths.resource(), paths.resource("vendor"))
+
+
+def test_a_corrupt_file_reads_as_no_list(tmp_path: Path, app_home: Path,
+                                         monkeypatch: pytest.MonkeyPatch) -> None:  # fmt: skip
+    client = None
+    for body in ("{not json", "[1, 2]", '{"entries": "x"}'):
+        path = tmp_path / "THIRD-PARTY-NOTICES.json"
+        path.write_text(body, encoding="utf-8")
+        monkeypatch.setenv(notices.NOTICES_ENV, str(path))
+        notices._load.cache_clear()
+        client = client or build_harness(tmp_path).client()
+        assert client.get("/api/legal/notices").json() == {"available": False, "entries": []}, body
+        assert client.get("/api/legal/notices/0").status_code == 404

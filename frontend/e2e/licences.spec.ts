@@ -14,6 +14,7 @@ test("About opens the licences, and an entry's text loads when it is opened", as
   await expect(entries).toHaveCount(3);
   await page.getByTestId("licences-search").fill("lgpl");
   await expect(entries).toHaveCount(1);
+  await expect(page.getByTestId("licences-count")).toHaveText("1 component");
   await expect(entries.getByTestId("licence-id")).toHaveText("LGPL-2.1-or-later");
 
   await entries.locator("summary").click();
