@@ -376,7 +376,8 @@ def ffmpeg_entry() -> Entry:
         " holds FFmpeg's own audio decoders, zlib, and the MinGW-w64 runtime.",
         texts=texts,
         source=f"{where}: FFmpeg's and zlib's source and the exact build. AM Consulting will"
-        " also provide it on request at office@amconsultingai.com.",
+        " also provide it on request at office@amconsultingai.com, for at least three years"
+        " after each release.",
         kind="other",
     )  # fmt: skip
 
