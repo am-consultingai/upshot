@@ -74,7 +74,10 @@ test("a_recorded_meeting_keeps_its_calendar_slot_and_is_flagged", async ({ page,
 
 test("an_event_on_now_offers_to_record_it", async ({ page, seedBody }) => {
   const now = new Date();
-  const start = new Date(now.getTime() - 5 * 60_000).toISOString();
+  // Not before midnight: an event is drawn on the day it starts, so from 00:00 to 00:05
+  // five minutes ago would put it in yesterday's day view.
+  const midnight = new Date(now).setHours(0, 0, 0, 0);
+  const start = new Date(Math.max(now.getTime() - 5 * 60_000, midnight)).toISOString();
   const end = new Date(now.getTime() + 25 * 60_000).toISOString();
   await seedBody({ reset: true, calendar_events: [{ id: "e2e-now", title: "Standup", start, end }] });
   await calendarView(page, "day");
