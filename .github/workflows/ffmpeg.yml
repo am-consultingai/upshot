@@ -1,0 +1,39 @@
+name: ffmpeg
+
+# Builds Upshot's audio-only ffmpeg.exe (packaging/ffmpeg/build.sh) and, when a release tag
+# is given, publishes it with its licence texts and the sources it was built from, as a
+# pre-release that packaging/build.ps1 downloads by URL and SHA-256. Run by hand only.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release tag to publish, e.g. ffmpeg-8.1.3-audio-1 (empty: build only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash packaging/ffmpeg/build.sh "$RUNNER_TEMP/ffmpeg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-audio-only
+          path: ${{ runner.temp }}/ffmpeg/dist
+      - name: Publish the release
+        if: inputs.release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE" =~ ^ffmpeg-[0-9]+\.[0-9]+\.[0-9]+-audio-[0-9]+$ ]] || { echo "bad tag: $RELEASE"; exit 1; }
+          cd "$RUNNER_TEMP/ffmpeg/dist"
+          zip -qr ffmpeg-sources.zip sources
+          sha256sum ffmpeg-sources.zip >> SHA256SUMS
+          gh release create "$RELEASE" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title "$RELEASE (Upshot's audio-only ffmpeg.exe)" --notes-file BUILD.txt \
+            ffmpeg.exe LICENSE-FFmpeg.txt LICENSE-zlib.txt BUILD.txt SHA256SUMS ffmpeg-sources.zip
