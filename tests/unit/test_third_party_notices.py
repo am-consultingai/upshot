@@ -62,12 +62,45 @@ def test_an_unknown_package_has_no_fallback() -> None:
 @pytest.mark.parametrize(
     ("declared", "expected"),
     [("MIT License", "MIT"), ("Apache Software License", "Apache-2.0"),
-     ("3-Clause BSD License", "BSD-3-Clause"), ("LGPLv3", "LGPL-3.0-only"),
+     ("3-Clause BSD License", "BSD-3-Clause"), ("LGPLv3", "LGPLv3"), ("BSD", "BSD"),
+     ("PSF", "PSF-2.0"), ("Apache-2.0 license", "Apache-2.0"),
      ("Apache licensed, as found in the LICENSE file", "Apache-2.0"),
      ("BSD-3-Clause AND 0BSD", "BSD-3-Clause AND 0BSD")],
 )  # fmt: skip
 def test_licence_names_become_spdx(declared: str, expected: str) -> None:
     assert notices.spdx(declared) == expected
+
+
+def test_a_vague_declaration_is_named_from_the_package_s_own_files() -> None:
+    """No "only" is invented for "LGPLv3": pystray's header says "or any later version"."""
+    assert notices.DECLARED_IN_FILE["pystray"] == "LGPL-3.0-or-later"
+    assert notices.DECLARED_IN_FILE["colorama"] == "BSD-3-Clause"
+
+
+def test_apache_2_s_full_text_is_added_where_only_its_header_ships() -> None:
+    header = ["Licensed under the Apache License, Version 2.0 (the License)"]
+    texts = notices.with_full_apache("Apache-2.0", header)
+    assert len(texts) == 2 and "TERMS AND CONDITIONS" in texts[1]
+    full = notices.with_full_apache("Apache-2.0", texts)
+    assert full == texts, "added once"
+    assert notices.with_full_apache("MIT", header) == header
+
+
+def test_each_fallback_s_pinned_version_is_the_one_installed() -> None:
+    """A fallback text names the version it was fetched at; a bump must fetch it again."""
+    from importlib import metadata
+
+    for file, package in (("ctranslate2.txt", "ctranslate2"), ("tokenizers.txt", "tokenizers"),
+                          ("sherpa-onnx-core.txt", "sherpa-onnx-core"),
+                          ("flatbuffers.txt", "flatbuffers")):  # fmt: skip
+        try:
+            installed = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            continue
+        source = (
+            (ROOT / "packaging" / "licenses" / file).read_text(encoding="utf-8").splitlines()[1]
+        )
+        assert f"v{installed}" in source, f"{file} was fetched for another version than {installed}"
 
 
 def test_lgpl_and_mpl_entries_say_where_their_source_is() -> None:
@@ -127,6 +160,34 @@ def test_a_bundled_file_is_credited_to_the_package_folder_it_came_from(
     assert notices.package_dir(source) == folder
 
 
+@pytest.mark.parametrize(
+    ("output", "licence"),
+    [("ffmpeg version n8.1\nconfiguration: --enable-version3 --disable-x\n", "LGPL-3.0-or-later"),
+     ("ffmpeg version n8.1\nconfiguration: --disable-debug\n", "LGPL-2.1-or-later"),
+     ("ffmpeg version n8.1\nconfiguration: --enable-gpl --enable-libx264\n", "GPL"),
+     ("ffmpeg version n8.1\n", "NOASSERTION"),
+     ("", "NOASSERTION")],
+)  # fmt: skip
+def test_ffmpeg_s_licence_comes_only_from_its_configure_line(output: str, licence: str) -> None:
+    assert notices.ffmpeg_licence(output) == licence
+
+
+def test_an_ffmpeg_that_cannot_run_has_no_licence_and_fails_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "vendor").mkdir()
+    (tmp_path / "vendor" / "ffmpeg.exe").write_bytes(b"")
+    monkeypatch.setattr(notices, "ROOT", tmp_path)
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise OSError("not a valid Win32 application")
+
+    monkeypatch.setattr(notices.subprocess, "run", broken)
+    entry = notices.ffmpeg_entry()
+    assert entry.licence == "NOASSERTION"
+    assert any("licence unknown" in m for m in notices.missing_texts([entry]))
+
+
 def test_ffmpeg_s_licence_is_read_from_its_configure_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -142,6 +203,9 @@ def test_ffmpeg_s_licence_is_read_from_its_configure_line(
 
     version("ffmpeg version n8.1\nconfiguration: --enable-version3 --disable-libx264\n")
     assert notices.ffmpeg_entry().licence == "LGPL-3.0-or-later"
+    assert any("GNU GENERAL PUBLIC LICENSE" in t for t in notices.ffmpeg_entry().texts), (
+        "the LGPL v3 incorporates the GPL v3"
+    )
     version("ffmpeg version n8.1\nconfiguration: --disable-debug\n")
     assert notices.ffmpeg_entry().licence == "LGPL-2.1-or-later"
 
@@ -195,6 +259,29 @@ def test_a_file_no_one_accounts_for_fails(tmp_path: Path, monkeypatch: pytest.Mo
         "mystery/lib.dll: no package installed it and no notices entry covers it"
     ]
     assert notices.main(["--check", str(dist)]) == 1
+
+
+def test_an_unmapped_extension_inside_a_package_is_not_python_s_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only top-level .pyd files are the standard library's."""
+    monkeypatch.setattr(notices, "owners", lambda: {})
+    dist = fake_dist(tmp_path, EXTRAS, ["_ssl.pyd", "foo/_bar.pyd"])
+    assert notices.check(dist) == [
+        "foo/_bar.pyd: no package installed it and no notices entry covers it"
+    ]
+
+
+def test_the_mcp_bridge_s_freeze_is_checked_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(notices, "owners", lambda: {})
+    dist = fake_dist(tmp_path, EXTRAS, [])
+    (dist / "mcp" / "_internal").mkdir(parents=True)
+    (dist / "mcp" / "_internal" / "stray.dll").write_bytes(b"x")
+    assert notices.check(dist) == [
+        "stray.dll: no package installed it and no notices entry covers it"
+    ]
 
 
 def test_a_package_the_notices_do_not_list_fails(
