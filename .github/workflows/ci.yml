@@ -16,6 +16,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy app
+      # No GPL, AGPL or unapproved licence, and no GPL binary, among what the app ships.
+      - run: uv run python scripts/licence_gate.py --python --binaries
       - run: uv run pytest -q -m "not windows and not audio_hw and not gpu and not live_api"
       - run: uv run python -m app.selftest all --report selftest-linux.json
       - uses: actions/upload-artifact@v4
@@ -43,6 +45,8 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+      # The packages the bundle really contains (its source maps), against the policy.
+      - run: uv run python scripts/licence_gate.py --javascript
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       # The Transcriptions page's upload is probed and decoded by ffmpeg (D86).
@@ -66,6 +70,8 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy app
+      # The Windows-only packages (pywin32, pystray...) are checked only here.
+      - run: uv run python scripts/licence_gate.py --python --binaries
       - run: uv run pytest -q -m "not audio_hw and not gpu and not live_api"
       - run: uv run python -m app.selftest all --report selftest-windows.json
       - uses: actions/upload-artifact@v4
