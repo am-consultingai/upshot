@@ -66,7 +66,7 @@ class Found:
 #: What the e2e server reports: no real lookup, and one of each case the page draws.
 TEST_FOUND = Found(
     windows={"claude_code": "claude.exe", "codex": "codex.exe", "antigravity": "agy.exe"},
-    wsl={"antigravity": "Ubuntu"},
+    wsl={"claude_code": "Ubuntu", "antigravity": "Ubuntu"},
 )
 
 
@@ -208,6 +208,49 @@ def find(config: Any, *, test: bool = False) -> Found:
     return Found(windows=find_on_windows(config), wsl=find_in_wsl())
 
 
+#: The apps added by an ``mcpServers`` entry in a file of their own: one row on the page,
+#: since that entry is the same for all of them. Each by its command on the PATH, and by
+#: where its installer puts it (``%LOCALAPPDATA%`` per user, ``%ProgramFiles%`` per machine).
+MCP_JSON_APPS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "VS Code": (
+        ("code",),
+        (
+            r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe",
+            r"%ProgramFiles%\Microsoft VS Code\Code.exe",
+        ),
+    ),
+    "Cursor": (("cursor",), (r"%LOCALAPPDATA%\Programs\cursor\Cursor.exe",)),
+    "LM Studio": (
+        ("lms",),
+        (
+            r"%LOCALAPPDATA%\Programs\LM Studio\LM Studio.exe",
+            r"%LOCALAPPDATA%\Programs\lm-studio\LM Studio.exe",
+        ),
+    ),
+    "mcphost": (("mcphost",), ()),
+}
+
+#: What the e2e server reports for that row.
+TEST_MCP_JSON = ["VS Code"]
+
+
+def find_mcp_json_apps(*, test: bool = False) -> list[str]:
+    """The apps of the ``mcp.json`` row on this computer (Windows only; nothing of theirs
+    is read): if any is here, the row is listed with the apps found."""
+    if test:
+        return TEST_MCP_JSON
+    if sys.platform != "win32":
+        return []
+    fresh = registry_path()
+    found: list[str] = []
+    for name, (programs, folders) in MCP_JSON_APPS.items():
+        on_path = fresh is not None and any(shutil.which(p, path=fresh) for p in programs)
+        installed = any(Path(os.path.expandvars(folder)).is_file() for folder in folders)
+        if on_path or installed:
+            found.append(name)
+    return found
+
+
 def windows_line(command: str, program_path: str | None, fresh_path: str | None) -> str:
     """The line typed into PowerShell: the shown command, with its program as PowerShell
     will find it.
@@ -285,7 +328,19 @@ def launch(argv: list[str], fresh_path: str | None) -> None:
     """Open ``argv`` in a console of its own: Windows hands a new console to the user's
     default terminal (Windows Terminal, or the classic console). It starts in the user's
     folder, never Upshot's, with the PATH read again."""
+    subprocess.Popen(
+        argv, cwd=str(Path.home()), env=terminal_env(fresh_path), creationflags=_CREATE_NEW_CONSOLE
+    )
+
+
+def terminal_env(fresh_path: str | None) -> dict[str, str]:
+    """The user's environment for their terminal, not Upshot's: the PATH read again, and
+    no ``CUDA_VISIBLE_DEVICES=""``, which Upshot sets for itself when it cannot use the
+    GPU (``app/asr/local.py``) and which would hide the GPU from whatever the user runs
+    there (a local model, Ollama). A value the user set themselves is kept."""
     env = dict(os.environ)
     if fresh_path:
         env["PATH"] = fresh_path
-    subprocess.Popen(argv, cwd=str(Path.home()), env=env, creationflags=_CREATE_NEW_CONSOLE)
+    if env.get("CUDA_VISIBLE_DEVICES") == "":
+        del env["CUDA_VISIBLE_DEVICES"]
+    return env

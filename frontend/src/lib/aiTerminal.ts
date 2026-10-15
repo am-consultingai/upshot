@@ -20,3 +20,12 @@ export function terminalToast(launched: boolean, copied: boolean): { key: Messag
   if (copied) return { key: "settings.aiAppsTerminalCopied", danger: false };
   return { key: "settings.aiAppsTerminalNotCopied", danger: true };
 }
+
+/** The sides a row offers: where the app was found; both when it was found nowhere, or
+ * before the answer is in (nothing to go on). Windows first. */
+export function sidesToShow(where: AiAppWhere | undefined): ("windows" | "wsl")[] {
+  const found: ("windows" | "wsl")[] = [];
+  if (where?.windows) found.push("windows");
+  if (where?.wsl) found.push("wsl");
+  return found.length ? found : ["windows", "wsl"];
+}
