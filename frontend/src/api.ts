@@ -566,6 +566,8 @@ export interface AiAppWhere {
 
 export interface AiAppsFound {
   apps: Record<AiAppId, AiAppWhere>;
+  /** The apps of the mcp.json row found here (VS Code, Cursor, LM Studio, mcphost). */
+  mcp_json: string[];
 }
 
 /** Settings → AI apps (D98): connecting the user's own AI tools to the meetings. */
