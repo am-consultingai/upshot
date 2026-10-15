@@ -230,6 +230,55 @@ def test_an_ffmpeg_that_cannot_run_has_no_licence_and_fails_strict(
     assert any("licence unknown" in m for m in notices.missing_texts([entry]))
 
 
+def fake_vendor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, texts: tuple[str, ...]) -> Path:
+    vendor = tmp_path / "vendor"
+    vendor.mkdir()
+    (vendor / "ffmpeg.exe").write_bytes(b"")
+    for name in texts:
+        (vendor / name).write_text(f"text of {name}", encoding="utf-8")
+    monkeypatch.setattr(notices, "ROOT", tmp_path)
+
+    def ran(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args, 0, "ffmpeg version 8.1.3\nconfiguration: --x\n", ""
+        )
+
+    monkeypatch.setattr(notices.subprocess, "run", ran)
+    return vendor
+
+
+def test_all_three_of_ffmpeg_s_texts_reach_its_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_vendor(tmp_path, monkeypatch, notices.FFMPEG_TEXTS)
+    notices.MISSING.clear()
+    entry = notices.ffmpeg_entry()
+    assert entry.texts == [f"text of {name}" for name in notices.FFMPEG_TEXTS]
+    assert notices.MISSING == []
+
+
+def test_a_missing_ffmpeg_notice_fails_strict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_vendor(tmp_path, monkeypatch, ("LICENSE-FFmpeg.txt", "LICENSE-zlib.txt"))
+    notices.MISSING.clear()
+    notices.ffmpeg_entry()
+    assert [
+        f"{notices.FFMPEG}: vendor\\LICENSE-mingw-w64-runtime.txt is missing"
+    ] == notices.MISSING
+    notices.MISSING.clear()
+
+
+def test_the_source_names_the_exact_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vendor = fake_vendor(tmp_path, monkeypatch, notices.FFMPEG_TEXTS)
+    assert "the ffmpeg-* release" in notices.ffmpeg_entry().source, "no marker: generic"
+    (vendor / "ffmpeg.source.txt").write_text("ffmpeg-8.1.3-audio-1 61a9f586", encoding="utf-8")
+    source = notices.ffmpeg_entry().source
+    assert "/releases/tag/ffmpeg-8.1.3-audio-1 (its ffmpeg-sources.zip)" in source
+
+
 def test_ffmpeg_s_licence_is_read_from_its_configure_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

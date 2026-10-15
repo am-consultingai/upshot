@@ -317,6 +317,8 @@ def ffmpeg_licence(version_text: str) -> str:
 
 #: The notices entry for ffmpeg.exe (packaging/ffmpeg/build.sh, the ffmpeg-* releases).
 FFMPEG = "FFmpeg (Upshot's audio-only build)"
+#: Its licence texts, from the release, in vendor/ beside it (build.ps1).
+FFMPEG_TEXTS = ("LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
 
 
 def ffmpeg_entry() -> Entry:
@@ -333,21 +335,35 @@ def ffmpeg_entry() -> Entry:
             version = ""
     licence = ffmpeg_licence(version)
     first = version.splitlines()[0] if version else "vendor\\ffmpeg.exe could not be read here."
-    texts = [
-        (vendor / name).read_text(encoding="utf-8", errors="replace")
-        for name in ("LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
-        if (vendor / name).is_file()
-    ]
+    texts = []
+    for name in FFMPEG_TEXTS:
+        if (vendor / name).is_file():
+            texts.append((vendor / name).read_text(encoding="utf-8", errors="replace"))
+        elif exe.is_file():  # shipped without one of its notices: --strict refuses
+            MISSING.append(f"{FFMPEG}: vendor\\{name} is missing")
     if licence.startswith("LGPL-3"):
         texts += licence_file("gpl-3.0.txt")  # the LGPL v3 incorporates the GPL v3
+    # The exact release the binary came from (build.ps1's marker: "<tag> <sums hash>"), so
+    # its sources zip is the one that matches; generic only where there is no binary.
+    marker = vendor / "ffmpeg.source.txt"
+    tag = (
+        marker.read_text(encoding="utf-8").split()[0]
+        if marker.is_file() and marker.read_text(encoding="utf-8").strip()
+        else ""
+    )
+    releases = "https://github.com/am-consultingai/upshot/releases"
+    where = (
+        f"{releases}/tag/{tag} (its ffmpeg-sources.zip)"
+        if tag
+        else f"{releases} (the ffmpeg-* release's ffmpeg-sources.zip)"
+    )
     return Entry(
         FFMPEG, "", licence,
         note=first + "\nffmpeg.exe, run as a separate program to read imported audio and video"
         " files; it is not linked into Upshot, and you may replace it with your own build. It"
         " holds FFmpeg's own audio decoders, zlib, and the MinGW-w64 runtime.",
         texts=texts,
-        source="https://github.com/am-consultingai/upshot/releases (the ffmpeg-* release: its"
-        " sources zip holds FFmpeg's and zlib's source and the exact build); AM Consulting will"
+        source=f"{where}: FFmpeg's and zlib's source and the exact build. AM Consulting will"
         " also provide it on request at office@amconsultingai.com.",
         kind="other",
     )  # fmt: skip
