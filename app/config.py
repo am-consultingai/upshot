@@ -80,7 +80,7 @@ DEFAULTS: dict[str, Any] = {
         "model_path": None,
         # An existing CUDA library folder (DESIGN.md §2). Without this the probe only
         # looks in the app home, the standard toolkit paths and the nvidia-* wheels, so a
-        # hand-placed cuBLAS/cuDNN is invisible and transcription silently runs on CPU.
+        # hand-placed cuBLAS is invisible and transcription silently runs on CPU.
         "cuda_dir": None,
         "compute_type": "auto",
         "device": "auto",

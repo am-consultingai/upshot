@@ -97,8 +97,8 @@ def cuda_library_dirs(
     A configured ``asr.cuda_dir`` wins: it is the user saying "the libraries are here",
     which is the whole point of being able to adopt an existing install. In an installed
     build the app's own copy, once there, wins over it instead: a ``cuda_dir`` left by a
-    developer session survives an uninstall, and two cuDNN builds must not both be on the
-    DLL path (z8tj1hfr6w).
+    developer session survives an uninstall, and two copies of the CUDA libraries must not
+    both be on the DLL path (z8tj1hfr6w).
     """
     found: list[Path] = []
     home = app_home if app_home is not None else paths.app_home()

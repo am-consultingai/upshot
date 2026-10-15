@@ -98,6 +98,11 @@ a = Analysis(
     # plain .py files in _internal, not inside the archive, where they could not be swapped.
     module_collection_mode={"pystray": "py", "soxr": "py"},
 )
+# ctranslate2's Windows wheel is built without cuDNN (WITH_CUDNN=OFF) yet carries NVIDIA's
+# cudnn64_9.dll, which its __init__ loads only because it loads every DLL in its folder.
+# Nothing calls it, and NVIDIA licenses it only for machines with an NVIDIA GPU; GPU
+# transcription was identical and as fast without it on a GTX 1080 and an MX450.
+a.binaries = [entry for entry in a.binaries if not Path(entry[0]).name.lower().startswith("cudnn")]
 pyz = PYZ(a.pure)
 
 
