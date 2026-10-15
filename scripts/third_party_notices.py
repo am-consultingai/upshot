@@ -63,14 +63,24 @@ SPDX = {
     "apache license 2.0": "Apache-2.0",
     "apache licensed, as found in the license file": "Apache-2.0",
     "3-clause bsd license": "BSD-3-Clause",
-    "bsd license": "BSD-3-Clause",
-    "bsd": "BSD-3-Clause",
     "python software foundation license": "PSF-2.0",
-    "lgplv3": "LGPL-3.0-only",
-    "gnu lesser general public license v3 (lgplv3)": "LGPL-3.0-only",
     "mozilla public license 2.0 (mpl 2.0)": "MPL-2.0",
     "isc license (iscl)": "ISC",
+    "apache-2.0 license": "Apache-2.0",
+    "psf": "PSF-2.0",
 }
+#: Packages whose metadata declares no licence, or one too vague to name (a bare "BSD",
+#: "LGPLv3"), as their own files state it. Each read from what the package ships:
+#: pycaw's LICENSE (MIT), windows-toasts' LICENSE (Apache 2.0), colorama's LICENSE.txt
+#: (three clauses), pystray's source header ("version 3 ... or any later version").
+DECLARED_IN_FILE = {
+    "pycaw": "MIT",
+    "windows-toasts": "Apache-2.0",
+    "colorama": "BSD-3-Clause",
+    "pystray": "LGPL-3.0-or-later",
+}
+#: Problems found while collecting, reported (and fatal under --strict) with the texts.
+MISSING: list[str] = []
 #: Copyleft families whose source must be offered with the binary (story S6).
 SOURCE_OFFERED = ("LGPL", "MPL")
 
@@ -130,6 +140,8 @@ def python_packages() -> list[metadata.Distribution]:
 
 def python_licence(dist: metadata.Distribution) -> str:
     meta = dist.metadata
+    if canonicalize_name(meta["Name"]) in DECLARED_IN_FILE:
+        return DECLARED_IN_FILE[canonicalize_name(meta["Name"])]
     expression = meta.get("License-Expression")
     if expression:
         return str(expression)
@@ -161,15 +173,22 @@ def source_line(name: str, version: str, licence: str) -> str:
     return ""
 
 
+def with_full_apache(licence: str, texts: list[str]) -> list[str]:
+    """Apache-2.0 asks for a copy of the licence; some packages ship only its header."""
+    if "Apache-2.0" in licence and not any("TERMS AND CONDITIONS" in t for t in texts):
+        return [*texts, licence_file("apache-2.0.txt")[0]]
+    return texts
+
+
 def python_entries() -> list[Entry]:
     out = []
     for dist in python_packages():
         name, version = dist.metadata["Name"], dist.version
         licence = python_licence(dist)
+        texts = with_full_apache(licence, python_licence_texts(dist))
         out.append(
-            Entry(name, version, licence, texts=python_licence_texts(dist),
-                  source=source_line(name, version, licence))
-        )  # fmt: skip
+            Entry(name, version, licence, texts=texts, source=source_line(name, version, licence))
+        )
     return out
 
 
@@ -214,6 +233,8 @@ def js_packages() -> list[Path]:
     modules = frontend / "node_modules"
     bundled = source_map_packages()
     if bundled is not None:
+        MISSING.extend(f"{name} (in the bundle, not in node_modules)"
+                       for name in sorted(bundled) if not (modules / name).is_dir())  # fmt: skip
         return [modules / name for name in sorted(bundled) if (modules / name).is_dir()]
     wanted = list(json.loads((frontend / "package.json").read_text())["dependencies"])
     seen: dict[str, Path] = {}
@@ -247,7 +268,8 @@ def js_entry(folder: Path) -> Entry:
                 continue
     name = str(data.get("name", folder.name))
     version = str(data.get("version", ""))
-    return Entry(name, version, str(licence), texts=texts or fallback(name), kind="javascript")
+    texts = with_full_apache(str(licence), texts or fallback(name))
+    return Entry(name, version, str(licence), texts=texts, kind="javascript")
 
 
 # ------------------------------------------------------------------ everything else
@@ -268,28 +290,42 @@ def python_runtime_licence() -> list[str]:
     return []
 
 
+def ffmpeg_licence(version_text: str) -> str:
+    """From ``ffmpeg -version``: NOASSERTION unless its configure line was read."""
+    configure = next(
+        (line for line in version_text.splitlines() if line.startswith("configuration:")), None
+    )
+    if configure is None:
+        return "NOASSERTION"
+    if "--enable-gpl" in configure:
+        return "GPL"  # build.ps1 refuses such a build; the licence gate would too
+    if "--enable-version3" in configure:
+        return "LGPL-3.0-or-later"
+    return "LGPL-2.1-or-later"
+
+
 def ffmpeg_entry() -> Entry:
-    """The licence follows from how this ffmpeg.exe was configured, not from a constant."""
+    """The licence follows from how this ffmpeg.exe was configured, never from a constant:
+    without the binary (a CI job), or when it cannot be run, it is NOASSERTION."""
     exe = ROOT / "vendor" / "ffmpeg.exe"
-    licence, note = "LGPL-2.1-or-later", ""
+    version = ""
     if exe.is_file():
         try:
             version = subprocess.run([str(exe), "-hide_banner", "-version"], capture_output=True,
                                      text=True, timeout=30).stdout  # fmt: skip
         except (OSError, subprocess.SubprocessError):
             version = ""
-        if "--enable-gpl" in version:
-            licence = "GPL"  # build.ps1 refuses such a build before this runs
-        elif "--enable-version3" in version:
-            licence = "LGPL-3.0-or-later"
-        note = version.splitlines()[0] if version else ""
+    licence = ffmpeg_licence(version)
+    first = version.splitlines()[0] if version else "vendor\\ffmpeg.exe could not be read here."
     text = ROOT / "vendor" / "ffmpeg-LICENSE.txt"
+    texts = [text.read_text(encoding="utf-8", errors="replace")] if text.is_file() else []
+    if licence.startswith("LGPL-3"):
+        texts += licence_file("gpl-3.0.txt")  # the LGPL v3 incorporates the GPL v3
     return Entry(
         "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)", "", licence,
-        note=(note + "\n" if note else "")
-        + "ffmpeg.exe, run as a separate program to read imported audio and video files; it"
-        " is not linked into Upshot, and you may replace it with your own build.",
-        texts=[text.read_text(encoding="utf-8", errors="replace")] if text.is_file() else [],
+        note=first + "\nffmpeg.exe, run as a separate program to read imported audio and video"
+        " files; it is not linked into Upshot, and you may replace it with your own build.",
+        texts=texts,
         source="https://ffmpeg.org/download.html and https://github.com/BtbN/FFmpeg-Builds;"
         " AM Consulting will also provide the corresponding source on request at"
         " office@amconsultingai.com.",
@@ -307,6 +343,12 @@ def extra_entries() -> list[Entry]:
         for name in ("OFL-frankruhllibre.txt", "OFL-ibmplexsanshebrew.txt")
     ]
     tailwind = ROOT / "frontend" / "node_modules" / "tailwindcss" / "LICENSE"
+    tailwind_json = tailwind.with_name("package.json")
+    tailwind_version = (
+        json.loads(tailwind_json.read_text(encoding="utf-8")).get("version", "")
+        if tailwind_json.is_file()
+        else ""
+    )
     nvidia = ROOT / "app" / "asr" / "licenses" / "nvidia_cublas_cu12-12.9.1.4-License.txt"
     return [
         Entry("Python", f"{sys.version_info.major}.{sys.version_info.minor}", "PSF-2.0",
@@ -338,7 +380,7 @@ def extra_entries() -> list[Entry]:
               licence_file("silero-vad.txt"), kind="other"),
         Entry("Frank Ruhl Libre and IBM Plex Sans Hebrew fonts", "", "OFL-1.1",
               "Bundled with the interface.", fonts, kind="other"),
-        Entry("Tailwind CSS", "", "MIT", "Compiled into the interface's stylesheet.",
+        Entry("Tailwind CSS", tailwind_version, "MIT", "Compiled into the interface's stylesheet.",
               [tailwind.read_text(encoding="utf-8")] if tailwind.is_file() else [],
               kind="other"),
         Entry("Intel OpenMP runtime (libiomp5md.dll, shipped inside ctranslate2)", "2025.3",
@@ -366,6 +408,7 @@ def _apache() -> str:
 
 
 def entries() -> list[Entry]:
+    MISSING.clear()
     js = []
     if (ROOT / "frontend" / "node_modules").is_dir():
         js = [js_entry(folder) for folder in js_packages()]
@@ -403,7 +446,14 @@ def render(items: list[Entry] | None = None) -> str:
 
 
 def missing_texts(items: list[Entry]) -> list[str]:
-    return [f"{i.name} {i.version}".rstrip() for i in items if not any(t.strip() for t in i.texts)]
+    """What --strict refuses: no licence text, no known licence, or a Python runtime whose
+    licence does not carry the libraries its note names."""
+    out = [f"{i.name} {i.version}".rstrip() for i in items if not any(t.strip() for t in i.texts)]
+    out += [f"{i.name}: licence unknown ({i.note.splitlines()[0]})" for i in items
+            if i.licence == "NOASSERTION"]  # fmt: skip
+    out += [f"{i.name} {i.version}: its licence text does not cover OpenSSL" for i in items
+            if i.name == "Python" and i.texts and "OpenSSL" not in i.texts[0]]  # fmt: skip
+    return out + MISSING
 
 
 # ------------------------------------------------------------------ --check
@@ -421,10 +471,15 @@ UNOWNED: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 def unowned(key: str) -> str | None:
-    """The EXTRA entry a file no package installed belongs to, by ``UNOWNED``."""
+    """The EXTRA entry a file no package installed belongs to, by ``UNOWNED``. A pattern
+    without a "/" matches a top-level file only: fnmatch's "*" also matches "/", and a
+    package's unmapped extension deep in a folder must not pass for Python's own."""
     for name, patterns in UNOWNED:
-        if any(fnmatch.fnmatch(key, pattern.lower()) for pattern in patterns):
-            return name
+        for pattern in patterns:
+            if "/" not in pattern and "/" in key:
+                continue
+            if fnmatch.fnmatch(key, pattern.lower()):
+                return name
     return None
 
 
@@ -493,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{target}: {len(items)} entries")
     missing = missing_texts(items)
     for name in missing:
-        print(f"[{'FAIL' if strict else 'warn'}] no licence text: {name}")
+        print(f"[{'FAIL' if strict else 'warn'}] {name}")
     return 1 if strict and missing else 0
 
 
