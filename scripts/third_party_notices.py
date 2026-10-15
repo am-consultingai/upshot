@@ -70,14 +70,14 @@ SPDX = {
     "psf": "PSF-2.0",
 }
 #: Packages whose metadata declares no licence, or one too vague to name (a bare "BSD",
-#: "LGPLv3"), as their own files state it. Each read from what the package ships:
-#: pycaw's LICENSE (MIT), windows-toasts' LICENSE (Apache 2.0), colorama's LICENSE.txt
-#: (three clauses), pystray's source header ("version 3 ... or any later version").
+#: "LGPLv3"), as their own files state it, at the version checked. Each read from what
+#: the package ships: pycaw's LICENSE (MIT), windows-toasts' LICENSE (Apache 2.0),
+#: colorama's LICENSE.txt (three clauses), pystray's header ("version 3 ... or any later").
 DECLARED_IN_FILE = {
-    "pycaw": "MIT",
-    "windows-toasts": "Apache-2.0",
-    "colorama": "BSD-3-Clause",
-    "pystray": "LGPL-3.0-or-later",
+    ("pycaw", "20251023"): "MIT",
+    ("windows-toasts", "1.3.1"): "Apache-2.0",
+    ("colorama", "0.4.6"): "BSD-3-Clause",
+    ("pystray", "0.19.5"): "LGPL-3.0-or-later",
 }
 #: What the Python runtime's licence file must carry for the libraries the freeze ships
 #: beside it (libcrypto-3/libssl-3, libffi-8): python.org's Windows build has OpenSSL's
@@ -147,8 +147,9 @@ def python_packages() -> list[metadata.Distribution]:
 
 def python_licence(dist: metadata.Distribution) -> str:
     meta = dist.metadata
-    if canonicalize_name(meta["Name"]) in DECLARED_IN_FILE:
-        return DECLARED_IN_FILE[canonicalize_name(meta["Name"])]
+    known = DECLARED_IN_FILE.get((canonicalize_name(meta["Name"]), dist.version))
+    if known:  # checked at that version only: another version is read afresh
+        return known
     expression = meta.get("License-Expression")
     if expression:
         return str(expression)
@@ -171,7 +172,8 @@ def python_licence_texts(dist: metadata.Distribution) -> list[str]:
                 texts.append(Path(str(dist.locate_file(file))).read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError):
                 continue
-    return texts or fallback(dist.metadata["Name"])
+    unique = list(dict.fromkeys(texts))  # some wheels carry the same licence twice
+    return unique or fallback(dist.metadata["Name"])
 
 
 def source_line(name: str, version: str, licence: str) -> str:
@@ -304,6 +306,8 @@ def ffmpeg_licence(version_text: str) -> str:
     )
     if configure is None:
         return "NOASSERTION"
+    if "--enable-nonfree" in configure:
+        return "LicenseRef-FFmpeg-nonfree"  # not redistributable at all
     if "--enable-gpl" in configure:
         return "GPL"  # build.ps1 refuses such a build; the licence gate would too
     if "--enable-version3" in configure:
@@ -340,6 +344,13 @@ def ffmpeg_entry() -> Entry:
     )  # fmt: skip
 
 
+def _version(package: str) -> str:
+    try:
+        return metadata.version(package)
+    except metadata.PackageNotFoundError:  # the build machine has it; CI's Linux job not
+        return ""
+
+
 def licence_file(name: str) -> list[str]:
     return [(LICENCES / name).read_text(encoding="utf-8")]
 
@@ -358,12 +369,13 @@ def extra_entries() -> list[Entry]:
     )
     nvidia = ROOT / "app" / "asr" / "licenses" / "nvidia_cublas_cu12-12.9.1.4-License.txt"
     return [
-        Entry("Python", f"{sys.version_info.major}.{sys.version_info.minor}", "PSF-2.0",
+        Entry("Python", ".".join(str(n) for n in sys.version_info[:3]), "PSF-2.0",
               "The Python runtime, bundled by PyInstaller, with the libraries it includes"
               " (OpenSSL 3 under Apache 2.0, libffi, bzip2, SQLite and others) and"
               " Microsoft's conditions for its Windows build; see its licence below.",
               python_runtime_licence(), kind="other"),
-        Entry("PyInstaller bootloader", "", "GPL-2.0-or-later WITH Bootloader-exception",
+        Entry("PyInstaller bootloader", _version("pyinstaller"),
+              "GPL-2.0-or-later WITH Bootloader-exception",
               "The bootloader that starts upshot.exe. The exception allows it to be used with"
               " software under any licence. https://pyinstaller.org/en/stable/license.html",
               licence_file("pyinstaller.txt"), kind="other"),
@@ -408,8 +420,8 @@ def extra_entries() -> list[Entry]:
 
 
 def _apache() -> str:
-    """Apache-2.0's text, from a package that ships it verbatim."""
-    return fallback("tokenizers")[0].split("\n\n", 1)[1]
+    """Apache-2.0's text (``packaging/licenses/apache-2.0.txt``, below its header)."""
+    return licence_file("apache-2.0.txt")[0].split("\n\n", 1)[1]
 
 
 # ------------------------------------------------------------------ the files
@@ -457,8 +469,8 @@ def missing_texts(items: list[Entry]) -> list[str]:
     """What --strict refuses: no licence text, no known licence, or a Python runtime whose
     licence does not carry the libraries its note names."""
     out = [f"{i.name} {i.version}".rstrip() for i in items if not any(t.strip() for t in i.texts)]
-    out += [f"{i.name}: licence unknown ({i.note.splitlines()[0]})" for i in items
-            if i.licence == "NOASSERTION"]  # fmt: skip
+    out += [f"{i.name}: licence unknown ({(i.note.splitlines() or ['no note'])[0]})"
+            for i in items if i.licence == "NOASSERTION"]  # fmt: skip
     out += [f"{i.name} {i.version}: its licence text lacks {what}" for i in items
             if i.name == "Python" for what, marker in RUNTIME_TEXTS
             if not any(marker in t for t in i.texts)]  # fmt: skip
