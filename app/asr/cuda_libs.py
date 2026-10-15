@@ -10,8 +10,8 @@ through ``upshot.exe --prepare`` when the card could run the model (``wanted``):
   no cuDNN anywhere, transcripts were identical and as fast on both cards. Earlier builds
   fetched it too (680 MB, about 1 GB unpacked); ``remove_retired`` deletes that copy;
 - resumable: a ``.part`` file continues where it stopped;
-- only the DLLs are kept, all in one folder, with the wheel's licence beside them (NVIDIA's
-  terms, which the user accepts by installing them);
+- only the DLLs are kept, all in one folder, with the wheel's licence beside them (NVIDIA's terms,
+  kept with the DLLs);
 - the wheel is deleted once unpacked.
 """
 
@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import threading
 import zipfile
@@ -121,9 +122,13 @@ def add_missing_licences(home: Path | None = None, wheels: tuple[Wheel, ...] = W
         for wheel in wheels:
             target = folder / licence_name(wheel)
             source = paths.resource("app", "asr", "licenses", licence_name(wheel))
-            if not target.exists() and source.is_file():
-                shutil.copyfile(source, target)
-                added += 1
+            if target.exists():
+                continue
+            if not source.is_file():
+                log.warning("the app carries no %s to put beside the GPU libraries", source.name)
+                continue
+            shutil.copyfile(source, target)
+            added += 1
         return added
     except OSError as exc:
         log.warning("could not add the GPU libraries' licence: %s", exc)
@@ -162,7 +167,11 @@ def _remove_retired(folder: Path, home: Path | None, wheels: tuple[Wheel, ...]) 
     marker = folder / MARKER
     current = json.dumps(_versions(wheels))
     if marker.read_text(encoding="utf-8") != current:
-        marker.write_text(current, encoding="utf-8")
+        # Replaced whole, never half-written: an empty marker reads as not ready, and the
+        # next install would download the 553 MB again.
+        partial = marker.with_name(MARKER + ".tmp")
+        partial.write_text(current, encoding="utf-8")
+        os.replace(partial, marker)
     if freed:
         log.info("removed %.0f MB of retired GPU libraries from %s", freed / 1e6, folder)
     return freed
