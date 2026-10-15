@@ -69,10 +69,11 @@ if (ROOT / "app" / "gcal" / "google_oauth_client.json").exists():
     datas.append((str(ROOT / "app" / "gcal" / "google_oauth_client.json"), "app/gcal"))
 datas.append((str(ROOT / "vendor" / "ffmpeg.exe"), "."))
 # Every third-party component and its licence, written by build.ps1
-# (scripts/third_party_notices.py). ffmpeg's GPL notice and the speech models' are in it.
-if not (ROOT / "vendor" / "THIRD-PARTY-NOTICES.txt").exists():
-    raise SystemExit("upshot.spec: vendor/THIRD-PARTY-NOTICES.txt is missing; run packaging/build.ps1")
-datas.append((str(ROOT / "vendor" / "THIRD-PARTY-NOTICES.txt"), "."))
+# (scripts/third_party_notices.py): the text, and the same entries as JSON for the app.
+for notices in ("THIRD-PARTY-NOTICES.txt", "THIRD-PARTY-NOTICES.json"):
+    if not (ROOT / "vendor" / notices).exists():
+        raise SystemExit(f"upshot.spec: vendor/{notices} is missing; run packaging/build.ps1")
+    datas.append((str(ROOT / "vendor" / notices), "."))
 datas += collect_data_files("faster_whisper")  # the bundled Silero VAD model
 
 binaries = (
