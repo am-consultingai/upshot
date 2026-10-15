@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, reason, type AiAppId, type AiApps, type AiAppsFound, type AiAppWhere } from "../api";
-import { lineToCopy, terminalToast } from "../lib/aiTerminal";
+import { lineToCopy, sidesToShow, terminalToast } from "../lib/aiTerminal";
 import { useI18n, type MessageKey } from "../i18n";
 import { buttonClass } from "./Button";
 import { confirmDialog } from "./ConfirmDialog";
@@ -104,9 +104,17 @@ function CommandRow({
   where: AiAppWhere | undefined;
 }) {
   const { t } = useI18n();
-  // Opens on the side the app was found on, Windows first; the user's click wins.
+  // Only the sides the app was found on (both when found nowhere); tabs only when there
+  // are two. Opens on the first, Windows; the user's click wins while that side is shown.
+  const sides = sidesToShow(where);
   const [chosen, setChosen] = useState<Side | null>(null);
-  const tab: Side = chosen ?? (where && !where.windows && where.wsl ? "wsl" : "windows");
+  const tab: Side = chosen && sides.includes(chosen) ? chosen : sides[0];
+  // A side that goes (its WSL distribution stopped) takes the click with it: it does not
+  // come back by itself when the side does.
+  const shown = sides.join();
+  useEffect(() => {
+    if (chosen && !shown.split(",").includes(chosen)) setChosen(null);
+  }, [chosen, shown]);
   const text = info?.commands[tab === "wsl" ? row.wsl : row.windows];
   const here = tab === "windows" ? Boolean(where?.windows) : Boolean(where?.wsl);
   const id = row.id;
@@ -116,9 +124,9 @@ function CommandRow({
       description={
         <span data-testid={`ai-app-${id}`}>
           {id === "claude-code" && <span className="block">{t("settings.transcriptionCodeHint")}</span>}
-          {info?.bridge && (
+          {info?.bridge && sides.length > 1 && (
             <span role="tablist" className="mt-1 flex gap-1">
-              {(["windows", "wsl"] as const).map((name) => (
+              {sides.map((name) => (
                 <button
                   key={name}
                   type="button"
@@ -176,7 +184,30 @@ function CommandRow({
   );
 }
 
-/** Apps not found on this computer, and the rows nothing can detect, out of the way. */
+/** An app added by an entry in a file of its own: the snippet to copy. */
+function FileRow({ app, info }: { app: (typeof BY_FILE)[number]; info: AiApps | undefined }) {
+  const { t } = useI18n();
+  const text = info?.commands[app.key];
+  return (
+    <SettingRow
+      label={<AppLabel apps={app.logos}>{t(app.label)}</AppLabel>}
+      description={
+        <span data-testid={`ai-app-${app.id}`}>
+          {t(app.hint)}
+          {text ? (
+            <Command text={text} testid={`ai-app-${app.id}`} />
+          ) : (
+            <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>
+          )}
+        </span>
+      }
+    >
+      {text && <CopyButton text={text} testid={`ai-app-${app.id}-copy`} />}
+    </SettingRow>
+  );
+}
+
+/** Apps not found on this computer, and the row nothing can detect, out of the way. */
 function MoreApps({ open, onToggle, names, children }: { open: boolean; onToggle: () => void; names: string; children: ReactNode }) {
   const { t } = useI18n();
   return (
@@ -198,9 +229,9 @@ function MoreApps({ open, onToggle, names, children }: { open: boolean; onToggle
 }
 
 /**
- * The apps, in one list: those found on this computer first, each with Open in terminal;
- * then, under More apps, the ones not found and the rows nothing can detect (an app's own
- * mcp.json, an app that takes a URL). More apps is open when nothing was found. Found is
+ * The apps, in one list: those found on this computer first, each with Open in terminal
+ * where it has a command; then, under More apps, the ones not found and the row nothing
+ * can detect (an app that takes a URL). More apps is open when nothing was found. Found is
  * asked again when the window comes back into view, so an app installed meanwhile moves up.
  */
 function AppsList({ info }: { info: AiApps | undefined }) {
@@ -225,6 +256,14 @@ function AppsList({ info }: { info: AiApps | undefined }) {
       found: !apps || isFound(row.app),
       node: <CommandRow key={row.id} row={row} info={info} where={apps?.[row.app]} />,
     })),
+    // One row for VS Code, Cursor, LM Studio and the rest: the same entry for all, so it
+    // is listed with the apps found as soon as any of them is here.
+    ...BY_FILE.map((app) => ({
+      id: app.id,
+      name: t(app.label),
+      found: !found.data || found.data.mcp_json.length > 0,
+      node: <FileRow key={app.id} app={app} info={info} />,
+    })),
   ];
   const first = rows.filter((row) => row.found);
   const rest = rows.filter((row) => !row.found);
@@ -238,27 +277,6 @@ function AppsList({ info }: { info: AiApps | undefined }) {
         names={rest.map((row) => row.name).join(", ")}
       >
         {rest.map((row) => row.node)}
-        {BY_FILE.map((app) => {
-          const text = info?.commands[app.key];
-          return (
-            <SettingRow
-              key={app.id}
-              label={<AppLabel apps={app.logos}>{t(app.label)}</AppLabel>}
-              description={
-                <span data-testid={`ai-app-${app.id}`}>
-                  {t(app.hint)}
-                  {text ? (
-                    <Command text={text} testid={`ai-app-${app.id}`} />
-                  ) : (
-                    <span className="mt-1 block">{t("settings.transcriptionInstalledOnly")}</span>
-                  )}
-                </span>
-              }
-            >
-              {text && <CopyButton text={text} testid={`ai-app-${app.id}-copy`} />}
-            </SettingRow>
-          );
-        })}
         <SettingRow
           label={
             <span className="flex items-center gap-2">

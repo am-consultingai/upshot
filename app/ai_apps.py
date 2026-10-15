@@ -99,7 +99,7 @@ def found(request: Request) -> dict[str, Any]:
             if command and where["windows"] and not _test_install()
             else command
         )
-    return {"apps": apps}
+    return {"apps": apps, "mcp_json": ai_terminal.find_mcp_json_apps(test=_test_install())}
 
 
 def ai_terminal_windows(window_title: str) -> set[int]:
