@@ -172,10 +172,27 @@ def test_pyavs_ffmpeg_fails_although_it_never_says_enable_gpl(tmp_path: Path) ->
     assert check_dist.problems(tmp_path) == ["avcodec-62.dll: built with --enable-libx264"]
 
 
-@pytest.mark.parametrize("flag", ["--enable-librubberband", "--enable-frei0r", "--enable-postproc"])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "--enable-librubberband",
+        "--enable-frei0r",
+        "--enable-postproc",
+        "--enable-avisynth",
+        "--enable-libsmbclient",
+        "--enable-libfdk_aac",  # configure reads _ and - alike
+        "--enable-libfdk-aac",
+        "--enable-cuda_nvcc",
+    ],
+)
 def test_any_gpl_only_library_fails_without_enable_gpl(tmp_path: Path, flag: str) -> None:
     (tmp_path / "avfilter.dll").write_bytes(b"--enable-version3 " + flag.encode() + b" --x")
     assert check_dist.problems(tmp_path) == [f"avfilter.dll: built with {flag}"]
+
+
+def test_a_longer_flag_that_only_starts_like_a_gpl_one_passes(tmp_path: Path) -> None:
+    (tmp_path / "x.dll").write_bytes(b"--enable-libx264rgb --enable-libopencore-amrnb")
+    assert check_dist.problems(tmp_path) == []
 
 
 def test_our_lgpl_ffmpeg_passes(tmp_path: Path) -> None:

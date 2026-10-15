@@ -150,7 +150,7 @@ def decode(source: Path | bytes, rate: int = SR) -> np.ndarray:
 
     binary = ffmpeg_path()
     if binary is None:
-        raise SystemExit("the benchmarks need ffmpeg: on PATH, bundled, or as ffmpeg_path")
+        raise SystemExit("the benchmarks need ffmpeg, on PATH or bundled")
     data = source if isinstance(source, bytes) else None
     command = [binary, "-nostdin", "-hide_banner", "-loglevel", "error"]
     command += ["-i", "pipe:0" if data is not None else str(source)]
