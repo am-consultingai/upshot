@@ -309,6 +309,9 @@ def wheel_bytes(package: str, dlls: dict[str, bytes]) -> bytes:
             archive.writestr(f"nvidia/{package}/bin/{name}", content)
         archive.writestr(f"nvidia/{package}/include/header.h", b"not a dll")
         archive.writestr(f"nvidia_{package}-1.dist-info/METADATA", b"meta")
+        archive.writestr(
+            f"nvidia_{package}-1.dist-info/licenses/License.txt", b"EULA " + package.encode()
+        )
     return buffer.getvalue()
 
 
@@ -358,6 +361,8 @@ def test_the_gpu_libraries_land_in_one_folder_the_app_registers(
         "cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll",
     ]  # fmt: skip
     assert not list(folder.glob("*.h"))
+    # NVIDIA's terms travel with the DLLs: the user accepts them by installing these.
+    assert (folder / "nvidia_cublas-1-License.txt").read_bytes() == b"EULA cublas"
     assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"cublas": "1", "cudnn": "2"}
     assert ready(app_home, WHEELS)
     # cuDNN sits beside cuBLAS, so the one folder the app registers carries both.
@@ -463,29 +468,58 @@ def test_no_gpu_libraries_where_the_gpu_is_too_small(app_home: Path, tmp_path: P
 
 
 def test_the_pinned_wheels_are_the_ones_proven_on_a_gpu() -> None:
-    """cuBLAS 12.9.1.4 and cuDNN 9.1.1.17: byte for byte the DLLs that transcribe on the
-    author's GTX 1080 (Pascal) with this ctranslate2. Changing them needs that check again."""
-    assert {w.name: w.version for w in cuda_libs.WHEELS} == {
-        "nvidia-cublas-cu12": "12.9.1.4",
-        "nvidia-cudnn-cu12": "9.1.1.17",
-    }
+    """cuBLAS 12.9.1.4 alone: byte for byte the DLLs that transcribe on a GTX 1080 (Pascal)
+    and an MX450 (Turing) with this ctranslate2, which needs no cuDNN (licence epic, P4).
+    Changing them needs that check again."""
+    assert {w.name: w.version for w in cuda_libs.WHEELS} == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert not any("cudnn" in name for name in cuda_libs.REQUIRED)
     for wheel in cuda_libs.WHEELS:
         assert wheel.url.startswith("https://files.pythonhosted.org/")
         assert wheel.url.endswith("win_amd64.whl") and len(wheel.sha256) == 64
 
 
 def test_libraries_already_on_the_machine_are_used_not_downloaded_again(tmp_path: Path) -> None:
-    """A CUDA Toolkit, or a folder named in asr.cuda_dir, with cuBLAS and cuDNN: no 1.2 GB."""
+    """A CUDA Toolkit, or a folder named in asr.cuda_dir, with cuBLAS: no 550 MB."""
     toolkit = tmp_path / "toolkit" / "bin"
     toolkit.mkdir(parents=True)
     (toolkit / "cublas64_12.dll").write_bytes(b"x")
     config = default_config()
     config.set("asr.cuda_dir", str(toolkit))
     assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) is None, (
-        "cuBLAS without cuDNN is not enough"
+        "cuBLAS without cuBLASLt is not enough"
     )
-    (toolkit / "cudnn64_9.dll").write_bytes(b"x")
+    (toolkit / "cublasLt64_12.dll").write_bytes(b"x")
     assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) == toolkit
+
+
+def test_an_earlier_builds_cudnn_is_removed_and_its_cublas_kept(app_home: Path) -> None:
+    """Builds before the licence epic fetched cuDNN too (about 1 GB unpacked, loaded by
+    nothing). Such a folder counts as ready, and --prepare clears the cuDNN out of it."""
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll"):
+        (folder / name).write_bytes(b"x" * 10)
+    (folder / cuda_libs.MARKER).write_text(
+        json.dumps({"nvidia-cublas-cu12": "12.9.1.4", "nvidia-cudnn-cu12": "9.1.1.17"})
+    )
+    assert ready(app_home), "the cuBLAS it holds is the one wanted"
+    assert cuda_libs.remove_retired(app_home) == 20
+    assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
+    assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert ready(app_home)
+    assert cuda_libs.remove_retired(app_home) == 0
+
+
+def test_another_cublas_version_is_not_ready(app_home: Path) -> None:
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in cuda_libs.REQUIRED:
+        (folder / name).write_bytes(b"x")
+    (folder / cuda_libs.MARKER).write_text(json.dumps({"nvidia-cublas-cu12": "12.4.0"}))
+    assert not ready(app_home)
+    assert cuda_libs.remove_retired(app_home) == 0, "only a ready folder is touched"
+    (folder / cuda_libs.MARKER).write_text("[]")
+    assert not ready(app_home)
 
 
 def test_prepare_skips_the_download_when_the_libraries_are_already_there(
@@ -501,6 +535,27 @@ def test_prepare_skips_the_download_when_the_libraries_are_already_there(
     assert code == prepare.EXIT_OK
     assert "GPU libraries: already on this computer" in texts
     assert not target_dir(app_home).exists()
+
+
+def test_prepare_on_an_upgrade_clears_the_retired_cudnn(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An install of an earlier build holds cuBLAS and cuDNN; the upgrade's --prepare keeps
+    the cuBLAS, downloads nothing, and frees the cuDNN."""
+    monkeypatch.setattr(cuda_libs, "usable_elsewhere", lambda config: None)
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll"):
+        (folder / name).write_bytes(b"x")
+    (folder / cuda_libs.MARKER).write_text(
+        json.dumps({"nvidia-cublas-cu12": "12.9.1.4", "nvidia-cudnn-cu12": "9.1.1.17"})
+    )
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home),
+               gpu_wanted=(True, "NVIDIA GPU with 8192 MB"), poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
+    assert not (app_home / "cuda" / ".download").exists(), "nothing was downloaded"
 
 
 # -- the speaker models (D85) ---------------------------------------------------------
@@ -637,7 +692,7 @@ def test_an_installed_build_does_not_count_a_configured_cuda_dir(
 
     folder = tmp_path / "Scripts"
     folder.mkdir()
-    for name in ("cublas64_12.dll", "cudnn64_9.dll"):
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll"):
         (folder / name).write_bytes(b"x")
     config = default_config()
     config.set("asr.cuda_dir", str(folder))
