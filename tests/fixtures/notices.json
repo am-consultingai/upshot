@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {"name": "FFmpeg (Upshot's audio-only build)", "version": "", "licence": "LGPL-2.1-or-later", "kind": "other",
+     "note": "ffmpeg.exe, audio decoders only.", "source": "https://github.com/am-consultingai/upshot/releases",
+     "texts": ["GNU LESSER GENERAL PUBLIC LICENSE\nVersion 2.1, February 1999"]},
+    {"name": "numpy", "version": "2.5.2", "licence": "BSD-3-Clause", "kind": "python", "note": "", "source": "",
+     "texts": ["Copyright (c) 2005-2025, NumPy Developers."]},
+    {"name": "react", "version": "19.2.0", "licence": "MIT", "kind": "javascript", "note": "", "source": "",
+     "texts": ["MIT License\n\nCopyright (c) Meta Platforms, Inc. and affiliates."]}
+  ]
+}
