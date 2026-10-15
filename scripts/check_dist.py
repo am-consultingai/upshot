@@ -41,8 +41,8 @@ GPL_LIBRARIES = (
     "decklink", "libfdk_aac", "libmpeghdec", "libtls",  # non-free
     "cuda_nvcc", "cuda_sdk", "libnpp",  # non-free hardware acceleration
 )  # fmt: skip
-#: Those, and the switches themselves (postproc was GPL-only until 8.0). configure reads
-#: "-" and "_" alike in a name, and the binary keeps whichever was typed.
+#: Those, and the switches themselves (postproc: GPL-only, until FFmpeg 8.0 removed it).
+#: configure reads "-" and "_" alike in a name, and the binary keeps whichever was typed.
 GPL_FLAGS = re.compile(
     rb"--enable-(gpl|nonfree|postproc|"
     + b"|".join(name.replace("_", "[-_]").encode() for name in GPL_LIBRARIES)
