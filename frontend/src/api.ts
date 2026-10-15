@@ -643,6 +643,25 @@ export interface LegalState {
   page: string;
 }
 
+/** One third-party component the app ships or fetches (app/legal/notices.py). */
+export interface NoticeEntry {
+  id: number;
+  name: string;
+  version: string;
+  /** SPDX where one fits, e.g. "MIT" or "LGPL-2.1-or-later". */
+  licence: string;
+  kind: "other" | "python" | "javascript";
+  note: string;
+  /** Where the source is, for components whose licence asks for it. */
+  source: string;
+}
+
+export interface NoticeList {
+  /** False in a build that has no list (a source checkout that never built one). */
+  available: boolean;
+  entries: NoticeEntry[];
+}
+
 /** Feedback from inside the app (D87): what the form sends. */
 export interface FeedbackBody {
   kind: "idea" | "problem" | "praise" | "other";
@@ -756,6 +775,8 @@ export const api = {
     request<LegalState>("/api/legal/accept", { method: "POST", body: JSON.stringify({ version }) }),
   /** Not accepting quits the app; `quitting` is false where nothing can be asked to quit. */
   declineTerms: () => request<{ quitting: boolean }>("/api/legal/decline", { method: "POST" }),
+  notices: () => request<NoticeList>("/api/legal/notices"),
+  noticeTexts: (id: number) => request<{ id: number; texts: string[] }>(`/api/legal/notices/${id}`),
   updates: () => request<UpdateState>("/api/updates"),
   diagnostics: () => request<DiagnosticsState>("/api/diagnostics"),
   feedback: () => request<{ available: boolean }>("/api/feedback"),
