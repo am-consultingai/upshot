@@ -47,7 +47,8 @@ def test_every_fallback_text_says_where_it_came_from() -> None:
 @pytest.mark.parametrize(
     ("name", "file"),
     [("ctranslate2", "ctranslate2.txt"), ("sherpa_onnx_core", "sherpa-onnx-core.txt"),
-     ("@ai-sdk/provider-utils", "ai-sdk-provider-utils.txt")],
+     ("@ai-sdk/provider-utils", "ai-sdk-provider-utils.txt"),
+     ("winrt-runtime", "winrt.txt"), ("winrt-Windows.Foundation.Collections", "winrt.txt")],
 )  # fmt: skip
 def test_a_package_without_a_licence_file_takes_the_committed_one(name: str, file: str) -> None:
     (text,) = notices.fallback(name)
