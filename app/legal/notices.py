@@ -2,8 +2,8 @@
 
 ``scripts/third_party_notices.py`` writes ``THIRD-PARTY-NOTICES.json`` at build time and the
 spec bundles it in ``_internal`` (``paths.resource``); ``vendor/`` holds the same file in a
-source checkout that has built it. The list (about 25 KB) is served whole and each entry's licence texts
-(1.4 MB in all) one entry at a time, when the page opens it.
+source checkout that has built it. The list (about 25 KB) is served whole, and each entry's
+licence texts (1.4 MB in all) one entry at a time, when the page opens it.
 """
 
 from __future__ import annotations
