@@ -55,6 +55,22 @@ def test_a_package_without_a_licence_file_takes_the_committed_one(name: str, fil
     assert text == (ROOT / "packaging" / "licenses" / file).read_text(encoding="utf-8")
 
 
+def test_the_same_licence_shipped_twice_is_listed_once(tmp_path: Path) -> None:
+    (tmp_path / "LICENSE").write_text("MIT text", encoding="utf-8")
+    (tmp_path / "COPYING").write_text("MIT text", encoding="utf-8")
+    (tmp_path / "NOTICE").write_text("a notice", encoding="utf-8")
+    dist = SimpleNamespace(
+        metadata={"Name": "twice"}, files=["LICENSE", "COPYING", "NOTICE"],
+        locate_file=lambda f: tmp_path / str(f),
+    )  # fmt: skip
+    assert notices.python_licence_texts(dist) == ["MIT text", "a notice"]
+
+
+def test_the_apache_text_starts_with_the_licence_itself() -> None:
+    text = notices._apache()
+    assert text.lstrip(" ").startswith("Apache License"), "no blank line before it"
+
+
 def test_an_unknown_package_has_no_fallback() -> None:
     assert notices.fallback("no-such-package") == []
 
