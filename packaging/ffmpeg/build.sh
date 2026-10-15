@@ -11,8 +11,9 @@
 # replaces on 175 real files: the same files convert, every sample within 1 LSB.
 #
 # Every input is pinned by SHA-256, FFmpeg's tarball also by its release signature. The
-# result goes to <work>/dist: ffmpeg.exe, its licence texts, BUILD.txt, SHA256SUMS, and
-# the sources it was built from (the LGPL's corresponding source).
+# result goes to <work>/dist: ffmpeg.exe, its licence texts (FFmpeg, zlib, and the
+# MinGW-w64 runtime the toolchain links in), BUILD.txt, SHA256SUMS, and the sources it was
+# built from (the LGPL's corresponding source), with the exact configure arguments.
 set -euo pipefail
 
 WORK="$(realpath "${1:?usage: build.sh <work folder>}")"
@@ -32,6 +33,7 @@ TOOLCHAIN="llvm-mingw-$TOOLCHAIN_VERSION-ucrt-ubuntu-22.04-x86_64"
 TOOLCHAIN_URL="https://github.com/mstorsjo/llvm-mingw/releases/download/$TOOLCHAIN_VERSION/$TOOLCHAIN.tar.xz"
 TOOLCHAIN_SHA256=5f9c6ed95b2d4bdb2869a488c5fd5857fbdabcf288a0aa3eb1da43f6a08d8ab4
 
+rm -rf "$WORK/dist"
 mkdir -p "$WORK/src" "$WORK/dist/sources"
 cd "$WORK/src"
 
@@ -47,7 +49,7 @@ export GNUPGHOME="$WORK/gnupg"
 mkdir -p "$GNUPGHOME" && chmod 700 "$GNUPGHOME"
 gpg -q --import ffmpeg-devel.asc
 gpg --status-fd 1 --verify "ffmpeg-$FFMPEG_VERSION.tar.xz.asc" "ffmpeg-$FFMPEG_VERSION.tar.xz" \
-  | grep -q "VALIDSIG $FFMPEG_KEY" || { echo "FFmpeg's signature does not verify" >&2; exit 1; }
+  | grep -q "^\[GNUPG:\] VALIDSIG $FFMPEG_KEY " || { echo "FFmpeg's signature does not verify" >&2; exit 1; }
 fetch "$ZLIB_URL" "$ZLIB_SHA256"
 fetch "$TOOLCHAIN_URL" "$TOOLCHAIN_SHA256"
 
@@ -63,38 +65,69 @@ mkdir -p zlib-out/include zlib-out/lib
 cp "zlib-$ZLIB_VERSION"/{zlib.h,zconf.h} zlib-out/include/
 cp "zlib-$ZLIB_VERSION/libz.a" zlib-out/lib/
 
-# The demuxers are exactly ingest's whitelist (FFmpeg calls "mpeg" mpegps in configure).
+# The demuxers are exactly ingest's whitelist (FFmpeg calls "mpeg" mpegps in configure);
+# the decoders and parsers are FFmpeg's own audio ones, by configure's names.
 DEMUXERS="$(python3 -I "$HERE/demuxers.py" "$REPO/app/audio/ingest.py")"
 DECODERS="$(paste -sd, "$HERE/decoders.txt")"
+PARSERS="$(paste -sd, "$HERE/parsers.txt")"
+# zlib through the environment, not --extra-cflags: those land in the binary's
+# configuration string, with whatever folder the build ran in.
+export CPATH="$WORK/src/zlib-out/include" LIBRARY_PATH="$WORK/src/zlib-out/lib"
+CONFIGURE_ARGS=(
+  --enable-cross-compile --cross-prefix=x86_64-w64-mingw32- --cc=x86_64-w64-mingw32-clang
+  --target-os=mingw32 --arch=x86_64
+  --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug
+  --disable-x86asm --disable-avdevice --disable-swscale --disable-ffplay --disable-ffprobe
+  --enable-static --disable-shared --enable-zlib
+  --enable-protocol=file --enable-demuxer="$DEMUXERS" --enable-parser="$PARSERS"
+  --enable-decoder="$DECODERS" --enable-muxer=wav --enable-encoder=pcm_s16le
+  --enable-filter=aresample,aformat,anull,abuffer,abuffersink,atrim
+  --extra-version=upshot-audio-only
+)
 
 cd "ffmpeg-$FFMPEG_VERSION"
-./configure --enable-cross-compile --cross-prefix=x86_64-w64-mingw32- \
-  --cc=x86_64-w64-mingw32-clang --target-os=mingw32 --arch=x86_64 \
-  --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug \
-  --disable-x86asm --disable-avdevice --disable-swscale --disable-ffplay --disable-ffprobe \
-  --enable-static --disable-shared --enable-zlib \
-  --extra-cflags="-I$WORK/src/zlib-out/include" --extra-ldflags="-L$WORK/src/zlib-out/lib" \
-  --enable-protocol=file --enable-demuxer="$DEMUXERS" --enable-parsers \
-  --enable-decoder="$DECODERS" --enable-muxer=wav --enable-encoder=pcm_s16le \
-  --enable-filter=aresample,aformat,anull,abuffer,abuffersink,atrim \
-  --extra-version=upshot-audio-only > "$WORK/configure.log"
+./configure "${CONFIGURE_ARGS[@]}" > "$WORK/configure.log"
 grep -q "^License: LGPL version 2.1 or later" "$WORK/configure.log" \
   || { echo "configure did not produce an LGPL-2.1 build" >&2; exit 1; }
+# configure drops a name it does not know without a word: what it enabled must be exactly
+# what was asked for.
+enabled() {  # section title in configure's output → sorted names
+  awk -v t="Enabled $1:" '$0==t {f=1; next} f && /^$/ {exit} f {for (i=1; i<=NF; i++) print $i}' \
+    "$WORK/configure.log" | sort
+}
+check() {  # what, wanted (comma list)
+  if ! diff <(enabled "$1") <(tr ',' '\n' <<<"$2" | sort) >/dev/null; then
+    echo "configure enabled other $1 than asked:" >&2
+    diff <(enabled "$1") <(tr ',' '\n' <<<"$2" | sort) >&2 || true
+    exit 1
+  fi
+}
+check decoders "$DECODERS"
+check demuxers "$DEMUXERS"
+check parsers "$PARSERS"
 make -s -j"$(nproc)"
 
 DIST="$WORK/dist"
 cp ffmpeg.exe "$DIST/ffmpeg.exe"
 cp COPYING.LGPLv2.1 "$DIST/LICENSE-FFmpeg.txt"
 cp "../zlib-$ZLIB_VERSION/LICENSE" "$DIST/LICENSE-zlib.txt"
+# The toolchain links the MinGW-w64 runtime into every executable; its licence asks for
+# its notice with the binary.
+cp "../$TOOLCHAIN/x86_64-w64-mingw32/share/mingw32/COPYING.MinGW-w64-runtime.txt" \
+   "$DIST/LICENSE-mingw-w64-runtime.txt"
 cp "../ffmpeg-$FFMPEG_VERSION.tar.xz" "../ffmpeg-$FFMPEG_VERSION.tar.xz.asc" \
    "../zlib-$ZLIB_VERSION.tar.gz" "$DIST/sources/"
-cp "$HERE/build.sh" "$HERE/demuxers.py" "$HERE/decoders.txt" "$DIST/sources/"
+cp "$HERE/build.sh" "$HERE/demuxers.py" "$HERE/decoders.txt" "$HERE/parsers.txt" "$DIST/sources/"
+# The exact arguments, so the sources rebuild without Upshot's repository (ingest.py).
+printf '%s\n' "${CONFIGURE_ARGS[@]}" > "$DIST/sources/configure-args.txt"
 {
   echo "FFmpeg $FFMPEG_VERSION, audio decoders only, for Upshot (built by packaging/ffmpeg/build.sh)."
   echo "zlib $ZLIB_VERSION; toolchain llvm-mingw $TOOLCHAIN_VERSION."
-  echo "Licence: LGPL-2.1-or-later (FFmpeg), Zlib (zlib)."
-  echo "The sources/ folder holds everything it was built from."
+  echo "Licence: LGPL-2.1-or-later (FFmpeg), Zlib (zlib); the MinGW-w64 runtime's notices."
+  echo "Upshot commit: ${GITHUB_SHA:-$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo unknown)}."
+  echo "The sources/ folder holds everything it was built from; configure-args.txt has the"
+  echo "exact configure arguments (with CPATH and LIBRARY_PATH pointing at the built zlib)."
   grep "^License:" "$WORK/configure.log"
 } > "$DIST/BUILD.txt"
-(cd "$DIST" && find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS)
+(cd "$DIST" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS)
 echo "built: $DIST/ffmpeg.exe"
