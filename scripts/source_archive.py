@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import re
 import sys
@@ -121,7 +122,7 @@ def ffmpeg_source(licence: str, vendor: Path) -> Source:
 
 def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type: ignore[type-arg]
     """One source per entry whose licence asks for it; SourceError for one without a way."""
-    sources = []
+    sources: list[Source] = []
     for entry in entries:
         if not needs_source(entry["licence"]):
             continue
@@ -131,6 +132,8 @@ def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type
             sources.append(python_source(entry["name"], entry["version"], entry["licence"], lock))
         else:
             raise SourceError(f"{entry['name']} ({entry['licence']}): no recipe for its source")
+    if not sources:  # every real build ships FFmpeg: an empty list is the wrong file
+        raise SourceError("no LGPL or MPL component in the notices: not a build's notices file?")
     return sources
 
 
@@ -138,7 +141,8 @@ def fetch(url: str) -> bytes:
     try:
         with urllib.request.urlopen(url, timeout=120) as response:
             return response.read()  # type: ignore[no-any-return]
-    except OSError as exc:  # URLError, HTTPError and timeouts are all OSErrors
+    # URLError, HTTPError and timeouts are OSErrors; a cut connection is an IncompleteRead.
+    except (OSError, http.client.HTTPException) as exc:
         raise SourceError(f"{url}: {exc}") from exc
 
 
@@ -174,10 +178,10 @@ def build(out: Path, sources: list[Source], get=fetch) -> None:  # type: ignore[
                     raise SourceError(f"{source.url}: SHA-256 is not the pinned {source.sha256}")
                 archive.writestr(source.file, data)
             archive.writestr("README.txt", readme(sources))
+        partial.replace(out)
     except BaseException:
         partial.unlink(missing_ok=True)  # nothing half-written is left beside the installer
         raise
-    partial.replace(out)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,8 +195,14 @@ def main(argv: list[str] | None = None) -> int:
             lock = tomllib.loads(LOCK.read_text(encoding="utf-8"))
         except (OSError, ValueError, KeyError) as exc:
             raise SourceError(f"cannot read {args.notices.name} or uv.lock: {exc}") from exc
-        sources = plan(entries, lock, args.notices.parent)
-        build(args.out, sources)
+        try:
+            sources = plan(entries, lock, args.notices.parent)
+        except (KeyError, TypeError, ValueError) as exc:  # a malformed entry or SHA256SUMS
+            raise SourceError(f"malformed notices or FFmpeg SHA256SUMS: {exc!r}") from exc
+        try:
+            build(args.out, sources)
+        except OSError as exc:  # the output folder, a locked file
+            raise SourceError(f"cannot write {args.out}: {exc}") from exc
     except SourceError as exc:
         print(f"source archive: {exc}", file=sys.stderr)
         return 1
