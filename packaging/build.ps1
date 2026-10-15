@@ -152,6 +152,10 @@ Write-Host "== third-party notices =="
 # an entry without its licence text fails the build.
 uv run python scripts/third_party_notices.py vendor\THIRD-PARTY-NOTICES.txt --strict
 Assert-Exit "third-party notices"
+# The same components against packaging\licenses\policy.toml, and the run-time packages'
+# binaries for GPL code, as CI does (scripts\licence_gate.py).
+uv run python scripts/licence_gate.py
+Assert-Exit "the licence gate"
 
 Write-Host "== PyInstaller =="
 # --noconfirm replaces dist\upshot; nothing is removed by hand.
