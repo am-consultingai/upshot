@@ -225,7 +225,9 @@ def test_a_saved_auto_profile_follows_the_device(
     import app.asr.local as local
 
     devices: list[str] = []
-    monkeypatch.setattr(local, "planned_device", lambda config: devices.append("asked") or plan)
+    monkeypatch.setattr(
+        local, "planned_device", lambda config, **_: devices.append("asked") or plan
+    )
     h = harness(tmp_path, job_policy="auto", profile="auto")
     build = lambda: Worker(  # noqa: E731
         dao=h.dao, queue=h.queue, config=h.config, stages={}, clock=h.clock
