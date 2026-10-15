@@ -14,6 +14,7 @@ import { applyFileEvent, applyJobProgress, type JobProgressEvent } from "./lib/a
 import Settings from "./routes/Settings";
 import Welcome from "./routes/Welcome";
 import TermsPage from "./routes/Terms";
+import LicencesPage from "./routes/Licences";
 import TermsNotice from "./components/TermsNotice";
 import UpdateNotice from "./components/UpdateNotice";
 import ReportsNotice from "./components/ReportsNotice";
@@ -366,6 +367,7 @@ export default function App() {
               <Route path="/transcriptions" element={<ToRequests />} />
               <Route path="/search" element={<Full><SearchPage /></Full>} />
               <Route path="/settings" element={<Full wide><Settings /></Full>} />
+              <Route path="/licences" element={<Full><LicencesPage /></Full>} />
               {/*
                 * Anything else goes home rather than rendering an empty pane. There
                 * was no catch-all while every path in the rail had a route; removing
