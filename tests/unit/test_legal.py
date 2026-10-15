@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import date, datetime
 from pathlib import Path
 
@@ -250,6 +251,7 @@ def test_the_notices_name_every_component_shipped_outside_a_package_manager() ->
     spec = importlib.util.spec_from_file_location("third_party_notices", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # its dataclasses look themselves up there
     spec.loader.exec_module(module)
     text = module.render()
     for name in (
