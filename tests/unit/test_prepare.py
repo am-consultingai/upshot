@@ -365,7 +365,7 @@ def test_the_gpu_libraries_land_in_one_folder_the_app_registers(
     assert (folder / "nvidia_cublas-1-License.txt").read_bytes() == b"EULA cublas"
     assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"cublas": "1", "cudnn": "2"}
     assert ready(app_home, WHEELS)
-    # cuDNN sits beside cuBLAS, so the one folder the app registers carries both.
+    # Every wheel's DLLs land in one folder, which the app registers as a whole.
     # Off Windows cuda_library_dirs looks in lib/, not bin/.
     if sys.platform == "win32":
         assert folder in cuda_library_dirs(app_home=app_home, search_path=[], system_dirs=())
@@ -515,9 +515,13 @@ def test_another_cublas_version_is_not_ready(app_home: Path) -> None:
     folder.mkdir(parents=True)
     for name in cuda_libs.REQUIRED:
         (folder / name).write_bytes(b"x")
-    (folder / cuda_libs.MARKER).write_text(json.dumps({"nvidia-cublas-cu12": "12.4.0"}))
+    (folder / "cudnn64_9.dll").write_bytes(b"x")
+    marker = json.dumps({"nvidia-cublas-cu12": "12.4.0"})
+    (folder / cuda_libs.MARKER).write_text(marker)
     assert not ready(app_home)
     assert cuda_libs.remove_retired(app_home) == 0, "only a ready folder is touched"
+    assert (folder / "cudnn64_9.dll").exists()
+    assert (folder / cuda_libs.MARKER).read_text() == marker
     (folder / cuda_libs.MARKER).write_text("[]")
     assert not ready(app_home)
 
@@ -556,6 +560,65 @@ def test_prepare_on_an_upgrade_clears_the_retired_cudnn(
     assert code == prepare.EXIT_OK
     assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
     assert not (app_home / "cuda" / ".download").exists(), "nothing was downloaded"
+
+
+def old_build_folder(app_home: Path) -> Path:
+    """What an install of an earlier build left: cuBLAS and cuDNN, both in the marker."""
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    for name in ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll"):
+        (folder / name).write_bytes(b"x")
+    (folder / cuda_libs.MARKER).write_text(
+        json.dumps({"nvidia-cublas-cu12": "12.9.1.4", "nvidia-cudnn-cu12": "9.1.1.17"})
+    )
+    return folder
+
+
+@pytest.mark.parametrize(
+    ("gpu", "wanted_now"),
+    [(True, (False, "transcription is set to run on the CPU")), (False, None)],
+)
+def test_the_retired_cudnn_goes_even_when_no_gpu_libraries_are_wanted_now(
+    app_home: Path, tmp_path: Path, gpu: bool, wanted_now: tuple[bool, str] | None
+) -> None:
+    """Set to the CPU since, or --prepare --no-gpu: the 1 GB still goes."""
+    folder = old_build_folder(app_home)
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home), gpu=gpu,
+               gpu_wanted=wanted_now, poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert sorted(p.name for p in folder.glob("*.dll")) == ["cublas64_12.dll", "cublasLt64_12.dll"]
+
+
+def test_a_cudnn_that_will_not_go_never_fails_the_install(
+    app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scanner holding the file: the install succeeds, the file and the old marker stay
+    (still ready), and the next install tries again."""
+    folder = old_build_folder(app_home)
+    marker = (folder / cuda_libs.MARKER).read_text()
+    real_unlink = Path.unlink
+
+    def held(self: Path, missing_ok: bool = False) -> None:
+        if self.name.startswith("cudnn"):
+            raise PermissionError(13, "in use", str(self))
+        real_unlink(self, missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", held)
+    monkeypatch.setattr(cuda_libs, "usable_elsewhere", lambda config: None)
+    code = run(default_config(), ProgressFile(tmp_path / "prepare.txt"),
+               model=model_manager(app_home), gpu_wanted=(True, "NVIDIA GPU with 8192 MB"),
+               poll=0.01)  # fmt: skip
+    assert code == prepare.EXIT_OK
+    assert (folder / "cudnn64_9.dll").exists()
+    assert (folder / cuda_libs.MARKER).read_text() == marker
+    assert ready(app_home)
+
+
+@pytest.mark.parametrize("name", ["", ".", "..", "..\\evil.dll", "C:evil.dll", "a/b.dll"])
+def test_a_member_name_that_could_leave_the_folder_is_not_unpacked(name: str) -> None:
+    assert not cuda_libs._safe_name(name)
+    assert cuda_libs._safe_name("cublas64_12.dll")
 
 
 # -- the speaker models (D85) ---------------------------------------------------------
