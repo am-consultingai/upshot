@@ -78,6 +78,25 @@ def _imports(args: argparse.Namespace) -> list[Check]:
         checks.append(Check("sherpa_onnx", True, "diarization runtime imports"))
     except Exception as exc:
         checks.append(Check("sherpa_onnx", False, f"diarization runtime: {exc}"))
+    # The LGPL packages ship as loose .py files in _internal, so the user can replace them
+    # (upshot.spec): prove the freeze still loads them from there. Nothing else here would:
+    # soxr is imported only when 48 kHz device audio is resampled, and pystray only when
+    # the tray is built, which a selftest run never reaches.
+    try:
+        import numpy as np
+        import soxr
+
+        resampled = soxr.resample(np.zeros(480, dtype=np.float32), 48000, 16000)
+        checks.append(Check("soxr", len(resampled) == 160, f"48 kHz → 16 kHz: {len(resampled)}"))
+    except Exception as exc:
+        checks.append(Check("soxr", False, f"resampler: {exc}"))
+    if sys.platform == "win32":
+        try:
+            import pystray._win32  # noqa: F401
+
+            checks.append(Check("pystray", True, "tray backend imports"))
+        except Exception as exc:
+            checks.append(Check("pystray", False, f"tray backend: {exc}"))
     # The summary's HTML allowlist is a native extension (nh3): prove the freeze runs it.
     try:
         from app.pipeline.stages.render import sanitize
