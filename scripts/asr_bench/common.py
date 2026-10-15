@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import unicodedata
 import wave
@@ -21,6 +22,8 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+
+import app  # noqa: E402, F401  (stands in for PyAV, which faster-whisper imports)
 
 SR = 16_000
 #: Silence between FLEURS utterances in an assembled recording.
@@ -134,6 +137,31 @@ def assemble(utterances: list[Utterance]) -> tuple[np.ndarray, list[tuple[float,
         spans.append((at, at + len(pcm) / SR, utterance.language, utterance.text))
         at += len(pcm) / SR + GAP_S
     return np.concatenate(parts) if parts else np.zeros(0, np.float32), spans
+
+
+def decode(source: Path | bytes, rate: int = SR) -> np.ndarray:
+    """Any audio file (or its bytes) as float32 mono at ``rate``, through ffmpeg.
+
+    PyAV, which ``faster_whisper.decode_audio`` needs, is not installed (pyproject.toml),
+    and FLEURS ships 32-bit float WAV, which the wave module cannot read. Decoded to
+    16-bit and scaled by 1/32768, as ``decode_audio`` did, so results stay comparable.
+    """
+    from app.audio.ingest import ffmpeg_path
+
+    binary = ffmpeg_path()
+    if binary is None:
+        raise SystemExit("the benchmarks need ffmpeg, on PATH or bundled")
+    data = source if isinstance(source, bytes) else None
+    command = [binary, "-nostdin", "-hide_banner", "-loglevel", "error"]
+    command += ["-i", "pipe:0" if data is not None else str(source)]
+    command += ["-f", "s16le", "-ac", "1", "-ar", str(rate), "pipe:1"]
+    done = subprocess.run(command, input=data, capture_output=True)
+    if done.returncode:
+        raise RuntimeError(
+            f"ffmpeg could not decode {source if data is None else 'the bytes'}: "
+            f"{done.stderr.decode(errors='replace').strip()}"
+        )
+    return np.frombuffer(done.stdout, dtype="<i2").astype(np.float32) / 32768.0
 
 
 def write_wav(path: Path, audio: np.ndarray) -> Path:
