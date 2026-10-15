@@ -216,12 +216,14 @@ begin
 end;
 
 { The install folder already holds this Upshot: the uninstall entry of this AppId names
-  it, and upshot.exe is in it. Gates [InstallDelete]. }
+  it, and upshot.exe is in it. Gates [InstallDelete]. Inno writes that entry only once
+  the files are copied, so a first install finds none. HKA, not HKCU: an all-users
+  install (the privileges dialog, or /ALLUSERS) keeps it under HKLM. }
 function IsUpshotInstall: Boolean;
 var
   Recorded: String;
 begin
-  Result := RegQueryStringValue(HKCU,
+  Result := RegQueryStringValue(HKA,
       'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1B7C2E-4A8D-4E57-9C1D-3B2A9E0F5D11}_is1',
       'Inno Setup: App Path', Recorded)
     and (CompareText(RemoveBackslashUnlessRoot(Recorded),
