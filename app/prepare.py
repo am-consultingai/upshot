@@ -232,6 +232,11 @@ def run(
     configured = config.get("asr.model_path")
     keep = Path(str(configured)).expanduser() if configured else None
     remove_retired(keep=keep)
+    # And an earlier build's cuDNN (about 1 GB, loaded by nothing), on every install,
+    # whatever the GPU step decides later; it never fails the install.
+    from app.asr import cuda_libs
+
+    cuda_libs.remove_retired()
     # An installed build replaces an unpinned model_path with its own copy, but the old
     # one transcribes until then: a retired folder it names goes only once the turbo is
     # in place, so a failed download leaves what worked (z8tj1hfr6w).
@@ -261,12 +266,9 @@ def run(
     if code != EXIT_OK:
         return code
 
-    from app.asr import cuda_libs
-
-    # An earlier build's cuDNN (about 1 GB, loaded by nothing) goes on every upgrade,
-    # whether or not this machine still wants GPU libraries; it never fails the install.
-    cuda_libs.remove_retired()
     if gpu:
+        from app.asr import cuda_libs
+
         want, why = gpu_wanted if gpu_wanted is not None else cuda_libs.wanted(config)
         elsewhere = cuda_libs.usable_elsewhere(config) if cuda is None and want else None
         if elsewhere is not None:

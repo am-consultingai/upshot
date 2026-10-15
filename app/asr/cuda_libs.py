@@ -105,11 +105,17 @@ def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS)
     """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
     rewrite the marker to name only the current wheels. Returns the bytes freed.
 
-    Only in this app's own, ready folder. Never raises: a file that will not go now (held
-    by a scanner, say) is tried again by the next install, and ``ready`` accepts the old
-    marker meanwhile.
+    Only in this app's own, ready folder. Never raises: it runs on every install, and a
+    file that will not go now (held by a scanner, say) is tried again by the next one.
     """
-    folder = target_dir(home)
+    try:
+        return _remove_retired(target_dir(home), home, wheels)
+    except OSError as exc:
+        log.warning("could not clear the retired GPU libraries: %s", exc)
+        return 0
+
+
+def _remove_retired(folder: Path, home: Path | None, wheels: tuple[Wheel, ...]) -> int:
     if not ready(home, wheels):
         return 0
     freed = 0
@@ -122,14 +128,11 @@ def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS)
                 log.warning("could not remove the retired GPU library %s: %s", path, exc)
                 continue
             freed += size
+    # Whatever stayed is globbed again next time, and ready() takes either marker.
     marker = folder / MARKER
     current = json.dumps(_versions(wheels))
-    try:
-        leftover = any(next(folder.glob(pattern), None) for pattern in RETIRED_GLOBS)
-        if not leftover and marker.read_text(encoding="utf-8") != current:
-            marker.write_text(current, encoding="utf-8")
-    except OSError as exc:
-        log.warning("could not rewrite %s: %s", marker, exc)
+    if marker.read_text(encoding="utf-8") != current:
+        marker.write_text(current, encoding="utf-8")
     if freed:
         log.info("removed %.0f MB of retired GPU libraries from %s", freed / 1e6, folder)
     return freed
@@ -338,7 +341,8 @@ class CudaInstaller:
                         "license"
                     ):
                         name = f"{parts[0].removesuffix('.dist-info')}-{parts[-1]}"
-                        (staging / name).write_bytes(archive.read(member))
+                        if _safe_name(name):
+                            (staging / name).write_bytes(archive.read(member))
         missing = [name for name in REQUIRED if not (staging / name).is_file()]
         if missing:
             raise RuntimeError(f"the GPU libraries are missing {', '.join(missing)}")
