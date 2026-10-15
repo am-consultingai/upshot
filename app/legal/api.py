@@ -1,4 +1,5 @@
-"""``/api/legal``: the Terms the interface shows, and the user's acceptance of them (D83)."""
+"""``/api/legal``: the Terms the interface shows, the user's acceptance of them (D83), and
+the third-party notices (every component the app ships, with its licence)."""
 
 from __future__ import annotations
 
@@ -7,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from app.legal import notices
 from app.legal.terms import TermsService
 
 router = APIRouter(prefix="/api/legal")
@@ -75,3 +77,18 @@ def check(request: Request) -> dict[str, Any]:
     terms = terms_of(request)
     fetched = terms.check_now()
     return {"fetched": fetched, "error": terms.last_error, **terms.state()}
+
+
+@router.get("/notices")
+def notices_list() -> dict[str, Any]:
+    """Every third-party component and its licence, without the licence texts."""
+    return notices.summary()
+
+
+@router.get("/notices/{index}")
+def notice_texts(index: int) -> dict[str, Any]:
+    """One component's licence and notice texts."""
+    try:
+        return {"id": index, "texts": notices.texts(index)}
+    except IndexError as exc:
+        raise HTTPException(404, f"no notice {index}") from exc

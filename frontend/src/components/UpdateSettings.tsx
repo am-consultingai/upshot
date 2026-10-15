@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { api, type UpdateState } from "../api";
 import { useI18n } from "../i18n";
 import Button from "./Button";
@@ -19,6 +20,7 @@ const MOVING = new Set<UpdateState["phase"]>(["checking", "downloading"]);
 export default function UpdateSettings() {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const status = useQuery({ queryKey: ["status"], queryFn: api.status });
   const updates = useQuery({
     queryKey: ["updates"],
@@ -63,6 +65,12 @@ export default function UpdateSettings() {
         }
       >
         <span />
+      </SettingRow>
+
+      <SettingRow label={t("updates.licences")} description={t("updates.licencesHint")}>
+        <Button data-testid="open-licences" onClick={() => navigate("/licences")} variant="secondary" size="md">
+          {t("updates.licencesOpen")}
+        </Button>
       </SettingRow>
 
       <SettingRow

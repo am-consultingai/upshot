@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import default_config
 from app.gcal.client import CLIENT_ENV
+from app.legal.notices import NOTICES_ENV
 from app.log import setup
 from app.main import create_app
 from app.server import LocalServer
@@ -36,6 +37,11 @@ def main() -> int:
             encoding="utf-8",
         )
         os.environ[CLIENT_ENV] = str(stand_in)
+    # A checkout has no built notices list; the licences page shows this short one.
+    os.environ.setdefault(
+        NOTICES_ENV,
+        str(Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "notices.json"),
+    )
     setup(to_file=False)
 
     # argv wins over the environment, and the harness always passes it. Not for
