@@ -39,7 +39,7 @@ export function Command({ text, testid }: { text: string; testid: string }) {
 }
 
 /**
- * Claude Desktop's row in Settings → AI apps (D86, R3): Upshot hands Claude the extension
+ * Claude Desktop's row in Settings → MCP (D86, R3): Upshot hands Claude the extension
  * and Claude shows its own install window. Upshot never edits Claude's files, and whether
  * Upshot is already added there is not shown: knowing would mean reading them.
  */
@@ -130,7 +130,7 @@ export function ClaudeDesktopRow() {
 }
 
 /**
- * Settings → AI apps, further down: the switch for transcription by other apps (D86), and
+ * Settings → MCP, further down: the switch for transcription by other apps (D86), and
  * the API for developers. Connecting each app is in `AiAppsSettings`.
  */
 export default function TranscriptionServiceSettings() {

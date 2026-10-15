@@ -1,4 +1,4 @@
-"""Settings → AI apps: which AI apps are on this computer, and a terminal with each one's
+"""Settings → MCP: which AI apps are on this computer, and a terminal with each one's
 own command to add Upshot typed in (ClickUp epic z8tj1hjg3v).
 
 Upshot edits no other app's files (D98). The user presses Enter, and the app's own CLI

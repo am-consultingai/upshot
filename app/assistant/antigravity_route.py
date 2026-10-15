@@ -227,7 +227,7 @@ class AntigravityRoute(ClaudeRoute):
             yield stream.data("problem", {"code": "not-installed", "provider": self.name})
             yield stream.error(
                 "Antigravity is not installed. Install it from Settings and sign in, or "
-                "choose another provider in Settings → AI."
+                "choose another provider in Settings → AI agents."
             )
             return
         # Signed out, a run would open Google's sign-in page unasked and wait a minute.

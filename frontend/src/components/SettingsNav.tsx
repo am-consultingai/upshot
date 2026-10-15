@@ -11,6 +11,8 @@ export interface SettingsSection {
   hint?: MessageKey;
   /** One line under the section's heading: what the section is for. */
   purpose?: MessageKey;
+  /** Older addresses that open this section: a part that was once a section of its own. */
+  aliases?: string[];
 }
 
 /**
@@ -21,11 +23,12 @@ export interface SettingsSection {
  * key rows and sign-in buttons appear — so arriving at the prompt from a
  * meeting's "View prompt" scrolled you there and then pushed you off it as the
  * section above finished rendering. A section is its own screen here, so there
- * is nothing above it to move.
+ * is less above anything to move. The prompt is the exception: it is part of AI
+ * agents again, under the providers, and Settings holds it in view while they
+ * settle (`useKeepInView`).
  *
  * Microsoft's guidance prefers one scrolling column and no second navigation,
- * and that holds while a page has four or five groups. This has five plus two
- * long ones, and the two long ones are the unstable ones.
+ * and that holds while a page has four or five groups. This has nine.
  *
  * The section lives in the URL hash, so "View prompt" keeps working as a link
  * and the browser's back button still means something.
@@ -40,8 +43,7 @@ export default function SettingsNav({
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { hash } = useLocation();
-  const current = hash.replace("#", "") || sections[0].id;
+  const current = useSection(sections);
 
   return (
     <nav data-testid="settings-nav" className="w-44 shrink-0" aria-label={t("nav.settings")}>
@@ -81,9 +83,10 @@ export default function SettingsNav({
   );
 }
 
-/** Which section is showing, from the hash, defaulting to the first. */
+/** Which section is showing, from the hash (or one of its aliases), defaulting to the first. */
 export function useSection(sections: SettingsSection[]): string {
   const { hash } = useLocation();
   const id = hash.replace("#", "");
-  return sections.some((section) => section.id === id) ? id : sections[0].id;
+  const found = sections.find((section) => section.id === id || section.aliases?.includes(id));
+  return (found ?? sections[0]).id;
 }
