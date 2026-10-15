@@ -32,13 +32,14 @@ interface ConfigShape {
 
 /*
  * Sections, in the order someone meets them: what it records, how it looks, what it
- * connects to, then the two long ones. Which speech model runs and where it runs are the
- * app's business, not the user's (first-run setup still downloads the model and says
- * where it runs). The AI model for summaries and for the conversation is the user's to
- * choose, from the provider's own list, under the provider (2026-10-12; it was the
- * app's alone until Antigravity's default took 75 s over a one-line check). Where
- * recordings are kept is shown, not chosen: Storage says where and how much, which is
- * how "local only" can be checked.
+ * connects to, where recordings are kept, then everything about AI together at the
+ * bottom (the owner, 2026-10-15: the AI items were scattered between Calendar and
+ * Storage). Which speech model runs and where it runs are the app's business, not the
+ * user's (first-run setup still downloads the model and says where it runs). The AI model
+ * for summaries and for the conversation is the user's to choose, from the provider's own
+ * list, under the provider (2026-10-12; it was the app's alone until Antigravity's default
+ * took 75 s over a one-line check). Where recordings are kept is shown, not chosen:
+ * Storage says where and how much, which is how "local only" can be checked.
  *
  * Each carries one line of purpose under its heading, said in terms of what it is for
  * rather than what is in it — the name says the second.
@@ -47,18 +48,18 @@ const SECTIONS: SettingsSection[] = [
   { id: "audio", label: "settings.groupAudio", purpose: "settings.purposeAudio" },
   { id: "appearance", label: "settings.groupAppearance", purpose: "settings.purposeAppearance" },
   { id: "calendar", label: "settings.groupCalendar", purpose: "settings.purposeCalendar" },
+  { id: "storage", label: "settings.groupStorage", purpose: "settings.purposeStorage" },
+  // Crash reports: the answer given in setup, and what was last sent (D87).
+  { id: "privacy", label: "settings.groupPrivacy", purpose: "settings.purposePrivacy" },
+  // What version this is, and the updates that arrive by themselves (D87).
+  { id: "about", label: "settings.groupAbout", purpose: "settings.purposeAbout" },
+  // AI, together and last.
   { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents", purpose: "settings.purposeSummaries" },
   { id: "prompt", label: "settings.prompt", purpose: "settings.purposePrompt" },
   { id: "transcription", label: "settings.groupTranscription", purpose: "settings.purposeTranscription" },
   // What the AI apps asked, and the files transcribed (D98); was a page of its own.
   { id: "requests", label: "settings.groupRequests", purpose: "settings.purposeRequests" },
-  { id: "storage", label: "settings.groupStorage", purpose: "settings.purposeStorage" },
-  // Crash reports: the answer given in setup, and what was last sent (D87).
-  { id: "privacy", label: "settings.groupPrivacy", purpose: "settings.purposePrivacy" },
-  // Last: what version this is, and the updates that arrive by themselves (D87).
-  { id: "about", label: "settings.groupAbout", purpose: "settings.purposeAbout" },
 ];
-
 export default function Settings() {
   const section = useSection(SECTIONS);
   const current = SECTIONS.find((s) => s.id === section)!;
