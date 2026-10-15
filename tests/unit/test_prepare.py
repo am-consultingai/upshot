@@ -687,11 +687,23 @@ def test_a_missing_bundled_licence_is_logged_not_raised(
     assert "carries no nvidia_cublas_cu12-12.9.1.4-License.txt" in caplog.text
 
 
-def test_the_marker_is_replaced_whole(app_home: Path) -> None:
+def test_the_marker_is_replaced_whole(app_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Written beside and moved over: when the move fails, the old marker is still whole
+    (and still ready), never half-written. On success no .tmp is left."""
     folder = old_build_folder(app_home)
-    cuda_libs.remove_retired(app_home)
-    assert not list(folder.glob("*.tmp")), "written beside, then moved over the old one"
+    before = (folder / cuda_libs.MARKER).read_text()
+
+    def refused(source: object, target: object) -> None:
+        raise PermissionError(13, "in use")
+
+    monkeypatch.setattr(cuda_libs.os, "replace", refused)
+    assert cuda_libs.remove_retired(app_home) == 0
+    assert (folder / cuda_libs.MARKER).read_text() == before
     assert ready(app_home)
+    monkeypatch.undo()
+    cuda_libs.remove_retired(app_home)
+    assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert not list(folder.glob("*.tmp"))
 
 
 def test_a_licence_is_added_only_to_a_ready_folder(app_home: Path) -> None:
