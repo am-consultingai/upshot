@@ -1,0 +1,209 @@
+"""The third-party notices: complete, correct, and checked against the freeze.
+
+The generator is ``scripts/third_party_notices.py``; ``packaging/build.ps1`` runs it with
+``--strict`` before PyInstaller and with ``--check dist\\upshot`` after it.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def load() -> SimpleNamespace:
+    spec = importlib.util.spec_from_file_location(
+        "third_party_notices", ROOT / "scripts" / "third_party_notices.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # its dataclasses look themselves up there
+    spec.loader.exec_module(module)
+    return module  # type: ignore[return-value]
+
+
+notices = load()
+
+
+# ------------------------------------------------------------------ texts
+
+
+def test_every_fallback_text_says_where_it_came_from() -> None:
+    files = sorted((ROOT / "packaging" / "licenses").glob("*.txt"))
+    assert files
+    for path in files:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert lines[1].startswith("Source: "), path.name
+        assert len("\n".join(lines[3:]).strip()) > 200, f"{path.name} holds no licence text"
+
+
+@pytest.mark.parametrize(
+    ("name", "file"),
+    [("ctranslate2", "ctranslate2.txt"), ("sherpa_onnx_core", "sherpa-onnx-core.txt"),
+     ("@ai-sdk/provider-utils", "ai-sdk-provider-utils.txt")],
+)  # fmt: skip
+def test_a_package_without_a_licence_file_takes_the_committed_one(name: str, file: str) -> None:
+    (text,) = notices.fallback(name)
+    assert text == (ROOT / "packaging" / "licenses" / file).read_text(encoding="utf-8")
+
+
+def test_an_unknown_package_has_no_fallback() -> None:
+    assert notices.fallback("no-such-package") == []
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [("MIT License", "MIT"), ("Apache Software License", "Apache-2.0"),
+     ("3-Clause BSD License", "BSD-3-Clause"), ("LGPLv3", "LGPL-3.0-only"),
+     ("Apache licensed, as found in the LICENSE file", "Apache-2.0"),
+     ("BSD-3-Clause AND 0BSD", "BSD-3-Clause AND 0BSD")],
+)  # fmt: skip
+def test_licence_names_become_spdx(declared: str, expected: str) -> None:
+    assert notices.spdx(declared) == expected
+
+
+def test_lgpl_and_mpl_entries_say_where_their_source_is() -> None:
+    assert "pypi.org/project/soxr/1.1.0" in notices.source_line(
+        "soxr", "1.1.0", "LGPL-2.1-or-later"
+    )
+    assert notices.source_line("certifi", "1", "MPL-2.0")
+    assert notices.source_line("numpy", "2", "BSD-3-Clause") == ""
+
+
+def test_strict_fails_on_an_entry_without_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    items = [
+        notices.Entry("has", "1", "MIT", texts=["MIT text"]),
+        notices.Entry("lacks", "2", "MIT"),
+    ]
+    monkeypatch.setattr(notices, "entries", lambda: items)
+    target = tmp_path / "N.txt"
+    assert notices.main([str(target)]) == 0, "without --strict it only warns"
+    assert notices.main([str(target), "--strict"]) == 1
+    assert notices.missing_texts(items) == ["lacks 2"]
+    data = json.loads(target.with_suffix(".json").read_text(encoding="utf-8"))
+    assert [e["name"] for e in data["entries"]] == ["has", "lacks"]
+
+
+# ------------------------------------------------------------------ what it lists
+
+
+def test_the_bundle_s_packages_come_from_its_source_maps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    maps = tmp_path / "dist" / "sourcemaps"
+    maps.mkdir(parents=True)
+    (maps / "index.js.map").write_text(json.dumps({"sources": [
+        "../../src/main.tsx",
+        "../../node_modules/react/index.js",
+        "../../node_modules/@ai-sdk/react/dist/index.mjs",
+        "../../node_modules/streamdown/node_modules/marked/lib/marked.esm.js",
+    ]}))  # fmt: skip
+    monkeypatch.setattr(notices, "ROOT", tmp_path)
+    assert notices.source_map_packages() == {
+        "react", "@ai-sdk/react", "streamdown/node_modules/marked",
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("source", "folder"),
+    [("../node_modules/react/index.js", "react"),
+     ("../node_modules/@scope/pkg/dist/a.js", "@scope/pkg"),
+     ("../node_modules/a/node_modules/@s/b/x.js", "a/node_modules/@s/b"),
+     ("../src/main.tsx", None)],
+)  # fmt: skip
+def test_a_bundled_file_is_credited_to_the_package_folder_it_came_from(
+    source: str, folder: str | None
+) -> None:
+    assert notices.package_dir(source) == folder
+
+
+def test_ffmpeg_s_licence_is_read_from_its_configure_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "vendor").mkdir()
+    (tmp_path / "vendor" / "ffmpeg.exe").write_bytes(b"")
+    monkeypatch.setattr(notices, "ROOT", tmp_path)
+
+    def version(stdout: str) -> None:
+        def ran(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(args, 0, stdout, "")
+
+        monkeypatch.setattr(notices.subprocess, "run", ran)
+
+    version("ffmpeg version n8.1\nconfiguration: --enable-version3 --disable-libx264\n")
+    assert notices.ffmpeg_entry().licence == "LGPL-3.0-or-later"
+    version("ffmpeg version n8.1\nconfiguration: --disable-debug\n")
+    assert notices.ffmpeg_entry().licence == "LGPL-2.1-or-later"
+
+
+def test_the_extras_name_what_no_package_manager_installs() -> None:
+    names = " ".join(e.name for e in notices.extra_entries())
+    parts = [
+        "Python", "PyInstaller", "FFmpeg", "ivrit-ai", "Systran", "pyannote", "3D-Speaker",
+        "Silero VAD", "fonts", "Tailwind", "Intel OpenMP", "NVIDIA cuBLAS", "Microsoft",
+    ]  # fmt: skip
+    for part in parts:
+        assert part in names, part
+
+
+# ------------------------------------------------------------------ --check
+
+
+def fake_dist(tmp_path: Path, listed: list[str], files: list[str]) -> Path:
+    dist = tmp_path / "upshot"
+    internal = dist / "_internal"
+    internal.mkdir(parents=True)
+    (internal / "THIRD-PARTY-NOTICES.json").write_text(
+        json.dumps({"entries": [{"name": n} for n in listed]}), encoding="utf-8"
+    )
+    for name in files:
+        path = internal / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+    return dist
+
+
+EXTRAS = ["Python", "Microsoft Visual C++ and Universal C runtime",
+          "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)"]  # fmt: skip
+
+
+def test_every_file_accounted_for_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(notices, "owners", lambda: {"numpy/__init__.py": "numpy"})
+    dist = fake_dist(tmp_path, ["numpy", *EXTRAS], [
+        "numpy/__init__.py", "numpy/__init__.pyc", "python313.dll", "_ssl.pyd", "base_library.zip",
+        "VCRUNTIME140.dll", "winrt/MSVCP140.dll", "ffmpeg.exe", "app/db/schema.sql",
+        "frontend/dist/index.html",
+    ])  # fmt: skip
+    assert notices.check(dist) == []
+    assert notices.main(["--check", str(dist)]) == 0
+
+
+def test_a_file_no_one_accounts_for_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(notices, "owners", lambda: {})
+    dist = fake_dist(tmp_path, EXTRAS, ["mystery/lib.dll"])
+    assert notices.check(dist) == [
+        "mystery/lib.dll: no package installed it and no notices entry covers it"
+    ]
+    assert notices.main(["--check", str(dist)]) == 1
+
+
+def test_a_package_the_notices_do_not_list_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(notices, "owners", lambda: {"av/__init__.py": "av"})
+    dist = fake_dist(tmp_path, EXTRAS, ["av/__init__.py"])
+    assert notices.check(dist) == ["av/__init__.py: from av, which the notices do not list"]
+
+
+def test_a_freeze_without_the_notices_fails(tmp_path: Path) -> None:
+    (tmp_path / "upshot" / "_internal").mkdir(parents=True)
+    assert notices.check(tmp_path / "upshot")[0].endswith("THIRD-PARTY-NOTICES.json is missing")

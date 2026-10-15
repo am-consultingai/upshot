@@ -147,8 +147,10 @@ Write-Host "source maps: $((Get-ChildItem $maps -Filter *.map).Count) moved to d
 
 Write-Host "== third-party notices =="
 # Every component the app ships and its licence, from what is installed here (the
-# Windows-only packages included); the spec bundles it beside upshot.exe.
-uv run python scripts/third_party_notices.py vendor\THIRD-PARTY-NOTICES.txt
+# Windows-only packages included) and from the interface's source maps (dist\sourcemaps,
+# just above); the spec bundles the text and its JSON twin beside upshot.exe. --strict:
+# an entry without its licence text fails the build.
+uv run python scripts/third_party_notices.py vendor\THIRD-PARTY-NOTICES.txt --strict
 Assert-Exit "third-party notices"
 
 Write-Host "== PyInstaller =="
@@ -181,6 +183,13 @@ Write-Host "== no GPL component in the freeze =="
 # brings such a library in next, the build stops here (scripts/check_dist.py).
 uv run python scripts/check_dist.py dist\upshot
 Assert-Exit "the GPL check of dist\upshot"
+
+Write-Host "== every file in the freeze is in the notices =="
+# Each file maps to the package that installed it, or to a notices entry for what no
+# package installed (Python, the Microsoft runtime, ffmpeg, Upshot itself); a file that
+# maps to nothing, or to a package the bundled notices do not list, stops the build.
+uv run python scripts/third_party_notices.py --check dist\upshot
+Assert-Exit "the notices check of dist\upshot"
 
 Write-Host "== selftest against the freeze =="
 # upshot.exe is a windowed program (console=False): `& upshot.exe` returns at once and
