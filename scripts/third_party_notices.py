@@ -90,9 +90,17 @@ def spdx(declared: str) -> str:
     return SPDX.get(declared.strip().lower(), declared.strip())
 
 
+#: Package families that share one licence file in ``packaging/licenses``.
+SHARED_FALLBACKS = (("winrt-*", "winrt"),)
+
+
 def fallback(name: str) -> list[str]:
     """``packaging/licenses/<name>.txt``; an npm scope's "@" and "/" become "-"."""
-    path = LICENCES / f"{canonicalize_name(name.lstrip('@').replace('/', '-'))}.txt"
+    stem = canonicalize_name(name.lstrip("@").replace("/", "-"))
+    stem = next(
+        (file for pattern, file in SHARED_FALLBACKS if fnmatch.fnmatch(stem, pattern)), stem
+    )
+    path = LICENCES / f"{stem}.txt"
     return [path.read_text(encoding="utf-8")] if path.is_file() else []
 
 
