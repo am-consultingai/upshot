@@ -253,10 +253,22 @@ export async function gotoApp(page: Page, path = "/"): Promise<void> {
  */
 export async function gotoSettings(
   page: Page,
-  section: "audio" | "appearance" | "calendar" | "summaries" | "prompt" | "transcription" | "requests" | "storage" = "audio",
+  section:
+    | "audio"
+    | "appearance"
+    | "calendar"
+    | "privacy"
+    | "storage"
+    | "about"
+    | "summaries"
+    | "prompt"
+    | "transcription"
+    | "requests" = "audio",
 ): Promise<void> {
   await gotoApp(page, `/settings#${section}`);
-  await expect(page.getByTestId(`settings-section-${section}`)).toHaveAttribute(
+  // The prompt is part of AI agents; its old address still opens it there.
+  const shown = section === "prompt" ? "summaries" : section;
+  await expect(page.getByTestId(`settings-section-${shown}`)).toHaveAttribute(
     "aria-current",
     "page",
   );

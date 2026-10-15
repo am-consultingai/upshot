@@ -1,4 +1,4 @@
-"""Settings → AI apps: finding the user's AI apps, and the terminal with each one's own
+"""Settings → MCP: finding the user's AI apps, and the terminal with each one's own
 command typed in (ClickUp epic z8tj1hjg3v). Upshot edits no other app's files (D98)."""
 
 from __future__ import annotations

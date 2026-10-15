@@ -313,7 +313,7 @@ function AppsList({ info }: { info: AiApps | undefined }) {
 }
 
 /**
- * Settings → AI apps (D98): the user's own AI tools reading their meetings. `part`
+ * Settings → MCP (D98): the user's own AI tools reading their meetings. `part`
  * "access" is the switch and the access key, first in the section; "apps" is how to add
  * Upshot to each app (`AppsList`). Upshot never edits another app's configuration.
  */

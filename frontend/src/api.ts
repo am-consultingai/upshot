@@ -570,7 +570,7 @@ export interface AiAppsFound {
   mcp_json: string[];
 }
 
-/** Settings → AI apps (D98): connecting the user's own AI tools to the meetings. */
+/** Settings → MCP (D98): connecting the user's own AI tools to the meetings. */
 export interface AiApps {
   meetings_enabled: boolean;
   transcription_enabled: boolean;

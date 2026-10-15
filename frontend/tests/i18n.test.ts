@@ -62,6 +62,8 @@ describe("catalogue parity", () => {
     "firstRun.done.sum.codex-subscription",
     // A pattern with no words of its own ("{greeting}, {name}"), the same in both.
     "greeting.named",
+    // The protocol's name, a section of Settings: MCP in every language.
+    "settings.groupTranscription",
   ]);
 
   /*
@@ -74,10 +76,11 @@ describe("catalogue parity", () => {
       "invite.links", "invite.optional", "feedback.title", "feedback.kind.problem",
       "updates.version", "updates.status", "common.minutes", "common.hours", "rail.in",
       "firstRun.ai.code", "terms.ok", "aiActivity.filter", "settings.aiAppsUrlDocker",
+      "settings.groupAudio",
     ],
     es: [
       "meetingInfo.hours", "meetingInfo.minutes", "calendar.google", "feedback.kind.idea",
-      "common.minutes", "common.hours", "aiActivity.filter",
+      "common.minutes", "common.hours", "aiActivity.filter", "settings.groupAudio",
     ],
     fr: [
       "palette.do", "meeting.pause", "meetingInfo.description", "meetingInfo.hours",
@@ -86,7 +89,7 @@ describe("catalogue parity", () => {
       "assistant.open", "assistant.source", "meeting.sections", "firstRun.ai.code",
       "firstRun.audio.mic", "terms.ok", "transcriptions.title",
       "recording.pause", "detector.score", "settings.models.assistant",
-      "aiApps.tabTranscriptions", "aiActivity.filter",
+      "aiApps.tabTranscriptions", "aiActivity.filter", "settings.groupAudio",
     ],
   };
 

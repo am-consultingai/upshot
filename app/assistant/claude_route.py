@@ -299,7 +299,7 @@ class ClaudeRoute:
             yield stream.data("problem", {"code": "not-installed", "provider": self.name})
             yield stream.error(
                 "Claude Code is not installed. Install it and sign in, or choose another "
-                "provider in Settings → AI."
+                "provider in Settings → AI agents."
             )
             return
         with tempfile.TemporaryDirectory(prefix="upshot-assistant-") as folder:

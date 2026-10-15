@@ -45,7 +45,7 @@ export function VendorLogo({ vendor, size = 28 }: { vendor: VendorId; size?: num
   );
 }
 
-// AI apps (D98), for Settings → AI apps: each app's own mark, from the same Simple Icons
+// AI apps (D98), for Settings → MCP: each app's own mark, from the same Simple Icons
 // release (CC0). Antigravity has none there and wears Gemini's, as in setup; VS Code and
 // Open WebUI have none either, so the shared rows show the marks that exist.
 const CLAUDE_CODE = "M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z";

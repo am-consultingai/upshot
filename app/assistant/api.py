@@ -100,12 +100,12 @@ def route_for(
     return None, {"code": "unsupported-provider", "provider": provider}
 
 
-CHOOSE_CLAUDE = "Choose Claude Code in Settings → AI to use it."
+CHOOSE_CLAUDE = "Choose Claude Code in Settings → AI agents to use it."
 PROBLEM_TEXT = {
     "local-model": f"The assistant does not work with local models yet. {CHOOSE_CLAUDE}",
     "unsupported-provider": (
         "For now the assistant works with your own plan, through Claude Code, Codex or "
-        "Antigravity. Choose one in Settings → AI."
+        "Antigravity. Choose one in Settings → AI agents."
     ),
     "not-configured": "The assistant is not configured.",
 }

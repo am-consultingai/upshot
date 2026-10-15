@@ -1,4 +1,4 @@
-"""The activity log and Settings → AI apps (D98)."""
+"""The activity log and Settings → MCP (D98)."""
 
 from __future__ import annotations
 

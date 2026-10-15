@@ -161,7 +161,7 @@ def terminal_windows(title: str) -> set[int]:
 
 
 def bring_terminal_forward(title: str, before: set[int]) -> None:
-    """After the server opened a terminal (Settings → AI apps), put it in front, in the
+    """After the server opened a terminal (Settings → MCP), put it in front, in the
     background: the page has its answer already. ``before``: the windows of that title
     that were open already, which are left where they are."""
 

@@ -179,7 +179,7 @@ class CodexRoute(ClaudeRoute):
             yield stream.data("problem", {"code": "not-installed", "provider": self.name})
             yield stream.error(
                 "Codex is not installed. Install it from Settings and sign in, or choose "
-                "another provider in Settings → AI."
+                "another provider in Settings → AI agents."
             )
             return
         self.token = token

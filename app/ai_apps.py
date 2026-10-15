@@ -1,4 +1,4 @@
-"""Settings → AI apps, and the activity page (D98): what the page needs to connect the
+"""Settings → MCP, and the activity page (D98): what the page needs to connect the
 user's own AI tools to Upshot, and to show what they asked.
 
 Under ``/api``, not ``/api/v1``: these are the page's routes, behind CSRF like the rest.

@@ -4,7 +4,6 @@ import { api, type UpdateState } from "../api";
 import { useI18n } from "../i18n";
 import Button from "./Button";
 import SettingRow, { SettingGroup } from "./SettingRow";
-import { openFeedback } from "./FeedbackDialog";
 import { Skeleton } from "./Skeleton";
 
 
@@ -64,12 +63,6 @@ export default function UpdateSettings() {
         }
       >
         <span />
-      </SettingRow>
-
-      <SettingRow label={t("feedback.title")} description={t("feedback.settingsHint")}>
-        <Button data-testid="open-feedback" variant="secondary" size="md" onClick={openFeedback}>
-          {t("feedback.open")}
-        </Button>
       </SettingRow>
 
       <SettingRow

@@ -4,11 +4,13 @@ import { api } from "../api";
 import { useI18n } from "../i18n";
 import SettingRow, { SettingGroup } from "./SettingRow";
 import Button from "./Button";
+import { openFeedback } from "./FeedbackDialog";
 
 
 /**
- * Privacy (D87): the crash-report answer given in setup, changeable here, and the last
- * report exactly as it was sent, so nobody has to take our word for what is in one.
+ * Share (D87; "Privacy" until 2026-10-15): what the user sends us. The crash-report answer
+ * given in setup, changeable here, the last report exactly as it was sent, so nobody has
+ * to take our word for what is in one, and feedback.
  */
 export default function PrivacySettings() {
   const { t } = useI18n();
@@ -82,6 +84,13 @@ export default function PrivacySettings() {
         ) : (
           <span />
         )}
+      </SettingRow>
+
+      {/* Feedback: the other thing the user sends us (moved from About, 2026-10-15). */}
+      <SettingRow label={t("feedback.title")} description={t("feedback.settingsHint")}>
+        <Button data-testid="open-feedback" variant="secondary" size="md" onClick={openFeedback}>
+          {t("feedback.open")}
+        </Button>
       </SettingRow>
     </SettingGroup>
   );

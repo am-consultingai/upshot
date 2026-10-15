@@ -99,7 +99,7 @@ export function watchFinished(state: {
 }
 
 /**
- * Settings → AI: one line per provider — its mark, its name, whether it is ready, the one
+ * Settings → AI agents: one line per provider — its mark, its name, whether it is ready, the one
  * action it needs, and Test (product owner, 2026-09-28: no explanations under each). A
  * second line appears only while something waits on the user (a sign-in's link and code)
  * or went wrong.
