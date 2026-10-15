@@ -34,13 +34,13 @@ from typing import Any, Protocol
 import numpy as np
 
 from app.asr.models import CLASSIFIER, HEBREW, HEBREW_LANGUAGE, OTHER, require
+from app.asr.wav import SAMPLE_RATE, read_audio
 from app.config import Config
 from app.errors import Cancelled
 from app.log import get
 
 log = get(__name__)
 
-SAMPLE_RATE = 16_000
 
 #: Mean p(he) at or above this → the Hebrew model. The literal majority rule of R2.
 #: Measured (2026-09-29, 11 recordings): Hebrew-main recordings 0.67-0.98, non-Hebrew
@@ -260,8 +260,6 @@ class TrackSpeech:
 def speech_of(track: str, wav: Path) -> TrackSpeech:  # pragma: no cover - real VAD
     """Silero VAD, as faster-whisper runs it, over the whole file at 16 kHz."""
     from faster_whisper.vad import VadOptions, get_speech_timestamps
-
-    from app.asr.wav import read_audio
 
     audio = read_audio(wav, SAMPLE_RATE)
     stamps = get_speech_timestamps(audio, VadOptions())

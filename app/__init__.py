@@ -3,6 +3,11 @@ import sys
 import types
 
 
+class _NoPyAV(AttributeError):
+    """An AttributeError, so ``hasattr`` and ``pickle.whichmodule`` (which walk every
+    module in ``sys.modules``) pass the stand-in by; any real use still fails, loudly."""
+
+
 def _no_pyav() -> types.ModuleType:
     """A stand-in for PyAV, which Upshot does not ship.
 
@@ -17,9 +22,7 @@ def _no_pyav() -> types.ModuleType:
     module.__spec__ = importlib.machinery.ModuleSpec("av", None, origin="Upshot stand-in")
 
     def __getattr__(name: str) -> object:
-        if name.startswith("__"):  # introspection (``hasattr(av, "__path__")``) stays quiet
-            raise AttributeError(name)
-        raise ImportError(f"PyAV is not part of Upshot (av.{name}); pass audio as an array")
+        raise _NoPyAV(f"PyAV is not part of Upshot (av.{name}); pass audio as an array")
 
     module.__getattr__ = __getattr__  # type: ignore[method-assign]
     return module
