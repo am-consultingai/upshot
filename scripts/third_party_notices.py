@@ -79,6 +79,13 @@ DECLARED_IN_FILE = {
     "colorama": "BSD-3-Clause",
     "pystray": "LGPL-3.0-or-later",
 }
+#: What the Python runtime's licence file must carry for the libraries the freeze ships
+#: beside it (libcrypto-3/libssl-3, libffi-8): python.org's Windows build has OpenSSL's
+#: Apache 2.0 text and libffi's notice; a uv-managed CPython's file has neither.
+RUNTIME_TEXTS = (
+    ("the Apache 2.0 text OpenSSL 3 is under", "Apache License"),
+    ("libffi's notice", "libffi"),
+)
 #: Problems found while collecting, reported (and fatal under --strict) with the texts.
 MISSING: list[str] = []
 #: Copyleft families whose source must be offered with the binary (story S6).
@@ -353,7 +360,8 @@ def extra_entries() -> list[Entry]:
     return [
         Entry("Python", f"{sys.version_info.major}.{sys.version_info.minor}", "PSF-2.0",
               "The Python runtime, bundled by PyInstaller, with the libraries it includes"
-              " (OpenSSL, libffi, SQLite, expat, zlib and others; see its licence below).",
+              " (OpenSSL 3 under Apache 2.0, libffi, bzip2, SQLite and others) and"
+              " Microsoft's conditions for its Windows build; see its licence below.",
               python_runtime_licence(), kind="other"),
         Entry("PyInstaller bootloader", "", "GPL-2.0-or-later WITH Bootloader-exception",
               "The bootloader that starts upshot.exe. The exception allows it to be used with"
@@ -451,8 +459,9 @@ def missing_texts(items: list[Entry]) -> list[str]:
     out = [f"{i.name} {i.version}".rstrip() for i in items if not any(t.strip() for t in i.texts)]
     out += [f"{i.name}: licence unknown ({i.note.splitlines()[0]})" for i in items
             if i.licence == "NOASSERTION"]  # fmt: skip
-    out += [f"{i.name} {i.version}: its licence text does not cover OpenSSL" for i in items
-            if i.name == "Python" and i.texts and "OpenSSL" not in i.texts[0]]  # fmt: skip
+    out += [f"{i.name} {i.version}: its licence text lacks {what}" for i in items
+            if i.name == "Python" for what, marker in RUNTIME_TEXTS
+            if not any(marker in t for t in i.texts)]  # fmt: skip
     return out + MISSING
 
 
