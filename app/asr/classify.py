@@ -257,7 +257,7 @@ class TrackSpeech:
         return (self.spans[-1][1] if self.spans else index) / SAMPLE_RATE
 
 
-def speech_of(track: str, wav: Path) -> TrackSpeech:  # pragma: no cover - real VAD
+def speech_of(track: str, wav: Path) -> TrackSpeech:
     """Silero VAD, as faster-whisper runs it, over the whole file at 16 kHz."""
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
