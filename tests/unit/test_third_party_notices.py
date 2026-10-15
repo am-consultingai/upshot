@@ -282,7 +282,7 @@ def fake_dist(tmp_path: Path, listed: list[str], files: list[str]) -> Path:
 
 
 EXTRAS = ["Python", "Microsoft Visual C++ and Universal C runtime",
-          "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)"]  # fmt: skip
+          notices.FFMPEG]  # fmt: skip
 
 
 def test_every_file_accounted_for_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
