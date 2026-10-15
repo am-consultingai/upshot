@@ -30,13 +30,23 @@ FORBIDDEN_NAMES: tuple[str, ...] = (
     "*fdk_aac*",
     "*postproc-*",  # libpostproc is GPL-only
 )
-#: Configure flags that make an FFmpeg build GPL or non-free, in its configure line: the
-#: switches themselves, and every external library FFmpeg's configure marks GPL-only or
-#: non-free, since a build can link one without ever saying --enable-gpl (PyAV's did).
+#: The external libraries FFmpeg's configure lists as GPL, GPLv3 or non-free
+#: (EXTERNAL_LIBRARY_GPL_LIST, _GPLV3_LIST, _NONFREE_LIST, HWACCEL_LIBRARY_NONFREE_LIST),
+#: the union over n6.1, n7.1 and n8.1. A build can link one without ever saying
+#: --enable-gpl: PyAV's linked x264 and x265 under --enable-version3.
+GPL_LIBRARIES = (
+    "avisynth", "frei0r", "libcdio", "libdavs2", "libdvdnav", "libdvdread", "librubberband",
+    "libvidstab", "libx264", "libx265", "libxavs", "libxavs2", "libxvid",  # GPL
+    "libsmbclient",  # GPLv3
+    "decklink", "libfdk_aac", "libmpeghdec", "libtls",  # non-free
+    "cuda_nvcc", "cuda_sdk", "libnpp",  # non-free hardware acceleration
+)  # fmt: skip
+#: Those, and the switches themselves (postproc was GPL-only until 8.0). configure reads
+#: "-" and "_" alike in a name, and the binary keeps whichever was typed.
 GPL_FLAGS = re.compile(
-    rb"--enable-(gpl|nonfree|postproc"
-    rb"|libx264|libx265|libxvid|libxavs|libxavs2|libdavs2|frei0r|libcdio|librubberband"
-    rb"|libvidstab|libdvdnav|libdvdread|libfdk-aac|decklink|libtls|cuda-nvcc|libnpp)\b"
+    rb"--enable-(gpl|nonfree|postproc|"
+    + b"|".join(name.replace("_", "[-_]").encode() for name in GPL_LIBRARIES)
+    + rb")\b"
 )
 BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
