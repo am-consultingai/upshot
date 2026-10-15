@@ -78,6 +78,32 @@ def _imports(args: argparse.Namespace) -> list[Check]:
         checks.append(Check("sherpa_onnx", True, "diarization runtime imports"))
     except Exception as exc:
         checks.append(Check("sherpa_onnx", False, f"diarization runtime: {exc}"))
+    # The LGPL packages ship as loose .py files in _internal, so the user can replace them
+    # (upshot.spec). Prove the freeze loads them, and from a real file: a module frozen into
+    # the archive also reports an _internal path as __file__, but no file is there. Nothing
+    # else here would import them: soxr is used only when 48 kHz device audio is resampled,
+    # pystray only when the tray is built, which a selftest run never reaches.
+    import numpy as np
+
+    try:
+        import soxr
+
+        resampled = len(soxr.resample(np.zeros(480, dtype=np.float32), 48000, 16000))
+        source = Path(str(soxr.__file__))
+        ok = resampled == 160 and source.is_file()
+        checks.append(Check("soxr", ok, f"48 kHz → 16 kHz: {resampled}, from {source}"))
+    except Exception as exc:
+        checks.append(Check("soxr", False, f"resampler: {exc}"))
+    if sys.platform == "win32":
+        try:
+            import pystray._win32
+
+            source = Path(str(pystray._win32.__file__))
+            checks.append(Check("pystray", source.is_file(), f"tray backend from {source}"))
+        except Exception as exc:
+            checks.append(Check("pystray", False, f"tray backend: {exc}"))
+    else:
+        checks.append(skipped("pystray", "the tray backend is Windows-only"))
     # The summary's HTML allowlist is a native extension (nh3): prove the freeze runs it.
     try:
         from app.pipeline.stages.render import sanitize
