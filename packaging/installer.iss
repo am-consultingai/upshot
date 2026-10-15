@@ -84,11 +84,14 @@ BeveledLabel=Powered by AM Consulting
 
 ; An upgrade copies over the old files but would never delete one a newer build no
 ; longer ships: PyAV's GPL x264 and x265 stayed in _internal after the build dropped
-; them. So the folders the freeze owns are emptied first, and every install leaves exactly
-; what dist\upshot holds. The root keeps the uninstaller; user data is not in {app}.
+; them. So the two folders the freeze owns are deleted first, and an upgrade leaves exactly
+; what dist\upshot holds there. Only where Upshot is already installed (IsUpshotInstall):
+; a first install into a folder the user chose must not delete a "mcp" of theirs. The
+; root keeps the uninstaller (and would keep a file a build dropped from the root; today
+; the root is upshot.exe alone); user data is not in {app}.
 [InstallDelete]
-Type: filesandordirs; Name: "{app}\_internal"
-Type: filesandordirs; Name: "{app}\mcp"
+Type: filesandordirs; Name: "{app}\_internal"; Check: IsUpshotInstall
+Type: filesandordirs; Name: "{app}\mcp"; Check: IsUpshotInstall
 
 [Files]
 Source: "..\dist\upshot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -210,6 +213,20 @@ end;
 function IsUpdate: Boolean;
 begin
   Result := HasSwitch('/UPDATE=1');
+end;
+
+{ The install folder already holds this Upshot: the uninstall entry of this AppId names
+  it, and upshot.exe is in it. Gates [InstallDelete]. }
+function IsUpshotInstall: Boolean;
+var
+  Recorded: String;
+begin
+  Result := RegQueryStringValue(HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1B7C2E-4A8D-4E57-9C1D-3B2A9E0F5D11}_is1',
+      'Inno Setup: App Path', Recorded)
+    and (CompareText(RemoveBackslashUnlessRoot(Recorded),
+                     RemoveBackslashUnlessRoot(ExpandConstant('{app}'))) = 0)
+    and FileExists(ExpandConstant('{app}\{#AppExe}'));
 end;
 
 { The download is no longer a choice in the wizard. A silent install that must not
