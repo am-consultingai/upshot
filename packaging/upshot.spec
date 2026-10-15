@@ -49,6 +49,9 @@ datas = [
     (str(ROOT / "app" / "db" / "migrations"), "app/db/migrations"),
     # The Terms the app shows and records acceptance of (app/legal/terms.py, D83).
     (str(ROOT / "app" / "legal" / "terms.md"), "app/legal"),
+    # NVIDIA's cuBLAS licence, for a GPU folder an earlier build unpacked without it
+    # (app/asr/cuda_libs.py add_missing_licences).
+    (str(ROOT / "app" / "asr" / "licenses"), "app/asr/licenses"),
 ]
 # The version and commit, stamped by build.ps1 (app/version.py).
 if (ROOT / "app" / "build_info.json").exists():

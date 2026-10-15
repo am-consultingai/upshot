@@ -101,6 +101,35 @@ def ready(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> bool:
     )
 
 
+def licence_name(wheel: Wheel) -> str:
+    """What ``_unpack`` calls a wheel's licence file: ``<dist>-<version>-License.txt``."""
+    return f"{wheel.name.replace('-', '_')}-{wheel.version}-License.txt"
+
+
+def add_missing_licences(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
+    """Put NVIDIA's licence beside DLLs an earlier build unpacked without it.
+
+    The app ships each pinned wheel's ``License.txt`` byte for byte (``app/asr/licenses``),
+    so a ready folder gets it without downloading the wheel again. Returns how many were
+    added. Never raises, like ``remove_retired``: the next install tries again.
+    """
+    try:
+        if not ready(home, wheels):
+            return 0
+        folder = target_dir(home)
+        added = 0
+        for wheel in wheels:
+            target = folder / licence_name(wheel)
+            source = paths.resource("app", "asr", "licenses", licence_name(wheel))
+            if not target.exists() and source.is_file():
+                shutil.copyfile(source, target)
+                added += 1
+        return added
+    except OSError as exc:
+        log.warning("could not add the GPU libraries' licence: %s", exc)
+        return 0
+
+
 def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
     """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
     rewrite the marker to name only the current wheels. Returns the bytes freed.
@@ -128,7 +157,8 @@ def _remove_retired(folder: Path, home: Path | None, wheels: tuple[Wheel, ...]) 
                 log.warning("could not remove the retired GPU library %s: %s", path, exc)
                 continue
             freed += size
-    # Whatever stayed is globbed again next time, and ready() takes either marker.
+    # The marker names only the current wheels; a file that stayed is globbed again next
+    # time, and ready() would take the old marker too.
     marker = folder / MARKER
     current = json.dumps(_versions(wheels))
     if marker.read_text(encoding="utf-8") != current:
