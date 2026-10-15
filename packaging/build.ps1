@@ -22,7 +22,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 # Windows PowerShell 5.1 redraws Invoke-WebRequest's progress bar for every chunk, which
-# made the 100 MB ffmpeg download take most of an hour on machine A.
+# once made a 100 MB download (BtbN's ffmpeg) take most of an hour on machine A.
 $ProgressPreference = "SilentlyContinue"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -112,22 +112,29 @@ $vendor = Join-Path $root "vendor"
 $ffmpeg = Join-Path $vendor "ffmpeg.exe"
 $ffmpegMarker = Join-Path $vendor "ffmpeg.source.txt"
 $ffmpegFiles = @("ffmpeg.exe", "LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
-$cachedFrom = if (Test-Path $ffmpegMarker) { (Get-Content $ffmpegMarker -Raw).Trim() } else { "" }
-if ($cachedFrom -ne "$ffmpegRelease $ffmpegSums" -or -not (Test-Path $ffmpeg)) {
+# The release's SHA256SUMS, kept beside the files (not named ffmpeg*, so the purge below
+# leaves it), so every build checks them again, cached or not.
+$sumsPath = Join-Path $vendor "release-ffmpeg.SHA256SUMS"
+$cachedFrom = if (Test-Path $ffmpegMarker) { "$(Get-Content $ffmpegMarker -Raw)".Trim() } else { "" }
+$cached = $cachedFrom -eq "$ffmpegRelease $ffmpegSums" -and (Test-Path $sumsPath) -and
+    -not ($ffmpegFiles | Where-Object { -not (Test-Path (Join-Path $vendor $_)) })
+if (-not $cached) {
     New-Item -ItemType Directory -Force -Path $vendor | Out-Null
-    Get-ChildItem $vendor -Filter "ffmpeg*" | Remove-Item -Force
-    $sumsPath = Join-Path $env:TEMP "ffmpeg-SHA256SUMS"
+    Get-ChildItem $vendor -File -Filter "ffmpeg*" | Remove-Item -Force
+    foreach ($name in $ffmpegFiles) { Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $vendor $name) }
     Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/SHA256SUMS" -OutFile $sumsPath
-    if ((Get-FileHash $sumsPath -Algorithm SHA256).Hash.ToLower() -ne $ffmpegSums) { throw "the ffmpeg release's SHA256SUMS is not the pinned one" }
-    $sums = @{}
-    foreach ($line in Get-Content $sumsPath) { $hash, $name = $line -split "\s+", 2; $sums[$name.Trim()] = $hash }
     foreach ($name in $ffmpegFiles) {
-        $target = Join-Path $vendor $name
-        Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/$name" -OutFile $target
-        if ((Get-FileHash $target -Algorithm SHA256).Hash.ToLower() -ne $sums[$name]) { throw "$name does not match the ffmpeg release's SHA256SUMS" }
+        Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/$name" -OutFile (Join-Path $vendor $name)
     }
-    [System.IO.File]::WriteAllText($ffmpegMarker, "$ffmpegRelease $ffmpegSums")
 }
+if ((Get-FileHash $sumsPath -Algorithm SHA256).Hash.ToLower() -ne $ffmpegSums) { throw "the ffmpeg release's SHA256SUMS is not the pinned one" }
+$sums = @{}
+foreach ($line in Get-Content $sumsPath) { $hash, $name = $line -split "\s+", 2; $sums[$name.Trim()] = $hash }
+foreach ($name in $ffmpegFiles) {
+    $file = Join-Path $vendor $name
+    if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLower() -ne $sums[$name]) { throw "vendor\$name does not match the ffmpeg release's SHA256SUMS" }
+}
+[System.IO.File]::WriteAllText($ffmpegMarker, "$ffmpegRelease $ffmpegSums")
 # Whatever the cache says, refuse to ship a GPL or non-free build.
 $ffmpegConfig = (& $ffmpeg -hide_banner -version) -join " "
 if (-not $ffmpegConfig) { throw "vendor\ffmpeg.exe does not run" }
