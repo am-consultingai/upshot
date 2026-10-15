@@ -40,9 +40,9 @@ UP_HOME=<app home> python scripts/asr_bench/calibrate.py --meetings <app data>/m
 UP_HOME=<app home> python scripts/asr_bench/perf.py <meeting folder> --device cpu --clip-s 100
 ```
 
-On a GPU from WSL the project venv has no CUDA libraries: install `nvidia-cublas-cu12` and
-`nvidia-cudnn-cu12==9.*` into a scratch folder, put their `lib` folders on
-`LD_LIBRARY_PATH`, and pass the cuBLAS one as `--cuda-dir`.
+On a GPU from WSL the project venv has no CUDA libraries: install `nvidia-cublas-cu12` into
+a scratch folder, put its `lib` folder on `LD_LIBRARY_PATH`, and pass it as `--cuda-dir`
+(ctranslate2 needs no cuDNN).
 
 The real-model unit tests (`@pytest.mark.gpu`, which run on the CPU too) are excluded from
 the default run: `pytest -m gpu`.
