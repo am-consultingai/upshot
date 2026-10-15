@@ -234,6 +234,8 @@ def test_ffmpeg_s_licence_is_read_from_its_configure_line(
     )
     version("ffmpeg version n8.1\nconfiguration: --disable-debug\n")
     assert notices.ffmpeg_entry().licence == "LGPL-2.1-or-later"
+    (tmp_path / "vendor" / "ffmpeg.exe").unlink()
+    assert notices.ffmpeg_entry().licence == "NOASSERTION", "nothing is guessed without it"
 
 
 def test_the_extras_name_what_no_package_manager_installs() -> None:
