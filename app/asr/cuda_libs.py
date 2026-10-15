@@ -10,8 +10,8 @@ through ``upshot.exe --prepare`` when the card could run the model (``wanted``):
   no cuDNN anywhere, transcripts were identical and as fast on both cards. Earlier builds
   fetched it too (680 MB, about 1 GB unpacked); ``remove_retired`` deletes that copy;
 - resumable: a ``.part`` file continues where it stopped;
-- only the DLLs are kept, all in one folder, with the wheel's licence beside them (NVIDIA's terms,
-  kept with the DLLs);
+- only the DLLs are kept, all in one folder, with the wheel's licence (NVIDIA's terms)
+  beside them;
 - the wheel is deleted once unpacked.
 """
 
@@ -162,6 +162,8 @@ def _remove_retired(folder: Path, home: Path | None, wheels: tuple[Wheel, ...]) 
                 log.warning("could not remove the retired GPU library %s: %s", path, exc)
                 continue
             freed += size
+    if freed:
+        log.info("removed %.0f MB of retired GPU libraries from %s", freed / 1e6, folder)
     # The marker names only the current wheels; a file that stayed is globbed again next
     # time, and ready() would take the old marker too.
     marker = folder / MARKER
@@ -172,8 +174,6 @@ def _remove_retired(folder: Path, home: Path | None, wheels: tuple[Wheel, ...]) 
         partial = marker.with_name(MARKER + ".tmp")
         partial.write_text(current, encoding="utf-8")
         os.replace(partial, marker)
-    if freed:
-        log.info("removed %.0f MB of retired GPU libraries from %s", freed / 1e6, folder)
     return freed
 
 
