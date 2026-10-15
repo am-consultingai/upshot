@@ -137,7 +137,8 @@ def add_missing_licences(home: Path | None = None, wheels: tuple[Wheel, ...] = W
 
 def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
     """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
-    rewrite the marker to name only the current wheels. Returns the bytes freed.
+    rewrite the marker to name only the current wheels. Returns the bytes freed (0 when
+    it fails).
 
     Only in this app's own, ready folder. Never raises: it runs on every install, and a
     file that will not go now (held by a scanner, say) is tried again by the next one.
