@@ -7,6 +7,7 @@ as ``faster_whisper.decode_audio``, and the transcripts were identical, hash for
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tomllib
@@ -87,10 +88,11 @@ def test_faster_whisper_imports_without_pyav_and_pyav_cannot_be_used() -> None:
     code = (
         "import importlib.util, app, faster_whisper, av\n"
         "assert importlib.util.find_spec('av').origin == 'Upshot stand-in'\n"
-        "assert not hasattr(av, '__path__')\n"
+        "assert not hasattr(av, '__path__') and not hasattr(av, 'open')\n"
+        "import pickle; pickle.whichmodule(type('T', (), {'__module__': None}), 'x')\n"
         "try:\n"
         "    faster_whisper.decode_audio('missing.wav')\n"
-        "except ImportError as exc:\n"
+        "except AttributeError as exc:\n"
         "    assert 'PyAV is not part of Upshot' in str(exc)\n"
         "else:\n"
         "    raise SystemExit('decode_audio ran')\n"
@@ -99,21 +101,31 @@ def test_faster_whisper_imports_without_pyav_and_pyav_cannot_be_used() -> None:
     assert done.returncode == 0, done.stderr
 
 
-def test_nothing_in_the_app_decodes_with_pyav() -> None:
-    """faster-whisper decodes with PyAV whenever it is handed a path or ``decode_audio``
-    is called; the app does neither."""
+def test_nothing_calls_decode_audio() -> None:
+    """``decode_audio`` is PyAV; the app and the benchmark scripts decode otherwise.
+    (That the transcriber is handed arrays is tested in test_phase5_asr.)"""
     offenders = [
         str(path.relative_to(ROOT))
-        for path in (ROOT / "app").rglob("*.py")
-        if "decode_audio" in path.read_text(encoding="utf-8")
+        for folder in ("app", "scripts")
+        for path in (ROOT / folder).rglob("*.py")
+        if "decode_audio(" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
-    local = (ROOT / "app" / "asr" / "local.py").read_text(encoding="utf-8")
-    assert "model.transcribe(\n            read_audio(wav)" in local
+
+
+def test_the_classifier_reads_speech_without_pyav(tmp_path: Path) -> None:
+    """The language classifier's reader, with the real Silero VAD: silence has no speech."""
+    from app.asr.classify import speech_of
+
+    speech = speech_of("them", write_wav(tmp_path / "t.wav", np.zeros(32000, dtype=np.int16)))
+    assert speech.track == "them"
+    assert speech.audio.dtype == np.float32 and speech.audio.size == 0
 
 
 def test_the_spec_excludes_pyav() -> None:
-    assert '"av"' in (ROOT / "packaging" / "upshot.spec").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging" / "upshot.spec").read_text(encoding="utf-8")
+    excludes = re.search(r"^\s*excludes=\[(.*)\],$", spec, re.M)
+    assert excludes and '"av"' in excludes.group(1).split(", ")
 
 
 # ------------------------------------------------------------------ the build guard
@@ -128,7 +140,14 @@ def test_a_clean_folder_passes(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["av.libs/avcodec-62.dll", "libx264-165-f3a9.dll", "libX265-efe4.dll", "postproc-58.dll"],
+    [
+        "av.libs/avcodec-62.dll",
+        "libx264-165-f3a9.dll",
+        "libX265-efe4.dll",
+        "x264.dll",
+        "postproc-58.dll",
+        "libpostproc-58.dll",
+    ],
 )
 def test_a_gpl_library_fails_the_build(tmp_path: Path, name: str) -> None:
     path = tmp_path / "_internal" / name
@@ -141,3 +160,33 @@ def test_a_gpl_library_fails_the_build(tmp_path: Path, name: str) -> None:
 def test_an_ffmpeg_built_with_enable_gpl_fails_whatever_its_name(tmp_path: Path) -> None:
     (tmp_path / "codec.dll").write_bytes(b"MZ ... --enable-gpl --enable-version3 ...")
     assert check_dist.problems(tmp_path) == ["codec.dll: built with --enable-gpl"]
+
+
+def test_pyavs_ffmpeg_fails_although_it_never_says_enable_gpl(tmp_path: Path) -> None:
+    """The configure line of PyAV 18.1.0's avcodec on Windows: x264 and x265 under
+    --enable-version3, with no --enable-gpl anywhere."""
+    (tmp_path / "avcodec-62.dll").write_bytes(
+        b"MZ --enable-mediafoundation --enable-version3 --disable-alsa --enable-zlib "
+        b"--enable-libx264 --enable-libx265 --enable-nvenc ... LGPL version 3 or later"
+    )
+    assert check_dist.problems(tmp_path) == ["avcodec-62.dll: built with --enable-libx264"]
+
+
+def test_our_lgpl_ffmpeg_passes(tmp_path: Path) -> None:
+    """BtbN's LGPL build names the GPL libraries only to disable them."""
+    (tmp_path / "ffmpeg.exe").write_bytes(
+        b"--enable-version3 --disable-libx264 --disable-libx265 --disable-libxvid "
+        b"--disable-libfdk-aac --enable-libopus"
+    )
+    assert check_dist.problems(tmp_path) == []
+
+
+def test_a_flag_split_across_two_chunks_is_found(tmp_path: Path) -> None:
+    path = tmp_path / "big.dll"
+    path.write_bytes(b"x" * 100 + b"--enable-libx265 " + b"y" * 100)
+    assert check_dist.gpl_flag(path, chunk=105) == "--enable-libx265"
+
+
+def test_an_empty_binary_is_skipped(tmp_path: Path) -> None:
+    (tmp_path / "empty.dll").write_bytes(b"")
+    assert check_dist.problems(tmp_path) == []

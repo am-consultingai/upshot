@@ -175,6 +175,8 @@ def test_warmup_runs_at_load(tmp_path: Path) -> None:
     backend.load()
     assert backend.warmups == 1
     assert models[0].calls, "the warmup inference forces the lazy library load at startup"
+    # An array, never a path: given a path, faster-whisper decodes with PyAV (not shipped).
+    assert all(isinstance(call["path"], np.ndarray) for call in models[0].calls)
 
 
 @pytest.mark.usefixtures("installed_models")
@@ -189,6 +191,9 @@ def test_transcribe_params_are_the_tuned_set(tmp_path: Path) -> None:
     backend = LocalAsr(default_config(), model_factory=factory)
     backend.transcribe(make_wav(tmp_path / "them" / "0001.wav", 2), language="he")
     call = models[0].calls[-1]
+    audio = call["path"]
+    assert isinstance(audio, np.ndarray) and audio.dtype == np.float32  # not a path: no PyAV
+    assert len(audio) == 2 * 16000
     assert call["condition_on_previous_text"] is False  # the repetition-loop guard
     assert call["vad_filter"] is True
     assert call["word_timestamps"] is True
