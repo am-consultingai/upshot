@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import SR, TIER1, assemble, cache_dir, config_for, has_fleurs, load_fleurs
+from common import SR, TIER1, assemble, cache_dir, config_for, decode, has_fleurs, load_fleurs
 
 from app.asr.classify import decide, mean_probabilities
 from app.asr.models import CLASSIFIER, OTHER, resolve
@@ -39,7 +39,7 @@ def windows(audio: np.ndarray, n: int) -> list[np.ndarray]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from faster_whisper import WhisperModel, decode_audio
+    from faster_whisper import WhisperModel
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--device", default="cuda", choices=("cpu", "cuda"))
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         if has_fleurs(cache, lang)
     }
     if args.clips:
-        mixed = decode_audio(str(Path(args.clips) / "mixed-he-en-he.wav"), sampling_rate=SR)
+        mixed = decode(Path(args.clips) / "mixed-he-en-he.wav")
         recordings["d60-english"] = (mixed[int(25.5 * SR) : int(45.5 * SR)], "en")
         recordings["d60-mixed"] = (mixed, "he")
     sampled = {name: windows(audio, 10) for name, (audio, _truth) in recordings.items()}

@@ -24,14 +24,12 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import FLEURS_CONFIGS, SR, TIER1, cache_dir, fleurs_dir, has_fleurs
+from common import FLEURS_CONFIGS, SR, TIER1, cache_dir, decode, fleurs_dir, has_fleurs
 
 BASE = "https://huggingface.co/datasets/google/fleurs/resolve/main/data"
 
 
 def fetch(language: str, cache: Path, seconds: float) -> None:
-    from faster_whisper import decode_audio
-
     config = FLEURS_CONFIGS[language]
     csv.field_size_limit(1 << 24)
     tsv = urllib.request.urlopen(f"{BASE}/{config}/dev.tsv", timeout=60).read().decode("utf-8")
@@ -52,7 +50,7 @@ def fetch(language: str, cache: Path, seconds: float) -> None:
             handle = tar.extractfile(member)
             if handle is None:
                 continue
-            pcm = decode_audio(io.BytesIO(handle.read()), sampling_rate=SR)
+            pcm = decode(handle.read())
             utterances.append((name, references[name], pcm))
             total += len(pcm) / SR
             if total >= seconds:

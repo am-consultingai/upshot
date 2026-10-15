@@ -87,12 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.clip_s:
         # The classifier still hears the whole meeting; only the transcription is cut
         # short, to measure its peak on a clip of known length (D60: 100 s).
-        from common import SR, cache_dir, write_wav
-        from faster_whisper import decode_audio
+        from common import SR, cache_dir, decode, write_wav
 
         clipped = {}
         for track, wav in tracks.items():
-            audio = decode_audio(str(wav), sampling_rate=SR)[: int(args.clip_s * SR)]
+            audio = decode(wav)[: int(args.clip_s * SR)]
             clipped[track] = write_wav(cache_dir(None) / "work" / "perf" / f"{track}.wav", audio)
     loads: list[str] = []
 
