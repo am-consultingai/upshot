@@ -211,6 +211,7 @@ def test_packaging_files_exist() -> None:
         "the guard reads this AppId's uninstall entry"
     )
     assert "FileExists(ExpandConstant('{app}\\{#AppExe}'))" in guard
+    assert "RegQueryStringValue(HKA," in guard, "HKLM for an all-users install, HKCU otherwise"
 
     build = Path("packaging/build.ps1").read_text(encoding="utf-8")
     assert '"--selftest", $suite' in build and '"imports"' in build, (
