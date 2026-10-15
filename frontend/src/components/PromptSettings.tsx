@@ -30,11 +30,11 @@ export default function PromptSettings() {
   });
 
   /*
-   * No self-scrolling any more. "View prompt" used to land here and then get
-   * pushed off it: the provider section above grows as its status query resolves
-   * and its key rows appear, so the thing you had just scrolled to slid down the
-   * page. The prompt is its own settings section now, with nothing above it that
-   * can change height.
+   * No self-scrolling here. "View prompt" used to land on the prompt and then get
+   * pushed off it: the provider section above grows as its status query resolves and
+   * its key rows appear. The prompt sits under the providers again (AI agents,
+   * 2026-10-15), so Settings keeps it in view while that section settles
+   * (`useKeepInView`).
    */
   // Never render nothing: an endpoint that 404s used to make this whole section vanish,
   // which looks exactly like a feature that was never built.

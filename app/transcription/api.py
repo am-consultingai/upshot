@@ -63,7 +63,7 @@ MAX_FIELD_BYTES = 16 * 1024
 OFF_DETAIL = "Transcription for other apps is off in Upshot's Settings"
 KEY_DETAIL = (
     "Upshot needs its access key: send it as 'Authorization: Bearer <key>'. The key is in "
-    "Upshot's Settings, under AI apps, and in the file access.key in Upshot's folder."
+    "Upshot's Settings, under MCP, and in the file access.key in Upshot's folder."
 )
 
 

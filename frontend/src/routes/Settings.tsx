@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { LANGUAGES, useI18n, type Locale } from "../i18n";
@@ -31,15 +32,15 @@ interface ConfigShape {
 }
 
 /*
- * Sections, in the order someone meets them: what it records, how it looks, what it
- * connects to, where recordings are kept, then everything about AI together at the
- * bottom (the owner, 2026-10-15; they sat between Calendar and Storage). Which speech
- * model runs and where it runs are the app's business, not the user's (first-run setup
- * still downloads the model and says where it runs). The AI model for summaries and for
- * the conversation is the user's to choose, from the provider's own list, under the
- * provider (2026-10-12; it was the app's alone until Antigravity's default took 75 s over
- * a one-line check). Where recordings are kept is shown, not chosen: Storage says where
- * and how much, which is how "local only" can be checked.
+ * Sections, in the order the owner set (2026-10-15): what it records, how it looks, what
+ * it connects to, what is shared with us, where recordings are kept, the version, then
+ * everything about AI together at the bottom. Which speech model runs and where it runs
+ * are the app's business, not the user's (first-run setup still downloads the model and
+ * says where it runs). The AI model for summaries and for the conversation is the user's
+ * to choose, from the provider's own list, under the provider (2026-10-12; it was the
+ * app's alone until Antigravity's default took 75 s over a one-line check). Where
+ * recordings are kept is shown, not chosen: Storage says where and how much, which is
+ * how "local only" can be checked.
  *
  * Each carries one line of purpose under its heading, said in terms of what it is for
  * rather than what is in it — the name says the second.
@@ -48,21 +49,60 @@ const SECTIONS: SettingsSection[] = [
   { id: "audio", label: "settings.groupAudio", purpose: "settings.purposeAudio" },
   { id: "appearance", label: "settings.groupAppearance", purpose: "settings.purposeAppearance" },
   { id: "calendar", label: "settings.groupCalendar", purpose: "settings.purposeCalendar" },
-  { id: "storage", label: "settings.groupStorage", purpose: "settings.purposeStorage" },
-  // Crash reports: the answer given in setup, and what was last sent (D87).
+  // "Share": crash reports, the answer given in setup and what was last sent (D87), and
+  // feedback. The id stays "privacy" so older links still land here.
   { id: "privacy", label: "settings.groupPrivacy", purpose: "settings.purposePrivacy" },
+  { id: "storage", label: "settings.groupStorage", purpose: "settings.purposeStorage" },
   // What version this is, and the updates that arrive by themselves (D87).
   { id: "about", label: "settings.groupAbout", purpose: "settings.purposeAbout" },
-  // AI, together and last.
-  { id: "summaries", label: "settings.groupSummaries", hint: "help.aiAgents", purpose: "settings.purposeSummaries" },
-  { id: "prompt", label: "settings.prompt", purpose: "settings.purposePrompt" },
+  // AI, together and last. The summary prompt is part of AI agents; "#prompt" (a
+  // meeting's "View prompt") still opens it, at the prompt.
+  {
+    id: "summaries",
+    label: "settings.groupSummaries",
+    hint: "help.aiAgents",
+    purpose: "settings.purposeSummaries",
+    aliases: ["prompt"],
+  },
+  // "MCP": how the user's own AI apps reach their meetings (D98). The id stays.
   { id: "transcription", label: "settings.groupTranscription", purpose: "settings.purposeTranscription" },
   // What the AI apps asked, and the files transcribed (D98); was a page of its own.
   { id: "requests", label: "settings.groupRequests", purpose: "settings.purposeRequests" },
 ];
+/**
+ * Keeps `target` at the top of the view while the content above it settles, after
+ * arriving at its address. The provider list above the prompt grows as its status loads,
+ * which pushed "View prompt" off the prompt when the two shared a page before. It stops at
+ * the first scroll, key or touch of the user's, or after a few seconds.
+ */
+function useKeepInView(target: RefObject<HTMLElement | null>, above: RefObject<HTMLElement | null>, active: boolean) {
+  useEffect(() => {
+    const element = target.current;
+    const growing = above.current;
+    if (!active || !element || !growing) return;
+    const place = () => element.scrollIntoView({ block: "start" });
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(growing);
+    const stop = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      for (const name of STOP_EVENTS) window.removeEventListener(name, stop, true);
+    };
+    const timer = setTimeout(stop, 5000);
+    for (const name of STOP_EVENTS) window.addEventListener(name, stop, true);
+    return stop;
+  }, [target, above, active]);
+}
+
+const STOP_EVENTS = ["wheel", "keydown", "touchstart", "mousedown"] as const;
 
 export default function Settings() {
   const section = useSection(SECTIONS);
+  const { hash } = useLocation();
+  const providers = useRef<HTMLDivElement>(null);
+  const prompt = useRef<HTMLDivElement>(null);
+  useKeepInView(prompt, providers, section === "summaries" && hash === "#prompt");
   const current = SECTIONS.find((s) => s.id === section)!;
   const setup = useSetupWarnings();
   const { t, locale, setLocale, theme, setTheme, tooltips, setTooltips } = useI18n();
@@ -266,8 +306,16 @@ export default function Settings() {
       )}
 
       {section === "calendar" && <CalendarSettings />}
-      {section === "summaries" && <ProviderSettings />}
-      {section === "prompt" && <PromptSettings />}
+      {section === "summaries" && (
+        <>
+          <div ref={providers}>
+            <ProviderSettings />
+          </div>
+          <div ref={prompt} className="mt-8 scroll-mt-6">
+            <PromptSettings />
+          </div>
+        </>
+      )}
       {/* What is running and waiting comes first, above how other apps connect. */}
       {section === "transcription" && (
         <>

@@ -2,7 +2,7 @@ import type { AiAppWhere } from "../api";
 import type { MessageKey } from "../i18n";
 
 /**
- * Settings → AI apps, Open in terminal (epic z8tj1hjg3v): what to copy at the click, and
+ * Settings → MCP, Open in terminal (epic z8tj1hjg3v): what to copy at the click, and
  * what the toast says afterwards.
  */
 

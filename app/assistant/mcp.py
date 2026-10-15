@@ -40,7 +40,7 @@ TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
 SWITCH = "mcp.meetings_enabled"
 OFF_TEXT = (
     "Reading meetings from other apps is turned off in Upshot. To turn it on: Upshot's "
-    "Settings, under AI apps, 'Let AI apps read my meetings'."
+    "Settings, under MCP, 'Let AI apps read my meetings'."
 )
 ASSISTANT_INSTRUCTIONS = "Read-only access to the user's Upshot meetings."
 #: The spotlighting rule the assistant's system prompt states, for tools that never see
@@ -257,7 +257,7 @@ class TokenGuard:
 
 EXT_KEY_DETAIL = (
     "Upshot needs its access key: send it as 'Authorization: Bearer <key>'. The key is in "
-    "Upshot's Settings, under AI apps."
+    "Upshot's Settings, under MCP."
 )
 
 

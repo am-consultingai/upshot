@@ -12,7 +12,7 @@ test.afterEach(async ({ request }) => {
 });
 
 test("a build from source shows the form, the preview, and why it cannot send", async ({ page }) => {
-  await gotoApp(page, "/settings#about");
+  await gotoApp(page, "/settings#privacy");
   await page.getByTestId("open-feedback").click();
   const dialog = page.getByTestId("feedback-dialog");
   await expect(dialog).toBeVisible();

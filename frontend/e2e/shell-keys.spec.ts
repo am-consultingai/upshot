@@ -290,8 +290,26 @@ test("the_transcript_follows_playback_until_the_reader_scrolls_away", async ({ p
 test("each_settings_section_says_what_it_is_for", async ({ page }) => {
   await gotoSettings(page, "audio");
   await expect(page.getByTestId("settings-purpose")).not.toBeEmpty();
-  await page.getByTestId("settings-section-prompt").click();
+  await page.getByTestId("settings-section-summaries").click();
   await expect(page.getByTestId("settings-purpose")).toContainText("instructions");
+});
+
+test("settings_sections_come_in_the_owners_order_with_ai_last", async ({ page }) => {
+  await gotoSettings(page, "audio");
+  const names = page.getByTestId("settings-nav").getByRole("button");
+  const order = ["Audio", "Appearance", "Calendars", "Share", "Storage", "About and updates",
+    "AI agents", "MCP", "App requests"];
+  // A section that needs attention carries a "!" after its name (no calendar here).
+  await expect(names).toHaveText(order.map((name) => new RegExp(`^${name}!?$`)));
+  // Feedback is shared with us, so it sits under Share, not About.
+  await expect(page.getByTestId("open-feedback")).toHaveCount(0);
+  await page.getByTestId("settings-section-privacy").click();
+  await expect(page.getByTestId("open-feedback")).toBeVisible();
+  await page.getByTestId("settings-section-about").click();
+  await expect(page.getByTestId("open-feedback")).toHaveCount(0);
+  // The summary prompt is part of AI agents, under the providers.
+  await page.getByTestId("settings-section-summaries").click();
+  await expect(page.getByTestId("prompt-settings")).toBeVisible();
 });
 
 test("storage_shows_the_folder_its_size_and_that_recordings_stay", async ({ page }) => {
