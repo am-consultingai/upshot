@@ -362,7 +362,7 @@ def test_the_gpu_libraries_land_in_one_folder_the_app_registers(
         "cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll", "cudnn_ops64_9.dll",
     ]  # fmt: skip
     assert not list(folder.glob("*.h"))
-    # NVIDIA's terms travel with the DLLs: the user accepts them by installing these.
+    # NVIDIA's terms travel with the DLLs.
     assert (folder / "nvidia_cublas-1-License.txt").read_bytes() == b"EULA cublas"
     assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"cublas": "1", "cudnn": "2"}
     assert ready(app_home, WHEELS)
@@ -674,6 +674,24 @@ def test_the_shipped_licence_is_the_wheels_own() -> None:
     text = paths.resource("app", "asr", "licenses", cuda_libs.licence_name(wheel)).read_bytes()
     digest = base64.urlsafe_b64encode(hashlib.sha256(text).digest()).rstrip(b"=").decode()
     assert digest == RECORD_SHA256_OF_LICENSE
+
+
+def test_a_missing_bundled_licence_is_logged_not_raised(
+    app_home: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    old_build_folder(app_home)
+    from app import paths
+
+    monkeypatch.setattr(paths, "resource", lambda *parts: app_home / "nowhere" / parts[-1])
+    assert cuda_libs.add_missing_licences(app_home) == 0
+    assert "carries no nvidia_cublas_cu12-12.9.1.4-License.txt" in caplog.text
+
+
+def test_the_marker_is_replaced_whole(app_home: Path) -> None:
+    folder = old_build_folder(app_home)
+    cuda_libs.remove_retired(app_home)
+    assert not list(folder.glob("*.tmp")), "written beside, then moved over the old one"
+    assert ready(app_home)
 
 
 def test_a_licence_is_added_only_to_a_ready_folder(app_home: Path) -> None:

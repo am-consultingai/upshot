@@ -191,6 +191,10 @@ def test_packaging_files_exist() -> None:
     # No templates any more: the summary is the document the prompt wrote, so there is
     # no Jinja layout left to bundle.
     assert "app/llm/prompts" in spec
+    # NVIDIA's cuBLAS licence ships for add_missing_licences, and ctranslate2's unused
+    # cudnn64_9.dll does not (app/asr/cuda_libs.py).
+    assert '(str(ROOT / "app" / "asr" / "licenses"), "app/asr/licenses")' in spec
+    assert 'not Path(entry[0]).name.lower().startswith("cudnn")' in spec
 
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
     assert "PrivilegesRequired=lowest" in installer, "the installer must not need admin"
