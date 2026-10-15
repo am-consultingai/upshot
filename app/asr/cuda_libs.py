@@ -1,16 +1,18 @@
-"""cuBLAS and cuDNN for GPU transcription, fetched once onto a machine that can use them.
+"""cuBLAS for GPU transcription, fetched once onto a machine that can use it.
 
 The freeze bundles no CUDA libraries, so without these a machine with a good NVIDIA card
 transcribes on the CPU, several times slower (known-issues #2). The installer fetches them
 through ``upshot.exe --prepare`` when the card could run the model (``wanted``):
 
-- the two NVIDIA wheels from PyPI, pinned by version and SHA-256. They are the exact DLLs
-  (same bytes) that transcribe on the author's GTX 1080 with this ctranslate2, so a
-  Pascal card is covered;
+- NVIDIA's cuBLAS wheel from PyPI, pinned by version and SHA-256: the exact DLLs (same
+  bytes) that transcribe on the author's GTX 1080 (Pascal) and on an MX450 (Turing);
+- no cuDNN. ctranslate2's Windows wheel is built without it (``WITH_CUDNN=OFF``); with
+  no cuDNN anywhere, transcripts were identical and as fast on both cards. Earlier builds
+  fetched it too (680 MB, about 1 GB unpacked); ``remove_retired`` deletes that copy;
 - resumable: a ``.part`` file continues where it stopped;
-- only the DLLs are kept, all in one folder: ``cuda_library_dirs`` registers a folder only
-  when cuBLAS is in it, so cuDNN in a folder of its own would never be found;
-- the wheels are deleted once unpacked.
+- only the DLLs are kept, all in one folder, with the wheel's licence beside them (NVIDIA's
+  terms, which the user accepts by installing them);
+- the wheel is deleted once unpacked.
 """
 
 from __future__ import annotations
@@ -59,21 +61,14 @@ WHEELS: tuple[Wheel, ...] = (
         "1e5fee10662e6e52bd71dec533fbbd4971bb70a5f24f3bc3793e5c2e9dc640bf",
         553_153_899,
     ),
-    Wheel(
-        "nvidia-cudnn-cu12",
-        "9.1.1.17",
-        "https://files.pythonhosted.org/packages/a5/0a/"
-        "4a3852f359aa6043369217155c4b905226634025d1b9c605286fdb823847/"
-        "nvidia_cudnn_cu12-9.1.1.17-py3-none-win_amd64.whl",
-        "d7c4b96b1c5ca8e4dc0bdbf2ce386903ba03faa94d2997b72769fa5048cb5f1f",
-        679_928_156,
-    ),
 )
 
-#: The DLLs unpacked from ``WHEELS``, about 1.8 GB.
-EXTRACTED_BYTES = 1_810_000_000
+#: The DLLs unpacked from ``WHEELS``: 771.5 MB measured.
+EXTRACTED_BYTES = 772_000_000
 #: The libraries a GPU load cannot do without; their presence is what ``ready`` checks.
-REQUIRED = ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll")
+REQUIRED = ("cublas64_12.dll", "cublasLt64_12.dll")
+#: What earlier builds also fetched, and nothing loads: cuDNN 9.
+RETIRED_GLOBS = ("cudnn*.dll",)
 #: Written into the folder once every wheel is unpacked: {wheel name: version}.
 MARKER = ".upshot-cuda"
 
@@ -96,9 +91,31 @@ def ready(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> bool:
     if not marker.is_file() or not all((folder / name).is_file() for name in REQUIRED):
         return False
     try:
-        return bool(json.loads(marker.read_text(encoding="utf-8")) == _versions(wheels))
+        recorded = json.loads(marker.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
+    # A marker naming more than the wheels (an earlier build's cuDNN too) is still ready:
+    # the cuBLAS it records is the one wanted, and ``remove_retired`` clears the rest.
+    return isinstance(recorded, dict) and all(
+        recorded.get(name) == version for name, version in _versions(wheels).items()
+    )
+
+
+def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
+    """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
+    rewrite the marker to name only the current wheels. Returns the bytes freed."""
+    folder = target_dir(home)
+    if not ready(home, wheels):
+        return 0
+    freed = 0
+    for pattern in RETIRED_GLOBS:
+        for path in folder.glob(pattern):
+            freed += path.stat().st_size
+            path.unlink()
+    (folder / MARKER).write_text(json.dumps(_versions(wheels)), encoding="utf-8")
+    if freed:
+        log.info("removed %.0f MB of retired GPU libraries from %s", freed / 1e6, folder)
+    return freed
 
 
 def usable_elsewhere(
@@ -107,9 +124,9 @@ def usable_elsewhere(
     search_path: Sequence[str] | None = None,
     system_dirs: Sequence[str] | None = None,
 ) -> Path | None:
-    """A folder the app already loads cuBLAS *and* cuDNN from, outside this app's own copy:
+    """A folder the app already loads cuBLAS from, outside this app's own copy:
     ``asr.cuda_dir``, NVIDIA's CUDA Toolkit, or wheels on the path. Then there is nothing to
-    download (a developer's machine would otherwise get a second 1.2 GB copy).
+    download (a developer's machine would otherwise get a second 550 MB copy).
 
     An installed build does not count ``asr.cuda_dir``: a developer session's folder
     survives an uninstall, and the installed copy would depend on it for good (z8tj1hfr6w).
@@ -123,7 +140,7 @@ def usable_elsewhere(
         system_dirs=SYSTEM_CUDA_DIRS if system_dirs is None else system_dirs,
     )
     for folder in dirs:
-        if any(folder.glob("cudnn64_9*.dll")) or any(folder.glob("libcudnn.so.9*")):
+        if any(folder.glob("cublasLt64_12*.dll")) or any(folder.glob("libcublasLt.so.12*")):
             return folder
     return None
 
@@ -274,7 +291,8 @@ class CudaInstaller:
             log.warning("GPU library download failed: %s", exc)
 
     def _unpack(self, wheels: list[Path]) -> None:
-        """Every ``nvidia/*/bin/*.dll`` into one folder, swapped in only once complete."""
+        """Every ``nvidia/*/bin/*.dll`` into one folder, with each wheel's licence (as
+        ``<wheel>-License.txt``), swapped in only once complete."""
         staging = self.target.with_name("bin.new")
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True)
@@ -292,6 +310,11 @@ class CudaInstaller:
                             raise DownloadCancelled()
                         with archive.open(member) as source, (staging / parts[3]).open("wb") as out:
                             shutil.copyfileobj(source, out, 1 << 22)
+                    elif parts[0].endswith(".dist-info") and parts[-1].lower().startswith(
+                        "license"
+                    ):
+                        name = f"{parts[0].removesuffix('.dist-info')}-{parts[-1]}"
+                        (staging / name).write_bytes(archive.read(member))
         missing = [name for name in REQUIRED if not (staging / name).is_file()]
         if missing:
             raise RuntimeError(f"the GPU libraries are missing {', '.join(missing)}")

@@ -270,6 +270,7 @@ def run(
             progress.write(stage="gpu", state="skipped", percent=100, text=present)
             log.info("prepare: CUDA libraries already usable in %s; nothing to download", elsewhere)
         elif cuda is None and want and cuda_libs.ready():
+            cuda_libs.remove_retired()  # an earlier build's cuDNN, which nothing loads
             progress.write(stage="gpu", state="skipped", percent=100, text=present)
         elif not want:
             progress.write(
