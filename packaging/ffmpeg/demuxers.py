@@ -3,7 +3,7 @@
     python3 -I packaging/ffmpeg/demuxers.py app/audio/ingest.py
 
 Read from the source text (``-I`` and no import of the app), so the build needs nothing
-installed. FFmpeg's configure names two demuxers differently from the format name ingest
+installed. FFmpeg's configure names one demuxer differently from the format name ingest
 whitelists: "mpeg" is ``mpegps``.
 """
 

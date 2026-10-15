@@ -11,29 +11,48 @@ on:
         required: false
         default: ""
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
+  # The build runs third-party code (configure, make, the toolchain), so it holds no write
+  # token: read-only contents, and no credentials left in the checkout.
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - run: bash packaging/ffmpeg/build.sh "$RUNNER_TEMP/ffmpeg"
+      - run: cd "$RUNNER_TEMP/ffmpeg/dist" && zip -qr ffmpeg-sources.zip sources && sha256sum ffmpeg-sources.zip >> SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-audio-only
-          path: ${{ runner.temp }}/ffmpeg/dist
-      - name: Publish the release
-        if: inputs.release != ''
-        env:
+          path: |
+            ${{ runner.temp }}/ffmpeg/dist/*.exe
+            ${{ runner.temp }}/ffmpeg/dist/*.txt
+            ${{ runner.temp }}/ffmpeg/dist/SHA256SUMS
+            ${{ runner.temp }}/ffmpeg/dist/ffmpeg-sources.zip
+
+  publish:
+    needs: build
+    if: inputs.release != '' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-audio-only
+          path: dist
+      - env:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.release }}
         run: |
           [[ "$RELEASE" =~ ^ffmpeg-[0-9]+\.[0-9]+\.[0-9]+-audio-[0-9]+$ ]] || { echo "bad tag: $RELEASE"; exit 1; }
-          cd "$RUNNER_TEMP/ffmpeg/dist"
-          zip -qr ffmpeg-sources.zip sources
-          sha256sum ffmpeg-sources.zip >> SHA256SUMS
+          cd dist && sha256sum -c SHA256SUMS
           gh release create "$RELEASE" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --prerelease --title "$RELEASE (Upshot's audio-only ffmpeg.exe)" --notes-file BUILD.txt \
-            ffmpeg.exe LICENSE-FFmpeg.txt LICENSE-zlib.txt BUILD.txt SHA256SUMS ffmpeg-sources.zip
+            ffmpeg.exe LICENSE-FFmpeg.txt LICENSE-zlib.txt LICENSE-mingw-w64-runtime.txt \
+            BUILD.txt SHA256SUMS ffmpeg-sources.zip
