@@ -21,6 +21,7 @@ Each failure names the package, its licence, and how to see what pulls it in.
 from __future__ import annotations
 
 import fnmatch
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -42,37 +43,105 @@ def load_policy(path: Path = POLICY) -> dict:  # type: ignore[type-arg]
     return policy
 
 
+class BadExpression(ValueError):
+    """A licence string that is not a well-formed SPDX expression."""
+
+
+def parse(licence: str) -> object:
+    """An SPDX expression as a tree: a str (an identifier, "X WITH Y" kept whole) or
+    ("OR"|"AND", [children]). OR binds loosest, then AND; parentheses group. Operators are
+    case-insensitive, as the SPDX spec says; anything malformed raises BadExpression."""
+    tokens = [t for t in re.split(r"(\(|\)|\s+)", licence) if t and not t.isspace()]
+    position = 0
+
+    def peek() -> str | None:
+        return tokens[position] if position < len(tokens) else None
+
+    def take() -> str:
+        nonlocal position
+        if position >= len(tokens):
+            raise BadExpression(f"{licence!r} ends early")
+        position += 1
+        return tokens[position - 1]
+
+    def expression(operator: str = "OR") -> object:
+        inner = "AND" if operator == "OR" else None
+        parts = [expression(inner) if inner else term()]
+        while (peek() or "").upper() == operator:
+            take()
+            parts.append(expression(inner) if inner else term())
+        return parts[0] if len(parts) == 1 else (operator, parts)
+
+    def term() -> object:
+        token = take()
+        if token == "(":
+            inside = expression()
+            if take() != ")":
+                raise BadExpression(f"{licence!r}: unbalanced parenthesis")
+            return inside
+        if token == ")" or token.upper() in ("AND", "OR", "WITH"):
+            raise BadExpression(f"{licence!r}: unexpected {token!r}")
+        if (peek() or "").upper() == "WITH":
+            take()
+            exception = take()
+            if exception in ("(", ")") or exception.upper() in ("AND", "OR", "WITH"):
+                raise BadExpression(f"{licence!r}: WITH needs an exception")
+            return f"{token} WITH {exception}"
+        return token
+
+    tree = expression()
+    if position != len(tokens):
+        raise BadExpression(f"{licence!r}: unexpected {tokens[position]!r}")
+    return tree
+
+
 def allowed(licence: str, name: str, policy: dict) -> bool:  # type: ignore[type-arg]
-    """Does ``name`` under ``licence`` pass? OR passes when one side does, AND when all do."""
+    """Does ``name`` under ``licence`` pass? OR passes when one side does, AND when all do;
+    a string that is not an SPDX expression (or names no licence) does not pass."""
     for item in policy.get("exception", []):
         if item["name"] == name and item["licence"] == licence:
             return True
-    expression = licence.strip()
-    if expression.startswith("(") and expression.endswith(")"):
-        expression = expression[1:-1].strip()
-    if " OR " in expression:
-        return any(allowed(part, name, policy) for part in expression.split(" OR "))
-    if " AND " in expression:
-        return all(allowed(part, name, policy) for part in expression.split(" AND "))
-    if expression in policy.get("allowed", []):
-        return True
-    return name in policy.get("conditional", {}).get(expression, [])
+    try:
+        tree = parse(licence)
+    except BadExpression:
+        return False
+    permitted = {i.casefold() for i in policy.get("allowed", [])}
+    conditional = {k.casefold(): v for k, v in policy.get("conditional", {}).items()}
+
+    def passes(node: object) -> bool:
+        if isinstance(node, tuple):
+            operator, children = node
+            return (any if operator == "OR" else all)(passes(c) for c in children)
+        key = str(node).casefold()
+        return key in permitted or name in conditional.get(key, [])
+
+    return passes(tree)
 
 
 def why_here(name: str) -> str:
     return f"see what needs it: uv tree --invert --package {name}" if name else ""
 
 
+#: The one component whose licence is unknowable without its binary: ffmpeg.exe, which only
+#: the build machine has (the build's --strict notices refuse it there).
+NEEDS_ITS_BINARY = "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)"
+
+
 def licence_problems(kinds: set[str], policy: dict) -> list[str]:  # type: ignore[type-arg]
     items = notices.extra_entries() if "other" in kinds else []
+    problems = []
     if "python" in kinds:
         items += notices.python_entries()
-    if "javascript" in kinds and (ROOT / "frontend" / "node_modules").is_dir():
-        items += [notices.js_entry(folder) for folder in notices.js_packages()]
-    problems = []
+    if "javascript" in kinds:
+        if not (ROOT / "frontend" / "node_modules").is_dir():
+            problems.append("frontend/node_modules is missing: run npm ci (and npm run build)")
+        else:
+            notices.MISSING.clear()
+            items += [notices.js_entry(folder) for folder in notices.js_packages()]
+            problems += [f"{missing}: not checked" for missing in notices.MISSING]
     for item in items:
-        if item.licence == "NOASSERTION":  # ffmpeg.exe, which only the build machine has
-            print(f"[skip] {item.name}: {item.note.splitlines()[0]}")
+        if item.name == NEEDS_ITS_BINARY and item.licence == "NOASSERTION":
+            print(f"[skip] {item.name}: {(item.note.splitlines() or ['no binary'])[0]}")
             continue
         if not allowed(item.licence, item.name, policy):
             hint = why_here(item.name) if item.kind == "python" else ""
@@ -80,16 +149,26 @@ def licence_problems(kinds: set[str], policy: dict) -> list[str]:  # type: ignor
     return problems
 
 
+#: Contents are read from these, on every platform the gate runs on.
+SCANNED_SUFFIXES = check_dist.BINARY_SUFFIXES | {".so", ".dylib"}
+
+
 def binary_problems() -> list[str]:
-    """GPL encoders or a GPL FFmpeg among the files the run-time packages installed."""
+    """GPL encoders or a GPL FFmpeg among the files the run-time packages installed, by
+    file or folder name and by content."""
     problems = []
     for dist in notices.python_packages():
-        for file in dist.files or ():
+        if dist.files is None:
+            problems.append(f"{dist.metadata['Name']}: no RECORD, so its files cannot be scanned")
+            continue
+        for file in dist.files:
             path = Path(str(dist.locate_file(file)))
-            name = path.name.lower()
-            if any(fnmatch.fnmatch(name, pattern) for pattern in check_dist.FORBIDDEN_NAMES):
+            names = [part.lower() for part in Path(str(file)).parts]
+            if any(fnmatch.fnmatch(n, p) for n in names for p in check_dist.FORBIDDEN_NAMES):
                 problems.append(f"{dist.metadata['Name']}: {file} is a GPL component")
-            elif path.suffix.lower() in check_dist.BINARY_SUFFIXES and path.is_file():
+            elif (
+                path.suffix.lower() in SCANNED_SUFFIXES or ".so." in path.name
+            ) and path.is_file():
                 flag = check_dist.gpl_flag(path)
                 if flag:
                     problems.append(f"{dist.metadata['Name']}: {file} is built with {flag}")
