@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -621,8 +622,8 @@ def test_an_unreadable_folder_never_fails_the_install(
 def test_a_cudnn_that_will_not_go_never_fails_the_install(
     app_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A scanner holding the file: the install succeeds, the file and the old marker stay
-    (still ready), and the next install tries again."""
+    """A scanner holding the file: the install succeeds, the file stays and is globbed
+    again by the next install; the marker already names only cuBLAS."""
     folder = old_build_folder(app_home)
     marker = (folder / cuda_libs.MARKER).read_text()
     real_unlink = Path.unlink
@@ -639,8 +640,47 @@ def test_a_cudnn_that_will_not_go_never_fails_the_install(
                poll=0.01)  # fmt: skip
     assert code == prepare.EXIT_OK
     assert (folder / "cudnn64_9.dll").exists(), "tried again by the next install"
-    assert marker  # the old marker named cuDNN; ready() takes either
+    assert json.loads((folder / cuda_libs.MARKER).read_text()) == {"nvidia-cublas-cu12": "12.9.1.4"}
+    assert marker != (folder / cuda_libs.MARKER).read_text()
     assert ready(app_home)
+    assert cuda_libs.remove_retired(app_home) == 0, "still held: nothing freed, nothing raised"
+
+
+def test_an_earlier_builds_folder_gets_nvidias_licence_without_a_download(
+    app_home: Path, tmp_path: Path
+) -> None:
+    """Earlier builds kept the DLLs only. The app ships the pinned wheel's License.txt,
+    byte for byte, and --prepare puts it beside them."""
+    folder = old_build_folder(app_home)
+    progress = ProgressFile(tmp_path / "prepare.txt")
+    code = run(default_config(), progress, model=model_manager(app_home), gpu=False, poll=0.01)
+    assert code == prepare.EXIT_OK
+    (wheel,) = cuda_libs.WHEELS
+    placed = folder / cuda_libs.licence_name(wheel)
+    assert placed.name == "nvidia_cublas_cu12-12.9.1.4-License.txt"
+    assert placed.read_bytes().startswith(b"End User License Agreement")
+    assert cuda_libs.add_missing_licences(app_home) == 0, "only when missing"
+
+
+#: From nvidia_cublas_cu12-12.9.1.4.dist-info/RECORD, the line for licenses/License.txt.
+RECORD_SHA256_OF_LICENSE = "rW9YU_ugyg0VnQ9Y1JrkmDDC-Mk_epJki5zpCttMbM0"
+
+
+def test_the_shipped_licence_is_the_wheels_own() -> None:
+    """The SHA-256 the cuBLAS 12.9.1.4 wheel's RECORD lists for its License.txt."""
+    from app import paths
+
+    (wheel,) = cuda_libs.WHEELS
+    text = paths.resource("app", "asr", "licenses", cuda_libs.licence_name(wheel)).read_bytes()
+    digest = base64.urlsafe_b64encode(hashlib.sha256(text).digest()).rstrip(b"=").decode()
+    assert digest == RECORD_SHA256_OF_LICENSE
+
+
+def test_a_licence_is_added_only_to_a_ready_folder(app_home: Path) -> None:
+    folder = target_dir(app_home)
+    folder.mkdir(parents=True)
+    assert cuda_libs.add_missing_licences(app_home) == 0
+    assert not list(folder.iterdir())
 
 
 @pytest.mark.parametrize("name", ["", ".", "..", "..\\evil.dll", "C:evil.dll", "a/b.dll"])
