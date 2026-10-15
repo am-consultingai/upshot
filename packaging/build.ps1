@@ -99,32 +99,40 @@ Assert-Exit "reading the Terms version"
 Write-Host "terms $termsVersion"
 
 Write-Host "== ffmpeg =="
-# An LGPL build (D84): Upshot only decodes imported files to WAV, which needs nothing from
-# FFmpeg's GPL-only parts (x264, x265 and similar encoders), and the LGPL's obligations are
-# lighter. The marker names the build the cached ffmpeg.exe came from, so a cache filled
-# by an earlier, different build is replaced instead of shipped.
-$ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip"
-$ffmpeg = Join-Path $root "vendor\ffmpeg.exe"
-$ffmpegMarker = Join-Path $root "vendor\ffmpeg.source.txt"
-$ffmpegLicence = Join-Path $root "vendor\ffmpeg-LICENSE.txt"
+# Upshot's own audio-only build (licence epic S3): FFmpeg's LGPL audio decoders, the
+# demuxers ingest whitelists and zlib, built by packaging\ffmpeg\build.sh in the ffmpeg
+# workflow and published, with its sources, as a pre-release. Measured against the BtbN
+# build it replaced on 175 real files: the same files convert, every sample within 1 LSB.
+# The release's SHA256SUMS is pinned here, and every file taken is checked against it;
+# the marker names the release, so a cache from another one is replaced, never shipped.
+$ffmpegRelease = "ffmpeg-8.1.3-audio-1"
+$ffmpegSums = "61a9f586459e79bd9f8691d606995ef990fe2e21f4b827b951018c17a44fb69e"
+$ffmpegBase = "https://github.com/am-consultingai/upshot/releases/download/$ffmpegRelease"
+$vendor = Join-Path $root "vendor"
+$ffmpeg = Join-Path $vendor "ffmpeg.exe"
+$ffmpegMarker = Join-Path $vendor "ffmpeg.source.txt"
+$ffmpegFiles = @("ffmpeg.exe", "LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
 $cachedFrom = if (Test-Path $ffmpegMarker) { (Get-Content $ffmpegMarker -Raw).Trim() } else { "" }
-if (-not (Test-Path $ffmpeg) -or $cachedFrom -ne $ffmpegUrl) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $root "vendor") | Out-Null
-    $zip = Join-Path $env:TEMP "ffmpeg-lgpl.zip"
-    $unpacked = Join-Path $env:TEMP "ffmpeg-lgpl"
-    if (Test-Path $unpacked) { Remove-Item -Recurse -Force $unpacked }
-    Invoke-WebRequest -UseBasicParsing -Uri $ffmpegUrl -OutFile $zip
-    Expand-Archive -Path $zip -DestinationPath $unpacked -Force
-    $found = Get-ChildItem -Path $unpacked -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-    Copy-Item $found.FullName $ffmpeg -Force
-    $licence = Get-ChildItem -Path $unpacked -Recurse -Filter LICENSE.txt | Select-Object -First 1
-    if ($licence) { Copy-Item $licence.FullName $ffmpegLicence -Force }
-    [System.IO.File]::WriteAllText($ffmpegMarker, $ffmpegUrl)
+if ($cachedFrom -ne "$ffmpegRelease $ffmpegSums" -or -not (Test-Path $ffmpeg)) {
+    New-Item -ItemType Directory -Force -Path $vendor | Out-Null
+    Get-ChildItem $vendor -Filter "ffmpeg*" | Remove-Item -Force
+    $sumsPath = Join-Path $env:TEMP "ffmpeg-SHA256SUMS"
+    Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/SHA256SUMS" -OutFile $sumsPath
+    if ((Get-FileHash $sumsPath -Algorithm SHA256).Hash.ToLower() -ne $ffmpegSums) { throw "the ffmpeg release's SHA256SUMS is not the pinned one" }
+    $sums = @{}
+    foreach ($line in Get-Content $sumsPath) { $hash, $name = $line -split "\s+", 2; $sums[$name.Trim()] = $hash }
+    foreach ($name in $ffmpegFiles) {
+        $target = Join-Path $vendor $name
+        Invoke-WebRequest -UseBasicParsing -Uri "$ffmpegBase/$name" -OutFile $target
+        if ((Get-FileHash $target -Algorithm SHA256).Hash.ToLower() -ne $sums[$name]) { throw "$name does not match the ffmpeg release's SHA256SUMS" }
+    }
+    [System.IO.File]::WriteAllText($ffmpegMarker, "$ffmpegRelease $ffmpegSums")
 }
-# Whatever the cache says, refuse to ship a GPL build.
+# Whatever the cache says, refuse to ship a GPL or non-free build.
 $ffmpegConfig = (& $ffmpeg -hide_banner -version) -join " "
-if ($ffmpegConfig -match "--enable-gpl") { throw "vendor\ffmpeg.exe is a GPL build; delete it and build again" }
-Write-Host "ffmpeg: LGPL build from $ffmpegUrl"
+if (-not $ffmpegConfig) { throw "vendor\ffmpeg.exe does not run" }
+if ($ffmpegConfig -match "--enable-(gpl|nonfree)") { throw "vendor\ffmpeg.exe is a GPL or non-free build; delete it and build again" }
+Write-Host "ffmpeg: $ffmpegRelease ($((& $ffmpeg -hide_banner -version | Select-Object -First 1)))"
 
 Write-Host "== frontend =="
 Push-Location (Join-Path $root "frontend")

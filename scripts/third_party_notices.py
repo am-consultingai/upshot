@@ -16,9 +16,9 @@ What it lists:
   (``dist/sourcemaps`` or ``frontend/dist/assets``); without them, the dependency closure
   of ``frontend/package.json``;
 - what no package manager knows about (``EXTRA``): the Python runtime, the PyInstaller
-  bootloader, ffmpeg (its licence read from its own configure line), the speech models,
-  Silero VAD, the fonts, Tailwind's CSS, Intel's OpenMP runtime, NVIDIA's cuBLAS and the
-  Microsoft runtime.
+  bootloader, ffmpeg (Upshot's audio-only build, its licence read from its configure line),
+  the speech models, Silero VAD, the fonts, Tailwind's CSS, Intel's OpenMP runtime,
+  NVIDIA's cuBLAS and the Microsoft runtime.
 
 Each entry carries its licence (SPDX where one fits) and the licence and notice texts the
 package ships; where it ships none, the text is taken from ``packaging/licenses`` (each file
@@ -315,10 +315,15 @@ def ffmpeg_licence(version_text: str) -> str:
     return "LGPL-2.1-or-later"
 
 
+#: The notices entry for ffmpeg.exe (packaging/ffmpeg/build.sh, the ffmpeg-* releases).
+FFMPEG = "FFmpeg (Upshot's audio-only build)"
+
+
 def ffmpeg_entry() -> Entry:
     """The licence follows from how this ffmpeg.exe was configured, never from a constant:
     without the binary (a CI job), or when it cannot be run, it is NOASSERTION."""
-    exe = ROOT / "vendor" / "ffmpeg.exe"
+    vendor = ROOT / "vendor"
+    exe = vendor / "ffmpeg.exe"
     version = ""
     if exe.is_file():
         try:
@@ -328,18 +333,22 @@ def ffmpeg_entry() -> Entry:
             version = ""
     licence = ffmpeg_licence(version)
     first = version.splitlines()[0] if version else "vendor\\ffmpeg.exe could not be read here."
-    text = ROOT / "vendor" / "ffmpeg-LICENSE.txt"
-    texts = [text.read_text(encoding="utf-8", errors="replace")] if text.is_file() else []
+    texts = [
+        (vendor / name).read_text(encoding="utf-8", errors="replace")
+        for name in ("LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
+        if (vendor / name).is_file()
+    ]
     if licence.startswith("LGPL-3"):
         texts += licence_file("gpl-3.0.txt")  # the LGPL v3 incorporates the GPL v3
     return Entry(
-        "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)", "", licence,
+        FFMPEG, "", licence,
         note=first + "\nffmpeg.exe, run as a separate program to read imported audio and video"
-        " files; it is not linked into Upshot, and you may replace it with your own build.",
+        " files; it is not linked into Upshot, and you may replace it with your own build. It"
+        " holds FFmpeg's own audio decoders, zlib, and the MinGW-w64 runtime.",
         texts=texts,
-        source="https://ffmpeg.org/download.html and https://github.com/BtbN/FFmpeg-Builds;"
-        " AM Consulting will also provide the corresponding source on request at"
-        " office@amconsultingai.com.",
+        source="https://github.com/am-consultingai/upshot/releases (the ffmpeg-* release: its"
+        " sources zip holds FFmpeg's and zlib's source and the exact build); AM Consulting will"
+        " also provide it on request at office@amconsultingai.com.",
         kind="other",
     )  # fmt: skip
 
@@ -486,7 +495,7 @@ UNOWNED: tuple[tuple[str, tuple[str, ...]], ...] = (
                 "libffi-*.dll", "sqlite3.dll", "*.pyd")),
     ("Microsoft Visual C++ and Universal C runtime", ("vcruntime140*.dll", "msvcp140*.dll",
      "ucrtbase.dll", "api-ms-win-*.dll", "winrt/msvcp140.dll")),
-    ("FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)", ("ffmpeg.exe",)),
+    (FFMPEG, ("ffmpeg.exe",)),
     ("Upshot", ("app/*", "frontend/*", "THIRD-PARTY-NOTICES.*")),
 )  # fmt: skip
 

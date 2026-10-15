@@ -125,7 +125,7 @@ def why_here(name: str) -> str:
 
 #: The one component whose licence is unknowable without its binary: ffmpeg.exe, which only
 #: the build machine has (the build's --strict notices refuse it there).
-NEEDS_ITS_BINARY = "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)"
+NEEDS_ITS_BINARY = notices.FFMPEG
 
 
 def licence_problems(kinds: set[str], policy: dict) -> list[str]:  # type: ignore[type-arg]
