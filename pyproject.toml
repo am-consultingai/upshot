@@ -63,6 +63,12 @@ dev = [
     "pyinstaller>=6.11; sys_platform == 'win32'",
 ]
 
+[tool.uv]
+# PyAV, which faster-whisper requires, is never installed: its Windows wheel bundles the
+# GPL encoders libx264 and libx265, which Upshot may not ship. faster-whisper is given
+# arrays instead of paths (app/asr/wav.py), and app/__init__.py stands in for the import.
+override-dependencies = ["av; sys_platform == 'never'"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
