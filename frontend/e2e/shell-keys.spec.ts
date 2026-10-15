@@ -319,16 +319,19 @@ test("storage_shows_the_folder_its_size_and_that_recordings_stay", async ({ page
   await expect(page.getByTestId("settings-page")).toContainText("Recordings are kept until you delete them.");
 });
 
-test("the_prompt_editor_counts_and_shows_what_changed", async ({ page }) => {
+test("the_prompt_editor_counts_and_saves_from_its_heading", async ({ page }) => {
   await gotoSettings(page, "prompt");
   const box = page.getByTestId("prompt-text");
   await expect(box).toBeVisible();
   const before = await box.inputValue();
   await expect(page.getByTestId("prompt-count")).toContainText(`${before.length.toLocaleString("en")} characters`);
+  // No "edited" chip and no comparison with the shipped prompt: Save sits by the heading.
+  await expect(page.getByTestId("prompt-state")).toHaveCount(0);
+  await expect(page.getByTestId("prompt-diff")).toHaveCount(0);
+  const save = page.getByTestId("prompt-save");
+  await expect(save).toBeDisabled();
 
   await box.fill(`${before}\nAlways end with the risks.`);
-  const added = page.locator("[data-testid=prompt-diff-line][data-kind=add]");
-  await expect(added.filter({ hasText: "Always end with the risks." })).toHaveCount(1);
-  // Unchanged lines far from the edit are folded away rather than repeated.
-  expect(await page.getByTestId("prompt-diff-line").count()).toBeLessThan(before.split("\n").length);
+  await expect(save).toBeEnabled();
+  await expect(page.getByTestId("prompt-diff")).toHaveCount(0);
 });
