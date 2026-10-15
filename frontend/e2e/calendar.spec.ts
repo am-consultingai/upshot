@@ -216,9 +216,10 @@ async function opensThroughTheServer(
 test("an_events_meeting_link_opens_through_the_server", async ({ page, seedBody }) => {
   // The details panel stops clicks from reaching the page, so the app window followed
   // this link itself, in its own browser profile signed in to nothing (z8tj1hfdww).
-  const now = new Date();
-  const start = new Date(now.getTime() + 60 * 60_000).toISOString();
-  const end = new Date(now.getTime() + 90 * 60_000).toISOString();
+  // Today at 10:00, not an hour from now: after 23:00 that fell on tomorrow, out of the
+  // day view, and the test failed every night until midnight.
+  const start = isoAt(0, 10);
+  const end = isoAt(0, 10, 30);
   await seedBody({
     reset: true,
     calendar_events: [
