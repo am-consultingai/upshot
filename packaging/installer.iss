@@ -82,6 +82,14 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
 [Messages]
 BeveledLabel=Powered by AM Consulting
 
+; An upgrade copies over the old files but would never delete one a newer build no
+; longer ships: PyAV's GPL x264 and x265 stayed in _internal after the build dropped
+; them. So the folders the freeze owns are emptied first, and every install leaves exactly
+; what dist\upshot holds. The root keeps the uninstaller; user data is not in {app}.
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\mcp"
+
 [Files]
 Source: "..\dist\upshot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
