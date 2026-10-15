@@ -259,10 +259,11 @@ class TrackSpeech:
 
 def speech_of(track: str, wav: Path) -> TrackSpeech:  # pragma: no cover - real VAD
     """Silero VAD, as faster-whisper runs it, over the whole file at 16 kHz."""
-    from faster_whisper import decode_audio
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-    audio = decode_audio(str(wav), sampling_rate=SAMPLE_RATE)
+    from app.asr.wav import read_audio
+
+    audio = read_audio(wav, SAMPLE_RATE)
     stamps = get_speech_timestamps(audio, VadOptions())
     spans = [(int(s["start"]), int(s["end"])) for s in stamps]
     joined = (
