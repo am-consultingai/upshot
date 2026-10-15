@@ -3,10 +3,10 @@
 # them; an "A OR B" passes when either side does, "A AND B" when both do.
 
 # Permissive: ship with the notice and the licence text (the notices file carries both).
+# Only licences a component uses today; another is added when one needs it, deliberately.
 allowed = [
   "MIT", "MIT-0", "MIT-CMU", "ISC", "0BSD", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0",
-  "Apache-2.0 WITH LLVM-exception", "PSF-2.0", "Python-2.0", "Zlib", "CC0-1.0",
-  "Unlicense", "BlueOak-1.0.0", "HPND", "BSL-1.0", "AFL-2.1",
+  "PSF-2.0", "Zlib", "CC0-1.0",
 ]
 
 # Copyleft that Upshot may ship only as it does for these components: unmodified,
@@ -14,6 +14,8 @@ allowed = [
 # offered. Anything else under these licences fails until it is added here, deliberately.
 [conditional]
 "LGPL-2.1-or-later" = ["soxr"]
+# FFmpeg's licence is read from its configure line: BtbN's build has --enable-version3. A
+# build without it reads LGPL-2.1-or-later and fails here until this says so.
 "LGPL-3.0-or-later" = ["pystray", "FFmpeg (BtbN FFmpeg-Builds, LGPL Windows build)"]
 "MPL-2.0" = ["certifi", "tqdm"]
 "OFL-1.1" = ["Frank Ruhl Libre and IBM Plex Sans Hebrew fonts"]
