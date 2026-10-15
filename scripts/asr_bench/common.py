@@ -150,12 +150,17 @@ def decode(source: Path | bytes, rate: int = SR) -> np.ndarray:
 
     binary = ffmpeg_path()
     if binary is None:
-        raise SystemExit("the benchmarks need ffmpeg on PATH")
+        raise SystemExit("the benchmarks need ffmpeg: on PATH, bundled, or as ffmpeg_path")
     data = source if isinstance(source, bytes) else None
     command = [binary, "-nostdin", "-hide_banner", "-loglevel", "error"]
     command += ["-i", "pipe:0" if data is not None else str(source)]
     command += ["-f", "s16le", "-ac", "1", "-ar", str(rate), "pipe:1"]
-    done = subprocess.run(command, input=data, capture_output=True, check=True)
+    done = subprocess.run(command, input=data, capture_output=True)
+    if done.returncode:
+        raise RuntimeError(
+            f"ffmpeg could not decode {source if data is None else 'the bytes'}: "
+            f"{done.stderr.decode(errors='replace').strip()}"
+        )
     return np.frombuffer(done.stdout, dtype="<i2").astype(np.float32) / 32768.0
 
 

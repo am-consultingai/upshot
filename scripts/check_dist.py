@@ -30,8 +30,14 @@ FORBIDDEN_NAMES: tuple[str, ...] = (
     "*fdk_aac*",
     "*postproc-*",  # libpostproc is GPL-only
 )
-#: Configure flags that make an FFmpeg build GPL or non-free, in its configure line.
-GPL_FLAGS = re.compile(rb"--enable-(gpl|nonfree|libx264|libx265|libxvid|libfdk-aac)\b")
+#: Configure flags that make an FFmpeg build GPL or non-free, in its configure line: the
+#: switches themselves, and every external library FFmpeg's configure marks GPL-only or
+#: non-free, since a build can link one without ever saying --enable-gpl (PyAV's did).
+GPL_FLAGS = re.compile(
+    rb"--enable-(gpl|nonfree|postproc"
+    rb"|libx264|libx265|libxvid|libxavs|libxavs2|libdavs2|frei0r|libcdio|librubberband"
+    rb"|libvidstab|libdvdnav|libdvdread|libfdk-aac|decklink|libtls|cuda-nvcc|libnpp)\b"
+)
 BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
 
