@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import os
-from functools import cache
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -34,21 +34,36 @@ def notices_path() -> Path | None:
     return None
 
 
-@cache
-def _load(path: Path, stamp: float) -> list[dict[str, Any]]:
-    entries = json.loads(path.read_text(encoding="utf-8")).get("entries", [])
-    return [entry for entry in entries if isinstance(entry, dict)]
+@lru_cache(maxsize=1)  # one file, re-read only when it changes
+def _load(path: Path, stamp: float) -> list[dict[str, Any]] | None:
+    """The file's entries; None when it cannot be read as a notices file."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        items = document["entries"]
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    if not isinstance(items, list):
+        return None
+    return [entry for entry in items if isinstance(entry, dict)]
+
+
+def _entries() -> list[dict[str, Any]] | None:
+    path = notices_path()
+    try:
+        return _load(path, path.stat().st_mtime) if path is not None else None
+    except OSError:
+        return None
 
 
 def entries() -> list[dict[str, Any]]:
-    path = notices_path()
-    return _load(path, path.stat().st_mtime) if path is not None else []
+    return _entries() or []
 
 
 def summary() -> dict[str, Any]:
     """Every entry without its texts, numbered for :func:`texts`."""
+    items = _entries()
     return {
-        "available": notices_path() is not None,
+        "available": items is not None,
         "entries": [
             {
                 "id": index,
@@ -59,7 +74,7 @@ def summary() -> dict[str, Any]:
                 "note": str(entry.get("note", "")),
                 "source": str(entry.get("source", "")),
             }
-            for index, entry in enumerate(entries())
+            for index, entry in enumerate(items or [])
         ],
     }
 
@@ -69,4 +84,5 @@ def texts(index: int) -> list[str]:
     items = entries()
     if not 0 <= index < len(items):
         raise IndexError(index)
-    return [str(text) for text in items[index].get("texts", [])]
+    found = items[index].get("texts", [])
+    return [str(text) for text in found] if isinstance(found, list) else [str(found)]
