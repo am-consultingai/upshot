@@ -16,7 +16,9 @@ installer. A release:
    installer is Authenticode-signed by the pinned certificate
    (``signer_thumbprint`` in ``packaging/release.local.json``).
 2. **Tags and releases.** ``git tag vX.Y.Z``, pushed; ``gh release create`` with the
-   installer and its ``.sha256`` (a beta is marked pre-release).
+   installer, its ``.sha256`` and ``Upshot-X.Y.Z-sources.zip`` beside it (the LGPL and MPL
+   components' source, ``scripts/source_archive.py``; a release without it is refused), a
+   beta marked pre-release.
 3. **Writes and signs the manifest**, ``site/updates/<channel>.json`` and ``.sig``, with the
    update signing key (``scripts/release_key.py``), then checks it with the app's own
    verifier before anything is pushed.
@@ -385,6 +387,10 @@ def publish(args: argparse.Namespace) -> None:
         print(f"dry run: {out} written and verified ({version}, rollout {rollout}%)")
         return
 
+    # The copyleft components' source goes out with the binaries, in the same place.
+    sources = installer.with_name(f"Upshot-{version}-sources.zip")
+    if not sources.is_file():
+        raise PublishError(f"no {sources.name} beside the installer: build.ps1 writes it")
     check_repository(tag)
     commit = run("git", "rev-parse", "--short=12", "HEAD", capture=True)
     checksum = installer.with_name(installer.name + ".sha256")
@@ -393,7 +399,7 @@ def publish(args: argparse.Namespace) -> None:
     run("git", "tag", "-a", tag, "-m", f"Upshot {version}")
     run("git", "push", "-q", "origin", tag)
     print(f"tagged {tag} ({commit})")
-    release = ["gh", "release", "create", tag, str(installer), str(checksum)]
+    release = ["gh", "release", "create", tag, str(installer), str(checksum), str(sources)]
     release += ["--title", f"Upshot {version}", "--notes", notes.get("en", f"Upshot {version}")]
     if args.channel == "beta":
         release.append("--prerelease")

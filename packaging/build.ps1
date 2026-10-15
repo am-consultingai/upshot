@@ -287,4 +287,10 @@ $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
 Write-Host "$setup"
 Write-Host "sha256 $hash"
 
+Write-Host "== source archive =="
+# The source the LGPL and MPL components' licences ask for, beside the installer;
+# publish_release.py attaches it to the release with it.
+uv run python scripts/source_archive.py (Join-Path $root "dist\Upshot-$version-sources.zip")
+Assert-Exit "the source archive"
+
 Write-Host "== done =="
