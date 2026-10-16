@@ -390,10 +390,12 @@ def test_the_embedding_is_the_multilingual_one_under_its_own_file_name(tmp_path)
 
 def test_fetching_the_new_embedding_removes_the_retired_one(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """An upgrade downloads the 3D-Speaker embedding and deletes the VoxCeleb one it replaces."""
+    import hashlib
     import io
     import urllib.request
 
     from app.asr import model_manager
+    from app.asr import models as models_module
     from app.asr.models import EMBEDDING_FILE, download_diarization
 
     fetched: list[str] = []
@@ -404,12 +406,40 @@ def test_fetching_the_new_embedding_removes_the_retired_one(tmp_path, monkeypatc
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(model_manager, "tls_context", lambda: None)
+    monkeypatch.setattr(models_module, "EMBEDDING_SHA256", hashlib.sha256(b"onnx").hexdigest())
     (tmp_path / "segmentation.onnx").write_bytes(b"x")
     (tmp_path / "embedding.onnx").write_bytes(b"old")
     models = download_diarization(default_config(asr__diarization_dir=str(tmp_path)))
     assert models.present and models.embedding.name == EMBEDDING_FILE
     assert len(fetched) == 1 and "3dspeaker" in fetched[0], "segmentation was already there"
     assert not (tmp_path / "embedding.onnx").exists()
+
+
+def test_a_diarization_model_that_is_not_the_pinned_file_is_refused(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A moved branch or a replaced release asset is not run: nothing is left on disk."""
+    import io
+    import urllib.request
+
+    import pytest
+
+    from app.asr import model_manager
+    from app.asr.models import download_diarization
+    from app.errors import PermanentError
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, **_: io.BytesIO(b"other"))
+    monkeypatch.setattr(model_manager, "tls_context", lambda: None)
+    with pytest.raises(PermanentError, match="not the pinned file"):
+        download_diarization(default_config(asr__diarization_dir=str(tmp_path)))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_segmentation_model_is_fetched_from_a_pinned_commit() -> None:
+    import re
+
+    from app.asr.models import SEGMENTATION_REVISION, SEGMENTATION_URL
+
+    assert re.fullmatch(r"[0-9a-f]{40}", SEGMENTATION_REVISION)
+    assert f"/resolve/{SEGMENTATION_REVISION}/" in SEGMENTATION_URL
 
 
 class Segmented:

@@ -1,7 +1,7 @@
 Upshot Terms of Service
 =======================
 
-Version 2026-10-06, effective 2026-10-06.
+Version 2026-10-16, effective 2026-10-16.
 
 1. AGREEMENT
 
@@ -87,8 +87,9 @@ expressly granted to you in these Terms.
 
 6. RESTRICTIONS
 
-Except as these Terms, the licence of the source code (section 7) or
-applicable law expressly permits, you must not:
+Except as these Terms, the licence of the source code (section 7), the
+licence of a third-party component (section 16) or applicable law expressly
+permits, you must not:
 
   - sell, resell, rent, lease, lend, sublicense, distribute or make the
     official app or its installer available to others, other than deploying
@@ -248,9 +249,14 @@ professional advice.
 
 Upshot includes software components and uses speech-recognition models
 published by others, including models from ivrit.ai and OpenAI's Whisper
-models as converted by SYSTRAN. They are licensed to you under their own
-licences, which are listed in the notices that come with Upshot. Nothing in
-these Terms limits your rights under those licences.
+models as converted by SYSTRAN. On a computer with a suitable NVIDIA
+graphics card, and only if you accept NVIDIA's licence when the installer
+shows it, the installer also downloads NVIDIA's cuBLAS library from NVIDIA.
+All of these are licensed to you under their own licences, which are listed
+in the notices that come with Upshot and in the app. Nothing in these Terms
+limits your rights under those licences: where a component's licence lets
+you modify, replace or reverse-engineer that component, these Terms do not
+restrict it.
 
 17. FEEDBACK
 
