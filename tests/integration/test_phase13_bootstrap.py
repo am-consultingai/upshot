@@ -302,6 +302,8 @@ def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries(
     """S9: NVIDIA's terms come before the download, which needs a yes (the page, or
     /NVIDIA=accept on a silent install). A no is --no-gpu; not asked is --gpu-if-present,
     which only keeps libraries already in the user's own folder."""
+    from app.asr import cuda_libs
+
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
     build = Path("packaging/build.ps1").read_text(encoding="utf-8")
     shipped = sorted(Path("app/asr/licenses").glob("nvidia_*-License.txt"))
@@ -313,11 +315,13 @@ def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries(
     assert "Params := Params + GpuParam;" in installer
     assert "Result := ' --no-gpu'" in installer and "Result := ' --gpu-if-present'" in installer
     # An all-users install runs as an administrator: its profile proves nothing; it asks.
-    assert "(IsAdminInstallMode or not NvidiaLicenceAccepted)" in installer
+    # Skipped only when the libraries are here AND were accepted as the licence now is: an
+    # acceptance whose download never ran (cancelled, failed, uninstalled) asks again.
+    skip = "(IsAdminInstallMode or not (GpuLibrariesPresent and NvidiaLicenceAccepted))"
+    assert skip in installer
+    assert f"DeleteFile(Home + '\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
     # The page is skipped only when this profile accepted this very licence (D100): the
     # installer and the app name the same file and compare by SHA-256.
-    from app.asr import cuda_libs
-
     assert f"\\upshot\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
     # Only the installer's yes saves an acceptance; a bare --prepare never does.
     assert "Result := ' --nvidia-accepted'" in installer
