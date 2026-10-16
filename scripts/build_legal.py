@@ -96,6 +96,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="fail if an output is out of date")
     args = parser.parse_args(argv)
     terms = parse(SOURCE.read_text(encoding="utf-8"))
+    # A minor version must name the material one before it, or the app's gate cannot hold
+    # for someone who accepted earlier still (D83). Checked here, where versions are made,
+    # not in the parser, which also reads versions published before the rule.
+    if not terms.material and not terms.last_material:
+        print(f"{SOURCE.name}: material: false needs last_material: <the last material version>")
+        return 1
     stale = []
     for path, content in outputs(terms).items():
         current = path.read_bytes().decode("utf-8") if path.exists() else None
