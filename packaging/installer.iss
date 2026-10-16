@@ -364,7 +364,7 @@ end;
 { What --prepare is told: nothing when accepted; --no-gpu when declined on the page;
   otherwise --gpu-if-present, which keeps and completes libraries already in the
   signed-in user's own folder and fetches none. That check is made by --prepare, which
-  runs as that user: Setup may run as an administrator, whose {localappdata} is another
+  runs as that user: Setup may run as an administrator, whose local app data is another
   profile. }
 function GpuParam: String;
 begin
