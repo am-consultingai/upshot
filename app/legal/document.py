@@ -52,6 +52,9 @@ class Terms:
     sections: tuple[Section, ...]
     #: The file exactly as read, which the manifest's checksum covers.
     source: str = field(repr=False)
+    #: The latest material version up to this one (this one, if it is material): whoever
+    #: accepted an earlier version must accept again, even when this change is not material.
+    last_material: str = ""
 
     @property
     def sha256(self) -> str:
@@ -130,6 +133,12 @@ def parse(source: str) -> Terms:
             raise TermsError(f"the terms' {name} must be a date (YYYY-MM-DD), not {value!r}")
         date.fromisoformat(value)  # a real date, not 2026-13-40
     material = meta.get("material", "false").lower() in ("true", "yes", "1")
+    last_material = version if material else meta.get("last_material", "")
+    if last_material:
+        if not _DATE.match(last_material):
+            raise TermsError(f"the terms' last_material must be a date, not {last_material!r}")
+        if last_material > version:
+            raise TermsError("the terms' last_material is later than their version")
 
     title = ""
     sections: list[Section] = []
@@ -193,6 +202,7 @@ def parse(source: str) -> Terms:
         title=title,
         sections=tuple(sections),
         source=source,
+        last_material=last_material,
     )
 
 
