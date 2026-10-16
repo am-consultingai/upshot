@@ -300,7 +300,8 @@ def test_the_installer_speaks_every_interface_language() -> None:
 
 def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries() -> None:
     """S9: NVIDIA's terms come before the download, which needs a yes (the page, or
-    /NVIDIA=accept on a silent install) or libraries already fetched; else --no-gpu."""
+    /NVIDIA=accept on a silent install). A no is --no-gpu; not asked is --gpu-if-present,
+    which only keeps libraries already in the user's own folder."""
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
     build = Path("packaging/build.ps1").read_text(encoding="utf-8")
     shipped = sorted(Path("app/asr/licenses").glob("nvidia_*-License.txt"))
