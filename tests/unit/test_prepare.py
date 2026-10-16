@@ -914,10 +914,14 @@ def test_declining_withdraws_an_earlier_acceptance(tmp_path: Path) -> None:
     from app.asr import cuda_libs
     from app.prepare import gpu_allowed
 
-    (tmp_path / "cuda").mkdir()
+    library = tmp_path / "cuda" / "nvidia" / "cu12" / "bin" / "cublas64_12.dll"
+    library.parent.mkdir(parents=True)
+    library.write_bytes(b"x")
     assert gpu_allowed(no_gpu=False, if_present=False, accepted=True, home=tmp_path)
     assert not gpu_allowed(no_gpu=True, if_present=False, home=tmp_path)
     assert not cuda_libs.acceptance_current(tmp_path)
+    # "Skip: transcribe on the processor": the app must not go on loading NVIDIA's files.
+    assert not (tmp_path / "cuda").exists()
     assert not gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)
 
 
@@ -980,6 +984,7 @@ def test_the_entry_point_passes_gpu_if_present_through(
     prepare.main(argv)  # libraries here, never accepted
     prepare.main([*base, "--nvidia-accepted"])  # accepted: saves the licence
     prepare.main(argv)
-    prepare.main([*base, "--no-gpu"])  # declined: withdraws it
+    prepare.main([*base, "--no-gpu"])  # declined: withdraws it, and removes the libraries
+    assert not (tmp_path / "cuda").exists()
     prepare.main(argv)
     assert seen == [False, True, True, False, False]

@@ -34,10 +34,11 @@ the CPU.
 The installer fetches them only once NVIDIA's licence is accepted (licence epic S9).
 ``--nvidia-accepted``: accepted; the accepted licence is saved
 (``cuda_libs.record_acceptance``). ``--no-gpu``: declined, nothing of NVIDIA's is fetched,
-and an earlier acceptance is withdrawn. ``--gpu-if-present``: not asked (a silent install,
-no NVIDIA GPU): libraries already in this user's folder are kept and completed only when
-the licence accepted for them is the one the pinned wheels come under (the same text and
-CUDA generation); none are fetched otherwise. A bare ``--prepare`` (the repair command)
+and an earlier acceptance is withdrawn with the libraries fetched under it.
+``--gpu-if-present``: not asked (a silent install, no NVIDIA GPU): libraries already in
+this user's folder are kept and completed only when the licence accepted for them is the
+one the pinned wheels come under (the same text and CUDA generation); none are fetched
+otherwise. A bare ``--prepare`` (the repair command)
 fetches as before but records no acceptance. Decided here, in the signed-in user's
 profile, not by Setup, which may run as an administrator with another profile.
 """
@@ -343,7 +344,8 @@ def gpu_allowed(
     """Whether the GPU step may run.
 
     ``accepted`` (the installer: its page, or /NVIDIA=accept) saves NVIDIA's licence as
-    accepted and runs it. ``no_gpu`` (declined) withdraws an earlier acceptance and does not.
+    accepted and runs it. ``no_gpu`` (declined) withdraws an earlier acceptance, removes the
+    libraries fetched under it, and does not run it.
     ``if_present`` runs it only when this user's folder already holds the libraries and the
     licence accepted for them is the one the pinned wheels come under. With none of these (a
     bare ``--prepare``, the repair command) it runs, as before, but records no acceptance.
