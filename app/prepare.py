@@ -15,7 +15,7 @@ install, in the open. It fetches, in order:
 3. the CUDA libraries (``cuda_libs``), only on a machine whose NVIDIA GPU could run the
    model.
 
-    upshot.exe --prepare --progress-file P [--cancel-file C] [--no-gpu]
+    upshot.exe --prepare --progress-file P [--cancel-file C] [--no-gpu | --gpu-if-present]
 
 ``P`` is rewritten every half second as ``key=value`` lines — plain text, because Inno's
 Pascal script reads it: ``stage`` (model|gpu|done), ``state`` (working|ready|skipped|
@@ -29,6 +29,13 @@ Models come from here and nowhere else (R12): transcription never downloads one.
 of the three fails, the exit code says so and the installer reports an incomplete install;
 running it again resumes. The CUDA libraries are optional: without them the app runs on
 the CPU.
+
+The installer fetches them only once NVIDIA's licence is accepted (licence epic S9).
+``--no-gpu``: declined, nothing of NVIDIA's is fetched. ``--gpu-if-present``: not asked
+(a silent install, no NVIDIA GPU): libraries already in this user's folder, fetched
+under the same licence by an earlier install, are kept and completed; none are fetched
+otherwise. Decided here, in the signed-in user's profile, not by Setup, which may run
+as an administrator with another profile.
 """
 
 from __future__ import annotations
@@ -326,6 +333,22 @@ def _report(exc: Exception) -> None:
         log.exception("could not report the failure")
 
 
+def gpu_allowed(*, no_gpu: bool, if_present: bool, home: Path | None = None) -> bool:
+    """Whether the GPU step may run: not when declined, and with ``if_present`` only when
+    this user's own folder already holds the libraries."""
+    if no_gpu:
+        return False
+    if if_present:
+        from app import paths
+
+        present = ((home or paths.app_home()) / "cuda").is_dir()
+        log.info(
+            "prepare: GPU libraries %s; not asked to fetch them", "present" if present else "absent"
+        )
+        return present
+    return True
+
+
 def main(argv: list[str]) -> int:
     """The ``--prepare`` entry point (app/tray.py)."""
     import argparse
@@ -334,6 +357,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--progress-file", type=Path)
     parser.add_argument("--cancel-file", type=Path)
     parser.add_argument("--no-gpu", action="store_true")
+    parser.add_argument("--gpu-if-present", action="store_true")
     # The installer's language (packaging/installer.iss), for the progress text.
     parser.add_argument("--language", default="en")
     args = parser.parse_args(argv)
@@ -344,8 +368,9 @@ def main(argv: list[str]) -> int:
 
     language: str = args.language
     progress = ProgressFile(args.progress_file)
+    gpu = gpu_allowed(no_gpu=args.no_gpu, if_present=args.gpu_if_present)
     try:
-        code = run(Config.load(), progress, cancelled, gpu=not args.no_gpu, language=language)
+        code = run(Config.load(), progress, cancelled, gpu=gpu, language=language)
     except Exception as exc:  # the installer must always get a last word
         log.exception("prepare failed")
         progress.write(

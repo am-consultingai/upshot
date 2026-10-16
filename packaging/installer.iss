@@ -319,8 +319,8 @@ begin
   Result := '';
 end;
 
-{ The GPU libraries already in the user's Upshot folder: fetched by an earlier install
-  under the same NVIDIA terms, so they are kept (and completed) without asking again. }
+{ The GPU libraries already in this profile's Upshot folder: fetched by an earlier install
+  under the same NVIDIA terms, so the page is not shown again (--prepare keeps them). }
 function GpuLibrariesPresent: Boolean;
 begin
   Result := DirExists(ExpandConstant('{localappdata}\upshot\cuda'));
@@ -352,16 +352,28 @@ begin
 end;
 
 { Whether --prepare may fetch NVIDIA's libraries: the user accepted NVIDIA's licence on
-  its page, a silent install passed /NVIDIA=accept, or they are already here. Anything
-  else runs it with --no-gpu, and Upshot transcribes on the processor. }
+  its page, or a silent install passed /NVIDIA=accept. }
 function NvidiaAccepted: Boolean;
 begin
-  if GpuLibrariesPresent then
-    Result := True
-  else if NvidiaAsked then
+  if NvidiaAsked then
     Result := NvidiaAccept.Checked
   else
     Result := WizardSilent and HasSwitch('/NVIDIA=accept');
+end;
+
+{ What --prepare is told: nothing when accepted; --no-gpu when declined on the page;
+  otherwise --gpu-if-present, which keeps and completes libraries already in the
+  signed-in user's own folder and fetches none. That check is made by --prepare, which
+  runs as that user: Setup may run as an administrator, whose {localappdata} is another
+  profile. }
+function GpuParam: String;
+begin
+  if NvidiaAccepted then
+    Result := ''
+  else if NvidiaAsked then
+    Result := ' --no-gpu'
+  else
+    Result := ' --gpu-if-present';
 end;
 
 procedure NvidiaChoiceClick(Sender: TObject);
@@ -433,7 +445,10 @@ begin
   WizardForm.LicenseMemo.Top := WizardForm.LicenseMemo.Top + Delta;
   WizardForm.LicenseMemo.Height := WizardForm.LicenseMemo.Height - Delta;
 
-  NvidiaAsked := not WizardSilent and not ModelDownloadSkipped and not GpuLibrariesPresent and HasNvidiaGpu;
+  { An all-users install runs as an administrator, whose profile says nothing about the
+    signed-in user's libraries: it always asks. }
+  NvidiaAsked := not WizardSilent and not ModelDownloadSkipped
+    and (IsAdminInstallMode or not GpuLibrariesPresent) and HasNvidiaGpu;
   Log('NVIDIA licence page: ' + IntToStr(Ord(NvidiaAsked)));
   if NvidiaAsked then
     CreateNvidiaPage;
@@ -468,8 +483,7 @@ begin
   ProgressFile := ExpandConstant('{tmp}\prepare-progress.txt');
   { --language: the progress lines app/prepare.py writes come in Setup's language. }
   Params := '--prepare --language=' + ActiveLanguage + ' --progress-file "' + ProgressFile + '"';
-  if not NvidiaAccepted then
-    Params := Params + ' --no-gpu';
+  Params := Params + GpuParam;
   Log('Running upshot.exe ' + Params);
   { As the signed-in user, not an elevated one: the model belongs in their profile. }
   if not ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), Params, '', SW_HIDE, ewNoWait, ResultCode) then begin
