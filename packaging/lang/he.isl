@@ -23,6 +23,6 @@ TermsInEnglish=תנאי השימוש מוצגים באנגלית.
 OpenSource=Upshot כולל גם תוכנות קוד פתוח, כל אחת תחת הרישיון שלה, ורשימתן ב-Upshot בהגדרות > אודות ועדכונים.
 NvidiaTitle=ספריות ה-GPU של NVIDIA
 NvidiaLead=Upshot יכול לתמלל מהר יותר על כרטיס המסך של NVIDIA.
-NvidiaAbove=לשם כך ההתקנה מורידה את NVIDIA cuBLAS ישירות מ-NVIDIA ‏(PyPI), תחת הרישיון של NVIDIA שלמטה: הסכם בינך לבין NVIDIA.
+NvidiaAbove=לשם כך ההתקנה מורידה את NVIDIA cuBLAS ישירות מ-NVIDIA ‏(PyPI), תחת הרישיון של NVIDIA שלמטה: הסכם ביניכם לבין NVIDIA.
 NvidiaAccept=קבלת ה-EULA של NVIDIA והורדת cuBLAS מ-NVIDIA ‏(PyPI)
 NvidiaSkip=דילוג: תמלול במעבד
