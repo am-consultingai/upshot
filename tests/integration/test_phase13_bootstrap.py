@@ -318,7 +318,9 @@ def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries(
     # installer and the app name the same file and compare by SHA-256.
     from app.asr import cuda_libs
 
-    assert f"\\upshot\\cuda\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
+    assert f"\\upshot\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
+    # Only the installer's yes saves an acceptance; a bare --prepare never does.
+    assert "Result := ' --nvidia-accepted'" in installer
     assert "GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile)" in installer
     # A silent acceptance states the administrator's authority, in Setup's /? help.
     assert "HelpTextNote=/NVIDIA=accept" in installer and "legal authority" in installer
