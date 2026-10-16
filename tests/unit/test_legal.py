@@ -235,12 +235,10 @@ def test_last_material_must_be_a_date_no_later_than_the_version() -> None:
     )
     with pytest.raises(TermsError, match="later than their version"):
         parse(later)
-    with pytest.raises(ValueError):
-        parse(
-            doc(material=False).replace(
-                "material: false", "material: false\nlast_material: 2026-13-40"
-            )
-        )
+    # Impossible, and earlier than the version, so only the real-date check refuses it.
+    impossible = "material: false\nlast_material: 2026-02-30"
+    with pytest.raises(TermsError, match="must be a real date"):
+        parse(doc(material=False).replace("material: false", impossible))
     assert parse(doc(material=True)).last_material == "2026-11-01"
 
 
