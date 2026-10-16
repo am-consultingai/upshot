@@ -296,3 +296,22 @@ def test_the_installer_speaks_every_interface_language() -> None:
         english = english or keys
         assert keys == english, f"{language}.isl differs from en.isl: {keys ^ english}"
     assert "--language={language}" in installer
+
+
+def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries() -> None:
+    """S9: NVIDIA's terms come before the download, which needs a yes (the page, or
+    /NVIDIA=accept on a silent install) or libraries already fetched; else --no-gpu."""
+    installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
+    build = Path("packaging/build.ps1").read_text(encoding="utf-8")
+    shipped = sorted(Path("app/asr/licenses").glob("nvidia_*-License.txt"))
+    assert len(shipped) == 1, "build.ps1 takes exactly one NVIDIA licence for the page"
+    assert 'Filter "nvidia_*-License.txt"' in build
+    assert "$nvidiaText, (New-Object System.Text.UTF8Encoding $true)" in build
+    assert 'Source: "..\\build\\nvidia-licence.txt"; Flags: dontcopy' in installer
+    assert "ExtractTemporaryFile('nvidia-licence.txt')" in installer
+    assert "if not NvidiaAccepted then\n    Params := Params + ' --no-gpu';" in installer
+    assert "HasSwitch('/NVIDIA=accept')" in installer
+    # Nothing is preselected: Next waits for a choice.
+    assert ".Checked := True" not in installer
+    enable = "WizardForm.NextButton.Enabled := NvidiaAccept.Checked or NvidiaSkip.Checked;"
+    assert enable in installer
