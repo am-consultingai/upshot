@@ -57,7 +57,9 @@ def service(
 def test_the_bundled_terms_parse_with_a_version_and_unique_sections() -> None:
     terms = bundled()
     assert date.fromisoformat(terms.version) and date.fromisoformat(terms.effective)
-    assert terms.material and terms.summary
+    assert terms.summary
+    # Material, or naming the material version before it, so nobody skips one.
+    assert terms.material or terms.last_material
     anchors = [s.anchor for s in terms.sections]
     assert len(anchors) == len(set(anchors)) and len(anchors) >= 20
     assert {"agreement", "licence", "plans", "updates", "changes", "law"} <= set(anchors)
@@ -177,6 +179,67 @@ def test_a_newer_version_is_shown_the_way_its_kind_needs(
     state = terms.state()
     assert state["gate"] is gate
     assert (state["notice"] or {}).get("kind") == notice
+
+
+@pytest.mark.parametrize(
+    ("accepted", "gate", "notice"),
+    [
+        ("2026-09-01", True, None),  # never saw the material 2026-10-06: the whole screen
+        ("2026-10-06", False, "changed"),  # saw it: this minor change is a banner
+    ],
+)
+def test_a_minor_version_does_not_carry_anyone_past_a_material_one(
+    tmp_path: Path, accepted: str, gate: bool, notice: str | None
+) -> None:
+    terms = service(tmp_path, today="2026-12-01")
+    terms.config.set("legal.accepted_version", accepted)
+    minor = doc(material=False).replace(
+        "material: false", "material: false\nlast_material: 2026-10-06"
+    )
+    (tmp_path / "legal").mkdir(exist_ok=True)
+    (tmp_path / "legal" / "terms-2026-11-01.md").write_text(minor, encoding="utf-8")
+    state = terms.state()
+    assert state["current"]["version"] == "2026-11-01"
+    assert state["gate"] is gate
+    assert (state["notice"] or {}).get("kind") == notice
+
+
+def test_a_malformed_acceptance_record_does_not_switch_the_gate_off(tmp_path: Path) -> None:
+    terms = service(tmp_path)
+    terms.config.set("legal.accepted_version", "x")  # compares later than any date
+    assert terms.accepted_version == ""
+    assert terms.state()["gate"] is True
+
+
+def test_a_minor_version_that_names_no_material_one_is_not_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_legal", ROOT / "scripts" / "build_legal.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = tmp_path / "terms.md"
+    source.write_text(doc(material=False), encoding="utf-8")
+    monkeypatch.setattr(module, "SOURCE", source)
+    assert module.main(["--check"]) == 1
+    assert "needs last_material" in capsys.readouterr().out
+
+
+def test_last_material_must_be_a_date_no_later_than_the_version() -> None:
+    later = doc(material=False).replace(
+        "material: false", "material: false\nlast_material: 2026-12-01"
+    )
+    with pytest.raises(TermsError, match="later than their version"):
+        parse(later)
+    # Impossible, and earlier than the version, so only the real-date check refuses it.
+    impossible = "material: false\nlast_material: 2026-02-30"
+    with pytest.raises(TermsError, match="must be a real date"):
+        parse(doc(material=False).replace("material: false", impossible))
+    assert parse(doc(material=True)).last_material == "2026-11-01"
 
 
 # ------------------------------------------------------------------ the website

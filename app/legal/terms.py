@@ -14,7 +14,8 @@ Three sources of a terms document, newest version wins once it is in effect:
 
 What the interface does with it (``state``):
 
-- No version accepted yet, or a **material** newer version in effect: ``gate`` is true and
+- No version accepted yet, a **material** newer version in effect, or a version accepted
+  before the latest material one (``last_material``): ``gate`` is true and
   the app shows the Terms instead of its other screens until they are accepted. The
   recorder and the detector are not touched: a meeting being recorded finishes (D83).
 - A non-material newer version in effect: a ``notice`` the user can acknowledge.
@@ -42,7 +43,7 @@ import httpx
 from app import paths
 from app.clock import Clock, SystemClock
 from app.config import Config
-from app.legal.document import Terms, TermsError, parse
+from app.legal.document import Terms, TermsError, is_date, parse
 from app.log import get
 
 log = get(__name__)
@@ -145,14 +146,18 @@ class TermsService:
 
     @property
     def accepted_version(self) -> str:
-        return str(self.config.get("legal.accepted_version") or "")
+        """The version accepted; empty when none is, or when the record is not a date (a
+        hand-edited one would otherwise compare later than every version)."""
+        accepted = str(self.config.get("legal.accepted_version") or "")
+        return accepted if is_date(accepted) else ""
 
     def state(self, today: date | None = None) -> dict[str, Any]:
         today = today or self._today()
         current = self.current(today)
         accepted = self.accepted_version
         behind = not accepted or current.version > accepted
-        gate = behind and (not accepted or current.material)
+        # A non-material version does not carry anyone past a material one they never saw.
+        gate = behind and (not accepted or current.material or accepted < current.last_material)
         notice: dict[str, Any] | None = None
         if behind and not gate:
             notice = {"kind": "changed", **_meta(current)}

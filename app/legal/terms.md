@@ -1,8 +1,9 @@
 ---
-version: 2026-10-06
-effective: 2026-10-06
-material: true
-summary: Upshot now updates itself, can send crash reports if you agree, and lets you send feedback from the app. These Terms describe the automatic updates and the feedback you send; the Privacy Policy describes exactly what each one sends.
+version: 2026-10-16
+effective: 2026-10-16
+material: false
+last_material: 2026-10-06
+summary: Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only once NVIDIA's licence has been accepted, and says that these Terms never restrict what a component's own licence lets you do with it.
 ---
 
 # Upshot Terms of Service
@@ -55,7 +56,7 @@ Upshot is licensed, not sold. We and our licensors keep all rights not expressly
 
 ## 6. Restrictions {#restrictions}
 
-Except as these Terms, the licence of the source code (section 7) or applicable law expressly permits, you must not:
+Except as these Terms, the licence of the source code (section 7), the licence of a third-party component (section 16) or applicable law expressly permits, you must not:
 
 - sell, resell, rent, lease, lend, sublicense, distribute or make the official app or its installer available to others, other than deploying it within your own organization;
 - remove, alter or obscure any copyright, trademark or other proprietary notice in Upshot;
@@ -132,7 +133,7 @@ Transcripts, summaries, action items and answers are produced automatically by s
 
 ## 16. Third-party components and models {#components}
 
-Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. They are licensed to you under their own licences, which are listed in the notices that come with Upshot. Nothing in these Terms limits your rights under those licences.
+Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. On a computer with a suitable NVIDIA graphics card, the installer can also download NVIDIA's cuBLAS library, as NVIDIA publishes it on PyPI, but only once NVIDIA's licence has been accepted: on the installer's page or, for a silent installation, with the installer's NVIDIA option. A copy that an earlier version of Upshot already downloaded is kept, and completed or updated, without asking again. All of these are licensed to you under their own licences, which are listed in the notices that come with Upshot and in the app. Nothing in these Terms limits your rights under those licences: where a component's licence lets you modify, replace or reverse-engineer that component, these Terms do not restrict it.
 
 ## 17. Feedback {#feedback}
 

@@ -27,7 +27,18 @@ _FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 _SECTION = re.compile(r"^## (.+?)(?:\s*\{#([a-z0-9-]+)\})?\s*$")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
-_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$", re.ASCII)
+
+
+def is_date(value: str) -> bool:
+    """A real date as YYYY-MM-DD: not 2026-02-30, not full-width digits."""
+    if not _DATE.match(value):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 class TermsError(ValueError):
@@ -52,6 +63,9 @@ class Terms:
     sections: tuple[Section, ...]
     #: The file exactly as read, which the manifest's checksum covers.
     source: str = field(repr=False)
+    #: The latest material version up to this one (this one, if it is material): whoever
+    #: accepted an earlier version must accept again, even when this change is not material.
+    last_material: str = ""
 
     @property
     def sha256(self) -> str:
@@ -125,11 +139,15 @@ def parse(source: str) -> Terms:
             meta[key.strip()] = value.strip()
     version = meta.get("version", "")
     effective = meta.get("effective", "")
-    for name, value in (("version", version), ("effective", effective)):
-        if not _DATE.match(value):
-            raise TermsError(f"the terms' {name} must be a date (YYYY-MM-DD), not {value!r}")
-        date.fromisoformat(value)  # a real date, not 2026-13-40
     material = meta.get("material", "false").lower() in ("true", "yes", "1")
+    last_material = version if material else meta.get("last_material", "")
+    dates = (("version", version), ("effective", effective), ("last_material", last_material))
+    for name, value in dates:
+        # A TermsError, never a bare ValueError: callers skip an untrusted copy on that.
+        if (value or name != "last_material") and not is_date(value):
+            raise TermsError(f"the terms' {name} must be a real date (YYYY-MM-DD), not {value!r}")
+    if last_material and last_material > version:
+        raise TermsError("the terms' last_material is later than their version")
 
     title = ""
     sections: list[Section] = []
@@ -193,6 +211,7 @@ def parse(source: str) -> Terms:
         title=title,
         sections=tuple(sections),
         source=source,
+        last_material=last_material,
     )
 
 

@@ -1,9 +1,9 @@
 {
-  "version": "2026-10-06",
-  "effective": "2026-10-06",
-  "material": true,
-  "summary": "Upshot now updates itself, can send crash reports if you agree, and lets you send feedback from the app. These Terms describe the automatic updates and the feedback you send; the Privacy Policy describes exactly what each one sends.",
+  "version": "2026-10-16",
+  "effective": "2026-10-16",
+  "material": false,
+  "summary": "Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only once NVIDIA's licence has been accepted, and says that these Terms never restrict what a component's own licence lets you do with it.",
   "url": "terms.md",
-  "sha256": "b2a018eae39bb0d36b0d40d2e54094311971887aaaf9c840c82dc63806e49df7",
+  "sha256": "48aae66411981fa583bfcc0fd13f2c9685a12360dc9c7e2ccafe693911a241f7",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }
