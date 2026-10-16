@@ -338,9 +338,9 @@ var
   Accepted: String;
 begin
   Result := False;
-  Accepted := ExpandConstant('{localappdata}\upshot\cuda\nvidia-licence-accepted-cu12.txt');
+  Accepted := ExpandConstant('{localappdata}\upshot\nvidia-licence-accepted-cu12.txt');
   if not FileExists(Accepted) then
-    exit;
+    Exit;
   try
     Result := GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile);
   except
@@ -383,15 +383,16 @@ begin
     Result := WizardSilent and HasSwitch('/NVIDIA=accept');
 end;
 
-{ What --prepare is told: nothing when accepted; --no-gpu when declined on the page;
-  otherwise --gpu-if-present, which keeps and completes libraries already in the
-  signed-in user's own folder and fetches none. That check is made by --prepare, which
+{ What --prepare is told: --nvidia-accepted when accepted (it saves the accepted licence);
+  --no-gpu when declined on the page (it withdraws an earlier acceptance); otherwise
+  --gpu-if-present, which keeps and completes libraries already in the signed-in user's
+  own folder, accepted under NVIDIA's licence as it now is, and fetches none. That check is made by --prepare, which
   runs as that user: Setup may run as an administrator, whose local app data is another
   profile. }
 function GpuParam: String;
 begin
   if NvidiaAccepted then
-    Result := ''
+    Result := ' --nvidia-accepted'
   else if NvidiaAsked then
     Result := ' --no-gpu'
   else

@@ -138,14 +138,16 @@ def add_missing_licences(home: Path | None = None, wheels: tuple[Wheel, ...] = W
 
 #: The CUDA generation of ``WHEELS``. A new generation is a new acceptance (D100).
 CUDA_GENERATION = "cu12"
-#: The NVIDIA licence the user accepted, saved under ``<home>/cuda`` when they accept (the
+#: The NVIDIA licence the user accepted, saved under ``<home>`` when they accept (the
 #: installer's page, or /NVIDIA=accept). It is written exactly as build.ps1 writes the
 #: installer's copy (UTF-8 with a BOM), so the installer compares the two by SHA-256.
 ACCEPTED_LICENCE = f"nvidia-licence-accepted-{CUDA_GENERATION}.txt"
 
 
 def accepted_licence_path(home: Path | None = None) -> Path:
-    return (home or paths.app_home()) / "cuda" / ACCEPTED_LICENCE
+    # Not in cuda/: that folder means "the GPU libraries are here" to --prepare and the
+    # uninstaller, and an acceptance alone is not that.
+    return (home or paths.app_home()) / ACCEPTED_LICENCE
 
 
 def _shipped_licence(wheels: tuple[Wheel, ...]) -> str:
@@ -171,8 +173,16 @@ def acceptance_current(home: Path | None = None, wheels: tuple[Wheel, ...] = WHE
     try:
         accepted = accepted_licence_path(home).read_text(encoding="utf-8-sig", newline="")
         return accepted == _shipped_licence(wheels)
-    except OSError:
+    except (OSError, ValueError):  # missing, unreadable or damaged: not accepted
         return False
+
+
+def withdraw_acceptance(home: Path | None = None) -> None:
+    """Forget an earlier acceptance once the user declines: the last answer was no."""
+    try:
+        accepted_licence_path(home).unlink(missing_ok=True)
+    except OSError as exc:
+        log.warning("could not withdraw NVIDIA's accepted licence: %s", exc)
 
 
 def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
