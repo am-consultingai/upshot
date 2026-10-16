@@ -309,7 +309,10 @@ def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries(
     assert "$nvidiaText, (New-Object System.Text.UTF8Encoding $true)" in build
     assert 'Source: "..\\build\\nvidia-licence.txt"; Flags: dontcopy' in installer
     assert "ExtractTemporaryFile('nvidia-licence.txt')" in installer
-    assert "if not NvidiaAccepted then\n    Params := Params + ' --no-gpu';" in installer
+    assert "Params := Params + GpuParam;" in installer
+    assert "Result := ' --no-gpu'" in installer and "Result := ' --gpu-if-present'" in installer
+    # An all-users install runs as an administrator: its profile proves nothing; it asks.
+    assert "(IsAdminInstallMode or not GpuLibrariesPresent)" in installer
     assert "HasSwitch('/NVIDIA=accept')" in installer
     # Nothing is preselected: Next waits for a choice.
     assert ".Checked := True" not in installer

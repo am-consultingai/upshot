@@ -887,3 +887,16 @@ def test_an_installed_build_does_not_count_a_configured_cuda_dir(
     assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) is None
     monkeypatch.setattr(paths, "is_frozen", lambda: False)
     assert cuda_libs.usable_elsewhere(config, search_path=[], system_dirs=()) == folder
+
+
+def test_the_gpu_step_runs_only_when_accepted_or_already_in_this_users_folder(
+    tmp_path: Path,
+) -> None:
+    from app.prepare import gpu_allowed
+
+    assert gpu_allowed(no_gpu=False, if_present=False, home=tmp_path)  # accepted
+    assert not gpu_allowed(no_gpu=True, if_present=False, home=tmp_path)  # declined
+    assert not gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)  # not asked, none here
+    (tmp_path / "cuda").mkdir()
+    assert gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)  # kept and completed
+    assert not gpu_allowed(no_gpu=True, if_present=True, home=tmp_path)
