@@ -2,8 +2,8 @@
   "version": "2026-10-16",
   "effective": "2026-10-16",
   "material": false,
-  "summary": "Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only if you accept NVIDIA's licence, and says that these Terms never restrict what a component's own licence lets you do with it.",
+  "summary": "Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only once NVIDIA's licence has been accepted, and says that these Terms never restrict what a component's own licence lets you do with it.",
   "url": "terms.md",
-  "sha256": "bc093c1723bb9d25431dea59fadc634d08aedf713d24e3143d0846d33f4d21d8",
+  "sha256": "6294bd60e0a141dd533cd469c18eecae501cebed9b067fbfb45d745a583152a0",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }
