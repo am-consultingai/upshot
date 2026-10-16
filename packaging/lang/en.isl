@@ -23,6 +23,6 @@ TermsInEnglish=
 OpenSource=Upshot also includes open-source software under its own licences, listed in Upshot under Settings > About and updates.
 NvidiaTitle=NVIDIA GPU libraries
 NvidiaLead=Upshot can transcribe faster on your NVIDIA graphics card.
-NvidiaAbove=For that, Setup downloads NVIDIA cuBLAS from NVIDIA, under NVIDIA's licence below.
+NvidiaAbove=For that, Setup downloads NVIDIA cuBLAS, under NVIDIA's licence below.
 NvidiaAccept=I accept NVIDIA's licence: download the GPU libraries
 NvidiaSkip=Skip: transcribe on the processor
