@@ -137,6 +137,7 @@ def parse(source: str) -> Terms:
     if last_material:
         if not _DATE.match(last_material):
             raise TermsError(f"the terms' last_material must be a date, not {last_material!r}")
+        date.fromisoformat(last_material)  # a real date, not 2026-13-40
         if last_material > version:
             raise TermsError("the terms' last_material is later than their version")
 

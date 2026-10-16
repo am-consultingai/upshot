@@ -146,7 +146,10 @@ class TermsService:
 
     @property
     def accepted_version(self) -> str:
-        return str(self.config.get("legal.accepted_version") or "")
+        """The version accepted; empty when none is, or when the record is not a date (a
+        hand-edited one would otherwise compare later than every version)."""
+        accepted = str(self.config.get("legal.accepted_version") or "")
+        return accepted if re.fullmatch(r"\d{4}-\d{2}-\d{2}", accepted) else ""
 
     def state(self, today: date | None = None) -> dict[str, Any]:
         today = today or self._today()
