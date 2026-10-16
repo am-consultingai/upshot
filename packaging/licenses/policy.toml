@@ -6,7 +6,7 @@
 # Only licences a component uses today; another is added when one needs it, deliberately.
 allowed = [
   "MIT", "MIT-0", "MIT-CMU", "ISC", "0BSD", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0",
-  "PSF-2.0", "Zlib", "CC0-1.0",
+  "PSF-2.0", "Zlib", "CC0-1.0", "BSL-1.0",
 ]
 
 # Copyleft that Upshot may ship only as it does for these components: unmodified,
@@ -44,3 +44,9 @@ name = "Intel OpenMP runtime (libiomp5md.dll, shipped inside ctranslate2)"
 licence = "LicenseRef-Intel-EULA-Developer-Tools"
 why = "ctranslate2 needs it; its redistribution conditions are open in story S11."
 approved = "temporary, until S11 replaces it or meets Intel's terms"
+
+[[exception]]
+name = "Intel oneMKL (statically linked inside ctranslate2)"
+licence = "LicenseRef-Intel-ISSL"
+why = "Free redistribution with Intel's notice and terms reproduced (no reverse engineering)."
+approved = "licence epic S12 (notice only; S12 option C removes MKL from the build)"
