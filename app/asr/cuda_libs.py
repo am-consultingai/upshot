@@ -2,7 +2,8 @@
 
 The freeze bundles no CUDA libraries, so without these a machine with a good NVIDIA card
 transcribes on the CPU, several times slower (known-issues #2). The installer fetches them
-through ``upshot.exe --prepare`` when the card could run the model (``wanted``):
+through ``upshot.exe --prepare`` when the card could run the model (``wanted``) and NVIDIA's
+licence was accepted in the installer (``prepare.gpu_allowed``, licence epic S9):
 
 - NVIDIA's cuBLAS wheel from PyPI, pinned by version and SHA-256: the exact DLLs (same
   bytes) that transcribe on the author's GTX 1080 (Pascal) and on an MX450 (Turing);

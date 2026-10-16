@@ -368,8 +368,8 @@ def main(argv: list[str]) -> int:
 
     language: str = args.language
     progress = ProgressFile(args.progress_file)
-    gpu = gpu_allowed(no_gpu=args.no_gpu, if_present=args.gpu_if_present)
     try:
+        gpu = gpu_allowed(no_gpu=args.no_gpu, if_present=args.gpu_if_present)
         code = run(Config.load(), progress, cancelled, gpu=gpu, language=language)
     except Exception as exc:  # the installer must always get a last word
         log.exception("prepare failed")
