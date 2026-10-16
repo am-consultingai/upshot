@@ -900,3 +900,19 @@ def test_the_gpu_step_runs_only_when_accepted_or_already_in_this_users_folder(
     (tmp_path / "cuda").mkdir()
     assert gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)  # kept and completed
     assert not gpu_allowed(no_gpu=True, if_present=True, home=tmp_path)
+
+
+def test_the_entry_point_passes_gpu_if_present_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app import prepare
+
+    monkeypatch.setenv("UP_HOME", str(tmp_path))
+    seen: list[bool] = []
+    monkeypatch.setattr(prepare, "run", lambda *a, gpu, **k: seen.append(gpu) or prepare.EXIT_OK)
+    argv = ["--progress-file", str(tmp_path / "progress.txt"), "--gpu-if-present"]
+    prepare.main(argv)
+    (tmp_path / "cuda").mkdir()
+    prepare.main(argv)
+    prepare.main([*argv, "--no-gpu"])
+    assert seen == [False, True, False]

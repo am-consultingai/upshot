@@ -145,8 +145,8 @@ Filename: "{app}\{#AppExe}"; Parameters: "--background --after-update"; Flags: n
 ; offers to remove the speech model and GPU libraries (see [Code]).
 
 [Code]
-{ The three speech models (and, with a suitable NVIDIA GPU, the CUDA libraries) are
-  fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
+{ The three speech models (and, with a suitable NVIDIA GPU and NVIDIA's licence
+  accepted on its page, the CUDA libraries) are fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
   work and the checks; this page only shows the progress file it writes.
   The models come from the installer and nowhere else: the app never downloads one while
   transcribing. So a model download that fails or is stopped leaves the install
