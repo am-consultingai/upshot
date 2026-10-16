@@ -330,7 +330,8 @@ end;
   NVIDIA's is downloaded. }
 function HasNvidiaGpu: Boolean;
 var
-  Locator, Service, Adapters: Variant;
+  Locator, Service, Adapters, Adapter: Variant;
+  Name: String;
   I: Integer;
 begin
   Result := False;
@@ -338,9 +339,13 @@ begin
     Locator := CreateOleObject('WbemScripting.SWbemLocator');
     Service := Locator.ConnectServer('.', 'root\CIMV2');
     Adapters := Service.ExecQuery('SELECT Name FROM Win32_VideoController');
-    for I := 0 to Adapters.Count - 1 do
-      if Pos('NVIDIA', Uppercase(Adapters.ItemIndex(I).Name)) > 0 then
+    for I := 0 to Adapters.Count - 1 do begin
+      Adapter := Adapters.ItemIndex(I);
+      Name := Adapter.Name;
+      Log('Graphics adapter: ' + Name);
+      if Pos('NVIDIA', Uppercase(Name)) > 0 then
         Result := True;
+    end;
   except
     Log('Could not list the graphics adapters: ' + GetExceptionMessage);
   end;
