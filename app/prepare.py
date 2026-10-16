@@ -32,10 +32,11 @@ the CPU.
 
 The installer fetches them only once NVIDIA's licence is accepted (licence epic S9).
 ``--no-gpu``: declined, nothing of NVIDIA's is fetched. ``--gpu-if-present``: not asked
-(a silent install, no NVIDIA GPU): libraries already in this user's folder, fetched
-under the same licence by an earlier install, are kept and completed; none are fetched
-otherwise. Decided here, in the signed-in user's profile, not by Setup, which may run
-as an administrator with another profile.
+(a silent install, no NVIDIA GPU): libraries already in this user's folder are kept and
+completed only when the licence accepted for them is the one the pinned wheels come under
+(the same text and CUDA generation, saved at acceptance: ``cuda_libs.record_acceptance``);
+none are fetched otherwise. Decided here, in the signed-in user's profile, not by Setup,
+which may run as an administrator with another profile.
 """
 
 from __future__ import annotations
@@ -334,18 +335,28 @@ def _report(exc: Exception) -> None:
 
 
 def gpu_allowed(*, no_gpu: bool, if_present: bool, home: Path | None = None) -> bool:
-    """Whether the GPU step may run: not when declined, and with ``if_present`` only when
-    this user's own folder already holds the libraries."""
+    """Whether the GPU step may run: not when declined; with ``if_present`` only when this
+    user's own folder already holds the libraries and the licence accepted for them is the
+    one the pinned wheels come under. An acceptance (neither flag) is saved for next time."""
+    from app.asr import cuda_libs
+
     if no_gpu:
         return False
     if if_present:
         from app import paths
 
         present = ((home or paths.app_home()) / "cuda").is_dir()
+        current = present and cuda_libs.acceptance_current(home)
         log.info(
-            "prepare: GPU libraries %s; not asked to fetch them", "present" if present else "absent"
+            "prepare: GPU libraries %s%s; not asked to fetch them",
+            "present" if present else "absent",
+            "" if current or not present else ", but not under NVIDIA's licence as it now is",
         )
-        return present
+        return current
+    try:
+        cuda_libs.record_acceptance(home)
+    except OSError as exc:  # the download still goes ahead; the next install asks again
+        log.warning("prepare: could not save NVIDIA's accepted licence: %s", exc)
     return True
 
 
