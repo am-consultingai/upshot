@@ -2,6 +2,9 @@
 name = "upshot-mcp"
 version = "0.1.0"
 description = "Connects Claude and other MCP clients to Upshot's local transcription (D86)."
+# Upshot's own licence (LICENSE at the repository's root); it ships in the installer as
+# mcp\upshot-mcp.exe. The table form: setuptools before 77 rejects a bare SPDX string.
+license = {text = "BUSL-1.1"}
 requires-python = ">=3.11"
 dependencies = []
 
