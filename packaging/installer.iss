@@ -321,6 +321,12 @@ begin
   Result := '';
 end;
 
+{ The GPU libraries are in this profile's Upshot folder (an earlier install fetched them). }
+function GpuLibrariesPresent: Boolean;
+begin
+  Result := DirExists(ExpandConstant('{localappdata}\upshot\cuda'));
+end;
+
 { NVIDIA's licence for the GPU libraries, in a temporary folder. }
 function NvidiaLicenceFile: String;
 begin
@@ -386,9 +392,9 @@ end;
 { What --prepare is told: --nvidia-accepted when accepted (it saves the accepted licence);
   --no-gpu when declined on the page (it withdraws an earlier acceptance); otherwise
   --gpu-if-present, which keeps and completes libraries already in the signed-in user's
-  own folder, accepted under NVIDIA's licence as it now is, and fetches none. That check is made by --prepare, which
-  runs as that user: Setup may run as an administrator, whose local app data is another
-  profile. }
+  own folder, accepted under NVIDIA's licence as it now is, and fetches none. That check
+  is made by --prepare, which runs as that user: Setup may run as an administrator, whose
+  local app data is another profile. }
 function GpuParam: String;
 begin
   if NvidiaAccepted then
@@ -470,7 +476,8 @@ begin
   { An all-users install runs as an administrator, whose profile says nothing about the
     signed-in user's libraries: it always asks. }
   NvidiaAsked := not WizardSilent and not ModelDownloadSkipped
-    and (IsAdminInstallMode or not NvidiaLicenceAccepted) and HasNvidiaGpu;
+    and (IsAdminInstallMode or not (GpuLibrariesPresent and NvidiaLicenceAccepted))
+    and HasNvidiaGpu;
   Log('NVIDIA licence page: ' + IntToStr(Ord(NvidiaAsked)));
   if NvidiaAsked then
     CreateNvidiaPage;
@@ -602,5 +609,7 @@ begin
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then begin
     DelTree(Home + '\models', True, True, True);
     DelTree(Home + '\cuda', True, True, True);
+    { With the libraries gone, a reinstall asks for NVIDIA's licence again. }
+    DeleteFile(Home + '\nvidia-licence-accepted-cu12.txt');
   end;
 end;
