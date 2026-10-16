@@ -204,12 +204,43 @@ def test_a_minor_version_does_not_carry_anyone_past_a_material_one(
     assert (state["notice"] or {}).get("kind") == notice
 
 
+def test_a_malformed_acceptance_record_does_not_switch_the_gate_off(tmp_path: Path) -> None:
+    terms = service(tmp_path)
+    terms.config.set("legal.accepted_version", "x")  # compares later than any date
+    assert terms.accepted_version == ""
+    assert terms.state()["gate"] is True
+
+
+def test_a_minor_version_that_names_no_material_one_is_not_published(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_legal", ROOT / "scripts" / "build_legal.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = tmp_path / "terms.md"
+    source.write_text(doc(material=False), encoding="utf-8")
+    monkeypatch.setattr(module, "SOURCE", source)
+    assert module.main(["--check"]) == 1
+    assert "needs last_material" in capsys.readouterr().out
+
+
 def test_last_material_must_be_a_date_no_later_than_the_version() -> None:
     later = doc(material=False).replace(
         "material: false", "material: false\nlast_material: 2026-12-01"
     )
     with pytest.raises(TermsError, match="later than their version"):
         parse(later)
+    with pytest.raises(ValueError):
+        parse(
+            doc(material=False).replace(
+                "material: false", "material: false\nlast_material: 2026-13-40"
+            )
+        )
     assert parse(doc(material=True)).last_material == "2026-11-01"
 
 

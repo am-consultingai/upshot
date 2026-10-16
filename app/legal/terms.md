@@ -3,7 +3,7 @@ version: 2026-10-16
 effective: 2026-10-16
 material: false
 last_material: 2026-10-06
-summary: Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only if you accept NVIDIA's licence, and says that these Terms never restrict what a component's own licence lets you do with it.
+summary: Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only once NVIDIA's licence has been accepted, and says that these Terms never restrict what a component's own licence lets you do with it.
 ---
 
 # Upshot Terms of Service
@@ -133,7 +133,7 @@ Transcripts, summaries, action items and answers are produced automatically by s
 
 ## 16. Third-party components and models {#components}
 
-Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. On a computer with a suitable NVIDIA graphics card, and only if you accept NVIDIA's licence when the installer shows it, the installer also downloads NVIDIA's cuBLAS library from NVIDIA. All of these are licensed to you under their own licences, which are listed in the notices that come with Upshot and in the app. Nothing in these Terms limits your rights under those licences: where a component's licence lets you modify, replace or reverse-engineer that component, these Terms do not restrict it.
+Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. On a computer with a suitable NVIDIA graphics card, the installer can also download NVIDIA's cuBLAS library, as NVIDIA publishes it on PyPI, but only once NVIDIA's licence has been accepted: on the installer's page or, for a silent installation, with the installer's NVIDIA option. A copy that an earlier version of Upshot already downloaded is kept. All of these are licensed to you under their own licences, which are listed in the notices that come with Upshot and in the app. Nothing in these Terms limits your rights under those licences: where a component's licence lets you modify, replace or reverse-engineer that component, these Terms do not restrict it.
 
 ## 17. Feedback {#feedback}
 
