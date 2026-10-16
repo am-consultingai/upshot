@@ -136,6 +136,45 @@ def add_missing_licences(home: Path | None = None, wheels: tuple[Wheel, ...] = W
         return 0
 
 
+#: The CUDA generation of ``WHEELS``. A new generation is a new acceptance (D100).
+CUDA_GENERATION = "cu12"
+#: The NVIDIA licence the user accepted, saved under ``<home>/cuda`` when they accept (the
+#: installer's page, or /NVIDIA=accept). It is written exactly as build.ps1 writes the
+#: installer's copy (UTF-8 with a BOM), so the installer compares the two by SHA-256.
+ACCEPTED_LICENCE = f"nvidia-licence-accepted-{CUDA_GENERATION}.txt"
+
+
+def accepted_licence_path(home: Path | None = None) -> Path:
+    return (home or paths.app_home()) / "cuda" / ACCEPTED_LICENCE
+
+
+def _shipped_licence(wheels: tuple[Wheel, ...]) -> str:
+    """The licence the installer shows: build.ps1 takes the one NVIDIA licence there is."""
+    (wheel,) = wheels
+    source = paths.resource("app", "asr", "licenses", licence_name(wheel))
+    return source.read_text(encoding="utf-8", newline="")
+
+
+def record_acceptance(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> None:
+    """Save the licence just accepted, so a later install can tell whether it still applies."""
+    target = accepted_licence_path(home)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(target.name + ".tmp")
+    partial.write_text(_shipped_licence(wheels), encoding="utf-8-sig", newline="")
+    os.replace(partial, target)
+
+
+def acceptance_current(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> bool:
+    """Whether this user accepted the licence the pinned wheels come under: the same text, for
+    the same CUDA generation. A copy kept from an earlier acceptance may be completed or
+    updated without asking again only then (the licence epic's legal review, D100)."""
+    try:
+        accepted = accepted_licence_path(home).read_text(encoding="utf-8-sig", newline="")
+        return accepted == _shipped_licence(wheels)
+    except OSError:
+        return False
+
+
 def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
     """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
     rewrite the marker to name only the current wheels. Returns the bytes freed (0 when

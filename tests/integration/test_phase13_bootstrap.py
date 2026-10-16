@@ -313,7 +313,15 @@ def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries(
     assert "Params := Params + GpuParam;" in installer
     assert "Result := ' --no-gpu'" in installer and "Result := ' --gpu-if-present'" in installer
     # An all-users install runs as an administrator: its profile proves nothing; it asks.
-    assert "(IsAdminInstallMode or not GpuLibrariesPresent)" in installer
+    assert "(IsAdminInstallMode or not NvidiaLicenceAccepted)" in installer
+    # The page is skipped only when this profile accepted this very licence (D100): the
+    # installer and the app name the same file and compare by SHA-256.
+    from app.asr import cuda_libs
+
+    assert f"\\upshot\\cuda\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
+    assert "GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile)" in installer
+    # A silent acceptance states the administrator's authority, in Setup's /? help.
+    assert "HelpTextNote=/NVIDIA=accept" in installer and "legal authority" in installer
     assert "HasSwitch('/NVIDIA=accept')" in installer
     # Nothing is preselected: Next waits for a choice.
     assert ".Checked := True" not in installer

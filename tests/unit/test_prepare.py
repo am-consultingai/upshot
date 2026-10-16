@@ -894,12 +894,47 @@ def test_the_gpu_step_runs_only_when_accepted_or_already_in_this_users_folder(
 ) -> None:
     from app.prepare import gpu_allowed
 
-    assert gpu_allowed(no_gpu=False, if_present=False, home=tmp_path)  # accepted
     assert not gpu_allowed(no_gpu=True, if_present=False, home=tmp_path)  # declined
     assert not gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)  # not asked, none here
     (tmp_path / "cuda").mkdir()
+    # Libraries here, but no acceptance saved for them (an earlier build): not updated.
+    assert not gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)
+    assert gpu_allowed(no_gpu=False, if_present=False, home=tmp_path)  # accepted, and saved
     assert gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)  # kept and completed
     assert not gpu_allowed(no_gpu=True, if_present=True, home=tmp_path)
+
+
+def test_a_changed_nvidia_licence_or_cuda_generation_needs_a_new_acceptance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D100: a kept copy is updated without asking only under the licence text accepted, for
+    the same CUDA generation; anything else waits for a new yes."""
+    from app.asr import cuda_libs
+    from app.prepare import gpu_allowed
+
+    assert gpu_allowed(no_gpu=False, if_present=False, home=tmp_path)
+    assert cuda_libs.acceptance_current(tmp_path)
+    accepted = cuda_libs.accepted_licence_path(tmp_path)
+    text = accepted.read_text(encoding="utf-8-sig", newline="")
+    revised = text + "\nRevised.\n"  # NVIDIA changed its terms
+    accepted.write_text(revised, encoding="utf-8-sig", newline="")
+    assert not cuda_libs.acceptance_current(tmp_path)
+    assert not gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)
+    accepted.write_text(text, encoding="utf-8-sig", newline="")
+    assert gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)
+    monkeypatch.setattr(cuda_libs, "ACCEPTED_LICENCE", "nvidia-licence-accepted-cu13.txt")
+    assert not gpu_allowed(no_gpu=False, if_present=True, home=tmp_path)  # a new generation
+
+
+def test_the_saved_acceptance_is_byte_for_byte_the_installers_licence(tmp_path: Path) -> None:
+    """The installer compares the two files by SHA-256: build.ps1 writes its copy as UTF-8
+    with a BOM over the shipped bytes, and record_acceptance must write the same bytes."""
+    from app.asr import cuda_libs
+
+    cuda_libs.record_acceptance(tmp_path)
+    (wheel,) = cuda_libs.WHEELS
+    shipped = Path("app/asr/licenses", cuda_libs.licence_name(wheel)).read_bytes()
+    assert cuda_libs.accepted_licence_path(tmp_path).read_bytes() == b"\xef\xbb\xbf" + shipped
 
 
 def test_the_entry_point_passes_gpu_if_present_through(
@@ -912,7 +947,7 @@ def test_the_entry_point_passes_gpu_if_present_through(
     monkeypatch.setattr(prepare, "run", lambda *a, gpu, **k: seen.append(gpu) or prepare.EXIT_OK)
     argv = ["--progress-file", str(tmp_path / "progress.txt"), "--gpu-if-present"]
     prepare.main(argv)
-    (tmp_path / "cuda").mkdir()
+    prepare.main(argv[:2])  # accepted: saves the licence
     prepare.main(argv)
     prepare.main([*argv, "--no-gpu"])
-    assert seen == [False, True, False]
+    assert seen == [False, True, True, False]
