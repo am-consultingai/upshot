@@ -390,7 +390,8 @@ begin
 end;
 
 { What --prepare is told: --nvidia-accepted when accepted (it saves the accepted licence);
-  --no-gpu when declined on the page (it withdraws an earlier acceptance); otherwise
+  --no-gpu when declined on the page (it withdraws an earlier acceptance and removes the
+  libraries fetched under it); otherwise
   --gpu-if-present, which keeps and completes libraries already in the signed-in user's
   own folder, accepted under NVIDIA's licence as it now is, and fetches none. That check
   is made by --prepare, which runs as that user: Setup may run as an administrator, whose
