@@ -95,6 +95,9 @@ Type: filesandordirs; Name: "{app}\mcp"; Check: IsUpshotInstall
 
 [Files]
 Source: "..\dist\upshot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; NVIDIA's licence, shown before the GPU libraries are downloaded (build.ps1 writes this
+; UTF-8 copy, with the BOM Inno needs, from app\asr\licenses). Not installed.
+Source: "..\build\nvidia-licence.txt"; Flags: dontcopy
 
 [Icons]
 ; AppUserModelID registers Upshot's notification identity (D72): without it toasts come
@@ -142,8 +145,8 @@ Filename: "{app}\{#AppExe}"; Parameters: "--background --after-update"; Flags: n
 ; offers to remove the speech model and GPU libraries (see [Code]).
 
 [Code]
-{ The three speech models (and, with a suitable NVIDIA GPU, the CUDA libraries) are
-  fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
+{ The three speech models (and, with a suitable NVIDIA GPU and NVIDIA's licence
+  accepted on its page, the CUDA libraries) are fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
   work and the checks; this page only shows the progress file it writes.
   The models come from the installer and nowhere else: the app never downloads one while
   transcribing. So a model download that fails or is stopped leaves the install
@@ -180,6 +183,9 @@ function GlobalMemoryStatusEx(var Buffer: TMemoryStatusEx): Boolean;
 var
   PreparePage: TOutputProgressWizardPage;
   PrepareNote: String;
+  NvidiaPage: TWizardPage;
+  NvidiaAccept, NvidiaSkip: TNewRadioButton;
+  NvidiaAsked: Boolean;
 
 function TotalRamMB: Int64;
 var
@@ -313,21 +319,139 @@ begin
   Result := '';
 end;
 
+{ The GPU libraries already in this profile's Upshot folder: fetched by an earlier install
+  under the same NVIDIA terms, so the page is not shown again (--prepare keeps them). }
+function GpuLibrariesPresent: Boolean;
+begin
+  Result := DirExists(ExpandConstant('{localappdata}\upshot\cuda'));
+end;
+
+{ An NVIDIA graphics adapter, from WMI. A failure reads as none, and then nothing of
+  NVIDIA's is downloaded. }
+function HasNvidiaGpu: Boolean;
+var
+  Locator, Service, Adapters, Adapter: Variant;
+  Name: String;
+  I: Integer;
+begin
+  Result := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Adapters := Service.ExecQuery('SELECT Name FROM Win32_VideoController');
+    for I := 0 to Adapters.Count - 1 do begin
+      Adapter := Adapters.ItemIndex(I);
+      Name := Adapter.Name;
+      Log('Graphics adapter: ' + Name);
+      if Pos('NVIDIA', Uppercase(Name)) > 0 then
+        Result := True;
+    end;
+  except
+    Log('Could not list the graphics adapters: ' + GetExceptionMessage);
+  end;
+end;
+
+{ Whether --prepare may fetch NVIDIA's libraries: the user accepted NVIDIA's licence on
+  its page, or a silent install passed /NVIDIA=accept. }
+function NvidiaAccepted: Boolean;
+begin
+  if NvidiaAsked then
+    Result := NvidiaAccept.Checked
+  else
+    Result := WizardSilent and HasSwitch('/NVIDIA=accept');
+end;
+
+{ What --prepare is told: nothing when accepted; --no-gpu when declined on the page;
+  otherwise --gpu-if-present, which keeps and completes libraries already in the
+  signed-in user's own folder and fetches none. That check is made by --prepare, which
+  runs as that user: Setup may run as an administrator, whose local app data is another
+  profile. }
+function GpuParam: String;
+begin
+  if NvidiaAccepted then
+    Result := ''
+  else if NvidiaAsked then
+    Result := ' --no-gpu'
+  else
+    Result := ' --gpu-if-present';
+end;
+
+procedure NvidiaChoiceClick(Sender: TObject);
+begin
+  WizardForm.NextButton.Enabled := True;
+end;
+
+{ After the Terms, on a machine with an NVIDIA GPU and no GPU libraries yet: NVIDIA's
+  licence, and a choice nothing is preselected for. }
+procedure CreateNvidiaPage;
+var
+  Above: TNewStaticText;
+  Memo: TNewMemo;
+  Lines: TArrayOfString;
+  I: Integer;
+begin
+  NvidiaPage := CreateCustomPage(wpLicense, CustomMessage('NvidiaTitle'), CustomMessage('NvidiaLead'));
+  Above := TNewStaticText.Create(NvidiaPage);
+  Above.Parent := NvidiaPage.Surface;
+  Above.Width := NvidiaPage.SurfaceWidth;
+  Above.WordWrap := True;
+  Above.Caption := CustomMessage('NvidiaAbove');
+
+  NvidiaSkip := TNewRadioButton.Create(NvidiaPage);
+  NvidiaSkip.Parent := NvidiaPage.Surface;
+  NvidiaSkip.Width := NvidiaPage.SurfaceWidth;
+  NvidiaSkip.Height := ScaleY(17);
+  NvidiaSkip.Top := NvidiaPage.SurfaceHeight - NvidiaSkip.Height;
+  NvidiaSkip.Caption := CustomMessage('NvidiaSkip');
+  NvidiaSkip.OnClick := @NvidiaChoiceClick;
+
+  NvidiaAccept := TNewRadioButton.Create(NvidiaPage);
+  NvidiaAccept.Parent := NvidiaPage.Surface;
+  NvidiaAccept.Width := NvidiaPage.SurfaceWidth;
+  NvidiaAccept.Height := ScaleY(17);
+  NvidiaAccept.Top := NvidiaSkip.Top - NvidiaAccept.Height - ScaleY(4);
+  NvidiaAccept.Caption := CustomMessage('NvidiaAccept');
+  NvidiaAccept.OnClick := @NvidiaChoiceClick;
+
+  Memo := TNewMemo.Create(NvidiaPage);
+  Memo.Parent := NvidiaPage.Surface;
+  Memo.Top := Above.Top + Above.Height + ScaleY(6);
+  Memo.Width := NvidiaPage.SurfaceWidth;
+  Memo.Height := NvidiaAccept.Top - ScaleY(8) - Memo.Top;
+  Memo.ReadOnly := True;
+  Memo.ScrollBars := ssVertical;
+  Memo.WordWrap := True;
+  ExtractTemporaryFile('nvidia-licence.txt');
+  if LoadStringsFromFile(ExpandConstant('{tmp}\nvidia-licence.txt'), Lines) then
+    for I := 0 to GetArrayLength(Lines) - 1 do
+      Memo.Lines.Add(Lines[I]);
+  Memo.SelStart := 0;
+end;
+
 procedure InitializeWizard;
 var
   Delta: Integer;
 begin
   PreparePage := CreateOutputProgressPage(CustomMessage('PrepareTitle'), CustomMessage('PrepareLead'));
-  { The Terms are English only (a legal text); every other language says so above them. }
-  if CustomMessage('TermsInEnglish') <> '' then begin
+  { The Terms are English only (a legal text); every other language says so above them.
+    Below the wizard's own line, every language says where the open-source licences are. }
+  WizardForm.LicenseLabel1.Caption := WizardForm.LicenseLabel1.Caption + #13#10 + CustomMessage('OpenSource');
+  if CustomMessage('TermsInEnglish') <> '' then
     WizardForm.LicenseLabel1.Caption := CustomMessage('TermsInEnglish') + #13#10 + WizardForm.LicenseLabel1.Caption;
-    { The wizard sized the label and placed the Terms below it before this ran: grow the
-      label to the longer caption and move the Terms down by as much, or its last line
-      is cut off (German and French). }
-    Delta := WizardForm.AdjustLabelHeight(WizardForm.LicenseLabel1);
-    WizardForm.LicenseMemo.Top := WizardForm.LicenseMemo.Top + Delta;
-    WizardForm.LicenseMemo.Height := WizardForm.LicenseMemo.Height - Delta;
-  end;
+  { The wizard sized the label and placed the Terms below it before this ran: grow the
+    label to the longer caption and move the Terms down by as much, or its last line is
+    cut off (German and French). }
+  Delta := WizardForm.AdjustLabelHeight(WizardForm.LicenseLabel1);
+  WizardForm.LicenseMemo.Top := WizardForm.LicenseMemo.Top + Delta;
+  WizardForm.LicenseMemo.Height := WizardForm.LicenseMemo.Height - Delta;
+
+  { An all-users install runs as an administrator, whose profile says nothing about the
+    signed-in user's libraries: it always asks. }
+  NvidiaAsked := not WizardSilent and not ModelDownloadSkipped
+    and (IsAdminInstallMode or not GpuLibrariesPresent) and HasNvidiaGpu;
+  Log('NVIDIA licence page: ' + IntToStr(Ord(NvidiaAsked)));
+  if NvidiaAsked then
+    CreateNvidiaPage;
 end;
 
 function ReadValue(const Lines: TArrayOfString; const Key: String): String;
@@ -359,6 +483,7 @@ begin
   ProgressFile := ExpandConstant('{tmp}\prepare-progress.txt');
   { --language: the progress lines app/prepare.py writes come in Setup's language. }
   Params := '--prepare --language=' + ActiveLanguage + ' --progress-file "' + ProgressFile + '"';
+  Params := Params + GpuParam;
   Log('Running upshot.exe ' + Params);
   { As the signed-in user, not an elevated one: the model belongs in their profile. }
   if not ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}'), Params, '', SW_HIDE, ewNoWait, ResultCode) then begin
@@ -430,6 +555,9 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  { Next waits for a choice on NVIDIA's page, as it waits for "I accept" on the Terms. }
+  if NvidiaAsked and (CurPageID = NvidiaPage.ID) then
+    WizardForm.NextButton.Enabled := NvidiaAccept.Checked or NvidiaSkip.Checked;
   if (CurPageID = wpFinished) and (PrepareNote <> '') then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 + PrepareNote;
 end;

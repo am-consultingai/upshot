@@ -266,6 +266,13 @@ if ($SkipInstaller) {
 }
 
 Write-Host "== installer =="
+# NVIDIA's licence for the installer's GPU page: the one Upshot ships beside the libraries
+# (app\asr\licenses), copied as UTF-8 with the BOM Inno's LoadStringsFromFile needs.
+$nvidia = @(Get-ChildItem (Join-Path $root "app\asr\licenses") -Filter "nvidia_*-License.txt")
+if ($nvidia.Count -ne 1) { throw "expected one NVIDIA licence in app\asr\licenses, found $($nvidia.Count)" }
+New-Item -ItemType Directory -Force -Path (Join-Path $root "build") | Out-Null
+$nvidiaText = [System.IO.File]::ReadAllText($nvidia[0].FullName, (New-Object System.Text.UTF8Encoding $false))
+[System.IO.File]::WriteAllText((Join-Path $root "build\nvidia-licence.txt"), $nvidiaText, (New-Object System.Text.UTF8Encoding $true))
 # A machine-wide install lands in Program Files (x86); winget's default per-user one in LOCALAPPDATA.
 $iscc = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
