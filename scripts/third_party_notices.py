@@ -17,8 +17,9 @@ What it lists:
   of ``frontend/package.json``;
 - what no package manager knows about (``EXTRA``): the Python runtime, the PyInstaller
   bootloader, ffmpeg (Upshot's audio-only build, its licence read from its configure line),
-  the speech models, Silero VAD, the fonts, Tailwind's CSS, Intel's OpenMP runtime,
-  NVIDIA's cuBLAS and the Microsoft runtime.
+  the speech models, Silero VAD, the fonts, Tailwind's CSS, Intel's OpenMP runtime, the
+  oneMKL and oneDNN libraries compiled into ctranslate2, NVIDIA's cuBLAS and the Microsoft
+  runtime.
 
 Each entry carries its licence (SPDX where one fits) and the licence and notice texts the
 package ships; where it ships none, the text is taken from ``packaging/licenses`` (each file
@@ -446,6 +447,16 @@ def extra_entries() -> list[Entry]:
               "Intel's proprietary runtime, redistributed under Intel's terms below.",
               licence_file("intel-openmp.txt")
               + licence_file("intel-openmp-third-party-programs.txt"), kind="other"),
+        Entry("Intel oneMKL (statically linked inside ctranslate2)", "2025.3",
+              "LicenseRef-Intel-ISSL",
+              "Intel's math library, compiled into ctranslate2.dll by its upstream build;"
+              " redistributed under the Intel Simplified Software License below.",
+              licence_file("intel-onemkl.txt"), kind="other"),
+        Entry("oneDNN (statically linked inside ctranslate2)", "3.1.1",
+              "Apache-2.0 AND BSD-3-Clause AND BSL-1.0",
+              "Intel's deep-learning primitives, compiled into ctranslate2.dll by its upstream"
+              " build, with the third-party code it contains (Xbyak, ittnotify, Boost).",
+              licence_file("onednn.txt"), kind="other"),
         Entry("NVIDIA cuBLAS (nvidia-cublas-cu12)", "12.9.1.4", "LicenseRef-NVIDIA-CUDA-EULA",
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
               " for GPU transcription; kept beside the libraries with this licence.",
