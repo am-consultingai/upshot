@@ -7,6 +7,7 @@ folder for a developer who keeps a copy elsewhere.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,10 +18,14 @@ from app.log import get
 
 log = get(__name__)
 
+#: Pinned to a commit, and both files to the bytes that were tested (and whose licences
+#: the notices record): a moved branch or a replaced release asset is refused, not run.
+SEGMENTATION_REVISION = "9403a6902bb58e3d5ae8c7e77c3422de279db2e0"
 SEGMENTATION_URL = (
     "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/"
-    "resolve/main/model.onnx"
+    f"resolve/{SEGMENTATION_REVISION}/model.onnx"
 )
+SEGMENTATION_SHA256 = "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079"
 #: A GitHub release asset, so the diarization path needs no Hugging Face account at all.
 #: 3D-Speaker's CAM++ trained on Chinese and English (Apache-2.0). The English VoxCeleb
 #: CAM++ before it could not tell the two people of a Hebrew call apart (D91).
@@ -28,6 +33,7 @@ EMBEDDING_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
     "speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
 )
+EMBEDDING_SHA256 = "aa3cfc16963a10586a9393f5035d6d6b57e98d358b347f80c2a30bf4f00ceba2"
 #: Named for the model, so an install that holds an older embedding fetches this one.
 EMBEDDING_FILE = "embedding-3dspeaker-campplus-zh-en.onnx"
 #: Embeddings this build no longer uses, removed once the current one is on disk.
@@ -316,18 +322,29 @@ def download_diarization(config: Config, *, timeout: float = 300.0) -> Diarizati
     from app.asr.model_manager import tls_context
 
     models = resolve_diarization(config)
-    for target, url in ((models.segmentation, SEGMENTATION_URL), (models.embedding, EMBEDDING_URL)):
+    pinned = (
+        (models.segmentation, SEGMENTATION_URL, SEGMENTATION_SHA256),
+        (models.embedding, EMBEDDING_URL, EMBEDDING_SHA256),
+    )
+    for target, url, sha256 in pinned:
         if target.exists():
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_suffix(target.suffix + ".part")
         log.info("downloading %s → %s", url.rsplit("/", 1)[-1], target)
+        digest = hashlib.sha256()
         with (
             urllib.request.urlopen(url, timeout=timeout, context=tls_context()) as response,
             partial.open("wb") as out,
         ):
             while chunk := response.read(1 << 20):
                 out.write(chunk)
+                digest.update(chunk)
+        if digest.hexdigest() != sha256:
+            partial.unlink(missing_ok=True)
+            raise PermanentError(
+                f"{url.rsplit('/', 1)[-1]} is not the pinned file (SHA-256 differs)"
+            )
         partial.replace(target)
     if models.embedding.parent == diarization_dir(config):
         for retired in RETIRED_EMBEDDING_FILES:
