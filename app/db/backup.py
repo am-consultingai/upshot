@@ -24,6 +24,9 @@ SUFFIX = ".db"
 FOLDER = "backups"
 #: How many copies stay: a week of daily ones, or a few updates.
 KEEP = 7
+#: A ``.partial`` older than this is a copy a crash interrupted, not one being written: a
+#: full copy of the database that ``copies`` never lists, so it would never be pruned.
+STALE_PARTIAL_S = 3600
 
 
 def folder_for(database: Path) -> Path:
@@ -63,8 +66,26 @@ def backup(
     partial.replace(target)  # a crash mid-copy leaves a .partial, never a broken backup
     for old in copies(folder)[:-keep] if keep > 0 else []:
         old.unlink(missing_ok=True)
+    remove_stale_partials(folder, now=now)
     log.info("database backed up to %s (%s)", target.name, why)
     return target
+
+
+def remove_stale_partials(folder: Path, *, now: datetime | None = None) -> int:
+    """Delete the ``.partial`` copies crashes left in ``folder``; how many went. One younger
+    than ``STALE_PARTIAL_S`` may be another backup still writing, so it stays."""
+    moment = (now or datetime.now(UTC)).timestamp()
+    removed = 0
+    for partial in folder.glob(f"{PREFIX}*.partial"):
+        try:
+            if moment - partial.stat().st_mtime > STALE_PARTIAL_S:
+                partial.unlink()
+                removed += 1
+        except OSError as exc:  # gone already, or held open: the next backup tries again
+            log.warning("could not remove the interrupted backup %s: %s", partial.name, exc)
+    if removed:
+        log.info("removed %d interrupted backup(s)", removed)
+    return removed
 
 
 def newest_age_s(database: Path, *, now: datetime | None = None) -> float | None:

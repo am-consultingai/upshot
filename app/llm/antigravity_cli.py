@@ -20,8 +20,10 @@ What is different, and why (D79):
   browser shows from stdin for 60 seconds, a limit built into the binary. ``agy models``
   answers "Please sign in…" when signed out, spends nothing, and is the status check.
   ``/logout`` is refused in print mode, so the app cannot sign anyone out.
-* **Runs are kept in the user's Antigravity history**, as Claude Code's are. There is no
-  ephemeral flag; the product owner chose not to delete them (D79).
+* **Runs are kept in the user's Antigravity history**, as the assistant's Claude Code
+  conversations are (Claude Code summaries run with ``--no-session-persistence``, Codex with
+  ``--ephemeral``). There is no ephemeral flag here; the product owner chose not to delete
+  them (D79).
 """
 
 from __future__ import annotations

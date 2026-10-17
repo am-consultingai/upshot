@@ -187,6 +187,26 @@ def test_a_backup_while_the_app_writes_is_consistent(tmp_path: Path) -> None:
     copy.close()
 
 
+def test_a_copy_a_crash_interrupted_is_removed_by_the_next_backup(tmp_path: Path) -> None:
+    """A .partial is a whole copy of the database that ``copies`` never lists: left by a
+    crash, it would stay for good. One younger than an hour may still be writing."""
+    import os
+    import time
+
+    database = a_database(tmp_path)
+    folder = tmp_path / "backups"
+    folder.mkdir()
+    stale = folder / "index-20261001T000000000000Z-daily.partial"
+    fresh = folder / "index-20261002T000000000000Z-update.partial"
+    for partial in (stale, fresh):
+        partial.write_bytes(b"half a database")
+    hours_ago = time.time() - 2 * 3600
+    os.utime(stale, (hours_ago, hours_ago))
+    backup.backup(database, why="test")
+    assert not stale.exists()
+    assert fresh.exists()
+
+
 def test_only_the_newest_backups_are_kept(tmp_path: Path) -> None:
     database = a_database(tmp_path)
     start = datetime(2026, 10, 1, tzinfo=UTC)
