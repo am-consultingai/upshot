@@ -82,7 +82,7 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
 [Messages]
 BeveledLabel=Powered by AM Consulting
 ; Setup's /? help, for administrators (D100: the silent acceptance states their authority).
-HelpTextNote=/NVIDIA=accept   With /SILENT or /VERYSILENT: download NVIDIA cuBLAS for GPU transcription. By passing it, the administrator certifies that they have read NVIDIA's licence (EULA) and have the legal authority to accept it on behalf of the organisation that will use Upshot.
+HelpTextNote=/NVIDIA=accept   Required with /SILENT or /VERYSILENT: always for an all-users install, and otherwise unless the Windows user Setup installs for has already accepted the exact NVIDIA licence (EULA) text this installer carries. Setup installs Upshot only once that licence is accepted, and NVIDIA cuBLAS is downloaded only where an NVIDIA GPU has enough memory for the speech model. The acceptance is saved for that user, and later installs and updates may download or update cuBLAS under it while that licence text is unchanged. A silent installation also accepts Upshot's Terms of Service on behalf of that user, and the person running it confirms that they have the authority to do so. By passing this option, the person running Setup confirms that they have read NVIDIA's licence and have the authority to accept it for the Windows user Setup installs for and for any organization on whose behalf that user uses Upshot.
 
 ; An upgrade copies over the old files but would never delete one a newer build no
 ; longer ships: PyAV's GPL x264 and x265 stayed in _internal after the build dropped
@@ -97,8 +97,9 @@ Type: filesandordirs; Name: "{app}\mcp"; Check: IsUpshotInstall
 
 [Files]
 Source: "..\dist\upshot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-; NVIDIA's licence, shown before the GPU libraries are downloaded (build.ps1 writes this
-; UTF-8 copy, with the BOM Inno needs, from app\asr\licenses). Not installed.
+; NVIDIA's licence, which every install accepts (D101) before anything is copied
+; (build.ps1 writes this UTF-8 copy, with the BOM Inno needs, from app\asr\licenses).
+; Not installed.
 Source: "..\build\nvidia-licence.txt"; Flags: dontcopy
 
 [Icons]
@@ -147,8 +148,8 @@ Filename: "{app}\{#AppExe}"; Parameters: "--background --after-update"; Flags: n
 ; offers to remove the speech model and GPU libraries (see [Code]).
 
 [Code]
-{ The three speech models (and, with a suitable NVIDIA GPU and NVIDIA's licence
-  accepted on its page, the CUDA libraries) are fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
+{ The three speech models (and, with a suitable NVIDIA GPU, the CUDA libraries, under
+  NVIDIA's licence, which every install accepts: D101) are fetched during the install by "upshot.exe --prepare" (app/prepare.py), which does the
   work and the checks; this page only shows the progress file it writes.
   The models come from the installer and nowhere else: the app never downloads one while
   transcribing. So a model download that fails or is stopped leaves the install
@@ -186,7 +187,7 @@ var
   PreparePage: TOutputProgressWizardPage;
   PrepareNote: String;
   NvidiaPage: TWizardPage;
-  NvidiaAccept, NvidiaSkip: TNewRadioButton;
+  NvidiaAccept: TNewCheckBox;
   NvidiaAsked: Boolean;
 
 function TotalRamMB: Int64;
@@ -246,7 +247,68 @@ begin
   Result := HasSwitch('/NOMODEL=1');
 end;
 
-{ Before anything is copied: refuse a machine without the memory to transcribe. }
+{ NVIDIA's licence, in a temporary folder. }
+function NvidiaLicenceFile: String;
+begin
+  Result := ExpandConstant('{tmp}\nvidia-licence.txt');
+  if not FileExists(Result) then
+    ExtractTemporaryFile('nvidia-licence.txt');
+end;
+
+{ This profile already accepted NVIDIA's licence as this installer carries it: --prepare
+  saved the accepted text at an earlier install (cuda_libs.ACCEPTED_LICENCE, written byte
+  for byte as build.ps1 writes the installer's copy). A changed text, or a new CUDA
+  generation (another file name), asks again (D100). }
+function NvidiaLicenceAccepted: Boolean;
+var
+  Accepted: String;
+begin
+  Result := False;
+  Accepted := ExpandConstant('{localappdata}\upshot\nvidia-licence-accepted-cu12.txt');
+  if not FileExists(Accepted) then
+    Exit;
+  try
+    Result := GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile);
+  except
+    Log('Could not compare the accepted NVIDIA licence: ' + GetExceptionMessage);
+  end;
+end;
+
+{ Accepting NVIDIA's licence is no longer a question for this run: this profile accepted it
+  as this installer carries it. Not for an all-users install, which runs as an
+  administrator whose profile says nothing about the signed-in user's. }
+function NvidiaAlreadyAccepted: Boolean;
+begin
+  Result := not IsAdminInstallMode and NvidiaLicenceAccepted;
+end;
+
+{ This Upshot is installed, in either privilege mode: its uninstall entry exists. Usable in
+  InitializeSetup, unlike IsUpshotInstall ({app} is not known yet). An automatic update
+  keeps the mode of the install it updates, so it always finds the entry. }
+function UpshotInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKA,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1B7C2E-4A8D-4E57-9C1D-3B2A9E0F5D11}_is1');
+end;
+
+{ Upshot installs only under NVIDIA's licence, on every computer (D101). The wizard asks on
+  its page; a silent install passes /NVIDIA=accept, or this profile accepted the licence as
+  this installer carries it. An automatic update (/UPDATE=1) is never refused: it installs
+  over any earlier install (and only over one: the switch alone on a computer without
+  Upshot gets no pass), and where this user's acceptance is missing or for an older
+  text it fetches nothing from NVIDIA until an install made by hand asks. }
+function NvidiaGate: Boolean;
+begin
+  Result := not WizardSilent or (IsUpdate and UpshotInstalled) or HasSwitch('/NVIDIA=accept')
+    or NvidiaAlreadyAccepted;
+  if not Result then begin
+    Log('NVIDIA licence not accepted: a silent install needs /NVIDIA=accept');
+    SuppressibleMsgBox(CustomMessage('NvidiaRequired'), mbCriticalError, MB_OK, IDOK);
+  end;
+end;
+
+{ Before anything is copied: refuse a machine without the memory to transcribe, and a
+  silent install that has not accepted NVIDIA's licence (D101). }
 function InitializeSetup: Boolean;
 var
   Ram: Int64;
@@ -257,13 +319,16 @@ begin
   Log('Physical memory: ' + IntToStr(Ram) + ' MB (minimum ' + IntToStr(MinRamMB) + ' MB)');
   if RamCheckSkipped then begin
     Log('Memory check skipped (/NORAMCHECK=1)');
+    Result := NvidiaGate;
     Exit;
   end;
   if (Ram > 0) and (Ram < MinRamMB) then begin
     Gb := Format('%.1f', [Ram / 1024.0]);
     SuppressibleMsgBox(FmtMessage(CustomMessage('RamTooLow'), [Gb]), mbCriticalError, MB_OK, IDOK);
     Result := False;
+    Exit;
   end;
+  Result := NvidiaGate;
 end;
 
 { Upshot runs in the tray with no window, so neither CloseApplications nor the
@@ -321,66 +386,8 @@ begin
   Result := '';
 end;
 
-{ The GPU libraries are in this profile's Upshot folder (an earlier install fetched them). }
-function GpuLibrariesPresent: Boolean;
-begin
-  Result := DirExists(ExpandConstant('{localappdata}\upshot\cuda'));
-end;
-
-{ NVIDIA's licence for the GPU libraries, in a temporary folder. }
-function NvidiaLicenceFile: String;
-begin
-  Result := ExpandConstant('{tmp}\nvidia-licence.txt');
-  if not FileExists(Result) then
-    ExtractTemporaryFile('nvidia-licence.txt');
-end;
-
-{ This profile already accepted NVIDIA's licence as this installer carries it: --prepare
-  saved the accepted text (cuda_libs.ACCEPTED_LICENCE, written byte for byte as build.ps1
-  writes the installer's copy). A changed text, or a new CUDA generation (another file
-  name), asks again (D100). }
-function NvidiaLicenceAccepted: Boolean;
-var
-  Accepted: String;
-begin
-  Result := False;
-  Accepted := ExpandConstant('{localappdata}\upshot\nvidia-licence-accepted-cu12.txt');
-  if not FileExists(Accepted) then
-    Exit;
-  try
-    Result := GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile);
-  except
-    Log('Could not compare the accepted NVIDIA licence: ' + GetExceptionMessage);
-  end;
-end;
-
-{ An NVIDIA graphics adapter, from WMI. A failure reads as none, and then nothing of
-  NVIDIA's is downloaded. }
-function HasNvidiaGpu: Boolean;
-var
-  Locator, Service, Adapters, Adapter: Variant;
-  Name: String;
-  I: Integer;
-begin
-  Result := False;
-  try
-    Locator := CreateOleObject('WbemScripting.SWbemLocator');
-    Service := Locator.ConnectServer('.', 'root\CIMV2');
-    Adapters := Service.ExecQuery('SELECT Name FROM Win32_VideoController');
-    for I := 0 to Adapters.Count - 1 do begin
-      Adapter := Adapters.ItemIndex(I);
-      Name := Adapter.Name;
-      Log('Graphics adapter: ' + Name);
-      if Pos('NVIDIA', Uppercase(Name)) > 0 then
-        Result := True;
-    end;
-  except
-    Log('Could not list the graphics adapters: ' + GetExceptionMessage);
-  end;
-end;
-
-{ Whether --prepare may fetch NVIDIA's libraries: the user accepted NVIDIA's licence on
-  its page, or a silent install passed /NVIDIA=accept. }
+{ NVIDIA's licence was accepted in this run: ticked on its page, or /NVIDIA=accept on a
+  silent install. }
 function NvidiaAccepted: Boolean;
 begin
   if NvidiaAsked then
@@ -389,30 +396,28 @@ begin
     Result := WizardSilent and HasSwitch('/NVIDIA=accept');
 end;
 
-{ What --prepare is told: --nvidia-accepted when accepted (it saves the accepted licence);
-  --no-gpu when declined on the page (it withdraws an earlier acceptance and removes the
-  libraries fetched under it); otherwise
-  --gpu-if-present, which keeps and completes libraries already in the signed-in user's
-  own folder, accepted under NVIDIA's licence as it now is, and fetches none. That check
-  is made by --prepare, which runs as that user: Setup may run as an administrator, whose
-  local app data is another profile. }
+{ What --prepare is told: --nvidia-accepted when accepted in this run (it saves the
+  accepted licence). Otherwise it fetches, keeps and completes the GPU libraries only when
+  the signed-in user accepted NVIDIA's licence as it now is (an earlier install; an
+  automatic update). That check is made by --prepare, which runs as that user: Setup may
+  run as an administrator, whose local app data is another profile. Either way --prepare
+  fetches them only where an NVIDIA GPU can use them. }
 function GpuParam: String;
 begin
   if NvidiaAccepted then
     Result := ' --nvidia-accepted'
-  else if NvidiaAsked then
-    Result := ' --no-gpu'
   else
-    Result := ' --gpu-if-present';
+    Result := '';
 end;
 
-procedure NvidiaChoiceClick(Sender: TObject);
+procedure NvidiaTicked(Sender: TObject);
 begin
-  WizardForm.NextButton.Enabled := True;
+  WizardForm.NextButton.Enabled := NvidiaAccept.Checked;
 end;
 
-{ After the Terms, on a machine with an NVIDIA GPU whose user has not accepted NVIDIA's
-  licence as this installer carries it: the licence, and a choice nothing is preselected for. }
+{ After the Terms, on every computer whose user has not accepted NVIDIA's licence as this
+  installer carries it: the licence, and a box nobody has ticked. There is no way past it
+  but ticking (D101). }
 procedure CreateNvidiaPage;
 var
   Above: TNewStaticText;
@@ -427,21 +432,13 @@ begin
   Above.WordWrap := True;
   Above.Caption := CustomMessage('NvidiaAbove');
 
-  NvidiaSkip := TNewRadioButton.Create(NvidiaPage);
-  NvidiaSkip.Parent := NvidiaPage.Surface;
-  NvidiaSkip.Width := NvidiaPage.SurfaceWidth;
-  NvidiaSkip.Height := ScaleY(17);
-  NvidiaSkip.Top := NvidiaPage.SurfaceHeight - NvidiaSkip.Height;
-  NvidiaSkip.Caption := CustomMessage('NvidiaSkip');
-  NvidiaSkip.OnClick := @NvidiaChoiceClick;
-
-  NvidiaAccept := TNewRadioButton.Create(NvidiaPage);
+  NvidiaAccept := TNewCheckBox.Create(NvidiaPage);
   NvidiaAccept.Parent := NvidiaPage.Surface;
   NvidiaAccept.Width := NvidiaPage.SurfaceWidth;
   NvidiaAccept.Height := ScaleY(17);
-  NvidiaAccept.Top := NvidiaSkip.Top - NvidiaAccept.Height - ScaleY(4);
+  NvidiaAccept.Top := NvidiaPage.SurfaceHeight - NvidiaAccept.Height;
   NvidiaAccept.Caption := CustomMessage('NvidiaAccept');
-  NvidiaAccept.OnClick := @NvidiaChoiceClick;
+  NvidiaAccept.OnClick := @NvidiaTicked;
 
   Memo := TNewMemo.Create(NvidiaPage);
   Memo.Parent := NvidiaPage.Surface;
@@ -474,11 +471,7 @@ begin
   WizardForm.LicenseMemo.Top := WizardForm.LicenseMemo.Top + Delta;
   WizardForm.LicenseMemo.Height := WizardForm.LicenseMemo.Height - Delta;
 
-  { An all-users install runs as an administrator, whose profile says nothing about the
-    signed-in user's libraries: it always asks. }
-  NvidiaAsked := not WizardSilent and not ModelDownloadSkipped
-    and (IsAdminInstallMode or not (GpuLibrariesPresent and NvidiaLicenceAccepted))
-    and HasNvidiaGpu;
+  NvidiaAsked := not WizardSilent and not NvidiaAlreadyAccepted;
   Log('NVIDIA licence page: ' + IntToStr(Ord(NvidiaAsked)));
   if NvidiaAsked then
     CreateNvidiaPage;
@@ -585,9 +578,9 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  { Next waits for a choice on NVIDIA's page, as it waits for "I accept" on the Terms. }
+  { Next waits for the box on NVIDIA's page, as it waits for "I accept" on the Terms. }
   if NvidiaAsked and (CurPageID = NvidiaPage.ID) then
-    WizardForm.NextButton.Enabled := NvidiaAccept.Checked or NvidiaSkip.Checked;
+    WizardForm.NextButton.Enabled := NvidiaAccept.Checked;
   if (CurPageID = wpFinished) and (PrepareNote <> '') then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 + PrepareNote;
 end;
@@ -598,9 +591,14 @@ var
 begin
   if CurUninstallStep = usUninstall then
     StopUpshot;
-  if (CurUninstallStep <> usPostUninstall) or UninstallSilent then
+  if CurUninstallStep <> usPostUninstall then
     Exit;
   Home := ExpandConstant('{localappdata}\upshot');
+  { The acceptance ends with Upshot: installing it again asks for NVIDIA's licence again
+    (D101), as it asks for the Terms. }
+  DeleteFile(Home + '\nvidia-licence-accepted-cu12.txt');
+  if UninstallSilent then
+    Exit;
   if not DirExists(Home + '\models') and not DirExists(Home + '\cuda') then
     Exit;
   What := CustomMessage('RemoveModels');
@@ -610,7 +608,5 @@ begin
       mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then begin
     DelTree(Home + '\models', True, True, True);
     DelTree(Home + '\cuda', True, True, True);
-    { With the libraries gone, a reinstall asks for NVIDIA's licence again. }
-    DeleteFile(Home + '\nvidia-licence-accepted-cu12.txt');
   end;
 end;

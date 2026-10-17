@@ -257,7 +257,7 @@ try {
         $prevDir = Join-Path $env:TEMP 'previous'
         Expand-Archive -Path $previousZip -DestinationPath $prevDir -Force
         $prevSetup = Get-ChildItem $prevDir -Filter 'Upshot-*-Setup.exe' | Select-Object -First 1
-        $pp = Start-Process -FilePath $prevSetup.FullName -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$(Join-Path $Out 'install-previous.log')`"") -PassThru
+        $pp = Start-Process -FilePath $prevSetup.FullName -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NVIDIA=accept', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$(Join-Path $Out 'install-previous.log')`"") -PassThru
         $null = $pp.Handle
         $pp.WaitForExit()
         $oldProc = Start-Process -FilePath $exe -PassThru
@@ -282,14 +282,14 @@ try {
         $installArgs = @('/CURRENTUSER', '/NORAMCHECK=1', "/LOG=`"$installLog`"")
     } elseif ($visible -and $ModelCache) {
         Doing "installing: the installer's progress window (/SILENT), without the model download (it comes from $ModelCache)"
-        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$installLog`"")
+        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NVIDIA=accept', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$installLog`"")
     } elseif ($visible) {
         Doing "installing: the installer's progress window, no questions (/SILENT), and the speech model download (about 3 GB, several minutes)"
-        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', "/LOG=`"$installLog`"")
+        $installArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NVIDIA=accept', '/NORAMCHECK=1', "/LOG=`"$installLog`"")
     } else {
         # The runner's jobs skip the 3 GB speech model: they test the install, not the download.
         Doing 'installing silently (/VERYSILENT), without the speech model download'
-        $installArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$installLog`"")
+        $installArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NVIDIA=accept', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$installLog`"")
     }
     # The installer refuses a machine under 12 GB (packaging/installer.iss). On one, try it
     # first without the test override: it must stop and install nothing.
@@ -297,12 +297,24 @@ try {
     if ($ramMb -lt 11776) {
         Doing "checking the installer refuses this $ramMb MB machine"
         $refuseLog = Join-Path $Out 'install-refused.log'
-        $r = Start-Process -FilePath $setupLocal -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/LOG=`"$refuseLog`"") -PassThru
+        # With /NVIDIA=accept, so only the memory check can refuse it.
+        $r = Start-Process -FilePath $setupLocal -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NVIDIA=accept', "/LOG=`"$refuseLog`"") -PassThru
         $null = $r.Handle
         $r.WaitForExit()
         $why = (Select-String -Path $refuseLog -Pattern 'Physical memory' -ErrorAction SilentlyContinue | Select-Object -First 1).Line
         Step 'ram-check-refuses' (($r.ExitCode -ne 0) -and -not (Test-Path $exe)) "exit=$($r.ExitCode) installed=$(Test-Path $exe) machine=$ramMb MB; $why"
     }
+    # D101: a silent install that has not accepted NVIDIA's licence must stop and install
+    # nothing. Nothing has saved an acceptance in this sandbox yet (/NOMODEL=1 skips --prepare).
+    Doing "checking a silent install without /NVIDIA=accept is refused"
+    $gateLog = Join-Path $Out 'install-nvidia-refused.log'
+    $g = Start-Process -FilePath $setupLocal -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NORAMCHECK=1', '/NOMODEL=1', "/LOG=`"$gateLog`"") -PassThru
+    $null = $g.Handle
+    $g.WaitForExit()
+    $said = [bool](Select-String -Path $gateLog -Pattern 'NVIDIA licence not accepted' -SimpleMatch -Quiet -ErrorAction SilentlyContinue)
+    # The log line is written in InitializeSetup, before anything is copied. Not "no upshot.exe":
+    # the upgrade test installed the previous build first.
+    Step 'nvidia-gate-refuses' (($g.ExitCode -ne 0) -and $said) "exit=$($g.ExitCode) logged=$said"
     $t0 = Get-Date
     # Setup.exe waits for its own .tmp stage and returns that exit code, so wait for Setup.exe
     # alone: -Wait would also wait for Upshot itself when the wizard's "Launch Upshot" starts it.
