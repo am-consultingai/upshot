@@ -288,7 +288,7 @@ begin
 end;
 
 { This Upshot is installed, in either privilege mode: its uninstall entry exists. Usable in
-  InitializeSetup, unlike IsUpshotInstall ({app} is not known yet). An automatic update
+  InitializeSetup, unlike IsUpshotInstall (the install folder is not known yet). An automatic update
   keeps the mode of the install it updates, so it always finds the entry. }
 function UpshotInstalled: Boolean;
 begin
