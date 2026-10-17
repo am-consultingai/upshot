@@ -1,9 +1,9 @@
 {
-  "version": "2026-10-16",
-  "effective": "2026-10-16",
-  "material": false,
-  "summary": "Section 16 now names NVIDIA's cuBLAS library, which the installer downloads only once NVIDIA's licence has been accepted, and says that these Terms never restrict what a component's own licence lets you do with it.",
+  "version": "2026-10-17",
+  "effective": "2026-10-17",
+  "material": true,
+  "summary": "There is no beta. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.",
   "url": "terms.md",
-  "sha256": "48aae66411981fa583bfcc0fd13f2c9685a12360dc9c7e2ccafe693911a241f7",
+  "sha256": "27aced59efc2470e4c99fe29359dcb42063314447fe47a22d7535ca329d6a03d",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }
