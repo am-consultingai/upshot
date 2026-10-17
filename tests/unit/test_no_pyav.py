@@ -157,6 +157,27 @@ def test_a_gpl_library_fails_the_build(tmp_path: Path, name: str) -> None:
     assert check_dist.main([str(tmp_path)]) == 1
 
 
+@pytest.mark.parametrize("name", ["ctranslate2/libiomp5md.dll", "libiompstubs5md.dll",
+                                  "mkl_core.2.dll"])  # fmt: skip
+def test_an_intel_runtime_library_fails_the_build(tmp_path: Path, name: str) -> None:
+    """S12: PyPI's ctranslate2 carries Intel's OpenMP; Upshot ships its own build without it."""
+    path = tmp_path / "_internal" / name
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"MZ")
+    assert check_dist.problems(tmp_path) == [f"_internal/{name}: an Intel runtime library"]
+
+
+def test_ctranslate2_needs_microsofts_openmp_runtime_in_the_freeze(tmp_path: Path) -> None:
+    engine = tmp_path / "_internal" / "ctranslate2" / "ctranslate2.dll"
+    engine.parent.mkdir(parents=True)
+    engine.write_bytes(b"MZ")
+    assert check_dist.problems(tmp_path) == [
+        "ctranslate2.dll needs Microsoft's vcomp140.dll, which the freeze lacks"
+    ]
+    (tmp_path / "_internal" / "vcomp140.dll").write_bytes(b"MZ")
+    assert check_dist.problems(tmp_path) == []
+
+
 def test_an_ffmpeg_built_with_enable_gpl_fails_whatever_its_name(tmp_path: Path) -> None:
     (tmp_path / "codec.dll").write_bytes(b"MZ ... --enable-gpl --enable-version3 ...")
     assert check_dist.problems(tmp_path) == ["codec.dll: built with --enable-gpl"]
