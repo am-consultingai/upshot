@@ -79,7 +79,7 @@ The Upshot licence does not give you any right to use the Upshot name or logo, o
 
 ## 8. Commercial licences {#plans}
 
-Production use that the Upshot licence does not permit free of charge, for example by an organization with 20 or more individuals working for it, requires a commercial licence from AM Consulting; to ask for one, write to office@amconsultingai.com. A commercial licence is governed by the terms agreed for it, which will form part of these Terms and prevail over these Terms and the Upshot licence where they differ. If you were already making production use of Upshot before 17 October 2026 and that use now requires a commercial licence, AM Consulting grants you a commercial licence for it, free of charge, until 16 November 2026. We will not charge you anything unless you explicitly agree to a commercial licence. Nothing in this section limits any right you have under consumer-protection law, including any right to cancel a purchase.
+Production use that the Upshot licence does not permit free of charge, for example by an organization with 20 or more individuals working for it, requires a commercial licence from AM Consulting; to ask for one, write to office@amconsultingai.com. A commercial licence is governed by the terms agreed for it, which will form part of these Terms and prevail over these Terms and the Upshot licence where they differ. We will not charge you anything unless you explicitly agree to a commercial licence. Nothing in this section limits any right you have under consumer-protection law, including any right to cancel a purchase.
 
 ## 9. Updates and checks the app makes {#updates}
 
