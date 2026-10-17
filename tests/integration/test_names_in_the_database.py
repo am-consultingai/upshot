@@ -202,9 +202,50 @@ def test_a_copy_a_crash_interrupted_is_removed_by_the_next_backup(tmp_path: Path
         partial.write_bytes(b"half a database")
     hours_ago = time.time() - 2 * 3600
     os.utime(stale, (hours_ago, hours_ago))
+    journal = folder / "index-20261001T000000000000Z-daily.partial-journal"
+    journal.write_bytes(b"j")
+    os.utime(journal, (hours_ago, hours_ago))
     backup.backup(database, why="test")
-    assert not stale.exists()
+    assert not stale.exists() and not journal.exists()
     assert fresh.exists()
+
+
+def test_a_failed_copy_leaves_nothing_and_a_locked_leftover_does_not_fail_a_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import time
+
+    database = a_database(tmp_path)
+    folder = tmp_path / "backups"
+    folder.mkdir()
+    locked = folder / "index-20261001T000000000000Z-daily.partial"
+    locked.write_bytes(b"held open by something")
+    hours_ago = time.time() - 2 * 3600
+    os.utime(locked, (hours_ago, hours_ago))
+    real_unlink = Path.unlink
+
+    def refuse(self: Path, missing_ok: bool = False) -> None:
+        if self == locked:
+            raise PermissionError("in use")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", refuse)
+    assert backup.backup(database, why="test") is not None  # logged, not raised
+    assert locked.exists()
+    monkeypatch.undo()
+
+    class Broken(sqlite3.Connection):
+        def backup(self, *args: object, **kwargs: object) -> None:  # type: ignore[override]
+            raise sqlite3.OperationalError("disk I/O error")
+
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(
+        backup.sqlite3, "connect", lambda *a, **k: real_connect(*a, factory=Broken, **k)
+    )
+    with pytest.raises(sqlite3.OperationalError):
+        backup.backup(database, why="broken")
+    assert not list(folder.glob("*-broken.partial"))
 
 
 def test_only_the_newest_backups_are_kept(tmp_path: Path) -> None:
