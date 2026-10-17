@@ -116,6 +116,8 @@ def test_claude_cli_disables_tools_by_default(tmp_path) -> None:  # type: ignore
     for tool in ("Bash", "Read", "Write", "Edit", "WebFetch"):
         assert tool in denied
     assert "--dangerously-skip-permissions" not in args
+    # A summary is never resumed: Claude Code keeps no history of the transcript it was sent.
+    assert "--no-session-persistence" in args
 
 
 def test_claude_cli_reports_a_missing_install() -> None:

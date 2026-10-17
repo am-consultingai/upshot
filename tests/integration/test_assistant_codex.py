@@ -93,3 +93,13 @@ def test_a_failed_tool_call_is_a_tool_error() -> None:
     assert failed == [
         {"type": "tool-output-error", "toolCallId": "i", "errorText": "boom", "dynamic": True}
     ]
+
+
+def test_codex_keeps_no_history_of_a_conversation() -> None:
+    """The Privacy Policy says Upshot runs Codex with its option not to save the run, for
+    the assistant as for summaries (tests/unit/test_codex_cli.py)."""
+    from app.assistant.codex_route import CodexRoute
+    from app.config import default_config
+
+    args = CodexRoute(default_config()).codex_args(["codex"], port=1)
+    assert "--ephemeral" in args

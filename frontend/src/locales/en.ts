@@ -404,7 +404,7 @@ export const en = {
   "settings.purposeAbout": "Which version you have, and how new ones arrive.",
   "settings.groupStorage": "Storage",
   "settings.dataFolder": "Data folder",
-  "settings.dataFolderHint": "Recordings, transcripts and summaries, a folder for each meeting. Nothing is kept anywhere else.",
+  "settings.dataFolderHint": "Recordings, transcripts and summaries, a folder for each meeting.",
   "settings.storageUsed": "Space used",
   "settings.storageKept": "Recordings are kept until you delete them.",
   "settings.copyPath": "Copy path",
