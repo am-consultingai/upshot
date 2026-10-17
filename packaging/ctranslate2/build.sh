@@ -119,10 +119,13 @@ WHEEL="$(ls "$DIST"/ctranslate2-*.whl)"
 
 # Nothing of Intel's, and no cuDNN: what the DLL imports, what it contains, what the wheel holds.
 "$PY" -m pip install -q "pefile==$PEFILE_VERSION"
+# LF line endings, written by Python itself: a redirected print() on Windows writes CRLF, which
+# grep -x would not match.
 "$PY" -c '
 import pefile, sys
-for entry in pefile.PE(sys.argv[1]).DIRECTORY_ENTRY_IMPORT:
-    print(entry.dll.decode())' "$CT2_ROOT/bin/ctranslate2.dll" > "$DIST/imports.txt"
+names = [entry.dll.decode() for entry in pefile.PE(sys.argv[1]).DIRECTORY_ENTRY_IMPORT]
+open(sys.argv[2], "w", newline="\n").write("".join(name + "\n" for name in names))' \
+  "$CT2_ROOT/bin/ctranslate2.dll" "$DIST/imports.txt"
 grep -qix "VCOMP140.DLL" "$DIST/imports.txt" || fail "does not use Microsoft's OpenMP"
 ! grep -qiE "libiomp5|^mkl_" "$DIST/imports.txt" || fail "imports Intel's OpenMP or MKL"
 ! grep -aqi "mkl_blas" "$CT2_ROOT/bin/ctranslate2.dll" || fail "contains Intel oneMKL"
@@ -162,9 +165,10 @@ header() {  # name file: the file's leading comment, which carries its notice
   cat thread-pool-LICENSE.txt; echo
   echo "== pybind11 $PYBIND11_VERSION (LICENSE)"
   "$PY" -c '
+import sys
 from importlib.metadata import distribution
 files = [f for f in distribution("pybind11").files if f.name.startswith("LICENSE")]
-print(files[0].read_text())'
+sys.stdout.buffer.write(files[0].read_text().encode())'
 } > "$DIST/LICENSE-third-party.txt"
 cp "onednn-$ONEDNN_VERSION.tar.gz" "$DIST/sources/"
 cp "$HERE/build.sh" "$DIST/sources/"
