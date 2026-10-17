@@ -17,6 +17,12 @@ on:
 
 permissions: {}
 
+# A newer push to the same pull request replaces its running build (two hours each); a manual
+# run is never cancelled.
+concurrency:
+  group: ctranslate2-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   # The build runs third-party code (CMake, MSVC, the CUDA installer, the sources), so it holds
   # no write token: read-only contents, and no credentials left in the checkout.
@@ -62,7 +68,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ inputs.release }}
         run: |
-          [[ "$RELEASE" =~ ^ctranslate2-[0-9]+\.[0-9]+\.[0-9]+-upshot-[0-9]+$ ]] || { echo "bad tag: $RELEASE"; exit 1; }
+          [[ "$RELEASE" =~ ^ctranslate2-[0-9]+\.[0-9]+\.[0-9]+-upshot-[0-9]+$ ]] \
+            || { echo "bad tag: $RELEASE"; exit 1; }
           cd dist && sha256sum -c SHA256SUMS
           gh release create "$RELEASE" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --prerelease --title "$RELEASE (Upshot's ctranslate2 wheel without Intel components)" \
