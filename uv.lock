@@ -4,7 +4,8 @@ requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
     "python_full_version == '3.14.*'",
-    "python_full_version < '3.14'",
+    "python_full_version < '3.14' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
 ]
 
 [manifest]
@@ -356,10 +357,15 @@ wheels = [
 name = "ctranslate2"
 version = "4.8.1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15'",
+    "python_full_version == '3.14.*'",
+    "python_full_version < '3.14' and sys_platform != 'win32'",
+]
 dependencies = [
-    { name = "numpy" },
-    { name = "pyyaml" },
-    { name = "setuptools" },
+    { name = "numpy", marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
+    { name = "pyyaml", marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
+    { name = "setuptools", marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/a7/3101c3a0785253a8ef386f39744ad19c28c75b7f227e7c232aee7a5c416a/ctranslate2-4.8.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:ba628835e6ad4ad399261ab6cb51bf152de563e6b122a9e8eb0c61e69f925931", size = 1270478, upload-time = "2026-07-03T12:39:25.401Z" },
@@ -377,6 +383,29 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/85/f2/d716426220b462bbb5bb354b9c6c8d9a41285f067203c860cc79f9f19917/ctranslate2-4.8.1-cp314-cp314t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:84723cae6f802551bbf2438e5e4810722631a2183b89a82c31df26566b54821d", size = 16860414, upload-time = "2026-07-03T12:39:55.54Z" },
     { url = "https://files.pythonhosted.org/packages/69/11/cdab0e7e2ad4e547f15ab227c09207569f1272abae05816900ecebb0797a/ctranslate2-4.8.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1910752ec541980644191fa3b407bc61dee00e88070b0aed29b4cef75010b3ea", size = 39465200, upload-time = "2026-07-03T12:39:59.017Z" },
     { url = "https://files.pythonhosted.org/packages/c0/03/126e963fc3237a416f3085b8a663ebd8ab449ed6c37195b4e0b49597ba0c/ctranslate2-4.8.1-cp314-cp314t-win_amd64.whl", hash = "sha256:dc9f1abef55579cc02cdc74b3a55df38491ec56d177d6e6039609d61d09ed30e", size = 19499597, upload-time = "2026-07-03T12:40:01.68Z" },
+]
+
+[[package]]
+name = "ctranslate2"
+version = "4.8.1"
+source = { url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl" }
+resolution-markers = [
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "numpy", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "pyyaml", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "setuptools", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+]
+wheels = [
+    { url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl", hash = "sha256:55b4601bb04f98281da3c7fce63090e7da3141b0b034b01617d480ce18e8f866" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy" },
+    { name = "pyyaml", specifier = ">=5.3,<7" },
+    { name = "setuptools" },
 ]
 
 [[package]]
@@ -410,7 +439,8 @@ version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "av", marker = "sys_platform == 'never'" },
-    { name = "ctranslate2" },
+    { name = "ctranslate2", version = "4.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
+    { name = "ctranslate2", version = "4.8.1", source = { url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl" }, marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
     { name = "huggingface-hub" },
     { name = "onnxruntime" },
     { name = "tokenizers" },
@@ -1218,8 +1248,8 @@ name = "pycaw"
 version = "20251023"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "comtypes" },
-    { name = "psutil" },
+    { name = "comtypes", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "psutil", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d1/81/19181e3118a503f94d8689fbbed60616e85d08cee3a295c11245ae73018f/pycaw-20251023.tar.gz", hash = "sha256:19935b92eb5efc3f3ea5ee8a2d37ca49009e9dc00f83d067b74b9922e84b5b3b", size = 23421, upload-time = "2025-10-23T18:26:45.087Z" }
 wheels = [
@@ -1320,12 +1350,12 @@ name = "pyinstaller"
 version = "6.22.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "altgraph" },
-    { name = "packaging" },
+    { name = "altgraph", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "packaging", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
     { name = "pefile", marker = "sys_platform == 'win32'" },
-    { name = "pyinstaller-hooks-contrib" },
+    { name = "pyinstaller-hooks-contrib", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
     { name = "pywin32-ctypes", marker = "sys_platform == 'win32'" },
-    { name = "setuptools" },
+    { name = "setuptools", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cc/2b/836d9def811c02522e0921d8b8cdf0c16b0545a216e97e71041758057859/pyinstaller-6.22.2.tar.gz", hash = "sha256:89b65a3ad07d9dd5832253e37bc45f31872d10d7f9d5c9fd0fdd6088a83829dd", size = 4092631, upload-time = "2026-08-17T20:53:22.231Z" }
 wheels = [
@@ -1339,7 +1369,7 @@ name = "pyinstaller-hooks-contrib"
 version = "2026.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "packaging" },
+    { name = "packaging", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/26/60/d881fa1ba8c160c18d8e6f782bb16ec4640c08bc08fc50f704c368ad4f9e/pyinstaller_hooks_contrib-2026.7.tar.gz", hash = "sha256:5fbcaacb22c4f4aac869a127dce283f67a4b4cfcc37d496f2446603e6d68aefa", size = 175992, upload-time = "2026-08-24T21:26:58.713Z" }
 wheels = [
@@ -1365,8 +1395,8 @@ name = "pystray"
 version = "0.19.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pillow" },
-    { name = "six" },
+    { name = "pillow", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "six", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/64/927a4b9024196a4799eba0180e0ca31568426f258a4a5c90f87a97f51d28/pystray-0.19.5-py2.py3-none-any.whl", hash = "sha256:a0c2229d02cf87207297c22d86ffc57c86c227517b038c0d3c59df79295ac617", size = 49068, upload-time = "2023-09-17T13:44:26.872Z" },
@@ -1646,8 +1676,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
+    { name = "jeepney", marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -1898,6 +1928,8 @@ dependencies = [
     { name = "apscheduler" },
     { name = "comtypes", marker = "sys_platform == 'win32'" },
     { name = "cryptography" },
+    { name = "ctranslate2", version = "4.8.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or sys_platform != 'win32'" },
+    { name = "ctranslate2", version = "4.8.1", source = { url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl" }, marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
     { name = "fastapi" },
     { name = "faster-whisper" },
     { name = "httpx" },
@@ -1948,6 +1980,8 @@ requires-dist = [
     { name = "apscheduler", specifier = ">=3.11" },
     { name = "comtypes", marker = "sys_platform == 'win32'", specifier = ">=1.4" },
     { name = "cryptography", specifier = ">=44" },
+    { name = "ctranslate2", marker = "python_full_version != '3.13.*' or sys_platform != 'win32'", specifier = "==4.8.1" },
+    { name = "ctranslate2", marker = "python_full_version == '3.13.*' and sys_platform == 'win32'", url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl" },
     { name = "fastapi", specifier = ">=0.120" },
     { name = "faster-whisper", specifier = ">=1.1" },
     { name = "httpx", specifier = ">=0.28" },
@@ -2007,11 +2041,11 @@ name = "windows-toasts"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
-    { name = "winrt-windows-data-xml-dom" },
-    { name = "winrt-windows-foundation" },
-    { name = "winrt-windows-foundation-collections" },
-    { name = "winrt-windows-ui-notifications" },
+    { name = "winrt-runtime", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "winrt-windows-data-xml-dom", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "winrt-windows-foundation", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "winrt-windows-foundation-collections", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
+    { name = "winrt-windows-ui-notifications", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4f/95/c045bdb9deceb30708be6209b3afb869c562c9ad78705e59dbb501077a04/windows_toasts-1.3.1.tar.gz", hash = "sha256:11fcab5dd2309525271f7f423979e066b9cc04cf434c9b09a341c97490fa239b", size = 24515, upload-time = "2025-05-06T19:33:56.704Z" }
 wheels = [
@@ -2023,7 +2057,7 @@ name = "winrt-runtime"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/16/dd/acdd527c1d890c8f852cc2af644aa6c160974e66631289420aa871b05e65/winrt_runtime-3.2.1.tar.gz", hash = "sha256:c8dca19e12b234ae6c3dadf1a4d0761b51e708457492c13beb666556958801ea", size = 21721, upload-time = "2025-06-06T14:40:27.593Z" }
 wheels = [
@@ -2040,7 +2074,7 @@ name = "winrt-windows-data-xml-dom"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cc/11/6b1e59abf5f8f0cba1fee13447c9d077d144332b9b664bb236fdfa878558/winrt_windows_data_xml_dom-3.2.1.tar.gz", hash = "sha256:db81f5956bf63ce8c9d8bfb6d0794ab2849f26e62a6256b833af8de3d6451399", size = 50032, upload-time = "2025-06-06T14:41:15.877Z" }
 wheels = [
@@ -2057,7 +2091,7 @@ name = "winrt-windows-foundation"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0c/55/098ce7ea0679efcc1298b269c48768f010b6c68f90c588f654ec874c8a74/winrt_windows_foundation-3.2.1.tar.gz", hash = "sha256:ad2f1fcaa6c34672df45527d7c533731fdf65b67c4638c2b4aca949f6eec0656", size = 30485, upload-time = "2025-06-06T14:41:53.344Z" }
 wheels = [
@@ -2074,7 +2108,7 @@ name = "winrt-windows-foundation-collections"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ef/62/d21e3f1eeb8d47077887bbf0c3882c49277a84d8f98f7c12bda64d498a07/winrt_windows_foundation_collections-3.2.1.tar.gz", hash = "sha256:0eff1ad0d8d763ad17e9e7bbd0c26a62b27215016393c05b09b046d6503ae6d5", size = 16043, upload-time = "2025-06-06T14:41:53.983Z" }
 wheels = [
@@ -2091,7 +2125,7 @@ name = "winrt-windows-ui-notifications"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "python_full_version >= '3.14' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fc/f9/4798657fd6999e6dae2c84876b40e91873ccd5f056b27c40ebd7f4ff11d8/winrt_windows_ui_notifications-3.2.1.tar.gz", hash = "sha256:eb29bf1c3306f3ceabd71d092b5505d5fe73fbc0660347dcc63ebc4204d34d21", size = 28942, upload-time = "2025-06-06T14:43:54.629Z" }
 wheels = [
