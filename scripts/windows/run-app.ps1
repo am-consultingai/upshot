@@ -14,8 +14,9 @@
 
   The speech models and the GPU libraries are the installed app's own, in -HomeDir
   (models\asr and cuda): a run from source uses exactly what the installed app uses. If
-  any of them is missing the run stops and says so - the installer (or upshot.exe
-  --prepare) is what puts them there, and a gap means the installation needs repairing.
+  any of them is missing the run stops and says so - the installer is what puts them there
+  (the GPU libraries only under NVIDIA's licence, accepted on its page: D101), and a gap
+  means the installation needs repairing.
 
 .PARAMETER Provider
   Summarizer, for this run only: fake, anthropic, gemini, openai, ollama,
@@ -183,7 +184,7 @@ if ($missingModels.Count -gt 0) {
         Write-Bad "app_config.json sets asr.model_path to $standIn. If the installer takes"
         Write-Bad "that for the Hebrew model it never installs its own: remove the line first."
     }
-    Write-Bad "Run the Upshot installer again (or upshot.exe --prepare) to repair it."
+    Write-Bad "Run the Upshot installer again to repair it."
     Read-Host "  Press Enter to close this window" | Out-Null
     return
 }
@@ -416,7 +417,7 @@ print(json.dumps({'missing': missing, 'gpu': gpu, 'why': why}))
     if ($installed.missing.Count -gt 0) {
         Write-Bad "The installed app's files are missing or out of date in ${HomeDir}:"
         foreach ($item in $installed.missing) { Write-Bad "  - $item" }
-        Write-Bad "Run the Upshot installer again (or upshot.exe --prepare) to repair it."
+        Write-Bad "Run the Upshot installer again to repair it."
         return
     }
     Write-Good "speech models: $modelsDir"

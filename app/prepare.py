@@ -16,7 +16,7 @@ install, in the open. It fetches, in order:
    model.
 
     upshot.exe --prepare --progress-file P [--cancel-file C]
-        [--nvidia-accepted | --no-gpu | --gpu-if-present]
+        [--nvidia-accepted]
 
 ``P`` is rewritten every half second as ``key=value`` lines — plain text, because Inno's
 Pascal script reads it: ``stage`` (model|gpu|done), ``state`` (working|ready|skipped|
@@ -31,16 +31,16 @@ of the three fails, the exit code says so and the installer reports an incomplet
 running it again resumes. The CUDA libraries are optional: without them the app runs on
 the CPU.
 
-The installer fetches them only once NVIDIA's licence is accepted (licence epic S9).
-``--nvidia-accepted``: accepted; the accepted licence is saved
-(``cuda_libs.record_acceptance``). ``--no-gpu``: declined, nothing of NVIDIA's is fetched,
-and an earlier acceptance is withdrawn with the libraries fetched under it.
-``--gpu-if-present``: not asked (a silent install, no NVIDIA GPU): libraries already in
-this user's folder are kept and completed only when the licence accepted for them is the
-one the pinned wheels come under (the same text and CUDA generation); none are fetched
-otherwise. A bare ``--prepare`` (the repair command)
-fetches as before but records no acceptance. Decided here, in the signed-in user's
-profile, not by Setup, which may run as an administrator with another profile.
+They are fetched only under NVIDIA's licence, which every install accepts (D101).
+``--nvidia-accepted``: accepted just now (the installer's page, or /NVIDIA=accept); the
+accepted licence is saved (``cuda_libs.record_acceptance``). Without it (accepted at an
+earlier install, an automatic update, the repair command) they are fetched, kept and
+completed only when the licence this user accepted is the one the pinned wheels come under
+(the same text and CUDA generation), so a computer that gains an NVIDIA GPU gets them at its
+next install or update without being asked again, and nothing more comes from NVIDIA under a
+licence nobody accepted. Whether this computer can use them is ``cuda_libs.wanted``, either
+way. Decided here, in the signed-in user's profile, not by Setup, which may run as an
+administrator with another profile.
 """
 
 from __future__ import annotations
@@ -338,41 +338,25 @@ def _report(exc: Exception) -> None:
         log.exception("could not report the failure")
 
 
-def gpu_allowed(
-    *, no_gpu: bool, if_present: bool, accepted: bool = False, home: Path | None = None
-) -> bool:
-    """Whether the GPU step may run.
+def gpu_allowed(*, accepted: bool = False, home: Path | None = None) -> bool:
+    """Whether the GPU step may run (it then fetches only what ``cuda_libs.wanted`` says).
 
     ``accepted`` (the installer: its page, or /NVIDIA=accept) saves NVIDIA's licence as
-    accepted and runs it. ``no_gpu`` (declined) withdraws an earlier acceptance, removes the
-    libraries fetched under it, and does not run it.
-    ``if_present`` runs it only when this user's folder already holds the libraries and the
-    licence accepted for them is the one the pinned wheels come under. With none of these (a
-    bare ``--prepare``, the repair command) it runs, as before, but records no acceptance.
+    accepted and runs it. Otherwise it runs only when this user accepted the licence the
+    pinned wheels come under.
     """
     from app.asr import cuda_libs
 
-    if no_gpu:
-        cuda_libs.withdraw_acceptance(home)
-        return False
     if accepted:
         try:
             cuda_libs.record_acceptance(home)
         except (OSError, ValueError) as exc:  # the download goes ahead; the next install asks
             log.warning("prepare: could not save NVIDIA's accepted licence: %s", exc)
         return True
-    if if_present:
-        from app import paths
-
-        present = ((home or paths.app_home()) / "cuda").is_dir()
-        current = present and cuda_libs.acceptance_current(home)
-        log.info(
-            "prepare: GPU libraries %s%s; not asked to fetch them",
-            "present" if present else "absent",
-            "" if current or not present else ", but not under NVIDIA's licence as it now is",
-        )
-        return current
-    return True
+    current = cuda_libs.acceptance_current(home)
+    if not current:
+        log.info("prepare: NVIDIA's licence as it now is was not accepted; no GPU step")
+    return current
 
 
 def main(argv: list[str]) -> int:
@@ -382,9 +366,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="upshot.exe --prepare")
     parser.add_argument("--progress-file", type=Path)
     parser.add_argument("--cancel-file", type=Path)
-    parser.add_argument("--no-gpu", action="store_true")
-    parser.add_argument("--gpu-if-present", action="store_true")
-    # Only the installer passes it, once NVIDIA's licence was accepted (D100).
+    # The installer passes it once NVIDIA's licence was accepted (D101); so does the test
+    # harness (scripts/windows/sandbox/app-e2e.ps1), for its own home.
     parser.add_argument("--nvidia-accepted", action="store_true")
     # The installer's language (packaging/installer.iss), for the progress text.
     parser.add_argument("--language", default="en")
@@ -397,9 +380,7 @@ def main(argv: list[str]) -> int:
     language: str = args.language
     progress = ProgressFile(args.progress_file)
     try:
-        gpu = gpu_allowed(
-            no_gpu=args.no_gpu, if_present=args.gpu_if_present, accepted=args.nvidia_accepted
-        )
+        gpu = gpu_allowed(accepted=args.nvidia_accepted)
         code = run(Config.load(), progress, cancelled, gpu=gpu, language=language)
     except Exception as exc:  # the installer must always get a last word
         log.exception("prepare failed")
