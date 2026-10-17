@@ -3,7 +3,7 @@ version: 2026-10-17
 effective: 2026-10-17
 material: true
 last_material: 2026-10-17
-summary: There is no beta. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.
+summary: The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.
 ---
 
 # Upshot Terms of Service
@@ -48,7 +48,7 @@ Upshot is under active development:
 
 ## 5. Your licence to use Upshot {#licence}
 
-The official app and the source code are both licensed to you under the Upshot licence. Under its Additional Use Grant, you may use Upshot in production free of charge if both of these are true:
+The official app and the source code are both licensed to you under the Upshot licence, except for the credentials, signing keys and service configuration in our builds, which the Upshot licence excludes; you may use those only as part of the official app, under these Terms. Under its Additional Use Grant, you may use Upshot in production free of charge if both of these are true:
 
 - you are an individual using it for your own personal purposes, or an organization with fewer than 20 individuals working for it as employees or independent contractors, counted together with all of its affiliates under common control; and
 - your use does not include offering Upshot, or any product or service derived from it, to third parties as a Competing Offering, as the Upshot licence defines it.
@@ -64,7 +64,7 @@ Upshot is licensed, not sold. We and our licensors keep all rights not expressly
 Except as the Upshot licence (section 5), the licence of a third-party component (section 16) or applicable law expressly permits, you must not:
 
 - make production use of Upshot that the Upshot licence does not permit, including offering Upshot, or any product or service derived from it, to third parties as a Competing Offering, unless a commercial licence covers that use;
-- remove, alter or obscure any copyright notice, licence notice or other proprietary notice in Upshot or its components, except to remove the Upshot name and logo from a modified or self-built version;
+- remove, alter or obscure any copyright notice, licence notice or other proprietary notice in Upshot or its components, except to remove the Upshot name and logo from the branding of a modified or self-built version;
 - present a modified or self-built version of Upshot as the official app, or distribute it under the Upshot name or logo (you may still say truthfully that it is based on Upshot);
 - misuse the credentials and services the official app uses, such as our Google Cloud client, our update service or our website, for example by using them in another product or by bypassing their limits;
 - use Upshot in breach of any law, including laws on recording conversations, privacy, data protection, export control and sanctions;
@@ -168,7 +168,7 @@ These Terms apply from when you accept them until they end.
 
 You may stop using Upshot at any time by uninstalling it. Uninstalling does not delete your content; you can delete it by deleting Upshot's data folder.
 
-We may end these Terms, or suspend or end your use of our services (such as updates, our update service, our Google Cloud client and our website), if you materially breach these Terms, if we are required to by law, or if we stop offering Upshot. Where reasonable, we will tell you first. When these Terms end, you must stop using our services. Your rights in the software itself are governed by the Upshot licence: they end automatically if you use Upshot in violation of it, and you must then stop using Upshot and uninstall it. Your content remains yours and stays on your computer.
+We may end these Terms, or suspend or end your use of our services (such as updates, our update service, our Google Cloud client and our website), if you materially breach these Terms, if we are required to by law, or if we stop offering Upshot. Where reasonable, we will tell you first. When these Terms end, you must stop using our services. Your rights in the software itself are governed by the Upshot licence: they end automatically, for the current and all other versions, if you use Upshot in violation of it, and you must then stop using Upshot and uninstall it. Your content remains yours and stays on your computer.
 
 Sections 6, 7, 10, 14, 15, 17, 18 and 20 to 26 continue to apply after these Terms end.
 

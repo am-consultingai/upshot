@@ -77,8 +77,11 @@ Upshot is under active development:
 5. YOUR LICENCE TO USE UPSHOT
 
 The official app and the source code are both licensed to you under the
-Upshot licence. Under its Additional Use Grant, you may use Upshot in
-production free of charge if both of these are true:
+Upshot licence, except for the credentials, signing keys and service
+configuration in our builds, which the Upshot licence excludes; you may use
+those only as part of the official app, under these Terms. Under its
+Additional Use Grant, you may use Upshot in production free of charge if
+both of these are true:
 
   - you are an individual using it for your own personal purposes, or an
     organization with fewer than 20 individuals working for it as employees
@@ -113,7 +116,8 @@ component (section 16) or applicable law expressly permits, you must not:
     covers that use;
   - remove, alter or obscure any copyright notice, licence notice or other
     proprietary notice in Upshot or its components, except to remove the
-    Upshot name and logo from a modified or self-built version;
+    Upshot name and logo from the branding of a modified or self-built
+    version;
   - present a modified or self-built version of Upshot as the official app,
     or distribute it under the Upshot name or logo (you may still say
     truthfully that it is based on Upshot);
@@ -342,9 +346,10 @@ updates, our update service, our Google Cloud client and our website), if
 you materially breach these Terms, if we are required to by law, or if we
 stop offering Upshot. Where reasonable, we will tell you first. When these
 Terms end, you must stop using our services. Your rights in the software
-itself are governed by the Upshot licence: they end automatically if you use
-Upshot in violation of it, and you must then stop using Upshot and uninstall
-it. Your content remains yours and stays on your computer.
+itself are governed by the Upshot licence: they end automatically, for the
+current and all other versions, if you use Upshot in violation of it, and
+you must then stop using Upshot and uninstall it. Your content remains yours
+and stays on your computer.
 
 Sections 6, 7, 10, 14, 15, 17, 18 and 20 to 26 continue to apply after these
 Terms end.

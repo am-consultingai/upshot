@@ -1,11 +1,11 @@
 """The file transcription service over HTTP: ``/api/v1`` (D86, plan §4.4).
 
-Any program on this computer may use it, with no key (R2). Websites are kept out by the
-Origin guard (``app/api/security.py``), and ``/api/v1`` is exempt from CSRF, which a
-program has no cookie for. The Settings switch ``transcription.service_enabled`` turns
-it off for programs; the page, recognised by its ``up_csrf`` cookie or header, keeps
-working. That switch is a courtesy, not an access control: any local program can get the
-cookie (D57).
+A program on this computer uses it with Upshot's access key (D98; R2's keyless access
+ended there). Websites are kept out by the Origin guard (``app/api/security.py``), and
+``/api/v1`` is exempt from CSRF, which a program has no cookie for. The Settings switch
+``transcription.service_enabled`` turns it off for programs; the page, recognised by its
+``up_csrf`` cookie or header, keeps working. That switch is a courtesy, not an access
+control: any local program can get the cookie (D57).
 
 Uploads are parsed as they stream in, straight into the data root: Starlette's own form
 parsing would spool the whole file to ``%TEMP%`` first, a second copy on C:.
