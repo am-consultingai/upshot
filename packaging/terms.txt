@@ -216,9 +216,9 @@ You are responsible for how you use Upshot. In particular, you agree:
     credentials you enter are stored on your computer, and you are
     responsible for protecting it, including from other people who use it.
   - To keep backups. You are responsible for keeping copies of anything you
-    need. Apart from the copies of files that other programs send it to
-    transcribe, Upshot deletes your content automatically only if you set a
-    period for it in its configuration.
+    need. Apart from the cases described in section 7 of the Privacy Policy,
+    Upshot deletes your content automatically only if you set a period for
+    it in its configuration.
   - Not to misuse Upshot, including by using it for any unlawful purpose or
     by attempting to interfere with it or with any service it connects to.
 
