@@ -2,8 +2,8 @@
   "version": "2026-10-17",
   "effective": "2026-10-17",
   "material": true,
-  "summary": "The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.",
+  "summary": "The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence. Installing Upshot now requires accepting NVIDIA's licence on every computer, though NVIDIA's library is downloaded only where a suitable NVIDIA graphics card can use it.",
   "url": "terms.md",
-  "sha256": "970409b5c7c1c9b9ba20d9df182416c702132fea923eeba7d61565860ce2ffff",
+  "sha256": "62f97a39b9c3606aabb6f880d28d2276d4b2fde557d5834a9f9f841681849c22",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }

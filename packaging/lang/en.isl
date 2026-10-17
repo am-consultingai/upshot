@@ -21,8 +21,8 @@ StatusFirstRun=Preparing first run...
 StatusPreparing=Preparing...
 TermsInEnglish=
 OpenSource=Upshot also includes open-source software under its own licences, listed in Upshot under Settings > About and updates.
-NvidiaTitle=NVIDIA GPU libraries
-NvidiaLead=Upshot can transcribe faster on your NVIDIA graphics card.
-NvidiaAbove=For that, Setup downloads NVIDIA cuBLAS directly from NVIDIA (PyPI), under NVIDIA's licence below: an agreement between you and NVIDIA.
-NvidiaAccept=I accept NVIDIA's EULA: download cuBLAS from NVIDIA (PyPI)
-NvidiaSkip=Skip: transcribe on the processor
+NvidiaTitle=NVIDIA's licence
+NvidiaLead=Upshot installs only with NVIDIA's licence accepted.
+NvidiaAbove=On a computer with a suitable NVIDIA graphics card, Setup downloads NVIDIA cuBLAS, as NVIDIA publishes it on PyPI, so transcription runs faster; on any other, Setup downloads nothing from NVIDIA. NVIDIA's licence below is an agreement between you and NVIDIA.
+NvidiaAccept=I accept NVIDIA's licence (EULA)
+NvidiaRequired=Upshot installs only with NVIDIA's licence accepted. For a silent installation, pass /NVIDIA=accept.
