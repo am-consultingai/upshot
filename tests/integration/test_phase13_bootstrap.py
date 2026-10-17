@@ -324,11 +324,13 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     assert f"\\upshot\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
     assert "GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile)" in installer
     # A silent install: refused before anything is copied, unless accepted.
+    # An automatic update passes only over an installed Upshot: /UPDATE=1 alone is no way in.
     gate = (
-        "Result := not WizardSilent or IsUpdate or HasSwitch('/NVIDIA=accept')"
-        " or NvidiaAlreadyAccepted;"
+        "Result := not WizardSilent or (IsUpdate and UpshotInstalled)"
+        " or HasSwitch('/NVIDIA=accept')\n    or NvidiaAlreadyAccepted;"
     )
     assert gate in installer
+    assert "Result := RegKeyExists(HKA," in installer
     assert installer.count("Result := NvidiaGate;") == 2  # with and without the memory check
     assert "HelpTextNote=/NVIDIA=accept   Required" in installer
     assert "have the authority" in installer

@@ -366,7 +366,8 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="upshot.exe --prepare")
     parser.add_argument("--progress-file", type=Path)
     parser.add_argument("--cancel-file", type=Path)
-    # Only the installer passes it, once NVIDIA's licence was accepted (D100).
+    # The installer passes it once NVIDIA's licence was accepted (D101); so does the test
+    # harness (scripts/windows/sandbox/app-e2e.ps1), for its own home.
     parser.add_argument("--nvidia-accepted", action="store_true")
     # The installer's language (packaging/installer.iss), for the progress text.
     parser.add_argument("--language", default="en")

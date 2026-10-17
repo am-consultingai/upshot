@@ -282,14 +282,25 @@ begin
   Result := not IsAdminInstallMode and NvidiaLicenceAccepted;
 end;
 
+{ This Upshot is installed, in either privilege mode: its uninstall entry exists. Usable in
+  InitializeSetup, unlike IsUpshotInstall ({app} is not known yet). An automatic update
+  keeps the mode of the install it updates, so it always finds the entry. }
+function UpshotInstalled: Boolean;
+begin
+  Result := RegKeyExists(HKA,
+    'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1B7C2E-4A8D-4E57-9C1D-3B2A9E0F5D11}_is1');
+end;
+
 { Upshot installs only under NVIDIA's licence, on every computer (D101). The wizard asks on
   its page; a silent install passes /NVIDIA=accept, or this profile accepted the licence as
   this installer carries it. An automatic update (/UPDATE=1) is never refused: it installs
-  over any earlier install, and where this user's acceptance is missing or for an older
+  over any earlier install (and only over one: the switch alone on a computer without
+  Upshot gets no pass), and where this user's acceptance is missing or for an older
   text it fetches nothing from NVIDIA until an install made by hand asks. }
 function NvidiaGate: Boolean;
 begin
-  Result := not WizardSilent or IsUpdate or HasSwitch('/NVIDIA=accept') or NvidiaAlreadyAccepted;
+  Result := not WizardSilent or (IsUpdate and UpshotInstalled) or HasSwitch('/NVIDIA=accept')
+    or NvidiaAlreadyAccepted;
   if not Result then begin
     Log('NVIDIA licence not accepted: a silent install needs /NVIDIA=accept');
     SuppressibleMsgBox(CustomMessage('NvidiaRequired'), mbCriticalError, MB_OK, IDOK);
