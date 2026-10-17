@@ -1,0 +1,70 @@
+name: ctranslate2
+
+# Builds Upshot's ctranslate2 wheel for Windows without any Intel component
+# (packaging/ctranslate2/build.sh, licence epic S12) and, when a release tag is given, publishes
+# it with its licence texts and the sources it was built from, as a pre-release that the build
+# pins by URL and SHA-256. Published by hand only; a pull request that changes the build builds
+# it, so the change is proven before it merges, and publishes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release tag to publish, e.g. ctranslate2-4.8.1-upshot-1 (empty: build only)"
+        required: false
+        default: ""
+  pull_request:
+    paths: [packaging/ctranslate2/**, .github/workflows/ctranslate2.yml]
+
+permissions: {}
+
+jobs:
+  # The build runs third-party code (CMake, MSVC, the CUDA installer, the sources), so it holds
+  # no write token: read-only contents, and no credentials left in the checkout.
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: mkdir -p "$RUNNER_TEMP/ct2" && bash packaging/ctranslate2/build.sh "$RUNNER_TEMP/ct2"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ctranslate2-wheel
+          path: |
+            ${{ runner.temp }}/ct2/dist/*.whl
+            ${{ runner.temp }}/ct2/dist/*.txt
+            ${{ runner.temp }}/ct2/dist/SHA256SUMS
+            ${{ runner.temp }}/ct2/dist/sources/
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.release != '' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ctranslate2-wheel
+          path: dist
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$RELEASE" =~ ^ctranslate2-[0-9]+\.[0-9]+\.[0-9]+-upshot-[0-9]+$ ]] || { echo "bad tag: $RELEASE"; exit 1; }
+          cd dist && sha256sum -c SHA256SUMS
+          (cd sources && zip -qr ../ctranslate2-sources.zip .) && sha256sum ctranslate2-sources.zip >> SHA256SUMS
+          gh release create "$RELEASE" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title "$RELEASE (Upshot's ctranslate2 wheel without Intel components)" \
+            --notes-file BUILD.txt \
+            ctranslate2-*.whl LICENSE-ctranslate2.txt LICENSE-oneDNN.txt LICENSE-NVIDIA-CUDA.txt \
+            BUILD.txt imports.txt SHA256SUMS ctranslate2-sources.zip
