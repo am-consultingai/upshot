@@ -448,10 +448,12 @@ def extra_entries() -> list[Entry]:
               " build (packaging/ctranslate2), with the third-party code it contains (Xbyak,"
               " ittnotify, Boost).", licence_file("onednn.txt"), kind="other"),
         Entry("ctranslate2's compiled-in third-party code", "4.8.1",
-              "MIT AND Apache-2.0 AND BSD-3-Clause AND BSD-2-Clause AND Zlib"
+              "MIT AND Apache-2.0 AND BSD-3-Clause AND BSD-2-Clause AND Zlib AND BSL-1.0"
               " AND Apache-2.0 WITH LLVM-exception",
-              "spdlog, cpu_features, cutlass, thrust/cub/libcudacxx (cccl), the AVX maths and"
-              " thread-pool headers and pybind11, compiled into ctranslate2.dll and _ext.pyd.",
+              "spdlog, cpu_features, cutlass, thrust/cub/libcudacxx (cccl, with Boost-derived"
+              " code), the AVX maths and thread-pool headers and pybind11, compiled into"
+              " ctranslate2.dll and _ext.pyd. The NVIDIA Software License in cccl's text covers"
+              " libcudacxx headers (cuda/annotated_ptr, cuda/pipeline) that are not compiled in.",
               licence_file("ctranslate2-third-party.txt"), kind="other"),
         Entry("NVIDIA CUDA runtime (statically linked inside ctranslate2)", "12.8",
               "LicenseRef-NVIDIA-CUDA-EULA",

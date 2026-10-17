@@ -390,3 +390,8 @@ def test_a_package_the_notices_do_not_list_fails(
 def test_a_freeze_without_the_notices_fails(tmp_path: Path) -> None:
     (tmp_path / "upshot" / "_internal").mkdir(parents=True)
     assert notices.check(tmp_path / "upshot")[0].endswith("THIRD-PARTY-NOTICES.json is missing")
+
+
+def test_microsofts_openmp_runtime_in_the_freeze_is_the_microsoft_runtime_entry() -> None:
+    """Upshot's ctranslate2 needs vcomp140.dll; PyInstaller puts it at the top of _internal."""
+    assert notices.unowned("vcomp140.dll") == "Microsoft Visual C++ and Universal C runtime"
