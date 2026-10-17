@@ -23,6 +23,8 @@ dependencies = [
     "pyyaml>=6.0",
     "pillow>=11.0",
     "faster-whisper>=1.1",
+    # Pinned, and on Windows taken from Upshot's own build (below), not PyPI's.
+    "ctranslate2==4.8.1",
     "onnxruntime>=1.20",
     # Speaker diarization, always on (DECISIONS.md D85): ONNX rather than pyannote/torch
     # (D28). sherpa-onnx-core is listed explicitly: it is a runtime dependency of
@@ -68,6 +70,17 @@ dev = [
 # GPL encoders libx264 and libx265, which Upshot may not ship. faster-whisper is given
 # arrays instead of paths (app/asr/wav.py), and app/__init__.py stands in for the import.
 override-dependencies = ["av; sys_platform == 'never'"]
+
+# ctranslate2 on Windows: Upshot's own wheel (packaging/ctranslate2/build.sh, published by
+# .github/workflows/ctranslate2.yml), built without Intel's OpenMP runtime and oneMKL, whose
+# licences Upshot does not take on (licence epic S12, D100). Same speed and accuracy; the CPU
+# path is oneDNN, as AMD CPUs already run. Elsewhere (CI on Linux) PyPI's wheel, never shipped.
+# The wheel is for Python 3.13, which the installer is built with; on another Windows Python
+# PyPI's wheel would come back, with Intel's runtime, and scripts/check_dist.py refuses that build.
+[tool.uv.sources]
+ctranslate2 = [
+  { url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13'" },
+]
 
 [build-system]
 requires = ["hatchling"]

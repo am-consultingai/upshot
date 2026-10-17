@@ -1,4 +1,4 @@
-"""Refuse a build that carries a GPL component Upshot may not ship.
+"""Refuse a build that carries a GPL or Intel component Upshot may not ship.
 
     uv run python scripts/check_dist.py dist/upshot
 
@@ -11,6 +11,12 @@ shipped them until PyAV was removed (``pyproject.toml``). Two checks:
 - inside every ``.dll``/``.pyd``/``.exe``: FFmpeg's configure line, which an FFmpeg build
   carries whatever its file is called. ``--enable-gpl`` alone is not enough: PyAV's
   FFmpeg links x264 and x265 with ``--enable-version3`` and no ``--enable-gpl`` at all.
+
+And Intel's runtime libraries (licence epic S12, D100): Upshot ships its own ctranslate2,
+built with Microsoft's OpenMP and oneDNN, because PyPI's carries Intel's OpenMP runtime
+(``libiomp5md.dll``, under Intel's developer-tools EULA) and oneMKL. A build that picked up
+PyPI's wheel again (another Python, a lost source pin) has ``libiomp5md.dll`` and is refused;
+ours needs Microsoft's ``vcomp140.dll`` beside it, which must then be in the freeze.
 """
 
 from __future__ import annotations
@@ -20,6 +26,8 @@ import re
 import sys
 from pathlib import Path
 
+#: Intel's runtime libraries, by lower-case file name: OpenMP, and oneMKL's DLLs.
+INTEL_NAMES: tuple[str, ...] = ("libiomp5*", "libiompstubs5*", "mkl_*.dll")
 #: Lower-case glob patterns, matched against every file and folder name.
 FORBIDDEN_NAMES: tuple[str, ...] = (
     "av.libs",  # PyAV's bundled FFmpeg, with x264 and x265
@@ -53,14 +61,20 @@ BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
 def problems(root: Path) -> list[str]:
     found = []
+    names = set()
     for path in sorted(root.rglob("*")):
         name = path.name.lower()
+        names.add(name)
         if any(fnmatch.fnmatch(name, pattern) for pattern in FORBIDDEN_NAMES):
             found.append(f"{path.relative_to(root)}: a GPL component")
+        elif any(fnmatch.fnmatch(name, pattern) for pattern in INTEL_NAMES):
+            found.append(f"{path.relative_to(root)}: an Intel runtime library")
         elif path.is_file() and path.suffix.lower() in BINARY_SUFFIXES:
             flag = gpl_flag(path)
             if flag:
                 found.append(f"{path.relative_to(root)}: built with {flag}")
+    if "ctranslate2.dll" in names and "vcomp140.dll" not in names:
+        found.append("ctranslate2.dll needs Microsoft's vcomp140.dll, which the freeze lacks")
     return found
 
 
@@ -86,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     for line in found:
         print(f"[FAIL] {line}")
     if not found:
-        print(f"[ok  ] {args[0]}: no GPL component")
+        print(f"[ok  ] {args[0]}: no GPL or Intel component")
     return 1 if found else 0
 
 

@@ -17,9 +17,9 @@ What it lists:
   of ``frontend/package.json``;
 - what no package manager knows about (``EXTRA``): the Python runtime, the PyInstaller
   bootloader, ffmpeg (Upshot's audio-only build, its licence read from its configure line),
-  the speech models, Silero VAD, the fonts, Tailwind's CSS, Intel's OpenMP runtime, the
-  oneMKL and oneDNN libraries compiled into ctranslate2, NVIDIA's cuBLAS and the Microsoft
-  runtime.
+  the speech models, Silero VAD, the fonts, Tailwind's CSS, what Upshot's ctranslate2 build
+  compiles in (oneDNN, its third-party code, NVIDIA's CUDA runtime), NVIDIA's cuBLAS and the
+  Microsoft runtime.
 
 Each entry carries its licence (SPDX where one fits) and the licence and notice texts the
 package ships; where it ships none, the text is taken from ``packaging/licenses`` (each file
@@ -442,27 +442,28 @@ def extra_entries() -> list[Entry]:
         Entry("Tailwind CSS", tailwind_version, "MIT", "Compiled into the interface's stylesheet.",
               [tailwind.read_text(encoding="utf-8")] if tailwind.is_file() else [],
               kind="other"),
-        Entry("Intel OpenMP runtime (libiomp5md.dll, shipped inside ctranslate2)", "2025.3",
-              "LicenseRef-Intel-EULA-Developer-Tools",
-              "Intel's proprietary runtime, redistributed under Intel's terms below.",
-              licence_file("intel-openmp.txt")
-              + licence_file("intel-openmp-third-party-programs.txt"), kind="other"),
-        Entry("Intel oneMKL (statically linked inside ctranslate2)", "2025.3",
-              "LicenseRef-Intel-ISSL",
-              "Intel's math library, compiled into ctranslate2.dll by its upstream build;"
-              " redistributed under the Intel Simplified Software License below.",
-              licence_file("intel-onemkl.txt"), kind="other"),
         Entry("oneDNN (statically linked inside ctranslate2)", "3.1.1",
               "Apache-2.0 AND BSD-3-Clause AND BSL-1.0",
-              "Intel's deep-learning primitives, compiled into ctranslate2.dll by its upstream"
-              " build, with the third-party code it contains (Xbyak, ittnotify, Boost).",
-              licence_file("onednn.txt"), kind="other"),
+              "Intel's deep-learning primitives, compiled into ctranslate2.dll by Upshot's own"
+              " build (packaging/ctranslate2), with the third-party code it contains (Xbyak,"
+              " ittnotify, Boost).", licence_file("onednn.txt"), kind="other"),
+        Entry("ctranslate2's compiled-in third-party code", "4.8.1",
+              "MIT AND Apache-2.0 AND BSD-3-Clause AND BSD-2-Clause AND Zlib"
+              " AND Apache-2.0 WITH LLVM-exception",
+              "spdlog, cpu_features, cutlass, thrust/cub/libcudacxx (cccl), the AVX maths and"
+              " thread-pool headers and pybind11, compiled into ctranslate2.dll and _ext.pyd.",
+              licence_file("ctranslate2-third-party.txt"), kind="other"),
+        Entry("NVIDIA CUDA runtime (statically linked inside ctranslate2)", "12.8",
+              "LicenseRef-NVIDIA-CUDA-EULA",
+              "Linked into ctranslate2.dll by its CUDA build; distributable under NVIDIA's CUDA"
+              " licence below.", licence_file("nvidia-cuda-runtime.txt"), kind="other"),
         Entry("NVIDIA cuBLAS (nvidia-cublas-cu12)", "12.9.1.4", "LicenseRef-NVIDIA-CUDA-EULA",
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
               " for GPU transcription; kept beside the libraries with this licence.",
               [nvidia.read_text(encoding="utf-8")] if nvidia.is_file() else [], kind="other"),
         Entry("Microsoft Visual C++ and Universal C runtime", "", "LicenseRef-Microsoft-Redist",
-              "vcruntime140, msvcp140, ucrtbase and api-ms-win-* libraries, redistributed under"
+              "vcruntime140, msvcp140, vcomp140 (OpenMP, for ctranslate2), ucrtbase and"
+              " api-ms-win-* libraries, redistributed under"
               " the Visual Studio redistribution terms.", ["(Microsoft redistributable files;"
               " no notice is required.)"], kind="other"),
     ]  # fmt: skip
@@ -534,7 +535,7 @@ UNOWNED: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Python", ("python3*.dll", "base_library.zip", "libcrypto-*.dll", "libssl-*.dll",
                 "libffi-*.dll", "sqlite3.dll", "*.pyd")),
     ("Microsoft Visual C++ and Universal C runtime", ("vcruntime140*.dll", "msvcp140*.dll",
-     "ucrtbase.dll", "api-ms-win-*.dll", "winrt/msvcp140.dll")),
+     "vcomp140.dll", "ucrtbase.dll", "api-ms-win-*.dll", "winrt/msvcp140.dll")),
     (FFMPEG, ("ffmpeg.exe",)),
     ("Upshot", ("app/*", "frontend/*", "THIRD-PARTY-NOTICES.*")),
 )  # fmt: skip

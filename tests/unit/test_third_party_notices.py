@@ -308,8 +308,8 @@ def test_the_extras_name_what_no_package_manager_installs() -> None:
     names = " ".join(e.name for e in notices.extra_entries())
     parts = [
         "Python", "PyInstaller", "FFmpeg", "ivrit-ai", "Systran", "pyannote", "3D-Speaker",
-        "Silero VAD", "fonts", "Tailwind", "Intel OpenMP", "oneMKL", "oneDNN", "NVIDIA cuBLAS",
-        "Microsoft",
+        "Silero VAD", "fonts", "Tailwind", "oneDNN", "compiled-in third-party code",
+        "NVIDIA CUDA runtime", "NVIDIA cuBLAS", "Microsoft",
     ]  # fmt: skip
     for part in parts:
         assert part in names, part
