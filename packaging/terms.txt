@@ -11,16 +11,19 @@ govern your installation and use of the Upshot desktop application,
 including its updates ("Upshot" or "the app"), and of the website at
 upshot.amconsultingai.com ("the website").
 
-You accept these Terms by selecting "I accept" when you install Upshot, by
-accepting them in the app, or by installing or using Upshot. If you install
-or use Upshot on behalf of an organization, you accept these Terms for that
-organization and confirm that you are authorized to do so; "you" then means
-both you and the organization. If you deploy Upshot to other people, for
-example through a managed or silent installation, you accept these Terms on
-behalf of each of them and are responsible for making these Terms available
-to them.
+You accept these Terms by selecting "I accept" when you install the official
+app, by accepting them in the app, or by installing or using the official
+app. If you install or use Upshot on behalf of an organization, you accept
+these Terms for that organization and confirm that you are authorized to do
+so; "you" then means both you and the organization. If you deploy Upshot to
+other people, for example through a managed or silent installation, you
+accept these Terms on behalf of each of them and are responsible for making
+these Terms available to them.
 
-If you do not accept these Terms, do not install or use Upshot.
+If you do not accept these Terms, the official app will not let you past its
+acceptance screen and you may not use our services (section 7). Your rights
+in the software under the Upshot licence (section 5) do not depend on these
+Terms.
 
 You must be at least 18 years old, or the age of legal capacity where you
 live if that is higher, to accept these Terms.
@@ -38,7 +41,8 @@ In these Terms:
     as distinct from the official app.
   - "Upshot licence" means the Business Source License 1.1, with the
     parameters AM Consulting sets in it (including its Additional Use
-    Grant), published with the source code as the file LICENSE.
+    Grant), published with the source code as the file LICENSE (for each
+    version of Upshot, the LICENSE published with that version).
   - "Commercial licence" means a licence from AM Consulting for production
     use of Upshot that the Upshot licence does not permit free of charge.
   - "Your content" means the recordings, transcripts, summaries, notes,
@@ -74,16 +78,21 @@ Upshot is under active development:
 
 The official app and the source code are both licensed to you under the
 Upshot licence. Under its Additional Use Grant, you may use Upshot in
-production free of charge if you are an individual using it for your own
-personal purposes, or an organization with fewer than 20 individuals working
-for it as employees or independent contractors, counted together with all of
-its affiliates under common control, provided that your use does not offer
-Upshot, or any product or service derived from it, to third parties as a
-Competing Offering, as the Upshot licence defines it. Any other production
-use requires a commercial licence (section 8). The Upshot licence also sets
-out what else you may do with Upshot, such as copying, modifying and
-redistributing it, and when each version becomes available under the Apache
-License, Version 2.0.
+production free of charge if both of these are true:
+
+  - you are an individual using it for your own personal purposes, or an
+    organization with fewer than 20 individuals working for it as employees
+    or independent contractors, counted together with all of its affiliates
+    under common control; and
+  - your use does not include offering Upshot, or any product or service
+    derived from it, to third parties as a Competing Offering, as the Upshot
+    licence defines it.
+
+Any other production use requires a commercial licence (section 8). The
+Upshot licence also sets out what else you may do with Upshot, such as
+copying, modifying and redistributing it and making non-production use of
+it, and when each version becomes available under the Apache License,
+Version 2.0.
 
 These Terms add the conditions that apply to your use of the official app
 and of the services it connects to. If these Terms and the Upshot licence
@@ -98,13 +107,16 @@ expressly granted to you in the Upshot licence or in these Terms.
 Except as the Upshot licence (section 5), the licence of a third-party
 component (section 16) or applicable law expressly permits, you must not:
 
-  - make production use of Upshot that the Upshot licence permits only under
-    a commercial licence, without one, or offer Upshot, or anything derived
-    from it, as a Competing Offering;
-  - remove, alter or obscure any copyright, trademark or other proprietary
-    notice in Upshot;
+  - make production use of Upshot that the Upshot licence does not permit,
+    including offering Upshot, or any product or service derived from it, to
+    third parties as a Competing Offering, unless a commercial licence
+    covers that use;
+  - remove, alter or obscure any copyright notice, licence notice or other
+    proprietary notice in Upshot or its components, except to remove the
+    Upshot name and logo from a modified or self-built version;
   - present a modified or self-built version of Upshot as the official app,
-    or distribute it under the Upshot name or logo;
+    or distribute it under the Upshot name or logo (you may still say
+    truthfully that it is based on Upshot);
   - misuse the credentials and services the official app uses, such as our
     Google Cloud client, our update service or our website, for example by
     using them in another product or by bypassing their limits;
@@ -118,8 +130,9 @@ component (section 16) or applicable law expressly permits, you must not:
 
 The Upshot licence (section 5) governs the source code and the official app
 alike. If you build Upshot yourself from the source code, what you build is
-governed by the Upshot licence, and these Terms apply to it only where it
-uses our services or website.
+governed by the Upshot licence. If you have accepted these Terms, they apply
+to it only where it uses our services or website, and section 6 also applies
+to how you name, present and distribute it.
 
 The Upshot licence does not give you any right to use the Upshot name or
 logo, our trademarks, our signing certificates, or the credentials and
@@ -132,10 +145,14 @@ Production use that the Upshot licence does not permit free of charge, for
 example by an organization with 20 or more individuals working for it,
 requires a commercial licence from AM Consulting; to ask for one, write to
 office@amconsultingai.com. A commercial licence is governed by the terms
-agreed for it, which will form part of these Terms. We will not charge you
-anything unless you explicitly agree to a commercial licence. Nothing in
-this section limits any right you have under consumer-protection law,
-including any right to cancel a purchase.
+agreed for it, which will form part of these Terms and prevail over these
+Terms and the Upshot licence where they differ. If you were already making
+production use of Upshot before 17 October 2026 and that use now requires a
+commercial licence, AM Consulting grants you a commercial licence for it,
+free of charge, until 16 November 2026. We will not charge you anything
+unless you explicitly agree to a commercial licence. Nothing in this section
+limits any right you have under consumer-protection law, including any right
+to cancel a purchase.
 
 9. UPDATES AND CHECKS THE APP MAKES
 
@@ -198,7 +215,8 @@ You are responsible for how you use Upshot. In particular, you agree:
     credentials you enter are stored on your computer, and you are
     responsible for protecting it, including from other people who use it.
   - To keep backups. You are responsible for keeping copies of anything you
-    need. Upshot deletes recordings after the period set in its settings.
+    need. Upshot deletes recordings automatically only if you set a period
+    for it in its settings.
   - Not to misuse Upshot, including by using it for any unlawful purpose or
     by attempting to interfere with it or with any service it connects to.
 
@@ -322,10 +340,14 @@ These Terms apply from when you accept them until they end.
 You may stop using Upshot at any time by uninstalling it. Uninstalling does
 not delete your content; you can delete it by deleting Upshot's data folder.
 
-We may suspend or end your licence if you materially breach these Terms, if
-we are required to by law, or if we stop offering Upshot. Where reasonable,
-we will tell you first. When your licence ends you must stop using Upshot
-and uninstall it. Your content remains yours and stays on your computer.
+We may end these Terms, or suspend or end your use of our services (such as
+updates, our update service, our Google Cloud client and our website), if
+you materially breach these Terms, if we are required to by law, or if we
+stop offering Upshot. Where reasonable, we will tell you first. When these
+Terms end, you must stop using our services. Your rights in the software
+itself are governed by the Upshot licence: they end automatically if you use
+Upshot in violation of it, and you must then stop using Upshot and uninstall
+it. Your content remains yours and stays on your computer.
 
 Sections 6, 7, 10, 14, 15, 17, 18 and 20 to 26 continue to apply after these
 Terms end.
@@ -345,8 +367,9 @@ computer and remains yours. For other changes, the app will show you the
 update and continuing to use Upshot after it takes effect means you accept
 it.
 
-If you do not accept updated Terms, you must stop using Upshot and uninstall
-it.
+If you do not accept updated Terms, the official app will not let you past
+its acceptance screen and you may not use our services. Your rights under
+the Upshot licence are not affected.
 
 25. GOVERNING LAW AND DISPUTES
 
@@ -359,9 +382,10 @@ these Terms cannot take away.
 
 26. GENERAL
 
-  - Entire agreement. These Terms, the Privacy Policy and the terms of any
-    commercial licence you agree to are the entire agreement between you and
-    us about Upshot, and replace any earlier terms.
+  - Entire agreement. These Terms, the Upshot licence, the Privacy Policy
+    and the terms of any commercial licence you agree to are the entire
+    agreement between you and us about Upshot, and replace any earlier
+    terms.
   - Severability. If any provision is found unenforceable, it will be
     enforced to the extent possible and the rest remain in effect.
   - No waiver. Our failure to enforce a provision is not a waiver of it.
