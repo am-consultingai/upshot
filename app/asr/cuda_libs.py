@@ -177,27 +177,6 @@ def acceptance_current(home: Path | None = None, wheels: tuple[Wheel, ...] = WHE
         return False
 
 
-def withdraw_acceptance(home: Path | None = None) -> None:
-    """The user declined NVIDIA's licence: forget an earlier acceptance and remove the
-    libraries fetched under it, which the app would otherwise go on loading (``local.py``
-    registers ``<home>/cuda/nvidia``). The last answer counts; a later yes fetches them
-    again. Never raises: a file that will not go now is removed by the next decline."""
-    home = home or paths.app_home()
-    try:
-        accepted_licence_path(home).unlink(missing_ok=True)
-    except OSError as exc:
-        log.warning("could not withdraw NVIDIA's accepted licence: %s", exc)
-    libraries = home / "cuda"
-    if libraries.is_dir():
-        shutil.rmtree(
-            libraries,
-            onexc=lambda _f, path, exc: log.warning(
-                "could not remove %s after NVIDIA's licence was declined: %s", path, exc
-            ),
-        )
-        log.info("removed the GPU libraries: NVIDIA's licence was declined")
-
-
 def remove_retired(home: Path | None = None, wheels: tuple[Wheel, ...] = WHEELS) -> int:
     """Delete what earlier builds unpacked and nothing loads (cuDNN, about 1 GB), and
     rewrite the marker to name only the current wheels. Returns the bytes freed (0 when

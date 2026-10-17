@@ -21,8 +21,8 @@ StatusFirstRun=מכינים את ההפעלה הראשונה...
 StatusPreparing=מכינים...
 TermsInEnglish=תנאי השימוש מוצגים באנגלית.
 OpenSource=Upshot כולל גם תוכנות קוד פתוח, כל אחת תחת הרישיון שלה, ורשימתן ב-Upshot בהגדרות > אודות ועדכונים.
-NvidiaTitle=ספריות ה-GPU של NVIDIA
-NvidiaLead=Upshot יכול לתמלל מהר יותר על כרטיס המסך של NVIDIA.
-NvidiaAbove=לשם כך ההתקנה מורידה את NVIDIA cuBLAS ישירות מ-NVIDIA ‏(PyPI), תחת הרישיון של NVIDIA שלמטה: הסכם ביניכם לבין NVIDIA.
-NvidiaAccept=קבלת ה-EULA של NVIDIA והורדת cuBLAS מ-NVIDIA ‏(PyPI)
-NvidiaSkip=דילוג: תמלול במעבד
+NvidiaTitle=הרישיון של NVIDIA
+NvidiaLead=Upshot מותקן רק לאחר קבלת הרישיון של NVIDIA.
+NvidiaAbove=במחשב עם כרטיס מסך מתאים של NVIDIA, ההתקנה מורידה את NVIDIA cuBLAS, כפי ש-NVIDIA מפרסמת אותה ב-PyPI, כדי שהתמלול יהיה מהיר יותר; בכל מחשב אחר ההתקנה לא מורידה דבר מ-NVIDIA. הרישיון של NVIDIA שלמטה הוא הסכם ביניכם לבין NVIDIA.
+NvidiaAccept=הרישיון של NVIDIA ‏(EULA) מקובל עליי
+NvidiaRequired=Upshot מותקן רק לאחר קבלת הרישיון של NVIDIA. בהתקנה שקטה יש להעביר ‎/NVIDIA=accept.

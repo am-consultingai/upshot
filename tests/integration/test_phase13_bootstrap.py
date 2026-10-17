@@ -298,10 +298,11 @@ def test_the_installer_speaks_every_interface_language() -> None:
     assert "--language={language}" in installer
 
 
-def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries() -> None:
-    """S9: NVIDIA's terms come before the download, which needs a yes (the page, or
-    /NVIDIA=accept on a silent install). A no is --no-gpu; not asked is --gpu-if-present,
-    which only keeps libraries already in the user's own folder."""
+def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
+    """D101: Upshot installs only under NVIDIA's licence, on every computer, GPU or not: a
+    box on its page that nothing ticks for the user, no Skip, and a silent install refused
+    without /NVIDIA=accept. --prepare is told --nvidia-accepted for a yes in this run, or
+    --gpu-if-accepted, which fetches only under this user's current acceptance."""
     from app.asr import cuda_libs
 
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
@@ -313,23 +314,27 @@ def test_the_installer_shows_nvidia_s_licence_before_fetching_the_gpu_libraries(
     assert 'Source: "..\\build\\nvidia-licence.txt"; Flags: dontcopy' in installer
     assert "ExtractTemporaryFile('nvidia-licence.txt')" in installer
     assert "Params := Params + GpuParam;" in installer
-    assert "Result := ' --no-gpu'" in installer and "Result := ' --gpu-if-present'" in installer
-    # An all-users install runs as an administrator: its profile proves nothing; it asks.
-    # Skipped only when the libraries are here AND were accepted as the licence now is: an
-    # acceptance whose download never ran (cancelled, failed, uninstalled) asks again.
-    skip = "(IsAdminInstallMode or not (GpuLibrariesPresent and NvidiaLicenceAccepted))"
-    assert skip in installer
-    assert f"DeleteFile(Home + '\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
-    # The page is skipped only when this profile accepted this very licence (D100): the
-    # installer and the app name the same file and compare by SHA-256.
-    assert f"\\upshot\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
-    # Only the installer's yes saves an acceptance; a bare --prepare never does.
     assert "Result := ' --nvidia-accepted'" in installer
+    assert "Result := ' --gpu-if-accepted'" in installer
+    assert "--no-gpu" not in installer and "HasNvidiaGpu" not in installer
+    # On every computer: asked unless this profile accepted this very licence (D100); an
+    # all-users install runs as an administrator, whose profile proves nothing.
+    assert "NvidiaAsked := not WizardSilent and not NvidiaAlreadyAccepted;" in installer
+    assert "Result := not IsAdminInstallMode and NvidiaLicenceAccepted;" in installer
+    assert f"\\upshot\\{cuda_libs.ACCEPTED_LICENCE}')" in installer
     assert "GetSHA256OfFile(Accepted) = GetSHA256OfFile(NvidiaLicenceFile)" in installer
-    # A silent acceptance states the administrator's authority, in Setup's /? help.
-    assert "HelpTextNote=/NVIDIA=accept" in installer and "legal authority" in installer
-    assert "HasSwitch('/NVIDIA=accept')" in installer
-    # Nothing is preselected: Next waits for a choice.
+    # A silent install: refused before anything is copied, unless accepted.
+    gate = (
+        "Result := not WizardSilent or IsUpdate or HasSwitch('/NVIDIA=accept')"
+        " or NvidiaAlreadyAccepted;"
+    )
+    assert gate in installer
+    assert installer.count("Result := NvidiaGate;") == 2  # with and without the memory check
+    assert "HelpTextNote=/NVIDIA=accept   Required" in installer and "have the authority" in installer
+    # A box, not a choice: unticked, and Next waits for it.
+    assert "NvidiaAccept: TNewCheckBox;" in installer and "NvidiaSkip" not in installer
     assert ".Checked := True" not in installer
-    enable = "WizardForm.NextButton.Enabled := NvidiaAccept.Checked or NvidiaSkip.Checked;"
-    assert enable in installer
+    assert "WizardForm.NextButton.Enabled := NvidiaAccept.Checked;" in installer
+    # The acceptance ends with the uninstall, silent or not: a reinstall asks again.
+    deleted = installer.index(f"DeleteFile(Home + '\\{cuda_libs.ACCEPTED_LICENCE}')")
+    assert deleted < installer.index("if UninstallSilent then", deleted - 400)
