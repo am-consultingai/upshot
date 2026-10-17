@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="google-site-verification" content="XKUea9-9pHLYyypgjQduZm0UfKmBIhbquxddD-uEbzE" />
 <title>Upshot: meeting notes without a bot in the meeting</title>
-<meta name="description" content="Upshot notices when your meeting starts, records it on your own Windows PC and gives you a summary written the way you like it. No bot joins your call, and the recording never leaves your computer.">
+<meta name="description" content="Upshot records your meetings on your own Windows PC and turns them into text with local AI, in many languages, Hebrew included. The call audio never leaves your computer, and no bot joins the call.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0f19">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Meeting notes, without a bot in the meeting.">
-<meta property="og:description" content="Upshot records and summarizes your calls on your own Windows PC. Nothing joins the call, and the recording never leaves your machine.">
+<meta property="og:description" content="Your call audio stays on your computer. Upshot records and transcribes your meetings with local AI, then summarizes them with the AI you choose, or a model on your PC.">
 <meta property="og:url" content="https://upshot.amconsultingai.com/">
 <meta property="og:image" content="https://upshot.amconsultingai.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -110,13 +110,13 @@
     <div class="hero-in">
       <div class="hero-text">
         <p class="eyebrow">Meeting notes for Windows</p>
-        <h1>You control your&nbsp;data.</h1>
-        <p class="lede">Your meeting is recorded and turned into text on your own computer. No bot joins the call, the recording never leaves your machine, and you decide how far the words travel: to the AI you already use, or nowhere at all.</p>
+        <h1>Your call audio stays on your&nbsp;computer.</h1>
+        <p class="lede">Upshot records your meetings and turns them into text with AI that runs on your own PC, in many languages, Hebrew included. The code is on GitHub, free to install for personal use and for organizations of fewer than 20 people. Connect the AI you already pay for to get summaries, and have Upshot transcribe audio and video files for it, on your PC.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">Get started</a>
           <a class="btn btn-sec" href="#dial">See where your data goes</a>
         </div>
-        <p class="hero-meta">Windows · no bot · no account · the recording never leaves · Hebrew and English</p>
+        <p class="hero-meta">Windows · audio stays on your PC · local AI transcription · many languages, Hebrew included · code on GitHub</p>
       </div>
       <figure class="flow" aria-label="Where a meeting goes: recorded and transcribed on your PC, and only the text leaves.">
         <ol>
@@ -132,21 +132,36 @@
   </section>
 
   <!-- PILLARS ------------------------------------------------------------->
-  <section class="pillars" aria-label="What Upshot does differently">
+  <section class="pillars" aria-label="What Upshot does">
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
-      <h2>Your voice stays home</h2>
-      <p>The recording is made and turned into text on your own computer, and never leaves it. Only the words can go any further, and only if you want them to.</p>
+      <h2>Your call audio stays home</h2>
+      <p>The meeting is recorded on your own computer, and the audio never leaves it. No bot joins the call, and nothing is sent to a recording service.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-laptop"/></svg></span>
+      <h2>Local AI writes the transcript</h2>
+      <p>Speech becomes text on your PC, with Whisper models on your processor or NVIDIA graphics card. No audio goes to a transcription service.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-wave"/></svg></span>
+      <h2>Many languages, Hebrew included</h2>
+      <p>Upshot recognizes the meeting's language by itself. Whisper covers about a hundred languages, best the widely spoken ones, and a meeting in Hebrew gets a model trained for Hebrew.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-doc"/></svg></span>
+      <h2>Code on GitHub, free to install</h2>
+      <p>The code is on <a href="https://github.com/am-consultingai/upshot">GitHub</a>. Install it for free for personal use, or in an organization of fewer than 20 people, under the <a href="https://github.com/am-consultingai/upshot/blob/main/LICENSE">Upshot license</a>. Larger organizations, and anyone offering it to others, need a commercial license.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
-      <h2>Use the AI you already pay for</h2>
-      <p>Claude, OpenAI or Gemini on your own account, or a model on your PC when a meeting should stay in the room. No new vendor, no new bill.</p>
+      <h2>Summaries from the AI you pay for</h2>
+      <p>Connect Claude, OpenAI or Gemini on your own account, or use a model on your PC. Only text goes to the AI you choose, such as the transcript and your instructions, never the audio.</p>
     </article>
     <article>
-      <span class="p-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
-      <h2>Never forget to record <span class="tag-new">New</span></h2>
-      <p>Upshot notices when a meeting starts. Let it record on its own, and every call ends with notes, whether you remembered or not.</p>
+      <span class="p-ic"><svg class="ic"><use href="#i-disk"/></svg></span>
+      <h2>Transcribe files from your AI app</h2>
+      <p>Upshot's MCP server lets Claude and other AI apps on your PC transcribe audio and video files. The file is transcribed on your computer and never uploaded; the text goes to your AI app, as anything in a chat does.</p>
     </article>
   </section>
 
@@ -184,7 +199,7 @@
         <ul class="stop-facts"><li class="">Leaves: the text, never the audio</li><li class="">Your own AI account</li><li class="">Everyday meetings</li></ul>
       </li>
     </ol>
-    <p class="chips-note">Either way, no audio is ever sent anywhere. <span class="soon-key">Soon</span> the choice will also be per meeting, so one sensitive call can stay local while the rest take the usual path.</p>
+    <p class="chips-note">Either way, no audio is ever sent anywhere.</p>
   </section>
 
   <!-- BOTS ---------------------------------------------------------------->
@@ -298,7 +313,7 @@ Headings in #0f766e. Under 200 words.</pre>
     </div>
     <ul class="callouts three">
       <li><b>Any structure</b> sections, order, headings, tone</li>
-      <li><b>Any look</b> your colours, your layout</li>
+      <li><b>Any look</b> your colors, your layout</li>
       <li><b>Copy, paste, send</b> formatting included</li>
     </ul>
     <p class="chips-note">Change your instructions any time, and any meeting can be written up again in the new format.</p>
@@ -420,15 +435,15 @@ Headings in #0f766e. Under 200 words.</pre>
       <details class="acc"><summary>How does it know a meeting started?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">It notices when a call app starts using your microphone and looks for signs of a real conversation. At first it only shows you the meetings it spotted, so you can see it gets them right. Once you trust it, switch on auto-record. Auto-record is new, and you can always press Record yourself.</div></details>
       <details class="acc"><summary>Does Upshot use my Google Calendar?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b"><span class="soon-key">Soon</span> Only if you connect it. Upshot will read your calendar events, read-only and on your computer, to know when your meetings are scheduled and to name them. Calendar data is never sent to us. The invitation goes with the meeting's text to the AI you chose, so the summary knows what the meeting was for; you can turn that off. The <a href="privacy.html#google">Privacy Policy</a> has the details.</div></details>
+        <div class="acc-b">Only if you connect it. Upshot reads your calendar events, read-only and on your computer, to know when your meetings are scheduled and to name them. Calendar data is never sent to us. The invitation goes with the meeting's text to the AI you chose, so the summary knows what the meeting was for; you can turn that off. The <a href="privacy.html#google">Privacy Policy</a> has the details.</div></details>
       <details class="acc"><summary>Can my own AI app read my meetings?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b"><span class="soon-key">Soon</span> Yes, if you connect it: Claude Desktop, Claude Code, Codex, Antigravity, Cursor, Open WebUI and other apps that speak MCP. Ask it “what did we decide on Tuesday?” and it reads the transcript and summary from Upshot on your computer. What it reads goes to that app’s AI, as anything in a chat does. You can turn it off, and Upshot shows what it asked for. The <a href="privacy.html#third-parties">Privacy Policy</a> has the details.</div></details>
+        <div class="acc-b">Yes, if you connect it: Claude Desktop, Claude Code, Codex, Antigravity, Cursor, Open WebUI and other apps that speak MCP. Ask it “what did we decide on Tuesday?” and it reads the transcript and summary from Upshot on your computer. What it reads goes to that app’s AI, as anything in a chat does. You can turn it off, and Upshot shows what it asked for. The <a href="privacy.html#third-parties">Privacy Policy</a> has the details.</div></details>
       <details class="acc"><summary>Can the summary go straight into an email?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">Yes. Tell Upshot to write it as an email, with your sections, tone and colours. Press Copy, paste into your email, and the formatting comes with it.</div></details>
+        <div class="acc-b">Yes. Tell Upshot to write it as an email, with your sections, tone and colors. Press Copy, paste into your email, and the formatting comes with it.</div></details>
       <details class="acc"><summary>Do I need a powerful PC?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">No. An NVIDIA graphics card makes it faster. Without one, Upshot waits until the call ends so your meeting isn’t slowed down, and the notes take longer to arrive.</div></details>
       <details class="acc"><summary>Which languages, and which platforms?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">Hebrew and English meetings, with the app itself in both languages. Upshot runs on Windows only.</div></details>
+        <div class="acc-b">Meetings in about a hundred languages, with a model trained for Hebrew. Upshot runs on Windows only.</div></details>
     </div>
   </section>
 
@@ -445,8 +460,8 @@ Headings in #0f766e. Under 200 words.</pre>
 cd upshot
 scripts\windows\run-app.cmd</code></pre>
     </div>
-    <p class="req">Windows · graphics card optional · installer <span class="soon-key">Soon</span></p>
-    <p class="limits">It can’t yet tell the other people in the call apart: their words are labelled together.</p>
+    <p class="req">Windows · graphics card optional</p>
+    <p class="limits">It tells the other people in the call apart, and you can name each one.</p>
   </section>
 
 </main>

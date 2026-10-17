@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Upshot: סיכומי פגישות בלי בוט בשיחה</title>
-<meta name="description" content="Upshot מזהה לבד שפגישה התחילה, מקליט אותה על המחשב שלכם ומגיש סיכום בעברית בפורמט שאתם בוחרים. אף בוט לא מצטרף לשיחה, וההקלטה לא יוצאת מהמחשב.">
+<meta name="description" content="Upshot מקליט פגישות על מחשב ה-Windows שלכם והופך אותן לטקסט בעזרת AI מקומי, בשפות רבות, כולל עברית. אודיו השיחה לא יוצא מהמחשב, ואף בוט לא מצטרף לשיחה.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0f19">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="he_IL">
 <meta property="og:title" content="סיכום לכל פגישה, בלי בוט בשיחה.">
-<meta property="og:description" content="Upshot מקליט ומסכם את הפגישות שלכם על המחשב שלכם, עם תמלול שאומן על עברית. אף אחד לא מצטרף לשיחה, וההקלטה לא יוצאת מהמחשב.">
+<meta property="og:description" content="אודיו השיחה נשאר על המחשב שלכם. Upshot מקליט ומתמלל את הפגישות שלכם בעזרת AI מקומי, ומסכם אותן עם ה-AI שתבחרו, או עם מודל על המחשב שלכם.">
 <meta property="og:url" content="https://upshot.amconsultingai.com/he/">
 <meta property="og:image" content="https://upshot.amconsultingai.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -33,6 +33,7 @@
       <stop offset="0" stop-color="#22d3ee"/><stop offset=".55" stop-color="#38bdf8"/><stop offset="1" stop-color="#818cf8"/>
     </linearGradient>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
     <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12c1.8-4 5.6-7 10-7s8.2 3 10 7c-1.8 4-5.6 7-10 7s-8.2-3-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -94,13 +95,13 @@
     <div class="hero-in">
       <div class="hero-text">
         <p class="eyebrow">סיכומי פגישות ל-Windows</p>
-        <h1>אתם שולטים במידע שלכם.</h1>
-        <p class="lede">הפגישה שלכם מוקלטת והופכת לטקסט על המחשב שלכם. אף בוט לא מצטרף לשיחה, ההקלטה לא יוצאת מהמחשב, ואתם מחליטים עד לאן המילים מגיעות: ל-AI שאתם כבר משתמשים בו, או לשום מקום.</p>
+        <h1>אודיו השיחה נשאר על המחשב שלכם.</h1>
+        <p class="lede">Upshot מקליט את הפגישות שלכם והופך אותן לטקסט בעזרת AI שרץ על המחשב שלכם, בשפות רבות, כולל עברית. הקוד נמצא ב-GitHub, וההתקנה חינם לשימוש אישי ולארגונים של פחות מ-20 אנשים. חברו את ה-AI שאתם כבר משלמים עליו כדי לקבל סיכומים, ו-Upshot יתמלל עבורו קובצי אודיו ווידאו, על המחשב שלכם.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">להתחיל</a>
           <a class="btn btn-sec" href="#dial">לאן המידע שלכם מגיע</a>
         </div>
-        <p class="hero-meta">Windows · בלי בוט · בלי חשבון · ההקלטה לא יוצאת מהמחשב · עברית ואנגלית</p>
+        <p class="hero-meta">Windows · האודיו נשאר על המחשב · תמלול ב-AI מקומי · שפות רבות, כולל עברית · הקוד ב-GitHub</p>
       </div>
       <figure class="flow" aria-label="לאן הפגישה מגיעה: מוקלטת ומתומללת על המחשב שלכם, ורק הטקסט יוצא.">
         <ol>
@@ -116,21 +117,36 @@
   </section>
 
   <!-- PILLARS ------------------------------------------------------------->
-  <section class="pillars" aria-label="מה Upshot עושה אחרת">
+  <section class="pillars" aria-label="מה Upshot עושה">
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
-      <h2>הקול שלכם נשאר בבית</h2>
-      <p>ההקלטה נעשית והופכת לטקסט על המחשב שלכם, ולא יוצאת ממנו. רק המילים יכולות להמשיך הלאה, ורק אם תרצו.</p>
+      <h2>אודיו השיחה נשאר בבית</h2>
+      <p>הפגישה מוקלטת על המחשב שלכם, והאודיו לא יוצא ממנו. אף בוט לא מצטרף לשיחה, ושום דבר לא נשלח לשירות הקלטה.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-laptop"/></svg></span>
+      <h2>AI מקומי כותב את התמליל</h2>
+      <p>הדיבור הופך לטקסט על המחשב שלכם, בעזרת מודלי Whisper על המעבד או על כרטיס מסך של NVIDIA. שום אודיו לא נשלח לשירות תמלול.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-wave"/></svg></span>
+      <h2>שפות רבות, כולל עברית</h2>
+      <p>Upshot מזהה בעצמו את שפת הפגישה. Whisper מכיר כמאה שפות ומדייק במיוחד בנפוצות שבהן. פגישה בעברית מקבלת מודל שאומן על עברית.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-doc"/></svg></span>
+      <h2>הקוד ב-GitHub, וההתקנה חינם</h2>
+      <p>הקוד נמצא ב-<a href="https://github.com/am-consultingai/upshot">GitHub</a>. ההתקנה חינם לשימוש אישי, או לשימוש בארגון של פחות מ-20 אנשים, לפי <a href="https://github.com/am-consultingai/upshot/blob/main/LICENSE">רישיון Upshot</a>. ארגונים גדולים יותר, ומי שמציע את Upshot לאחרים, צריכים רישיון מסחרי.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
-      <h2>ה-AI שכבר יש לכם</h2>
-      <p>Claude, OpenAI או Gemini בחשבון שלכם, או מודל על המחשב כשפגישה צריכה להישאר בחדר. בלי ספק חדש ובלי חשבון נוסף.</p>
+      <h2>סיכומים מה-AI שאתם משלמים עליו</h2>
+      <p>חברו את Claude, ‏OpenAI או Gemini בחשבון שלכם, או השתמשו במודל על המחשב שלכם. רק טקסט נשלח ל-AI שבחרתם, כמו התמליל וההנחיות שלכם, ואף פעם לא האודיו.</p>
     </article>
     <article>
-      <span class="p-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
-      <h2>לא תשכחו להקליט <span class="tag-new">חדש</span></h2>
-      <p>Upshot מזהה כשפגישה מתחילה. תנו לו להקליט לבד, וכל שיחה תסתיים עם סיכום, גם אם שכחתם.</p>
+      <span class="p-ic"><svg class="ic"><use href="#i-disk"/></svg></span>
+      <h2>תמלול קבצים מאפליקציית ה-AI שלכם</h2>
+      <p>שרת ה-MCP של Upshot מאפשר ל-Claude ולאפליקציות AI אחרות במחשב שלכם לתמלל קובצי אודיו ווידאו. הקובץ מתומלל על המחשב עצמו ולא מועלה לשום מקום; הטקסט עובר לאפליקציית ה-AI שלכם, כמו כל מה שכותבים בצ׳אט.</p>
     </article>
   </section>
 
@@ -168,7 +184,7 @@
         <ul class="stop-facts"><li class="">יוצא: הטקסט, אף פעם לא האודיו</li><li class="">חשבון AI שלכם</li><li class="">פגישות יומיומיות</li></ul>
       </li>
     </ol>
-    <p class="chips-note">כך או כך, שום אודיו לא נשלח לשום מקום. <span class="soon-key">בקרוב</span> הבחירה תהיה גם לכל פגישה בנפרד, כך שפגישה רגישה אחת תישאר מקומית והשאר ימשיכו כרגיל.</p>
+    <p class="chips-note">כך או כך, שום אודיו לא נשלח לשום מקום.</p>
   </section>
 
   <!-- HEBREW -------------------------------------------------------------->
@@ -439,15 +455,15 @@
       <details class="acc"><summary>איך הוא יודע שפגישה התחילה?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">הוא מזהה כשאפליקציית שיחות מתחילה להשתמש במיקרופון, ומחפש סימנים לשיחה אמיתית. בהתחלה הוא רק מראה לכם אילו פגישות זיהה, כדי שתראו שהוא צודק. כשתסמכו עליו, הפעילו הקלטה אוטומטית. ההקלטה האוטומטית חדשה, ותמיד אפשר ללחוץ על הקלטה בעצמכם.</div></details>
       <details class="acc"><summary>Upshot משתמש ביומן Google שלי?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b"><span class="soon-key">בקרוב</span> רק אם תחברו אותו. Upshot יקרא את האירועים ביומן, לקריאה בלבד ועל המחשב שלכם, כדי לדעת מתי הפגישות מתוכננות ולתת להן שם. נתוני היומן לא נשלחים אלינו. ההזמנה נשלחת יחד עם טקסט הפגישה ל-AI שבחרתם, כדי שהסיכום יֵדע לשם מה הפגישה; אפשר לכבות את זה. הפרטים ב<a href="../privacy.html#google" hreflang="en">מדיניות הפרטיות</a>.</div></details>
+        <div class="acc-b">רק אם תחברו אותו. Upshot קורא את האירועים ביומן בהרשאת קריאה בלבד, על המחשב שלכם, כדי לדעת מתי הפגישות מתוכננות ולתת להן שם. נתוני היומן לא נשלחים אלינו. ההזמנה נשלחת יחד עם טקסט הפגישה ל-AI שבחרתם, כדי שהסיכום יֵדע לשם מה הפגישה; אפשר לכבות את זה. הפרטים ב<a href="../privacy.html#google" hreflang="en">מדיניות הפרטיות</a>.</div></details>
       <details class="acc"><summary>אפליקציית ה-AI שלי יכולה לקרוא את הפגישות?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b"><span class="soon-key">בקרוב</span> כן, אם תחברו אותה: Claude Desktop, Claude Code, Codex, Antigravity, Cursor, Open WebUI ואפליקציות אחרות שמדברות MCP. שאלו אותה ”מה החלטנו ביום שלישי?“ והיא תקרא את התמליל והסיכום מ-Upshot שעל המחשב שלכם. מה שהיא קוראת נשלח ל-AI של האפליקציה, כמו כל דבר בצ'אט. אפשר לכבות את זה, ו-Upshot מציג מה היא ביקשה. הפרטים ב<a href="../privacy.html#third-parties" hreflang="en">מדיניות הפרטיות</a>.</div></details>
+        <div class="acc-b">כן, אם תחברו אותה: Claude Desktop, Claude Code, Codex, Antigravity, Cursor, Open WebUI ואפליקציות אחרות שמדברות MCP. שאלו אותה ”מה החלטנו ביום שלישי?“ והיא תקרא את התמליל והסיכום מ-Upshot שעל המחשב שלכם. מה שהיא קוראת נשלח ל-AI של האפליקציה, כמו כל דבר בצ'אט. אפשר לכבות את זה, ו-Upshot מציג מה היא ביקשה. הפרטים ב<a href="../privacy.html#third-parties" hreflang="en">מדיניות הפרטיות</a>.</div></details>
       <details class="acc"><summary>אפשר לשלוח את הסיכום ישר במייל?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">כן. בקשו מ-Upshot לכתוב אותו כמייל, עם הפרקים, הטון והצבעים שלכם. לוחצים העתקה, מדביקים במייל, והעיצוב עובר איתו.</div></details>
       <details class="acc"><summary>צריך מחשב חזק?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">לא. כרטיס מסך של NVIDIA מאיץ את העבודה. בלעדיו, Upshot מחכה לסוף השיחה כדי לא להאט את הפגישה, והסיכום מגיע מאוחר יותר.</div></details>
-      <details class="acc"><summary>על אילו מחשבים זה עובד?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">Windows בלבד. האפליקציה עצמה זמינה בעברית ובאנגלית.</div></details>
+      <details class="acc"><summary>באילו שפות, ועל אילו מחשבים?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">פגישות בכמאה שפות, עם מודל שאומן על עברית. Upshot עובד על Windows בלבד.</div></details>
     </div>
   </section>
 
@@ -464,8 +480,8 @@
 cd upshot
 scripts\windows\run-app.cmd</code></pre>
     </div>
-    <p class="req">Windows · כרטיס מסך לא חובה · תוכנת התקנה <span class="soon-key">בקרוב</span></p>
-    <p class="limits">עדיין אי אפשר להבחין בין המשתתפים האחרים בשיחה: הדברים שלהם מסומנים יחד.</p>
+    <p class="req">Windows · כרטיס מסך לא חובה</p>
+    <p class="limits">הוא מבחין בין המשתתפים האחרים בשיחה, ואפשר לתת לכל אחד מהם שם.</p>
   </section>
 
 </main>
