@@ -893,15 +893,13 @@ def test_the_gpu_step_runs_only_under_a_current_acceptance(tmp_path: Path) -> No
     from app.asr import cuda_libs
     from app.prepare import gpu_allowed
 
-    assert not gpu_allowed(if_accepted=True, home=tmp_path)  # never accepted
+    assert not gpu_allowed(home=tmp_path)  # never accepted: the repair command fetches nothing
     (tmp_path / "cuda").mkdir()
     # Libraries here, but no acceptance saved for them (an earlier build): not updated.
-    assert not gpu_allowed(if_accepted=True, home=tmp_path)
-    # A bare --prepare (the repair command) runs the step but is no acceptance.
-    assert gpu_allowed(if_accepted=False, home=tmp_path)
+    assert not gpu_allowed(home=tmp_path)
     assert not cuda_libs.accepted_licence_path(tmp_path).exists()
-    assert gpu_allowed(if_accepted=False, accepted=True, home=tmp_path)  # saved
-    assert gpu_allowed(if_accepted=True, home=tmp_path)  # kept and completed
+    assert gpu_allowed(accepted=True, home=tmp_path)  # saved
+    assert gpu_allowed(home=tmp_path)  # kept and completed
     # The acceptance is not in cuda/, which means "the libraries are here".
     assert cuda_libs.accepted_licence_path(tmp_path).parent == tmp_path
 
@@ -914,9 +912,9 @@ def test_a_computer_that_gains_a_gpu_gets_the_libraries_under_its_earlier_accept
     the libraries without asking again (``run`` then asks ``cuda_libs.wanted``)."""
     from app.prepare import gpu_allowed
 
-    assert gpu_allowed(if_accepted=False, accepted=True, home=tmp_path)
+    assert gpu_allowed(accepted=True, home=tmp_path)
     assert not (tmp_path / "cuda").exists()
-    assert gpu_allowed(if_accepted=True, home=tmp_path)
+    assert gpu_allowed(home=tmp_path)
 
 
 def test_a_damaged_acceptance_reads_as_none_and_never_fails_the_install(tmp_path: Path) -> None:
@@ -926,7 +924,7 @@ def test_a_damaged_acceptance_reads_as_none_and_never_fails_the_install(tmp_path
     (tmp_path / "cuda").mkdir()
     cuda_libs.accepted_licence_path(tmp_path).write_bytes(b"\xff\xfe")  # not UTF-8
     assert not cuda_libs.acceptance_current(tmp_path)
-    assert not gpu_allowed(if_accepted=True, home=tmp_path)
+    assert not gpu_allowed(home=tmp_path)
 
 
 def test_a_changed_nvidia_licence_or_cuda_generation_needs_a_new_acceptance(
@@ -938,18 +936,18 @@ def test_a_changed_nvidia_licence_or_cuda_generation_needs_a_new_acceptance(
     from app.prepare import gpu_allowed
 
     (tmp_path / "cuda").mkdir()
-    assert gpu_allowed(if_accepted=False, accepted=True, home=tmp_path)
+    assert gpu_allowed(accepted=True, home=tmp_path)
     assert cuda_libs.acceptance_current(tmp_path)
     accepted = cuda_libs.accepted_licence_path(tmp_path)
     text = accepted.read_text(encoding="utf-8-sig", newline="")
     revised = text + "\nRevised.\n"  # NVIDIA changed its terms
     accepted.write_text(revised, encoding="utf-8-sig", newline="")
     assert not cuda_libs.acceptance_current(tmp_path)
-    assert not gpu_allowed(if_accepted=True, home=tmp_path)
+    assert not gpu_allowed(home=tmp_path)
     accepted.write_text(text, encoding="utf-8-sig", newline="")
-    assert gpu_allowed(if_accepted=True, home=tmp_path)
+    assert gpu_allowed(home=tmp_path)
     monkeypatch.setattr(cuda_libs, "ACCEPTED_LICENCE", "nvidia-licence-accepted-cu13.txt")
-    assert not gpu_allowed(if_accepted=True, home=tmp_path)  # a new generation
+    assert not gpu_allowed(home=tmp_path)  # a new generation
 
 
 def test_the_saved_acceptance_is_byte_for_byte_the_installers_licence(tmp_path: Path) -> None:
@@ -964,7 +962,7 @@ def test_the_saved_acceptance_is_byte_for_byte_the_installers_licence(tmp_path: 
     assert cuda_libs.accepted_licence_path(tmp_path).read_bytes() == b"\xef\xbb\xbf" + shipped
 
 
-def test_the_entry_point_passes_gpu_if_accepted_through(
+def test_the_entry_point_runs_the_gpu_step_only_under_an_acceptance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app import prepare
@@ -973,7 +971,7 @@ def test_the_entry_point_passes_gpu_if_accepted_through(
     seen: list[bool] = []
     monkeypatch.setattr(prepare, "run", lambda *a, gpu, **k: seen.append(gpu) or prepare.EXIT_OK)
     base = ["--progress-file", str(tmp_path / "progress.txt")]
-    argv = [*base, "--gpu-if-accepted"]
+    argv = base
     prepare.main(argv)  # never accepted
     prepare.main([*base, "--nvidia-accepted"])  # accepted: saves the licence
     prepare.main(argv)

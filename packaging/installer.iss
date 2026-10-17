@@ -82,7 +82,7 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
 [Messages]
 BeveledLabel=Powered by AM Consulting
 ; Setup's /? help, for administrators (D100: the silent acceptance states their authority).
-HelpTextNote=/NVIDIA=accept   Required with /SILENT or /VERYSILENT unless the Windows user Setup installs for has already accepted the exact NVIDIA licence (EULA) text this installer carries. Setup installs Upshot only once that licence is accepted, and NVIDIA cuBLAS is downloaded only where an NVIDIA GPU has enough memory for the speech model. The acceptance is saved for that user, and later installs and updates may download or update cuBLAS under it while that licence text is unchanged. A silent installation also accepts Upshot's Terms of Service on behalf of that user, and the person running it confirms that they have the authority to do so. By passing this option, the person running Setup confirms that they have read NVIDIA's licence and have the authority to accept it for the Windows user Setup installs for and for any organization on whose behalf that user uses Upshot.
+HelpTextNote=/NVIDIA=accept   Required with /SILENT or /VERYSILENT: always for an all-users install, and otherwise unless the Windows user Setup installs for has already accepted the exact NVIDIA licence (EULA) text this installer carries. Setup installs Upshot only once that licence is accepted, and NVIDIA cuBLAS is downloaded only where an NVIDIA GPU has enough memory for the speech model. The acceptance is saved for that user, and later installs and updates may download or update cuBLAS under it while that licence text is unchanged. A silent installation also accepts Upshot's Terms of Service on behalf of that user, and the person running it confirms that they have the authority to do so. By passing this option, the person running Setup confirms that they have read NVIDIA's licence and have the authority to accept it for the Windows user Setup installs for and for any organization on whose behalf that user uses Upshot.
 
 ; An upgrade copies over the old files but would never delete one a newer build no
 ; longer ships: PyAV's GPL x264 and x265 stayed in _internal after the build dropped
@@ -284,8 +284,9 @@ end;
 
 { Upshot installs only under NVIDIA's licence, on every computer (D101). The wizard asks on
   its page; a silent install passes /NVIDIA=accept, or this profile accepted the licence as
-  this installer carries it. An automatic update (/UPDATE=1) installs over one that did;
-  newer terms wait for the next install made by hand. }
+  this installer carries it. An automatic update (/UPDATE=1) is never refused: it installs
+  over any earlier install, and where this user's acceptance is missing or for an older
+  text it fetches nothing from NVIDIA until an install made by hand asks. }
 function NvidiaGate: Boolean;
 begin
   Result := not WizardSilent or IsUpdate or HasSwitch('/NVIDIA=accept') or NvidiaAlreadyAccepted;
@@ -385,17 +386,17 @@ begin
 end;
 
 { What --prepare is told: --nvidia-accepted when accepted in this run (it saves the
-  accepted licence); otherwise --gpu-if-accepted, which fetches, keeps and completes the
-  GPU libraries only when the signed-in user accepted NVIDIA's licence as it now is (an
-  earlier install; an automatic update). That check is made by --prepare, which runs as
-  that user: Setup may run as an administrator, whose local app data is another profile.
-  Either way --prepare fetches them only where an NVIDIA GPU can use them. }
+  accepted licence). Otherwise it fetches, keeps and completes the GPU libraries only when
+  the signed-in user accepted NVIDIA's licence as it now is (an earlier install; an
+  automatic update). That check is made by --prepare, which runs as that user: Setup may
+  run as an administrator, whose local app data is another profile. Either way --prepare
+  fetches them only where an NVIDIA GPU can use them. }
 function GpuParam: String;
 begin
   if NvidiaAccepted then
     Result := ' --nvidia-accepted'
   else
-    Result := ' --gpu-if-accepted';
+    Result := '';
 end;
 
 procedure NvidiaTicked(Sender: TObject);
