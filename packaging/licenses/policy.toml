@@ -6,7 +6,7 @@
 # Only licences a component uses today; another is added when one needs it, deliberately.
 allowed = [
   "MIT", "MIT-0", "MIT-CMU", "ISC", "0BSD", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0",
-  "PSF-2.0", "Zlib", "CC0-1.0", "BSL-1.0",
+  "PSF-2.0", "Zlib", "CC0-1.0", "BSL-1.0", "Apache-2.0 WITH LLVM-exception",
 ]
 
 # Copyleft that Upshot may ship only as it does for these components: unmodified,
@@ -40,13 +40,7 @@ why = "Downloaded from PyPI on GPU machines, not shipped; NVIDIA's terms kept be
 approved = "licence epic S2 (PR #43); NVIDIA's terms shown before the download in S9"
 
 [[exception]]
-name = "Intel OpenMP runtime (libiomp5md.dll, shipped inside ctranslate2)"
-licence = "LicenseRef-Intel-EULA-Developer-Tools"
-why = "ctranslate2 needs it; its redistribution conditions are open in story S11."
-approved = "temporary, until S11 replaces it or meets Intel's terms"
-
-[[exception]]
-name = "Intel oneMKL (statically linked inside ctranslate2)"
-licence = "LicenseRef-Intel-ISSL"
-why = "Free redistribution with Intel's notice and terms reproduced (no reverse engineering)."
-approved = "licence epic S12 (notice only; S12 option C removes MKL from the build)"
+name = "NVIDIA CUDA runtime (statically linked inside ctranslate2)"
+licence = "LicenseRef-NVIDIA-CUDA-EULA"
+why = "Distributable (CUDA licence, Attachment A). §2.1 (for use in systems with NVIDIA GPUs) is read as met: Upshot uses CUDA only when an NVIDIA GPU is present; elsewhere it is never initialised, as with PyPI's CUDA wheels."
+approved = "D100, licence epic S12 (product owner, 2026-10-17; a CPU-only build is the fallback, ClickUp)"
