@@ -109,7 +109,7 @@ You are responsible for how you use Upshot. In particular, you agree:
 - **To respect others' rights.** You will not use Upshot to record, process or share content in a way that infringes anyone's privacy, confidentiality, intellectual-property or other rights.
 - **To follow the rules of the services you connect.** You will comply with the terms of any AI provider, calendar service, email service or other third-party service you connect to Upshot.
 - **To keep your computer and credentials secure.** Your content and the credentials you enter are stored on your computer, and you are responsible for protecting it, including from other people who use it.
-- **To keep backups.** You are responsible for keeping copies of anything you need. Upshot deletes your content automatically only if you set a period for it in its configuration.
+- **To keep backups.** You are responsible for keeping copies of anything you need. Apart from the copies of files that other programs send it to transcribe, Upshot deletes your content automatically only if you set a period for it in its configuration.
 - **Not to misuse Upshot,** including by using it for any unlawful purpose or by attempting to interfere with it or with any service it connects to.
 
 ## 12. Third-party services {#third-parties}
