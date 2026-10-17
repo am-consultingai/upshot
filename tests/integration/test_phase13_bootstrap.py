@@ -333,6 +333,11 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     assert "Result := RegKeyExists(HKA," in installer
     assert installer.count("Result := NvidiaGate;") == 2  # with and without the memory check
     assert "HelpTextNote=/NVIDIA=accept   Required" in installer
+    # Administrators can read the exact text before a silent install: /? links to the very
+    # file build.ps1 embeds, at the release tag (publish_release.py tags vX.Y.Z).
+    assert f'#define NvidiaLicence "{shipped[0].name}"' in installer
+    link = "https://github.com/am-consultingai/upshot/blob/v{#AppVersion}/app/asr/licenses/"
+    assert link + "{#NvidiaLicence}" in installer
     assert "have the authority" in installer
     # A box, not a choice: unticked, and Next waits for it.
     assert "NvidiaAccept: TNewCheckBox;" in installer and "NvidiaSkip" not in installer
@@ -341,3 +346,31 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     # The acceptance ends with the uninstall, silent or not: a reinstall asks again.
     deleted = installer.index(f"DeleteFile(Home + '\\{cuda_libs.ACCEPTED_LICENCE}')")
     assert deleted < installer.index("if UninstallSilent then", deleted - 400)
+
+
+def test_no_brace_comment_in_the_installer_code_holds_a_brace() -> None:
+    """Pascal ends a { } comment at the first }, so "{app}" inside one ends it early and the
+    rest is read as code: c81f4d0 did not compile ("'BEGIN' expected"). CI does not run
+    ISCC, so this stands in for it. String literals ('...') and // comments are skipped."""
+    installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
+    code = installer[installer.index("\n[Code]") :]
+    line, depth, in_string, start, slashes = 1, 0, False, 0, False
+    for i, char in enumerate(code):
+        previous = code[i - 1] if i else ""
+        if char == "\n":
+            line += 1
+            slashes = False
+        if slashes:  # a // comment, to the end of the line
+            continue
+        if depth:
+            assert char != "{", f"[Code] line {line}: a {{ inside the comment from line {start}"
+            if char == "}":
+                depth = 0
+        elif in_string:
+            in_string = char != "'"
+        elif char == "'":
+            in_string = True
+        elif char == "/" and previous == "/":
+            slashes = True
+        elif char == "{":
+            depth, start = 1, line
