@@ -109,7 +109,7 @@ You are responsible for how you use Upshot. In particular, you agree:
 - **To respect others' rights.** You will not use Upshot to record, process or share content in a way that infringes anyone's privacy, confidentiality, intellectual-property or other rights.
 - **To follow the rules of the services you connect.** You will comply with the terms of any AI provider, calendar service, email service or other third-party service you connect to Upshot.
 - **To keep your computer and credentials secure.** Your content and the credentials you enter are stored on your computer, and you are responsible for protecting it, including from other people who use it.
-- **To keep backups.** You are responsible for keeping copies of anything you need. Upshot deletes recordings automatically only if you set a period for it in its settings.
+- **To keep backups.** You are responsible for keeping copies of anything you need. Upshot deletes your content automatically only if you set a period for it in its configuration.
 - **Not to misuse Upshot,** including by using it for any unlawful purpose or by attempting to interfere with it or with any service it connects to.
 
 ## 12. Third-party services {#third-parties}
@@ -168,7 +168,7 @@ These Terms apply from when you accept them until they end.
 
 You may stop using Upshot at any time by uninstalling it. Uninstalling does not delete your content; you can delete it by deleting Upshot's data folder.
 
-We may end these Terms, or suspend or end your use of our services (such as updates, our update service, our Google Cloud client and our website), if you materially breach these Terms, if we are required to by law, or if we stop offering Upshot. Where reasonable, we will tell you first. When these Terms end, you must stop using our services. Your rights in the software itself are governed by the Upshot licence: they end automatically, for the current and all other versions, if you use Upshot in violation of it, and you must then stop using Upshot and uninstall it. Your content remains yours and stays on your computer.
+We may end these Terms, or suspend or end your use of our services (such as updates, our update service, our Google Cloud client and our website), if you materially breach these Terms, if we are required to by law, or if we stop offering Upshot. Where reasonable, we will tell you first. When these Terms end, you must stop using our services. Your rights in the software itself are governed by the Upshot licence: they end automatically, for the current and all other versions, if you use Upshot in violation of it, and you must then stop using Upshot unless you obtain a commercial licence. Your content remains yours and stays on your computer.
 
 Sections 6, 7, 10, 14, 15, 17, 18 and 20 to 26 continue to apply after these Terms end.
 
