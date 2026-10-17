@@ -9,7 +9,10 @@ Parameters
 
 Licensor:             AM Consulting
 
-Licensed Work:        Upshot, every version published by the Licensor. The
+Licensed Work:        Upshot, every version published by the Licensor,
+                      excluding the credentials, signing keys and service
+                      configuration that the Licensor adds to its builds
+                      and does not publish in the source code. The
                       Licensed Work is (c) 2026 AM Consulting.
 
 Additional Use Grant: You may make production use of the Licensed Work,
