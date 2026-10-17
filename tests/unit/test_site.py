@@ -40,6 +40,7 @@ class _Collect(HTMLParser):
         self.ids: set[str] = set()
         self.hrefs: list[str] = []
         self.loads: list[str] = []
+        self.uses: list[str] = []  # <use href="#icon">: the page's own SVG sprite
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = dict(attrs)
@@ -47,6 +48,8 @@ class _Collect(HTMLParser):
             self.ids.add(str(a["id"]))
         if tag == "a" and a.get("href"):
             self.hrefs.append(str(a["href"]))
+        if tag == "use" and a.get("href"):
+            self.uses.append(str(a["href"]))
         # Anything the browser fetches on load, as opposed to a link it follows.
         for key in ("src", "srcset"):
             if a.get(key):
@@ -99,6 +102,14 @@ def test_audio_retention_matches_config(page: Path) -> None:
 def test_in_page_anchors_resolve(page: Path) -> None:
     _, collected = _parse(page)
     missing = [h for h in collected.hrefs if h.startswith("#") and h[1:] not in collected.ids]
+    assert not missing
+
+
+@every_page
+def test_every_icon_is_in_the_pages_own_sprite(page: Path) -> None:
+    """Each page carries its own sprite: an icon used but not defined renders an empty box."""
+    _, collected = _parse(page)
+    missing = [u for u in collected.uses if u.startswith("#") and u[1:] not in collected.ids]
     assert not missing
 
 
