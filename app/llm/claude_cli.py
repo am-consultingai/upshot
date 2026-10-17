@@ -583,6 +583,10 @@ class ClaudeCliClient:
             "json",
             "--disallowed-tools",
             str(self.config.get("llm.claude_cli_disallowed_tools", DISALLOWED_TOOLS)),
+            # A summary is one run, never resumed: without this Claude Code keeps every
+            # transcript Upshot sends it in its own history on disk (Codex: --ephemeral).
+            # The assistant's route resumes its sessions, so it keeps them (Privacy §5).
+            "--no-session-persistence",
         ]
         if system:
             # `--system-prompt` *replaces* Claude Code's own, which is the point. As a

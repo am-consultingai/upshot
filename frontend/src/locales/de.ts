@@ -1103,7 +1103,7 @@ export const de: Record<MessageKey, string> = {
   "settings.purposeAbout": "Welche Version Sie haben und wie neue ankommen.",
   "settings.groupStorage": "Speicher",
   "settings.dataFolder": "Datenordner",
-  "settings.dataFolderHint": "Aufnahmen, Transkripte und Zusammenfassungen, ein Ordner pro Besprechung. Nichts wird anderswo gespeichert.",
+  "settings.dataFolderHint": "Aufnahmen, Transkripte und Zusammenfassungen, ein Ordner pro Besprechung.",
   "settings.storageUsed": "Belegter Platz",
   "settings.storageKept": "Aufnahmen bleiben erhalten, bis Sie sie löschen.",
   "settings.copyPath": "Pfad kopieren",

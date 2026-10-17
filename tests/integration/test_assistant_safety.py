@@ -73,6 +73,9 @@ def test_the_cli_gets_no_way_to_send_anything_out() -> None:
     assert args[args.index("--tools") + 1] == "", "every built-in tool off: no web, no shell"
     assert "--strict-mcp-config" in args, "the user's own MCP servers are not loaded"
     assert args[args.index("--allowedTools") + 1] == f"{TOOL_PREFIX}*"
+    # A conversation resumes its session on the next turn, so Claude Code keeps it; only a
+    # summary (ClaudeCliClient) runs without session persistence (Privacy Policy §5).
+    assert "--no-session-persistence" not in args
 
 
 def test_every_tool_only_reads() -> None:
