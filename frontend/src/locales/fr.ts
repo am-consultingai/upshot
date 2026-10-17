@@ -1103,7 +1103,7 @@ export const fr: Record<MessageKey, string> = {
   "settings.purposeAbout": "Quelle version vous avez, et comment arrivent les nouvelles.",
   "settings.groupStorage": "Stockage",
   "settings.dataFolder": "Dossier de données",
-  "settings.dataFolderHint": "Enregistrements, transcriptions et résumés, un dossier par réunion. Rien n'est conservé ailleurs.",
+  "settings.dataFolderHint": "Enregistrements, transcriptions et résumés, un dossier par réunion.",
   "settings.storageUsed": "Espace utilisé",
   "settings.storageKept": "Les enregistrements sont conservés jusqu'à ce que vous les supprimiez.",
   "settings.copyPath": "Copier le chemin",

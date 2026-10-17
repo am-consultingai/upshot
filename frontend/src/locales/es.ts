@@ -1103,7 +1103,7 @@ export const es: Record<MessageKey, string> = {
   "settings.purposeAbout": "Qué versión tiene y cómo llegan las nuevas.",
   "settings.groupStorage": "Almacenamiento",
   "settings.dataFolder": "Carpeta de datos",
-  "settings.dataFolderHint": "Grabaciones, transcripciones y resúmenes, una carpeta por reunión. No se guarda nada en ningún otro sitio.",
+  "settings.dataFolderHint": "Grabaciones, transcripciones y resúmenes, una carpeta por reunión.",
   "settings.storageUsed": "Espacio usado",
   "settings.storageKept": "Las grabaciones se conservan hasta que usted las elimine.",
   "settings.copyPath": "Copiar ruta",
