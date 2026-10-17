@@ -2,8 +2,8 @@
   "version": "2026-10-17",
   "effective": "2026-10-17",
   "material": true,
-  "summary": "There is no beta. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.",
+  "summary": "The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.",
   "url": "terms.md",
-  "sha256": "46e29e5af00d0c1fc9440e2ba155ed24e68751af958dfb98aa676c5c6dfad2d0",
+  "sha256": "ffec917d5083af556213436e2b300454c8199e48c7ca2227dc561c0bf60a1e78",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }
