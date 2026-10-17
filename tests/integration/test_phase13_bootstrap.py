@@ -302,7 +302,7 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     """D101: Upshot installs only under NVIDIA's licence, on every computer, GPU or not: a
     box on its page that nothing ticks for the user, no Skip, and a silent install refused
     without /NVIDIA=accept. --prepare is told --nvidia-accepted for a yes in this run, or
-    --gpu-if-accepted, which fetches only under this user's current acceptance."""
+    nothing, and it then fetches only under this user's current acceptance."""
     from app.asr import cuda_libs
 
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
@@ -315,7 +315,7 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     assert "ExtractTemporaryFile('nvidia-licence.txt')" in installer
     assert "Params := Params + GpuParam;" in installer
     assert "Result := ' --nvidia-accepted'" in installer
-    assert "Result := ' --gpu-if-accepted'" in installer
+    assert "Result := '';" in installer
     assert "--no-gpu" not in installer and "HasNvidiaGpu" not in installer
     # On every computer: asked unless this profile accepted this very licence (D100); an
     # all-users install runs as an administrator, whose profile proves nothing.
@@ -330,7 +330,8 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     )
     assert gate in installer
     assert installer.count("Result := NvidiaGate;") == 2  # with and without the memory check
-    assert "HelpTextNote=/NVIDIA=accept   Required" in installer and "have the authority" in installer
+    assert "HelpTextNote=/NVIDIA=accept   Required" in installer
+    assert "have the authority" in installer
     # A box, not a choice: unticked, and Next waits for it.
     assert "NvidiaAccept: TNewCheckBox;" in installer and "NvidiaSkip" not in installer
     assert ".Checked := True" not in installer

@@ -2,8 +2,10 @@
 # Runs the built dist\upshot\upshot.exe (no install) in a home of its own, so the machine's
 # own Upshot is not touched:
 #
-#   1. upshot.exe --prepare: with a suitable NVIDIA GPU, the CUDA libraries from PyPI (the
-#      model is pointed at an existing verified folder, so it is not fetched again).
+#   1. upshot.exe --prepare --nvidia-accepted: with a suitable NVIDIA GPU, the CUDA libraries
+#      from PyPI (the model is pointed at an existing verified folder, so it is not fetched
+#      again). Whoever runs this accepts NVIDIA's licence for this test home, as the
+#      installer's page would (D101); without it --prepare fetches nothing from NVIDIA.
 #   2. The app starts; each test clip is imported, transcribed and compared with its
 #      reference transcript (word recall).
 #   3. Summaries through the user's own plan: Claude Code first, then Codex on the same
@@ -49,10 +51,10 @@ $config | ConvertTo-Json -Depth 5 | Out-File -Encoding ascii (Join-Path $home_ '
 Say "home $home_, model $ModelPath" 'White'
 
 try {
-    # 1. The GPU libraries, as the installer would fetch them.
+    # 1. The GPU libraries, as the installer would fetch them once NVIDIA's licence is accepted.
     $progress = Join-Path $Out 'prepare-progress.txt'
     $t = Get-Date
-    $p = Start-Process -FilePath $Exe -ArgumentList @('--prepare', '--progress-file', "`"$progress`"") -PassThru
+    $p = Start-Process -FilePath $Exe -ArgumentList @('--prepare', '--nvidia-accepted', '--progress-file', "`"$progress`"") -PassThru
     $null = $p.Handle
     $p.WaitForExit()
     $final = if (Test-Path $progress) { (Get-Content $progress | Where-Object { $_ -match '^(stage|state|text|error)=' }) -join ' ' } else { 'no progress file' }
