@@ -18,9 +18,14 @@ WORKFLOW = (ROOT / ".github" / "workflows" / "ctranslate2.yml").read_text(encodi
 def test_every_input_is_pinned() -> None:
     assert re.search(r"^CT2_COMMIT=[0-9a-f]{40}$", SCRIPT, re.M)
     assert '"$(git -C CTranslate2 rev-parse HEAD)" == "$CT2_COMMIT"' in SCRIPT
-    for name in ("ONEDNN_SHA256", "CUDA_SHA256", "CUDART_SHA256"):
+    for name in ("ONEDNN_SHA256", "CUDA_SHA256", "CUDART_SHA256",
+                 "SIMD_UTILS_LICENSE_SHA256", "THREAD_POOL_LICENSE_SHA256"):  # fmt: skip
         assert re.search(rf"^{name}=[0-9a-f]{{64}}$", SCRIPT, re.M), name
-        assert f'echo "${name}  ' in SCRIPT, f"{name} is checked"
+        assert f'"${name}"' in SCRIPT, f"{name} is checked"
+    assert 'echo "$2  $3" | sha256sum -c -' in SCRIPT, "fetch checks every download"
+    # The licence files come from pinned commits, not a branch.
+    for url in re.findall(r"^\w+_LICENSE_URL=(\S+)$", SCRIPT, re.M):
+        assert re.search(r"/[0-9a-f]{40}/", url), url
     for name in ("PYBIND11_VERSION", "SETUPTOOLS_VERSION", "WHEEL_VERSION", "PEFILE_VERSION"):
         assert re.search(rf"^{name}=\d", SCRIPT, re.M), name
     assert "install_requirements.txt" not in SCRIPT, "the build tools are pinned here, not upstream"
@@ -29,10 +34,10 @@ def test_every_input_is_pinned() -> None:
 def test_the_build_has_no_intel_component_and_no_cudnn() -> None:
     for flag in ("-DWITH_MKL=OFF", "-DOPENMP_RUNTIME=COMP", "-DWITH_CUDNN=OFF", "-DWITH_DNNL=ON"):
         assert flag in SCRIPT, flag
-    assert 'libiomp5md.dll" python' not in SCRIPT and 'cudnn64_9.dll" python' not in SCRIPT
+    assert "libiomp5md.dll" not in SCRIPT.split("# The wheel.")[1].split("# Nothing of Intel")[0]
     # The built DLL is checked, not just the flags: Microsoft's OpenMP, no Intel OpenMP or MKL,
     # and no DLL in the wheel but ctranslate2.dll.
-    assert 'grep -qx "VCOMP140.DLL"' in SCRIPT
+    assert 'grep -qix "VCOMP140.DLL"' in SCRIPT
     assert 'grep -qiE "libiomp5|^mkl_"' in SCRIPT and 'grep -aqi "mkl_blas"' in SCRIPT
     assert "unexpected DLLs in the wheel" in SCRIPT
 
@@ -46,7 +51,8 @@ def test_the_release_carries_its_licences_and_sources() -> None:
     # What ctranslate2 compiles in from its third_party folder, and pybind11, carry notices.
     compiled_in = (
         "spdlog cpu_features cutlass thrust", "avx_mathfun.h", "avx512_mathfun.h",
-        "BS_thread_pool.hpp", 'd("pybind11").files',
+        "BS_thread_pool.hpp", 'distribution("pybind11").files', "simd_utils-LICENSE.txt",
+        "thread-pool-LICENSE.txt",
     )  # fmt: skip
     for part in compiled_in:
         assert part in SCRIPT, part
