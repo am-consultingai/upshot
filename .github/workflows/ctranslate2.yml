@@ -42,8 +42,8 @@ jobs:
           path: |
             ${{ runner.temp }}/ct2/dist/*.whl
             ${{ runner.temp }}/ct2/dist/*.txt
+            ${{ runner.temp }}/ct2/dist/ctranslate2-sources.zip
             ${{ runner.temp }}/ct2/dist/SHA256SUMS
-            ${{ runner.temp }}/ct2/dist/sources/
 
   publish:
     needs: build
@@ -62,9 +62,9 @@ jobs:
         run: |
           [[ "$RELEASE" =~ ^ctranslate2-[0-9]+\.[0-9]+\.[0-9]+-upshot-[0-9]+$ ]] || { echo "bad tag: $RELEASE"; exit 1; }
           cd dist && sha256sum -c SHA256SUMS
-          (cd sources && zip -qr ../ctranslate2-sources.zip .) && sha256sum ctranslate2-sources.zip >> SHA256SUMS
           gh release create "$RELEASE" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --prerelease --title "$RELEASE (Upshot's ctranslate2 wheel without Intel components)" \
             --notes-file BUILD.txt \
-            ctranslate2-*.whl LICENSE-ctranslate2.txt LICENSE-oneDNN.txt LICENSE-NVIDIA-CUDA.txt \
+            ctranslate2-*.whl LICENSE-ctranslate2.txt LICENSE-oneDNN.txt LICENSE-third-party.txt \
+            LICENSE-NVIDIA-CUDA.txt \
             BUILD.txt imports.txt SHA256SUMS ctranslate2-sources.zip
