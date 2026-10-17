@@ -3,7 +3,7 @@ version: 2026-10-17
 effective: 2026-10-17
 material: true
 last_material: 2026-10-17
-summary: The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence.
+summary: The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence. Installing Upshot now requires accepting NVIDIA's licence on every computer, though NVIDIA's library is downloaded only where a suitable NVIDIA graphics card can use it.
 ---
 
 # Upshot Terms of Service
@@ -132,7 +132,7 @@ Transcripts, summaries, action items and answers are produced automatically by s
 
 ## 16. Third-party components and models {#components}
 
-Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. On a computer with a suitable NVIDIA graphics card, the installer can also download NVIDIA's cuBLAS library, as NVIDIA publishes it on PyPI, but only once NVIDIA's licence has been accepted: on the installer's page or, for a silent installation, with the installer's NVIDIA option. A copy that an earlier version of Upshot already downloaded is kept, and completed or updated, without asking again. All of these are licensed to you under their own licences, which are listed in the notices that come with Upshot and in the app. Nothing in these Terms limits your rights under those licences: where a component's licence lets you modify, replace or reverse-engineer that component, these Terms do not restrict it.
+Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. Upshot is installed only once NVIDIA's licence has been accepted, on every computer: by ticking the box on the installer's page or, for a silent installation, with the installer's NVIDIA option. On a computer whose NVIDIA graphics card has enough memory to run the speech model, the installer then downloads NVIDIA's cuBLAS library, as NVIDIA publishes it on PyPI; on any other computer the installer downloads nothing from NVIDIA. Your acceptance is saved until you uninstall Upshot. While NVIDIA's licence text stays the same, a later installation or update downloads, completes or updates the library under that acceptance without asking again, including on a computer that has since gained a suitable card. If NVIDIA's licence changes, nothing more is downloaded from NVIDIA until the new licence has been accepted; a copy already downloaded stays on your computer. NVIDIA's licence is an agreement between NVIDIA and you or, for a silent installation, the user or organization it is accepted for. These components and models, NVIDIA's library included, are licensed to you under their own licences, which are listed in the notices that come with Upshot and in the app. Nothing in these Terms limits your rights under those licences: where a component's licence lets you modify, replace or reverse-engineer that component, these Terms do not restrict it.
 
 ## 17. Feedback {#feedback}
 
