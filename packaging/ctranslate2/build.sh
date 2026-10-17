@@ -16,10 +16,12 @@
 # same at equal thread counts.
 #
 # Every input is pinned: ctranslate2 by its release commit (its submodules by the commits that
-# commit records), oneDNN and the CUDA toolkit installer by SHA-256. The result goes to
-# <work>/dist: the wheel, the licence texts it needs (ctranslate2, oneDNN and the third-party
-# code in it, and NVIDIA's CUDA licence for the CUDA runtime linked into ctranslate2.dll),
-# BUILD.txt, imports.txt, SHA256SUMS, and the sources it was built from.
+# commit records), oneDNN, the CUDA toolkit installer and NVIDIA's licence archive by SHA-256,
+# the Python build tools by version. The result goes to <work>/dist: the wheel; the licence texts
+# it needs (ctranslate2; oneDNN and the third-party code in it; the code compiled in from
+# ctranslate2's third_party folder and pybind11; NVIDIA's CUDA licence for the CUDA runtime
+# linked into ctranslate2.dll); BUILD.txt; imports.txt; the sources it was built from
+# (ctranslate2-sources.zip); and SHA256SUMS over all of them.
 set -euo pipefail
 
 # Windows-style paths (D:/...): cmake and MSVC are native programs.
@@ -34,12 +36,20 @@ ONEDNN_SHA256=d1cd58f57b2308d362a9bc474acbc21524cb879cf5d8779b460c718f0fac82d6
 CUDA_URL=https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_572.61_windows.exe
 CUDA_SHA256=19392bbffd0ad4ee7cb295a181e87f682187f17653679c1c548c263b7e1cd9a6
 CUDA_ROOT="C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.8"
+# NVIDIA's CUDA licence, from the CUDA runtime's redistributable archive of this toolkit (the
+# selective install above does not necessarily write EULA.txt).
+CUDART_URL=https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/windows-x86_64/cuda_cudart-windows-x86_64-12.8.90-archive.zip
+CUDART_SHA256=4a39058fd8519444a81cfc7ae055d136f48d1a31ffa41ae255b35b2edd61e13b
+PYBIND11_VERSION=2.11.1
+SETUPTOOLS_VERSION=84.0.0
+WHEEL_VERSION=0.48.0
 PEFILE_VERSION=2024.8.26
 NPROC=$(nproc)
 
 rm -rf "$WORK/dist"
 mkdir -p "$WORK/src" "$WORK/dist/sources"
 cd "$WORK/src"
+DIST="$WORK/dist"
 
 # The CUDA toolkit: only the parts the build needs (as upstream).
 if [[ ! -d "$CUDA_ROOT/bin" ]]; then
@@ -68,6 +78,10 @@ git clone -q --branch "v$CT2_VERSION" --recurse-submodules --shallow-submodules 
   https://github.com/OpenNMT/CTranslate2.git
 [[ "$(git -C CTranslate2 rev-parse HEAD)" == "$CT2_COMMIT" ]] \
   || { echo "ctranslate2 v$CT2_VERSION is not commit $CT2_COMMIT" >&2; exit 1; }
+# The sources as cloned, before anything builds in the tree. Relative paths only: GNU tar reads
+# "D:/..." as a remote host.
+git -C CTranslate2 submodule status --recursive > "$DIST/sources/submodules.txt"
+tar czf "../dist/sources/ctranslate2-$CT2_VERSION-with-submodules.tar.gz" --exclude=.git CTranslate2
 
 CT2_ROOT="$WORK/install"
 CMAKE_ARGS=(
@@ -85,7 +99,8 @@ cmake --build ct2-build --config Release --target install --parallel "$NPROC"
   cd CTranslate2
   cp README.md python/
   cp "$CT2_ROOT/bin/ctranslate2.dll" python/ctranslate2/
-  "$PY" -m pip install -q -r python/install_requirements.txt
+  "$PY" -m pip install -q "pybind11==$PYBIND11_VERSION" "setuptools==$SETUPTOOLS_VERSION" \
+    "wheel==$WHEEL_VERSION"
   CTRANSLATE2_ROOT="$CT2_ROOT" "$PY" -m pip wheel -q --no-deps --no-build-isolation -w "$WORK/dist" ./python
 )
 WHEEL="$(ls "$WORK"/dist/ctranslate2-*.whl)"
@@ -95,7 +110,7 @@ WHEEL="$(ls "$WORK"/dist/ctranslate2-*.whl)"
 "$PY" -c 'import pefile, sys; [print(e.dll.decode()) for e in pefile.PE(sys.argv[1]).DIRECTORY_ENTRY_IMPORT]' \
   "$CT2_ROOT/bin/ctranslate2.dll" > "$WORK/dist/imports.txt"
 grep -qx "VCOMP140.DLL" "$WORK/dist/imports.txt" || { echo "does not use Microsoft's OpenMP" >&2; exit 1; }
-! grep -qi "libiomp5" "$WORK/dist/imports.txt" || { echo "imports Intel's OpenMP" >&2; exit 1; }
+! grep -qiE "libiomp5|^mkl_" "$WORK/dist/imports.txt" || { echo "imports Intel's OpenMP or MKL" >&2; exit 1; }
 ! grep -aqi "mkl_blas" "$CT2_ROOT/bin/ctranslate2.dll" || { echo "contains Intel oneMKL" >&2; exit 1; }
 "$PY" -c '
 import sys, zipfile
@@ -104,21 +119,41 @@ bad = [n for n in names if n.lower().endswith(".dll") and n.lower().split("/")[-
 sys.exit(f"unexpected DLLs in the wheel: {bad}" if bad else 0)' "$WHEEL"
 
 # Licence texts, the sources, and what was built.
-DIST="$WORK/dist"
 cp CTranslate2/LICENSE "$DIST/LICENSE-ctranslate2.txt"
 cat "oneDNN-$ONEDNN_VERSION/LICENSE" <(echo) "oneDNN-$ONEDNN_VERSION/THIRD-PARTY-PROGRAMS" > "$DIST/LICENSE-oneDNN.txt"
-cp "$CUDA_ROOT/EULA.txt" "$DIST/LICENSE-NVIDIA-CUDA.txt"
-tar czf "$DIST/sources/ctranslate2-$CT2_VERSION-with-submodules.tar.gz" --exclude=.git CTranslate2
+curl -fsSL -o cudart.zip "$CUDART_URL"
+echo "$CUDART_SHA256  cudart.zip" | sha256sum -c - >/dev/null || { echo "cudart.zip: SHA-256 mismatch" >&2; exit 1; }
+"$PY" -c 'import sys, zipfile; sys.stdout.buffer.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]))' \
+  cudart.zip cuda_cudart-windows-x86_64-12.8.90-archive/LICENSE > "$DIST/LICENSE-NVIDIA-CUDA.txt"
+# What ctranslate2 compiles in from its third_party folder in this configuration (spdlog,
+# cpu_features; with CUDA, cutlass and thrust/cub/libcudacxx; the AVX maths and thread-pool
+# headers), and pybind11's headers in _ext.pyd. cxxopts, googletest and ruy are not built.
+header() { echo "== $1 (licence notice from the file's header)"; awk '{print} /\*\//{exit}' "$2"; echo; }
+{
+  for dir in spdlog cpu_features cutlass thrust; do
+    file="$(ls CTranslate2/third_party/$dir/LICENSE* | head -1)"
+    echo "== $dir ($(basename "$file"))"; cat "$file"; echo
+  done
+  header avx_mathfun.h CTranslate2/third_party/avx_mathfun.h
+  header avx512_mathfun.h CTranslate2/third_party/avx512_mathfun.h
+  header BS_thread_pool.hpp CTranslate2/third_party/BS_thread_pool.hpp
+  echo "== pybind11 $PYBIND11_VERSION (LICENSE)"
+  "$PY" -c 'from importlib.metadata import distribution as d; f = [p for p in d("pybind11").files if p.name.startswith("LICENSE")]; print(f[0].read_text())'
+} > "$DIST/LICENSE-third-party.txt"
 cp "onednn-$ONEDNN_VERSION.tar.gz" "$DIST/sources/"
 cp "$HERE/build.sh" "$DIST/sources/"
 printf '%s\n' "${CMAKE_ARGS[@]}" > "$DIST/sources/cmake-args.txt"
+"$PY" -m pip freeze > "$DIST/sources/python-build-tools.txt"
+(cd "$DIST" && "$PY" -c 'import shutil; shutil.make_archive("ctranslate2-sources", "zip", "sources")')
 {
   echo "ctranslate2 $CT2_VERSION (commit $CT2_COMMIT), Windows x64 wheel, for Upshot (built by packaging/ctranslate2/build.sh)."
   echo "No Intel component: Microsoft's OpenMP (VCOMP140.DLL) instead of Intel's; oneDNN $ONEDNN_VERSION (static) instead of oneMKL; no cuDNN."
   echo "CUDA 12.8 (cuBLAS loaded at run time; the CUDA runtime is linked in statically)."
-  echo "Licences: MIT (ctranslate2); Apache-2.0 with its third-party programs (oneDNN); NVIDIA's CUDA licence (CUDA runtime)."
+  echo "Licences: MIT (ctranslate2); Apache-2.0 with its third-party programs (oneDNN); the code compiled in from"
+  echo "ctranslate2's third_party folder and pybind11 (LICENSE-third-party.txt); NVIDIA's CUDA licence (CUDA runtime)."
   echo "Upshot commit: ${GITHUB_SHA:-unknown}."
-  echo "sources/ holds everything it was built from; cmake-args.txt has the exact CMake arguments."
+  echo "ctranslate2-sources.zip holds everything it was built from: ctranslate2 with its submodules"
+  echo "(submodules.txt has their commits), oneDNN, build.sh, the exact CMake arguments and the Python build tools."
 } > "$DIST/BUILD.txt"
 (cd "$DIST" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS)
 cat "$DIST/SHA256SUMS"
