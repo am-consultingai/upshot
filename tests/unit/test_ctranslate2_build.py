@@ -38,6 +38,10 @@ def test_the_build_has_no_intel_component_and_no_cudnn() -> None:
     # The built DLL is checked, not just the flags: Microsoft's OpenMP, no Intel OpenMP or MKL,
     # and no DLL in the wheel but ctranslate2.dll.
     assert 'grep -qix "VCOMP140.DLL"' in SCRIPT
+    # Written with LF by Python itself: a redirected print() on Windows gives CRLF lines, which
+    # grep -x would never match (the spike build's imports.txt had CRLF on every line).
+    assert 'open(sys.argv[2], "w", newline="\\n")' in SCRIPT
+    assert '> "$DIST/imports.txt"' not in SCRIPT
     assert 'grep -qiE "libiomp5|^mkl_"' in SCRIPT and 'grep -aqi "mkl_blas"' in SCRIPT
     assert "unexpected DLLs in the wheel" in SCRIPT
 
