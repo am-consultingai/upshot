@@ -216,8 +216,8 @@ You are responsible for how you use Upshot. In particular, you agree:
     credentials you enter are stored on your computer, and you are
     responsible for protecting it, including from other people who use it.
   - To keep backups. You are responsible for keeping copies of anything you
-    need. Upshot deletes recordings automatically only if you set a period
-    for it in its settings.
+    need. Upshot deletes your content automatically only if you set a period
+    for it in its configuration.
   - Not to misuse Upshot, including by using it for any unlawful purpose or
     by attempting to interfere with it or with any service it connects to.
 
@@ -348,8 +348,8 @@ stop offering Upshot. Where reasonable, we will tell you first. When these
 Terms end, you must stop using our services. Your rights in the software
 itself are governed by the Upshot licence: they end automatically, for the
 current and all other versions, if you use Upshot in violation of it, and
-you must then stop using Upshot and uninstall it. Your content remains yours
-and stays on your computer.
+you must then stop using Upshot unless you obtain a commercial licence. Your
+content remains yours and stays on your computer.
 
 Sections 6, 7, 10, 14, 15, 17, 18 and 20 to 26 continue to apply after these
 Terms end.
