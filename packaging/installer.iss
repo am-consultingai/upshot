@@ -12,6 +12,11 @@
 #ifndef TermsVersion
   #error TermsVersion is not defined: build.ps1 passes it (/DTermsVersion=...), read from app\legal\terms.md
 #endif
+; The NVIDIA licence build.ps1 embeds (its one nvidia_*-License.txt in app\asr\licenses),
+; named in Setup's /? help as a link to that file at the release tag, so an administrator can
+; read the exact text before a silent install passes /NVIDIA=accept. A test keeps the name in
+; step with the file.
+#define NvidiaLicence "nvidia_cublas_cu12-12.9.1.4-License.txt"
 #define AppExe "upshot.exe"
 ; The running app's single-instance mutex (app/instance.py MUTEX_NAME).
 #define AppMutex "Local\upshot"
@@ -82,7 +87,7 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
 [Messages]
 BeveledLabel=Powered by AM Consulting
 ; Setup's /? help, for administrators (D100: the silent acceptance states their authority).
-HelpTextNote=/NVIDIA=accept   Required with /SILENT or /VERYSILENT: always for an all-users install, and otherwise unless the Windows user Setup installs for has already accepted the exact NVIDIA licence (EULA) text this installer carries. Setup installs Upshot only once that licence is accepted, and NVIDIA cuBLAS is downloaded only where an NVIDIA GPU has enough memory for the speech model. The acceptance is saved for that user, and later installs and updates may download or update cuBLAS under it while that licence text is unchanged. A silent installation also accepts Upshot's Terms of Service on behalf of that user, and the person running it confirms that they have the authority to do so. By passing this option, the person running Setup confirms that they have read NVIDIA's licence and have the authority to accept it for the Windows user Setup installs for and for any organization on whose behalf that user uses Upshot.
+HelpTextNote=/NVIDIA=accept   Required with /SILENT or /VERYSILENT: always for an all-users install, and otherwise unless the Windows user Setup installs for has already accepted the exact NVIDIA licence (EULA) text this installer carries. Setup installs Upshot only once that licence is accepted, and NVIDIA cuBLAS is downloaded only where an NVIDIA GPU has enough memory for the speech model. The acceptance is saved for that user, and later installs and updates may download or update cuBLAS under it while that licence text is unchanged. A silent installation also accepts Upshot's Terms of Service on behalf of that user, and the person running it confirms that they have the authority to do so. The exact NVIDIA licence (EULA) text this installer carries is at https://github.com/am-consultingai/upshot/blob/v{#AppVersion}/app/asr/licenses/{#NvidiaLicence}, and Setup shows it when run without /SILENT or /VERYSILENT. By passing this option, the person running Setup confirms that they have read NVIDIA's licence and have the authority to accept it for the Windows user Setup installs for and for any organization on whose behalf that user uses Upshot.
 
 ; An upgrade copies over the old files but would never delete one a newer build no
 ; longer ships: PyAV's GPL x264 and x265 stayed in _internal after the build dropped
@@ -283,7 +288,7 @@ begin
 end;
 
 { This Upshot is installed, in either privilege mode: its uninstall entry exists. Usable in
-  InitializeSetup, unlike IsUpshotInstall ({app} is not known yet). An automatic update
+  InitializeSetup, unlike IsUpshotInstall (the install folder is not known yet). An automatic update
   keeps the mode of the install it updates, so it always finds the entry. }
 function UpshotInstalled: Boolean;
 begin
