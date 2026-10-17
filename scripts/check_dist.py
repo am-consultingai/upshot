@@ -66,13 +66,13 @@ def problems(root: Path) -> list[str]:
         name = path.name.lower()
         names.add(name)
         if any(fnmatch.fnmatch(name, pattern) for pattern in FORBIDDEN_NAMES):
-            found.append(f"{path.relative_to(root)}: a GPL component")
+            found.append(f"{path.relative_to(root).as_posix()}: a GPL component")
         elif any(fnmatch.fnmatch(name, pattern) for pattern in INTEL_NAMES):
-            found.append(f"{path.relative_to(root)}: an Intel runtime library")
+            found.append(f"{path.relative_to(root).as_posix()}: an Intel runtime library")
         elif path.is_file() and path.suffix.lower() in BINARY_SUFFIXES:
             flag = gpl_flag(path)
             if flag:
-                found.append(f"{path.relative_to(root)}: built with {flag}")
+                found.append(f"{path.relative_to(root).as_posix()}: built with {flag}")
     if "ctranslate2.dll" in names and "vcomp140.dll" not in names:
         found.append("ctranslate2.dll needs Microsoft's vcomp140.dll, which the freeze lacks")
     return found
