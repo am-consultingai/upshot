@@ -333,6 +333,11 @@ def test_every_install_accepts_nvidia_s_licence_with_a_ticked_box() -> None:
     assert "Result := RegKeyExists(HKA," in installer
     assert installer.count("Result := NvidiaGate;") == 2  # with and without the memory check
     assert "HelpTextNote=/NVIDIA=accept   Required" in installer
+    # Administrators can read the exact text before a silent install: /? links to the very
+    # file build.ps1 embeds, at the release tag (publish_release.py tags vX.Y.Z).
+    assert f'#define NvidiaLicence "{shipped[0].name}"' in installer
+    link = "https://github.com/am-consultingai/upshot/blob/v{#AppVersion}/app/asr/licenses/"
+    assert link + "{#NvidiaLicence}" in installer
     assert "have the authority" in installer
     # A box, not a choice: unticked, and Next waits for it.
     assert "NvidiaAccept: TNewCheckBox;" in installer and "NvidiaSkip" not in installer
