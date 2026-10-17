@@ -340,7 +340,8 @@ without a consent the law requires.
 These Terms apply from when you accept them until they end.
 
 You may stop using Upshot at any time by uninstalling it. Uninstalling does
-not delete your content; you can delete it by deleting Upshot's data folder.
+not delete your content; you can delete it by deleting Upshot's data folder
+and its own folder (%LOCALAPPDATA%\upshot).
 
 We may end these Terms, or suspend or end your use of our services (such as
 updates, our update service, our Google Cloud client and our website), if
