@@ -42,5 +42,5 @@ approved = "licence epic S2 (PR #43); NVIDIA's terms shown before the download i
 [[exception]]
 name = "NVIDIA CUDA runtime (statically linked inside ctranslate2)"
 licence = "LicenseRef-NVIDIA-CUDA-EULA"
-why = "Listed as distributable in NVIDIA's CUDA licence (Attachment A); its terms ship with it."
-approved = "licence epic S12"
+why = "Distributable (CUDA licence, Attachment A). §2.1 (for use in systems with NVIDIA GPUs) is read as met: Upshot uses CUDA only when an NVIDIA GPU is present; elsewhere it is never initialised, as with PyPI's CUDA wheels."
+approved = "D100, licence epic S12 (product owner, 2026-10-17; a CPU-only build is the fallback, ClickUp)"

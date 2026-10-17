@@ -457,8 +457,9 @@ def extra_entries() -> list[Entry]:
               licence_file("ctranslate2-third-party.txt"), kind="other"),
         Entry("NVIDIA CUDA runtime (statically linked inside ctranslate2)", "12.8",
               "LicenseRef-NVIDIA-CUDA-EULA",
-              "Linked into ctranslate2.dll by its CUDA build; distributable under NVIDIA's CUDA"
-              " licence below.", licence_file("nvidia-cuda-runtime.txt"), kind="other"),
+              "Linked into ctranslate2.dll by its CUDA build and used only on machines with an"
+              " NVIDIA GPU; distributable under NVIDIA's CUDA licence below.",
+              licence_file("nvidia-cuda-runtime.txt"), kind="other"),
         Entry("NVIDIA cuBLAS (nvidia-cublas-cu12)", "12.9.1.4", "LicenseRef-NVIDIA-CUDA-EULA",
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
               " for GPU transcription; kept beside the libraries with this licence.",
