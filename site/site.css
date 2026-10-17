@@ -191,9 +191,6 @@ footer a:hover{color:var(--ink)}
 /* ---- detection chips ---- */
 .chips{list-style:none;margin:36px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:10px}
 .chips li{font-size:15px;color:var(--s2);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:8px 16px}
-.chips li.soon{color:var(--s4);border-style:dashed}
-.chips li.soon::after{content:"Soon";margin-inline-start:8px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--s4)}
-.soon-key{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--s3);border:1px dashed var(--s4);border-radius:6px;padding:1px 6px;margin-inline-end:6px;vertical-align:1px}
 .chips-note{margin-top:22px;font-size:15px;color:var(--s3);max-width:70ch}
 
 /* ---- comparison ---- */
@@ -295,7 +292,7 @@ footer a:hover{color:var(--ink)}
  *   --t-body 18px   paragraphs and card copy (16px on phones)
  *   --t-sub  16px   tags, stat captions, notes, table cells
  *   --t-label 14px  eyebrows, nav, labels, captions, buttons' small variant
- *   --t-micro 12px  uppercase badges only: Live, New, Soon, Demo data
+ *   --t-micro 12px  uppercase badges only: Live, New, Demo data
  */
 :root{--t-body:18px;--t-sub:16px;--t-label:14px;--t-micro:12px}
 body{font-size:var(--t-body)}
@@ -343,8 +340,7 @@ body{font-size:var(--t-body)}
 .mail-body h4{font-size:17px}
 .fmt-prompt pre{font-size:15px}
 
-.demo,.tag-new,.soon-key,.tool b,.chips li.soon::after{font-size:var(--t-micro)}
-.mono-mark,.people i,.cw-t em{font-size:var(--t-micro)}
+.demo,.tag-new,.tool b,.mono-mark,.people i,.cw-t em{font-size:var(--t-micro)}
 footer{font-size:var(--t-label)}
 .powered{font-size:13px}
 .ready-top,.ready dt,.fmt-label,.shot-bar span,.cw-bar span,.people small,.copy{font-size:var(--t-label)}
@@ -471,7 +467,7 @@ footer{font-size:var(--t-label)}
 [dir=rtl] .term pre{text-align:left}
 /* Hebrew has no capitals: tracking meant for uppercase Latin just spaces the letters apart */
 [lang=he] .eyebrow,[lang=he] .nav-links a,[lang=he] .brand-tag,[lang=he] .fmt-label,[lang=he] .ready-top,
-[lang=he] .legend,[lang=he] .powered,[lang=he] .tag-new,[lang=he] .soon-key,[lang=he] .demo,[lang=he] .tool b{letter-spacing:0}
+[lang=he] .legend,[lang=he] .powered,[lang=he] .tag-new,[lang=he] .demo,[lang=he] .tool b{letter-spacing:0}
 [lang=he]{--display:"Rubik","Space Grotesk",system-ui,sans-serif;--sans:"Heebo","Inter",system-ui,sans-serif;
   --mono:"JetBrains Mono","Heebo",ui-monospace,monospace}
 [lang=he] h1,[lang=he] h2,[lang=he] h3{letter-spacing:-.01em}
@@ -480,7 +476,7 @@ footer{font-size:var(--t-label)}
    only commands and code stay monospaced. */
 [lang=he] .eyebrow, [lang=he] .nav-links a, [lang=he] .brand-tag, [lang=he] .btn, [lang=he] .hero-meta,
 [lang=he] .ready-top, [lang=he] .people small, [lang=he] .people i, [lang=he] .fmt-label, [lang=he] .legend,
-[lang=he] .tool b, [lang=he] .demo, [lang=he] .tag-new, [lang=he] .soon-key, [lang=he] figcaption,
+[lang=he] .tool b, [lang=he] .demo, [lang=he] .tag-new, [lang=he] figcaption,
 [lang=he] .req, [lang=he] .copy, [lang=he] .cw-bar span, [lang=he] .cw-t em, [lang=he] .mail-head span,
 [lang=he] .vs thead th, [lang=he] .vs td, [lang=he] .shot-bar span, [lang=he] .stats span,
 [lang=he] .chips-note, [lang=he] .tools-note{font-family:var(--sans)}

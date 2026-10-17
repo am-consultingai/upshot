@@ -114,6 +114,14 @@ def test_every_icon_is_in_the_pages_own_sprite(page: Path) -> None:
 
 
 @every_page
+def test_nothing_is_promised_for_later(page: Path) -> None:
+    """Product owner, 2026-10-17: the site says what Upshot does, never what it will do."""
+    html = page.read_text(encoding="utf-8")
+    for promise in (">Soon<", "בקרוב", 'class="soon', "soon-key"):
+        assert promise not in html, promise
+
+
+@every_page
 def test_local_files_exist(page: Path) -> None:
     _, collected = _parse(page)
     local = [u for u in collected.loads if not u.startswith("https://")]
