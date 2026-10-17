@@ -401,7 +401,7 @@ export const he: Record<MessageKey, string> = {
   "settings.purposeAbout": "איזו גרסה מותקנת אצלך, ואיך מגיעות גרסאות חדשות.",
   "settings.groupStorage": "אחסון",
   "settings.dataFolder": "תיקיית הנתונים",
-  "settings.dataFolderHint": "הקלטות, תמלילים וסיכומים, תיקייה לכל פגישה. שום דבר לא נשמר במקום אחר.",
+  "settings.dataFolderHint": "הקלטות, תמלילים וסיכומים, תיקייה לכל פגישה.",
   "settings.storageUsed": "נפח בשימוש",
   "settings.storageKept": "ההקלטות נשמרות עד שתמחק אותן.",
   "settings.copyPath": "העתקת הנתיב",

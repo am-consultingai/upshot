@@ -12,6 +12,7 @@ file copy of a database in WAL mode does not.
 from __future__ import annotations
 
 import sqlite3
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,6 +25,9 @@ SUFFIX = ".db"
 FOLDER = "backups"
 #: How many copies stay: a week of daily ones, or a few updates.
 KEEP = 7
+#: A ``.partial`` older than this is a copy a crash interrupted, not one being written: a
+#: full copy of the database that ``copies`` never lists, so it would never be pruned.
+STALE_PARTIAL_S = 3600
 
 
 def folder_for(database: Path) -> Path:
@@ -51,6 +55,8 @@ def backup(
     stamp = (now or datetime.now(UTC)).astimezone(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     target = folder / f"{PREFIX}{stamp}-{why}{SUFFIX}"
     partial = target.with_suffix(".partial")
+    # First, so a crash leftover that fills the disk cannot fail every backup after it.
+    remove_stale_partials(folder)
     source = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
     try:
         copy = sqlite3.connect(partial)
@@ -58,6 +64,9 @@ def backup(
             source.backup(copy)
         finally:
             copy.close()
+    except BaseException:
+        partial.unlink(missing_ok=True)  # an error, not a crash: leave nothing behind
+        raise
     finally:
         source.close()
     partial.replace(target)  # a crash mid-copy leaves a .partial, never a broken backup
@@ -65,6 +74,28 @@ def backup(
         old.unlink(missing_ok=True)
     log.info("database backed up to %s (%s)", target.name, why)
     return target
+
+
+def remove_stale_partials(folder: Path, *, now: float | None = None) -> int:
+    """Delete what crashes left in ``folder``: ``.partial`` copies and SQLite's
+    ``.partial-journal`` beside them. How many went. One modified within
+    ``STALE_PARTIAL_S`` may be another backup still writing, so it stays. ``now`` is a
+    timestamp on the real clock (file times are), for tests; not ``backup``'s stamp time."""
+    moment = time.time() if now is None else now
+    removed = 0
+    for leftover in [
+        *folder.glob(f"{PREFIX}*.partial"),
+        *folder.glob(f"{PREFIX}*.partial-journal"),
+    ]:
+        try:
+            if moment - leftover.stat().st_mtime > STALE_PARTIAL_S:
+                leftover.unlink()
+                removed += 1
+        except OSError as exc:  # gone already, or held open: the next backup tries again
+            log.warning("could not remove the interrupted backup %s: %s", leftover.name, exc)
+    if removed:
+        log.info("removed %d interrupted backup file(s)", removed)
+    return removed
 
 
 def newest_age_s(database: Path, *, now: datetime | None = None) -> float | None:
