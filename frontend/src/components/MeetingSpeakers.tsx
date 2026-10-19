@@ -80,16 +80,23 @@ export function useSpeakerRename(meetingId: string) {
     onSettled: async (_saved, error) => {
       // Search hits carry the name a slot was given.
       void queryClient.invalidateQueries({ queryKey: ["search"] });
+      /*
+       * A failed rename always reads the meeting again, and does not wait for it: the
+       * snapshot it put back may itself be an earlier rename's rejected name, and the
+       * overlay must let go of this one now. Renames still on their way stay covered.
+       */
+      if (error) {
+        void queryClient.invalidateQueries({ queryKey: key });
+        return;
+      }
       // Another rename still in flight: drop any poll on its way, which would not have
       // that rename yet; the last one to settle refetches.
       if (queryClient.isMutating({ mutationKey }) > 1) {
         await queryClient.cancelQueries({ queryKey: key });
         return;
       }
-      const refetch = queryClient.invalidateQueries({ queryKey: key });
-      // A saved rename stays pending — and on screen — until the fresh copy lands. A
-      // failed one does not wait: its slot is already back, and the overlay must let go.
-      if (!error) await refetch;
+      // A saved rename stays pending — and on screen — until the fresh copy lands.
+      await queryClient.invalidateQueries({ queryKey: key });
     },
   });
 }
