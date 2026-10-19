@@ -34,12 +34,16 @@ export function meetingDirections(meeting: { direction?: string | null; summary_
  * scripts against the others; digits, punctuation and symbols do not count, and text
  * with no letters at all runs left to right.
  *
- * Inside a right-to-left block (`lean`) a tie goes to the block, and so does a Hebrew
- * one-letter prefix hyphenated to a word ("ל-GitHub", "ה-README"), which only a Hebrew
- * sentence has: "PR ל-GitHub Actions" there is Hebrew, "Send דנה the notes" is still
- * English. Elsewhere a tie goes to the first word.
+ * Inside a right-to-left block (`lean`) a tie goes to the block, and so do two things
+ * only a Hebrew sentence has: a one-letter prefix joined to a word ("ל-GitHub",
+ * "ל־staging") and a Hebrew function word (עם, של, לפני…). "Code review לפני merge"
+ * there is Hebrew; "Send דנה the notes", which only names someone, is still English.
+ * Elsewhere a tie goes to the first word.
  */
-const HEBREW_PREFIX = /(^|[^\p{L}])\p{Script=Hebrew}-\S/u;
+const HEBREW_PREFIX = /(^|[^\p{L}])\p{Script=Hebrew}[-\u05BE]\S/u;
+const HEBREW_FUNCTION_WORDS = new Set([
+  "את", "של", "עם", "על", "אל", "לפני", "אחרי", "עבור", "בין", "מול", "עד", "גם", "כל",
+]);
 const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
 const WORD = /\p{L}+/gu;
 
@@ -50,6 +54,7 @@ export function directionOf(text: string, lean?: Direction): Direction {
   for (const [word] of text.matchAll(WORD)) {
     const here: Direction = RTL_LETTER.test(word) ? "rtl" : "ltr";
     if (here === "rtl" && first === null) return "rtl";
+    if (lean === "rtl" && HEBREW_FUNCTION_WORDS.has(word)) return "rtl";
     first ??= here;
     if (here === "rtl") rtl += 1;
     else ltr += 1;
