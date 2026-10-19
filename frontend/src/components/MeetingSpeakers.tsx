@@ -264,7 +264,8 @@ export default function MeetingSpeakers({
           data-track={person.mine ? "me" : "them"}
           data-slot={person.slot}
           title={`${person.name} · ${Math.round(person.share * 100)}%`}
-          className="inline-flex h-6 w-[8.5rem] shrink-0 items-center gap-1.5 rounded-full ps-2.5 pe-2 text-xs text-secondary shadow-[var(--shadow-ring)]"
+          // The outline inside the chip: the row scrolls, and clips anything drawn outside it.
+          className="inline-flex h-6 w-[8.5rem] shrink-0 items-center gap-1.5 rounded-full ps-2.5 pe-2 text-xs text-secondary shadow-[inset_0_0_0_1px_var(--border)]"
         >
           <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: person.colour }} />
           <SpeakerName
