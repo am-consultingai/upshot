@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import { addDays, dayKey } from "../lib/calendar";
 import { daysUntil, dueLabel, nextWeekday } from "../lib/due";
 import { formatShortDate } from "../lib/format";
+import type { Direction } from "../lib/direction";
 import { initials, personColour } from "../lib/speakers";
 import DatePicker from "./DatePicker";
 import Menu, { useContextMenu, type MenuItem } from "./Menu";
@@ -89,6 +90,7 @@ export default function ActionItemRow({
   showMeeting = true,
   selected = false,
   onFocusRow,
+  dir,
 }: {
   item: ActionItem;
   /** Off on the meeting page, where the meeting is the page you are already on. */
@@ -96,6 +98,12 @@ export default function ActionItemRow({
   /** The inbox's keyboard selection. */
   selected?: boolean;
   onFocusRow?: () => void;
+  /**
+   * Which way the row runs. Unset, it follows the item's own words, whatever the
+   * interface language: a Hebrew item puts its tick on the right and its owner on
+   * the left, an English one the other way round.
+   */
+  dir?: Direction;
 }) {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
@@ -197,6 +205,7 @@ export default function ActionItemRow({
       data-done={done ? "true" : "false"}
       data-mine={item.mine ? "true" : "false"}
       data-due-at={item.due_at ?? undefined}
+      dir={dir ?? "auto"}
       aria-current={showMeeting && selected ? "true" : undefined}
       data-selected={showMeeting && selected ? "true" : undefined}
       onContextMenu={context.onContextMenu}
@@ -243,7 +252,8 @@ export default function ActionItemRow({
         {(showMeeting || item.detail) && (
           <span data-testid="action-provenance" className="mt-0.5 block text-sm text-tertiary">
             {showMeeting && (
-              <>
+              // The interface's words, isolated from an item that may run the other way.
+              <bdi>
                 {t("actions.from")}{" "}
                 <Link
                   data-testid="action-meeting"
@@ -253,9 +263,9 @@ export default function ActionItemRow({
                   {item.meeting_title ?? item.meeting_id}
                 </Link>
                 {when && <span className="tabular-nums">, {when}</span>}
-                {item.detail && " — "}
-              </>
+              </bdi>
             )}
+            {showMeeting && item.detail && " — "}
             {item.detail && <span data-testid="action-detail">{item.detail}</span>}
           </span>
         )}
@@ -298,7 +308,7 @@ export default function ActionItemRow({
                 : "inline-flex h-5 items-center rounded-full border border-dashed border-line-strong px-2 text-2xs text-tertiary opacity-0 group-hover:opacity-100 hover:text-primary focus-visible:opacity-100"
             }
           >
-            {item.due_at ? dueLabel(item.due_at, locale, words) : `+ ${t("actions.addDate")}`}
+            <bdi>{item.due_at ? dueLabel(item.due_at, locale, words) : `+ ${t("actions.addDate")}`}</bdi>
           </button>
           </Tooltip>
         ) : null}
