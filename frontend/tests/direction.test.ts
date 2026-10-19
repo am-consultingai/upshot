@@ -53,6 +53,13 @@ describe("a piece of text runs the way its words do", () => {
     expect(directionOf("Send דנה the notes", "rtl")).toBe("ltr");
     expect(directionOf("Follow up with משה on the budget", "rtl")).toBe("ltr");
     expect(directionOf("Book a re-run of the build", "rtl")).toBe("ltr");
+    // Hebrew function words and the maqaf mark a Hebrew sentence.
+    expect(directionOf("Pull request עם fix לבאג", "rtl")).toBe("rtl");
+    expect(directionOf("Code review לפני merge", "rtl")).toBe("rtl");
+    expect(directionOf("Sync עם Dana על Q3 roadmap", "rtl")).toBe("rtl");
+    expect(directionOf("Update the Jira ticket של הבאג", "rtl")).toBe("rtl");
+    expect(directionOf("PR review עם Dana", "rtl")).toBe("rtl");
+    expect(directionOf("Deploy ל\u05BEstaging", "rtl")).toBe("rtl");
   });
 
   it("digits, punctuation and symbols do not count; nothing at all is left to right", () => {
