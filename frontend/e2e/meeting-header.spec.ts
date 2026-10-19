@@ -156,11 +156,18 @@ test("double_clicking_a_name_in_the_transcript_renames_that_speaker_everywhere",
   await page.getByTestId("meeting-tab-transcript").click();
   const names = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_1]");
   await expect(names).toHaveCount(3);
+  // Every rename sent, so a cancel that saved anyway shows even though a later save
+  // overwrites it on screen.
+  const sent: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PATCH") sent.push(request.postData() ?? "");
+  });
 
   // Escape puts the name back.
   await names.nth(2).dblclick();
   await page.getByTestId("speaker-name-input").fill("Not this");
   await page.getByTestId("speaker-name-input").press("Escape");
+  await expect(page.getByTestId("speaker-name-input")).toHaveCount(0);
   await expect(names.first()).toHaveText("Speaker 1");
 
   // Enter saves, on every line and in the header at once.
@@ -169,6 +176,8 @@ test("double_clicking_a_name_in_the_transcript_renames_that_speaker_everywhere",
   await saveName(page, "e2e-name");
   for (const index of [0, 1, 2]) await expect(names.nth(index)).toHaveText("Dana Levi");
   await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Dana Levi");
+  // The cancelled name was never sent: anything from the Escape went before this save.
+  expect(sent.some((body) => body.includes("Not this"))).toBe(false);
 
   // Saved: it survives a reload.
   await page.reload();
@@ -251,6 +260,10 @@ test("renaming_from_the_keyboard_keeps_focus_on_the_name", async ({ page, seed }
   await gotoApp(page, "/m/e2e-keys");
   const name = page.locator("[data-testid=talk-share][data-slot=THEM_1] [data-testid=speaker-name]");
   const input = page.getByTestId("speaker-name-input");
+  const sent: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PATCH") sent.push(request.postData() ?? "");
+  });
 
   // Escape cancels and gives focus back to the name, not to the meeting list.
   await name.focus();
@@ -267,6 +280,7 @@ test("renaming_from_the_keyboard_keeps_focus_on_the_name", async ({ page, seed }
   await saveName(page, "e2e-keys");
   await expect(name).toBeFocused();
   await expect(name).toHaveText("Dana Levi");
+  expect(sent.some((body) => body.includes("Not this"))).toBe(false);
 });
 
 test("a_press_from_the_keyboard_or_a_screen_reader_opens_the_name_but_a_click_does_not", async ({ page, seed }) => {
