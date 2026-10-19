@@ -650,7 +650,8 @@ export default function MeetingPage() {
             {draft === null ? (
               <h1
                 ref={titleRef}
-                className="display min-w-0 max-w-full cursor-text truncate text-[1.5rem] leading-tight"
+                // The field's padding, given back in margin: measured, the heading is as wide as the field.
+                className="display -mx-2 min-w-0 max-w-[calc(100%+1rem)] cursor-text truncate px-2 text-[1.5rem] leading-tight"
                 data-testid="meeting-title"
                 // One line now: the whole title on hover. Renaming is a double-click or the ⋯ menu.
                 title={meeting.data.title ?? id}
@@ -682,9 +683,9 @@ export default function MeetingPage() {
                     event.currentTarget.blur();
                   }
                 }}
-                // The heading's room and height exactly (measured above).
-                style={{ width: titleWidth.current ?? undefined }}
-                className="display min-w-0 max-w-full flex-none rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
+                // The heading's room and height (measured above), and room to type in a short one.
+                style={{ width: titleWidth.current === null ? undefined : `max(${titleWidth.current}px, 12rem)` }}
+                className="display -mx-2 min-w-0 max-w-[calc(100%+1rem)] flex-none rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
               />
             )}
             <MeetingChips meeting={meeting.data} onPeople={() => setDetails(true)} />

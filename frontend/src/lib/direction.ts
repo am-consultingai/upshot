@@ -21,24 +21,29 @@ export function meetingDirections(meeting: { direction?: string | null; summary_
 }
 
 /**
- * Which way a piece of text runs, by the letters most of it is written in.
+ * Which way a piece of text runs.
  *
- * Not the first letter, which is what `dir="auto"` goes by: a Hebrew action item that
- * opens with a product name ("PR חדש לתיקון הבאג") is a Hebrew sentence, and laid out
- * left to right it reads backwards. Letters from right-to-left scripts against all
- * other letters; digits, punctuation and marks do not count. A tie goes to the first
- * letter, and text with no letters at all runs left to right.
+ * Not by its first letter, which is what `dir="auto"` goes by: a Hebrew action item
+ * that opens with a product name ("PR חדש לתיקון הבאג") is a Hebrew sentence. Nor by
+ * counting letters, where long English names outweigh short Hebrew words
+ * ("לעדכן את ה-README ב-GitHub").
+ *
+ * Inside a right-to-left block (`lean`), any right-to-left word makes it a
+ * right-to-left sentence: Hebrew written with English terms in it is the everyday
+ * case there. Elsewhere, words (runs of letters) from right-to-left scripts against
+ * the others; digits, punctuation and symbols do not count, a tie goes to the first
+ * word, and text with no letters at all runs left to right.
  */
 const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
-const LETTER = /\p{L}/u;
+const WORD = /\p{L}+/gu;
 
-export function directionOf(text: string): Direction {
+export function directionOf(text: string, lean?: Direction): Direction {
   let rtl = 0;
   let ltr = 0;
   let first: Direction | null = null;
-  for (const char of text) {
-    if (!LETTER.test(char)) continue;
-    const here: Direction = RTL_LETTER.test(char) ? "rtl" : "ltr";
+  for (const [word] of text.matchAll(WORD)) {
+    const here: Direction = RTL_LETTER.test(word) ? "rtl" : "ltr";
+    if (here === "rtl" && lean === "rtl") return "rtl";
     first ??= here;
     if (here === "rtl") rtl += 1;
     else ltr += 1;
