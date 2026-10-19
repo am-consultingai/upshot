@@ -21,19 +21,28 @@ export function meetingDirections(meeting: { direction?: string | null; summary_
 }
 
 /**
- * Which way a piece of text runs, from its first strongly directional letter — what
- * `dir="auto"` decides, for an element whose text is inside a `<bdi>` (which
- * `dir="auto"` skips). Hebrew, Arabic and the other right-to-left scripts run right to
- * left; anything else, and text with no letters at all, left to right.
+ * Which way a piece of text runs, by the letters most of it is written in.
+ *
+ * Not the first letter, which is what `dir="auto"` goes by: a Hebrew action item that
+ * opens with a product name ("PR חדש לתיקון הבאג") is a Hebrew sentence, and laid out
+ * left to right it reads backwards. Letters from right-to-left scripts against all
+ * other letters; digits, punctuation and marks do not count. A tie goes to the first
+ * letter, and text with no letters at all runs left to right.
  */
-const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u;
-const LTR_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/u;
+const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
+const LETTER = /\p{L}/u;
 
 export function directionOf(text: string): Direction {
+  let rtl = 0;
+  let ltr = 0;
+  let first: Direction | null = null;
   for (const char of text) {
-    if (RTL_LETTER.test(char)) return "rtl";
-    if (LTR_LETTER.test(char)) return "ltr";
+    if (!LETTER.test(char)) continue;
+    const here: Direction = RTL_LETTER.test(char) ? "rtl" : "ltr";
+    first ??= here;
+    if (here === "rtl") rtl += 1;
+    else ltr += 1;
   }
-  return "ltr";
+  if (rtl === ltr) return first ?? "ltr";
+  return rtl > ltr ? "rtl" : "ltr";
 }
-
