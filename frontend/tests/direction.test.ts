@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { meetingDirections, textDirection } from "../src/lib/direction";
+import { directionOf, meetingDirections, textDirection } from "../src/lib/direction";
 
 describe("text direction comes from the API", () => {
   it("is rtl only when the API says so", () => {
@@ -21,3 +21,22 @@ describe("text direction comes from the API", () => {
     expect(meetingDirections(undefined)).toEqual({ summary: "ltr", transcript: "ltr" });
   });
 });
+
+describe("a piece of text runs the way its first letter does", () => {
+  it("Hebrew and Arabic run right to left, even when English comes later", () => {
+    expect(directionOf("לשלוח את הסיכום ל-Slack")).toBe("rtl");
+    expect(directionOf("إرسال الملخص")).toBe("rtl");
+  });
+
+  it("English runs left to right, even when Hebrew comes later", () => {
+    expect(directionOf("Call Dana.")).toBe("ltr");
+    expect(directionOf("Send דנה the notes")).toBe("ltr");
+  });
+
+  it("numbers and punctuation do not decide; nothing at all is left to right", () => {
+    expect(directionOf("3. לשלוח")).toBe("rtl");
+    expect(directionOf("— 42")).toBe("ltr");
+    expect(directionOf("")).toBe("ltr");
+  });
+});
+
