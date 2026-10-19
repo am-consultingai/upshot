@@ -639,7 +639,8 @@ export default function MeetingPage() {
               <h1
                 className="display min-w-0 max-w-full cursor-text truncate text-[1.5rem] leading-tight"
                 data-testid="meeting-title"
-                title={t("meeting.rename")}
+                // One line now: the whole title on hover. Renaming is a double-click or the ⋯ menu.
+                title={meeting.data.title ?? id}
                 onDoubleClick={() => setDraft(meeting.data?.title ?? "")}
               >
                 {rename.isPending ? rename.variables : (meeting.data.title ?? id)}

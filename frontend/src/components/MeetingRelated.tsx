@@ -36,7 +36,13 @@ export default function MeetingRelated({
   if (others.length === 0 && !transcribed) return null;
 
   return (
-    <div data-testid="meeting-related" className="mb-12 grid gap-8 border-t border-line-subtle pt-6 lg:grid-cols-2">
+    <div
+      data-testid="meeting-related"
+      // Two columns only when there are two things: alone, the box takes the width.
+      className={`mb-12 grid gap-8 border-t border-line-subtle pt-6 ${
+        others.length > 0 && transcribed ? "lg:grid-cols-2" : ""
+      }`}
+    >
       {others.length > 0 && (
         <section data-testid="related-meetings">
           <Tooltip label={t("meeting.relatedMeetings")} hint={t("help.related")}>

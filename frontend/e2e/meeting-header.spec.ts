@@ -261,3 +261,75 @@ test("renaming_from_the_keyboard_keeps_focus_on_the_name", async ({ page, seed }
   await expect(name).toBeFocused();
   await expect(name).toHaveText("Dana Levi");
 });
+
+test("a_press_from_the_keyboard_or_a_screen_reader_opens_the_name_but_a_click_does_not", async ({ page, seed }) => {
+  await seed([
+    { id: "e2e-press", title: "Vendor call", state: "RENDERED", started_at: isoAt(0, 10), turns: turns(["ME", "THEM_1"], 4) },
+  ]);
+  await gotoApp(page, "/m/e2e-press");
+  const name = page.locator("[data-testid=talk-share][data-slot=THEM_1] [data-testid=speaker-name]");
+  const input = page.getByTestId("speaker-name-input");
+
+  // A single mouse click is not a rename: that is a double-click.
+  await name.click();
+  await expect(input).toHaveCount(0);
+
+  // Space presses the button, as a screen reader's click does (a click with no detail).
+  await name.focus();
+  await page.keyboard.press("Space");
+  await expect(input).toBeFocused();
+  await input.press("Escape");
+  await name.evaluate((node) => node.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+  await expect(input).toBeFocused();
+});
+
+test("a_failed_rename_puts_the_old_name_back_everywhere", async ({ page, seed }) => {
+  await seed([
+    { id: "e2e-fail", title: "Vendor call", state: "RENDERED", started_at: isoAt(0, 10), turns: turns(["ME", "THEM_1"], 6) },
+  ]);
+  await page.route("**/api/meetings/e2e-fail", (route) =>
+    route.request().method() === "PATCH" ? route.fulfill({ status: 500, body: "{}" }) : route.continue(),
+  );
+  await gotoApp(page, "/m/e2e-fail");
+  await page.getByTestId("meeting-tab-transcript").click();
+  const names = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_1]");
+  await names.first().dblclick();
+  await page.getByTestId("speaker-name-input").fill("Dana Levi");
+  await saveName(page, "e2e-fail");
+  for (const index of [0, 1, 2]) await expect(names.nth(index)).toHaveText("Speaker 1");
+  await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Speaker 1");
+  await expect(page.getByTestId("toast").first()).toBeVisible();
+});
+
+test("a_long_title_stays_on_one_line_and_shows_whole_on_hover", async ({ page, seed }) => {
+  const long = "Quarterly planning with the infrastructure, data and platform teams about the migration";
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await seed([{ id: "e2e-long", title: long, state: "RENDERED", started_at: isoAt(0, 10) }]);
+  await gotoApp(page, "/m/e2e-long");
+  await expect(page.getByTestId("meeting-title")).toHaveAttribute("title", long);
+});
+
+test("a_row_menu_in_a_hebrew_block_opens_toward_the_page_under_an_english_interface", async ({ page, seed }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await seed([
+    {
+      id: "e2e-rtl-menu",
+      title: "פגישת צוות",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      language: "he",
+      summary_html: SUMMARY_HE,
+      turns: [{ speaker: "THEM", at_ms: 1000, text: "בוקר טוב" }],
+      action_items: [{ who: "ME", what: "לשלוח את הסיכום ל-Slack" }],
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-rtl-menu");
+  const row = page.getByTestId("meeting-actions").getByTestId("action-item").first();
+  await row.hover();
+  const trigger = await row.getByTestId("action-menu").boundingBox();
+  await row.getByTestId("action-menu").click();
+  // The trigger is at the row's left end, so the menu grows rightward from it, into the
+  // row — not leftward over the sidebar, clamped to the window's edge.
+  const menu = await page.getByTestId("overflow-menu").boundingBox();
+  expect(Math.abs((menu?.x ?? 0) - (trigger?.x ?? 0))).toBeLessThan(12);
+});

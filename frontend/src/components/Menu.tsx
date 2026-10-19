@@ -38,6 +38,12 @@ export interface MenuAnchor {
   y: number;
   /** "end" puts the menu's inline-end edge at x — under a trailing trigger. */
   align: "start" | "end";
+  /**
+   * Which way the trigger's own text runs, when it is known. A right-to-left block
+   * under an English interface (Hebrew action items) has its trailing trigger on the
+   * left, and the menu has to grow from there, not from the page's direction.
+   */
+  rtl?: boolean;
 }
 
 const WIDTH = 196;
@@ -65,7 +71,7 @@ export function MenuSurface({
   useLayoutEffect(() => {
     const node = surface.current;
     const height = node?.offsetHeight ?? 0;
-    const rtl = document.documentElement.dir === "rtl";
+    const rtl = at.rtl ?? document.documentElement.dir === "rtl";
     const growsLeft = (at.align === "end") !== rtl;
     let left = growsLeft ? at.x - WIDTH : at.x;
     left = Math.max(8, Math.min(left, window.innerWidth - WIDTH - 8));
@@ -185,8 +191,8 @@ export default function Menu({
   const openAtTrigger = () => {
     const rect = button.current?.getBoundingClientRect();
     if (!rect) return;
-    const rtl = document.documentElement.dir === "rtl";
-    setAt({ x: rtl ? rect.left : rect.right, y: rect.bottom + 4, align: "end" });
+    const rtl = getComputedStyle(button.current as HTMLButtonElement).direction === "rtl";
+    setAt({ x: rtl ? rect.left : rect.right, y: rect.bottom + 4, align: "end", rtl });
   };
 
   return (
