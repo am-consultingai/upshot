@@ -234,7 +234,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   await expect(row.getByTestId("action-what")).toHaveCSS("direction", "rtl");
   // Mixed text in reading order: "Slack" ends the Hebrew sentence, so it is drawn at its left end.
   const [first, slack] = await row.getByTestId("action-what").evaluate((node) => {
-    const text = node.firstChild as Text;
+    const text = node.querySelector("bdi")?.firstChild as Text;
     const at = (word: string) => {
       const range = document.createRange();
       const start = text.data.indexOf(word);
@@ -250,7 +250,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   // on the right — while the row stays right to left, its text right-aligned.
   const english = block.getByTestId("action-item").filter({ hasText: "Call Dana." });
   const [call, stop, right, edge] = await english.getByTestId("action-what").evaluate((node) => {
-    const text = node.firstChild as Text;
+    const text = node.querySelector("bdi")?.firstChild as Text;
     const at = (start: number, end: number) => {
       const range = document.createRange();
       range.setStart(text, start);

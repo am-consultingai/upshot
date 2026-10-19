@@ -19,3 +19,21 @@ export function meetingDirections(meeting: { direction?: string | null; summary_
     transcript: textDirection(meeting?.direction),
   };
 }
+
+/**
+ * Which way a piece of text runs, from its first strongly directional letter — what
+ * `dir="auto"` decides, for an element whose text is inside a `<bdi>` (which
+ * `dir="auto"` skips). Hebrew, Arabic and the other right-to-left scripts run right to
+ * left; anything else, and text with no letters at all, left to right.
+ */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/u;
+const LTR_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/u;
+
+export function directionOf(text: string): Direction {
+  for (const char of text) {
+    if (RTL_LETTER.test(char)) return "rtl";
+    if (LTR_LETTER.test(char)) return "ltr";
+  }
+  return "ltr";
+}
+
