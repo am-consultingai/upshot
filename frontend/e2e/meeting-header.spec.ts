@@ -410,6 +410,7 @@ test("a_saved_rename_stays_on_screen_through_a_poll_and_another_pending_rename",
 });
 
 test("two_failed_renames_of_one_speaker_leave_neither_name_while_another_is_pending", async ({ page, seed }) => {
+  test.setTimeout(45_000);
   await seed([
     {
       id: "e2e-twice",
@@ -447,10 +448,16 @@ test("two_failed_renames_of_one_speaker_leave_neither_name_while_another_is_pend
   await rename(first, "Y");
   await rename(second, "Z");
 
+  // Just after a poll, so the next one is about 8 seconds off and cannot be what puts
+  // things right: only the refetch the failures start can.
+  await page.waitForResponse(
+    (response) => response.url().endsWith("/api/meetings/e2e-twice") && response.request().method() === "GET",
+    { timeout: 12_000 },
+  );
   // Both of THEM_1's renames fail while THEM_2's is still held: the original comes back.
   gates.X();
   gates.Y();
-  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Speaker 1");
+  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Speaker 1", { timeout: 2_500 });
   for (const index of [0, 1, 2]) await expect(second.nth(index)).toHaveText("Z");
   gates.Z();
 });
