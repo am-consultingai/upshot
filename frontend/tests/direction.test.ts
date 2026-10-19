@@ -22,20 +22,28 @@ describe("text direction comes from the API", () => {
   });
 });
 
-describe("a piece of text runs the way most of its letters do", () => {
-  it("Hebrew and Arabic run right to left, also when they open with an English word", () => {
+describe("a piece of text runs the way its words do", () => {
+  it("Hebrew with English terms in it is a Hebrew sentence", () => {
     expect(directionOf("לשלוח את הסיכום ל-Slack")).toBe("rtl");
     expect(directionOf("PR חדש לתיקון הבאג")).toBe("rtl");
     expect(directionOf("Slack: לשלוח את הסיכום לצוות")).toBe("rtl");
+    expect(directionOf("לעדכן את ה-README ב-GitHub")).toBe("rtl");
+    expect(directionOf("לבדוק את ה-Dashboard ב-Grafana")).toBe("rtl");
+    expect(directionOf("לשלוח ל-Microsoft את ה-NDA")).toBe("rtl");
     expect(directionOf("إرسال الملخص")).toBe("rtl");
   });
 
   it("English and other left-to-right scripts run left to right, also around a Hebrew name", () => {
     expect(directionOf("Call Dana.")).toBe("ltr");
     expect(directionOf("Send דנה the notes")).toBe("ltr");
-    expect(directionOf("会议纪要 עם")).toBe("ltr");
-    expect(directionOf("会议 עם דנה")).toBe("rtl");
+    expect(directionOf("会议纪要 notes עם")).toBe("ltr");
     expect(directionOf("बैठक के नोट्स")).toBe("ltr");
+  });
+
+  it("inside a right-to-left block, any right-to-left word decides", () => {
+    expect(directionOf("PR ל-GitHub Actions", "rtl")).toBe("rtl");
+    expect(directionOf("PR ל-GitHub Actions")).toBe("ltr");
+    expect(directionOf("Call Dana.", "rtl")).toBe("ltr");
   });
 
   it("digits, punctuation and symbols do not count; nothing at all is left to right", () => {
@@ -45,7 +53,7 @@ describe("a piece of text runs the way most of its letters do", () => {
     expect(directionOf("")).toBe("ltr");
   });
 
-  it("a tie goes to the first letter", () => {
+  it("a tie goes to the first word", () => {
     expect(directionOf("ab אב")).toBe("ltr");
     expect(directionOf("אב ab")).toBe("rtl");
   });
