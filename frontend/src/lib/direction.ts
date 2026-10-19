@@ -30,12 +30,16 @@ export function meetingDirections(meeting: { direction?: string | null; summary_
  *
  * A text that opens with a right-to-left word is a right-to-left sentence, however
  * many English names follow ("להגדיר Google Analytics"): an English sentence does not
- * open with a Hebrew word. Inside a right-to-left block (`lean`), any right-to-left
- * word is enough — Hebrew written with English terms in it is the everyday case there.
- * Otherwise, words (runs of letters) from right-to-left scripts against the others;
- * digits, punctuation and symbols do not count, a tie goes to the first word, and
- * text with no letters at all runs left to right.
+ * open with a Hebrew word. Otherwise, words (runs of letters) from right-to-left
+ * scripts against the others; digits, punctuation and symbols do not count, and text
+ * with no letters at all runs left to right.
+ *
+ * Inside a right-to-left block (`lean`) a tie goes to the block, and so does a Hebrew
+ * one-letter prefix hyphenated to a word ("ל-GitHub", "ה-README"), which only a Hebrew
+ * sentence has: "PR ל-GitHub Actions" there is Hebrew, "Send דנה the notes" is still
+ * English. Elsewhere a tie goes to the first word.
  */
+const HEBREW_PREFIX = /(^|[^\p{L}])\p{Script=Hebrew}-\S/u;
 const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
 const WORD = /\p{L}+/gu;
 
@@ -45,11 +49,12 @@ export function directionOf(text: string, lean?: Direction): Direction {
   let first: Direction | null = null;
   for (const [word] of text.matchAll(WORD)) {
     const here: Direction = RTL_LETTER.test(word) ? "rtl" : "ltr";
-    if (here === "rtl" && (lean === "rtl" || first === null)) return "rtl";
+    if (here === "rtl" && first === null) return "rtl";
     first ??= here;
     if (here === "rtl") rtl += 1;
     else ltr += 1;
   }
-  if (rtl === ltr) return first ?? "ltr";
+  if (lean === "rtl" && HEBREW_PREFIX.test(text)) return "rtl";
+  if (rtl === ltr) return lean ?? first ?? "ltr";
   return rtl > ltr ? "rtl" : "ltr";
 }
