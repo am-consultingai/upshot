@@ -6,7 +6,18 @@
  * named only from that rail, and action items ran left to right under a Hebrew
  * summary. Each test here is one of those coming back.
  */
+import type { Page } from "@playwright/test";
 import { expect, gotoApp, isoAt, test } from "./fixtures";
+
+/** Press Enter in the name field and wait for the server to have the name, not just the screen. */
+async function saveName(page: Page, id: string) {
+  await Promise.all([
+    page.waitForResponse(
+      (response) => response.url().endsWith(`/api/meetings/${id}`) && response.request().method() === "PATCH",
+    ),
+    page.getByTestId("speaker-name-input").press("Enter"),
+  ]);
+}
 
 const LONG_SUMMARY = `<html><body><h2>Overview</h2>${"<p>The team went through the migration plan, step by step, and agreed on the order.</p>".repeat(40)}</body></html>`;
 const SUMMARY_HE = `<html dir="rtl" lang="he"><body><h2>סקירה</h2><p>הצוות דן בהעברה ל-Kubernetes.</p></body></html>`;
@@ -39,14 +50,17 @@ test("the_header_and_the_pills_stay_put_while_the_summary_scrolls", async ({ pag
   const before = await tabs.boundingBox();
 
   const scroller = page.locator("[data-meeting-scroller]");
+  const titleBefore = await title.boundingBox();
   await scroller.evaluate((node) => (node.scrollTop = node.scrollHeight));
-  await expect(title).toBeInViewport();
+  expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(300);
+  expect((await title.boundingBox())?.y).toBe(titleBefore?.y);
   expect((await tabs.boundingBox())?.y).toBe(before?.y);
 
   // The transcript too, under the same header.
   await page.getByTestId("meeting-tab-transcript").click();
   await scroller.evaluate((node) => (node.scrollTop = node.scrollHeight));
-  await expect(title).toBeInViewport();
+  expect(await scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(300);
+  expect((await title.boundingBox())?.y).toBe(titleBefore?.y);
   expect((await tabs.boundingBox())?.y).toBe(before?.y);
 });
 
@@ -145,7 +159,7 @@ test("double_clicking_a_name_in_the_transcript_renames_that_speaker_everywhere",
   // Enter saves, on every line and in the header at once.
   await names.nth(2).dblclick();
   await page.getByTestId("speaker-name-input").fill("Dana Levi");
-  await page.getByTestId("speaker-name-input").press("Enter");
+  await saveName(page, "e2e-name");
   for (const index of [0, 1, 2]) await expect(names.nth(index)).toHaveText("Dana Levi");
   await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Dana Levi");
 
@@ -157,7 +171,7 @@ test("double_clicking_a_name_in_the_transcript_renames_that_speaker_everywhere",
   // And a rename in the header reaches the transcript.
   await page.locator("[data-testid=talk-share][data-slot=THEM_2] [data-testid=speaker-name]").dblclick();
   await page.getByTestId("speaker-name-input").fill("Yoni Bar");
-  await page.getByTestId("speaker-name-input").press("Enter");
+  await saveName(page, "e2e-name");
   await expect(
     page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_2]").first(),
   ).toHaveText("Yoni Bar");
@@ -182,8 +196,12 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
   const block = page.getByTestId("meeting-actions");
   await expect(block).toHaveAttribute("dir", "rtl");
-  // The interface's words keep their own order inside the mirrored header.
+  // The interface's words keep their own order inside the mirrored header, and the
+  // header mirrors: "+ Add" at the left end, the count beside the title on the right.
   await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 1 done");
+  const add = await page.getByTestId("meeting-actions-add").boundingBox();
+  const progress = await page.getByTestId("meeting-actions-progress").boundingBox();
+  expect(add?.x ?? 999).toBeLessThan(progress?.x ?? 0);
 
   const row = block.getByTestId("action-item").first();
   const tick = await row.getByTestId("action-toggle").boundingBox();
@@ -193,9 +211,53 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   expect(tick?.x ?? 0).toBeGreaterThan(what?.x ?? 0);
   expect(owner?.x ?? 999).toBeLessThan(what?.x ?? 0);
   await expect(row.getByTestId("action-what")).toHaveCSS("direction", "rtl");
+  // Mixed text in reading order: "Slack" ends the Hebrew sentence, so it is drawn at its left end.
+  const [first, slack] = await row.getByTestId("action-what").evaluate((node) => {
+    const text = node.firstChild as Text;
+    const at = (word: string) => {
+      const range = document.createRange();
+      const start = text.data.indexOf(word);
+      range.setStart(text, start);
+      range.setEnd(text, start + word.length);
+      return range.getBoundingClientRect().x;
+    };
+    return [at("לשלוח"), at("Slack")];
+  });
+  expect(slack).toBeLessThan(first);
 
   // In the inbox the row follows its own words.
   await gotoApp(page, "/actions");
   const inbox = page.getByTestId("action-item").filter({ hasText: "לשלוח את הסיכום" });
   await expect(inbox.getByTestId("action-what")).toHaveCSS("direction", "rtl");
+});
+
+test("renaming_from_the_keyboard_keeps_focus_on_the_name", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-keys",
+      title: "Vendor call",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: turns(["ME", "THEM_1"], 4),
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-keys");
+  const name = page.locator("[data-testid=talk-share][data-slot=THEM_1] [data-testid=speaker-name]");
+  const input = page.getByTestId("speaker-name-input");
+
+  // Escape cancels and gives focus back to the name, not to the meeting list.
+  await name.focus();
+  await page.keyboard.press("F2");
+  await input.fill("Not this");
+  await input.press("Escape");
+  await expect(name).toBeFocused();
+  await expect(name).toHaveText("Speaker 1");
+
+  // Enter saves and gives focus back too. A name is at most what the server keeps.
+  await page.keyboard.press("Enter");
+  await expect(input).toHaveAttribute("maxlength", "80");
+  await input.fill("Dana Levi");
+  await saveName(page, "e2e-keys");
+  await expect(name).toBeFocused();
+  await expect(name).toHaveText("Dana Levi");
 });

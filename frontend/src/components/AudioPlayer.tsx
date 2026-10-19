@@ -223,7 +223,7 @@ const AudioPlayer = forwardRef<AudioPlayerHandle, {
         {clock(at)} / {clock(total)}
       </span>
 
-      <Tooltip label={t("meeting.railSpeakers")} hint={t("help.waveform")} side="top">
+      <Tooltip label={t("meeting.speakers")} hint={t("help.waveform")} side="top">
       <div className="relative min-w-0 flex-1">
         {bands.length > 0 && total > 0 && (
           <div
