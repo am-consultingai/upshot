@@ -1,9 +1,39 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useMutationState, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type MeetingDetail } from "../api";
 import { useI18n } from "../i18n";
 import type { Speaker } from "../lib/speakers";
 import { toast } from "./Toaster";
+
+/** Collapses runs of whitespace, as the server does; empty means "no name". */
+function cleanName(name: string): string {
+  return name.split(/\s+/).filter(Boolean).join(" ");
+}
+
+function renameKey(meetingId: string) {
+  return ["rename-speaker", meetingId];
+}
+
+/**
+ * The meeting's speaker names with every rename still on its way to the server laid
+ * over them. The page polls the meeting, and a poll answered before a rename is stored
+ * would otherwise put the old name back on screen until the rename settled.
+ */
+export function useSpeakerNames(meetingId: string, saved: Record<string, string>): Record<string, string> {
+  const pending = useMutationState({
+    filters: { mutationKey: renameKey(meetingId), status: "pending" },
+    select: (mutation) => mutation.state.variables as { slot: string; name: string } | undefined,
+  });
+  if (pending.length === 0) return saved;
+  const names = { ...saved };
+  for (const rename of pending) {
+    if (!rename) continue;
+    const clean = cleanName(rename.name);
+    if (clean) names[rename.slot] = clean;
+    else delete names[rename.slot];
+  }
+  return names;
+}
 
 /**
  * Name a speaker slot on this meeting, everywhere at once.
@@ -16,7 +46,7 @@ import { toast } from "./Toaster";
 export function useSpeakerRename(meetingId: string) {
   const queryClient = useQueryClient();
   const key = ["meeting", meetingId];
-  const mutationKey = ["rename-speaker", meetingId];
+  const mutationKey = renameKey(meetingId);
   return useMutation({
     mutationKey,
     mutationFn: ({ slot, name }: { slot: string; name: string }) =>
@@ -27,7 +57,7 @@ export function useSpeakerRename(meetingId: string) {
       queryClient.setQueryData(key, (old: MeetingDetail | undefined) => {
         if (!old) return old;
         const names = { ...(old.speaker_names ?? {}) };
-        const clean = name.split(/\s+/).filter(Boolean).join(" ");
+        const clean = cleanName(name);
         if (clean) names[slot] = clean;
         else delete names[slot];
         return { ...old, speaker_names: names };
