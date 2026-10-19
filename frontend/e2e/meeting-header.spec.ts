@@ -140,6 +140,8 @@ test("more_than_three_speakers_scroll_sideways_in_one_row", async ({ page, seed 
   expect(box?.width ?? 0).toBeGreaterThanOrEqual((chip?.width ?? 0) * 3);
   const overflows = await row.evaluate((node) => node.scrollWidth > node.clientWidth);
   expect(overflows).toBe(true);
+  // Each chip's outline is drawn inside it: the scrolling row clips anything outside.
+  await expect(row.getByTestId("talk-share").first()).toHaveCSS("box-shadow", /inset/);
 });
 
 test("double_clicking_a_name_in_the_transcript_renames_that_speaker_everywhere", async ({ page, seed }) => {
