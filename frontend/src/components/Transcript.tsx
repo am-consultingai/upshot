@@ -3,6 +3,7 @@ import { useI18n } from "../i18n";
 import { isMicSlot, stamp, type Segment, type Speaker } from "../lib/speakers";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 import { Icon } from "./Icon";
+import { SpeakerName } from "./MeetingSpeakers";
 
 /** Where each match is: which segment, and where in its text. */
 interface Match {
@@ -66,8 +67,13 @@ const Transcript = forwardRef<
     /** The reader scrolled the transcript themselves. */
     onUnfollow?: () => void;
     onSeek: (seconds: number) => void;
+    /** Name a speaker slot; double-clicking a name on any turn offers it. */
+    onRenameSpeaker?: (slot: string, name: string) => void;
   }
->(function Transcript({ segments, people, dir, speaking, following = false, onUnfollow, onSeek }, findRef) {
+>(function Transcript(
+  { segments, people, dir, speaking, following = false, onUnfollow, onSeek, onRenameSpeaker },
+  findRef,
+) {
   const { t } = useI18n();
   const [find, setFind] = useState("");
   const [current, setCurrent] = useState(0);
@@ -249,7 +255,11 @@ const Transcript = forwardRef<
                   >
                     {person?.initials ?? "?"}
                   </span>
-                  <bdi>{person?.name ?? segment.speaker}</bdi>
+                  {person && onRenameSpeaker ? (
+                    <SpeakerName person={person} onRename={onRenameSpeaker} className="cursor-text" />
+                  ) : (
+                    <bdi>{person?.name ?? segment.speaker}</bdi>
+                  )}
                 </span>
               )}
               <p
