@@ -248,11 +248,11 @@ export default function ActionItemRow({
           }`}
         >
           {/*
-           * Isolated, so each text orders itself by its own words — an English item in a
-           * Hebrew block keeps its full stop at the end — while the row's direction still
-           * aligns it.
+           * Isolated in its own direction, so it reads in its own order — an English item
+           * in a Hebrew block keeps its full stop at the end, a Hebrew one that opens with
+           * "PR" stays a Hebrew sentence — while the row's direction still aligns it.
            */}
-          <bdi>{item.what}</bdi>
+          <bdi dir={directionOf(item.what)}>{item.what}</bdi>
         </span>
         {(showMeeting || item.detail) && (
           <span data-testid="action-provenance" className="mt-0.5 block text-sm text-tertiary">
@@ -273,7 +273,7 @@ export default function ActionItemRow({
             {showMeeting && item.detail && " — "}
             {item.detail && (
               <span data-testid="action-detail">
-                <bdi>{item.detail}</bdi>
+                <bdi dir={directionOf(item.detail)}>{item.detail}</bdi>
               </span>
             )}
           </span>
