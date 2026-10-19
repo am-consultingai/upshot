@@ -16,7 +16,9 @@ import { toast } from "./Toaster";
 export function useSpeakerRename(meetingId: string) {
   const queryClient = useQueryClient();
   const key = ["meeting", meetingId];
+  const mutationKey = ["rename-speaker", meetingId];
   return useMutation({
+    mutationKey,
     mutationFn: ({ slot, name }: { slot: string; name: string }) =>
       api.patchMeeting(meetingId, { speaker_names: { [slot]: name || null } }),
     onMutate: async ({ slot, name }) => {
@@ -45,6 +47,9 @@ export function useSpeakerRename(meetingId: string) {
       toast({ title: reason(error), tone: "danger" });
     },
     onSettled: () => {
+      // The last rename in flight refetches: an earlier one's fresh copy of the meeting
+      // would not have a later name yet, and would flash the old one back.
+      if (queryClient.isMutating({ mutationKey }) > 1) return;
       void queryClient.invalidateQueries({ queryKey: key });
       // Search hits carry the name a slot was given.
       void queryClient.invalidateQueries({ queryKey: ["search"] });

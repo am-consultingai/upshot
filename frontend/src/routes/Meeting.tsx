@@ -633,7 +633,7 @@ export default function MeetingPage() {
        * space comes from putting things side by side, not from smaller type.
        */}
       <header data-testid="meeting-header" className="flex-none border-b border-line-subtle px-8 pt-3 pb-2.5">
-        <div className="max-w-[72rem]">
+        <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             {draft === null ? (
               <h1
@@ -719,13 +719,13 @@ export default function MeetingPage() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div ref={setScroller} data-meeting-scroller className="min-w-0 flex-1 overflow-y-auto">
           {/*
-           * The width of the pane, up to a cap for very wide windows. This used to be a
-           * 37rem reading measure beside a rail, and below the widest windows the rail
-           * hid and left its column empty; the summary and the transcript get that room
-           * now. The minimap sits in the margin beside the column.
+           * The width of the pane. This used to be a 37rem reading measure beside a rail,
+           * and below the widest windows the rail hid and left its column empty; any cap
+           * leaves that same empty strip on a wide enough window, so the summary and the
+           * transcript take the pane. The minimap sits in the margin beside the column.
            */}
           <div className="flex gap-6 px-8 pt-5">
-            <div className="w-full min-w-0 max-w-[72rem]">
+            <div className="w-full min-w-0 flex-1">
               {meeting.data.description && (
                 <p
                   data-testid="meeting-description"
@@ -1094,7 +1094,7 @@ function MeetingSkeleton() {
         <Skeleton className="mt-2 h-7 w-44 rounded-md" />
       </div>
       <div className="px-8 pt-5">
-        <div className="w-full max-w-[72rem]">
+        <div className="w-full">
           <SkeletonProse lines={4} className="mb-6" />
           <SkeletonProse lines={5} />
         </div>

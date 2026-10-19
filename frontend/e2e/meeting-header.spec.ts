@@ -93,8 +93,9 @@ test("the_header_is_compact_without_smaller_type", async ({ page, seed }) => {
   expect(smallest).toBeGreaterThanOrEqual(12);
 });
 
-test("no_rail_the_summary_takes_its_width", async ({ page, seed }) => {
-  await page.setViewportSize({ width: 1440, height: 800 });
+test("no_rail_the_summary_and_the_transcript_take_the_pane", async ({ page, seed }) => {
+  // A maximised wide window: any cap on the column would leave an empty strip here.
+  await page.setViewportSize({ width: 1920, height: 900 });
   await seed([
     {
       id: "e2e-wide",
@@ -108,8 +109,13 @@ test("no_rail_the_summary_takes_its_width", async ({ page, seed }) => {
   await gotoApp(page, "/m/e2e-wide");
   await expect(page.getByTestId("summary-html")).toBeVisible();
   await expect(page.getByTestId("meeting-rail")).toHaveCount(0);
-  // Wider than the old 37rem reading column.
-  expect((await page.getByTestId("summary-html").boundingBox())?.width ?? 0).toBeGreaterThan(700);
+  const scroller = page.locator("[data-meeting-scroller]");
+  // The pane less its 2rem of padding each side (one section, so no minimap beside it).
+  const room = (await scroller.evaluate((node) => node.clientWidth)) - 64;
+  expect(Math.abs(((await page.getByTestId("summary-html").boundingBox())?.width ?? 0) - room)).toBeLessThan(4);
+
+  await page.getByTestId("meeting-tab-transcript").click();
+  expect(Math.abs(((await page.getByTestId("transcript").boundingBox())?.width ?? 0) - room)).toBeLessThan(4);
 });
 
 test("more_than_three_speakers_scroll_sideways_in_one_row", async ({ page, seed }) => {
@@ -283,22 +289,49 @@ test("a_press_from_the_keyboard_or_a_screen_reader_opens_the_name_but_a_click_do
   await expect(input).toBeFocused();
 });
 
-test("a_failed_rename_puts_the_old_name_back_everywhere", async ({ page, seed }) => {
+test("a_failed_rename_puts_only_its_own_old_name_back", async ({ page, seed }) => {
   await seed([
-    { id: "e2e-fail", title: "Vendor call", state: "RENDERED", started_at: isoAt(0, 10), turns: turns(["ME", "THEM_1"], 6) },
+    {
+      id: "e2e-fail",
+      title: "Vendor call",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: turns(["ME", "THEM_1", "THEM_2"], 9),
+    },
   ]);
-  await page.route("**/api/meetings/e2e-fail", (route) =>
-    route.request().method() === "PATCH" ? route.fulfill({ status: 500, body: "{}" }) : route.continue(),
-  );
+  // THEM_1's rename is held, then refused; THEM_2's goes through meanwhile.
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/meetings/e2e-fail", async (route) => {
+    if (route.request().method() !== "PATCH" || !route.request().postData()?.includes("THEM_1")) {
+      await route.continue();
+      return;
+    }
+    await held;
+    await route.fulfill({ status: 500, body: "{}" });
+  });
   await gotoApp(page, "/m/e2e-fail");
   await page.getByTestId("meeting-tab-transcript").click();
-  const names = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_1]");
-  await names.first().dblclick();
+  const first = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_1]");
+  const second = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_2]");
+
+  await first.first().dblclick();
   await page.getByTestId("speaker-name-input").fill("Dana Levi");
+  await page.getByTestId("speaker-name-input").press("Enter");
+  // Shown everywhere before the server has answered.
+  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Dana Levi");
+  await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Dana Levi");
+
+  await second.first().dblclick();
+  await page.getByTestId("speaker-name-input").fill("Yoni Bar");
   await saveName(page, "e2e-fail");
-  for (const index of [0, 1, 2]) await expect(names.nth(index)).toHaveText("Speaker 1");
+
+  // The held one fails: its old name comes back, the other keeps its new one.
+  release();
+  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Speaker 1");
   await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Speaker 1");
   await expect(page.getByTestId("toast").first()).toBeVisible();
+  for (const index of [0, 1, 2]) await expect(second.nth(index)).toHaveText("Yoni Bar");
 });
 
 test("a_long_title_stays_on_one_line_and_shows_whole_on_hover", async ({ page, seed }) => {
