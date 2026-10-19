@@ -304,12 +304,19 @@ test("a_failed_rename_puts_only_its_own_old_name_back", async ({ page, seed }) =
   // THEM_1's rename is held, then refused; THEM_2's goes through meanwhile.
   let release: () => void = () => undefined;
   const held = new Promise<void>((resolve) => (release = resolve));
+  // Once it has failed, the meeting's refetch is held too: the old name must be back
+  // without waiting for it.
+  let holdReads = false;
+  let releaseReads: () => void = () => undefined;
+  const reads = new Promise<void>((resolve) => (releaseReads = resolve));
   await page.route("**/api/meetings/e2e-fail", async (route) => {
+    if (route.request().method() === "GET" && holdReads) await reads;
     if (route.request().method() !== "PATCH" || !route.request().postData()?.includes("THEM_1")) {
       await route.continue();
       return;
     }
     await held;
+    holdReads = true;
     await route.fulfill({ status: 500, body: "{}" });
   });
   await gotoApp(page, "/m/e2e-fail");
@@ -334,12 +341,14 @@ test("a_failed_rename_puts_only_its_own_old_name_back", async ({ page, seed }) =
   await page.getByTestId("speaker-name-input").fill("Yoni Bar");
   await saveName(page, "e2e-fail");
 
-  // The held one fails: its old name comes back, the other keeps its new one.
+  // The held one fails: its old name comes back, the other keeps its new one — before
+  // the meeting is read again.
   release();
+  await expect(page.getByTestId("toast").first()).toBeVisible();
   for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Speaker 1");
   await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Speaker 1");
-  await expect(page.getByTestId("toast").first()).toBeVisible();
   for (const index of [0, 1, 2]) await expect(second.nth(index)).toHaveText("Yoni Bar");
+  releaseReads();
 });
 
 test("a_saved_rename_stays_on_screen_through_a_poll_and_another_pending_rename", async ({ page, seed }) => {
