@@ -44,10 +44,15 @@ describe("a piece of text runs the way its words do", () => {
     expect(directionOf("बैठक के नोट्स")).toBe("ltr");
   });
 
-  it("inside a right-to-left block, any right-to-left word decides", () => {
+  it("inside a right-to-left block, a Hebrew prefix or a tie leans right to left; an English sentence stays English", () => {
     expect(directionOf("PR ל-GitHub Actions", "rtl")).toBe("rtl");
     expect(directionOf("PR ל-GitHub Actions")).toBe("ltr");
+    expect(directionOf("API ב-Grafana Cloud Dashboards", "rtl")).toBe("rtl");
+    expect(directionOf("ab אב", "rtl")).toBe("rtl");
     expect(directionOf("Call Dana.", "rtl")).toBe("ltr");
+    expect(directionOf("Send דנה the notes", "rtl")).toBe("ltr");
+    expect(directionOf("Follow up with משה on the budget", "rtl")).toBe("ltr");
+    expect(directionOf("Book a re-run of the build", "rtl")).toBe("ltr");
   });
 
   it("digits, punctuation and symbols do not count; nothing at all is left to right", () => {

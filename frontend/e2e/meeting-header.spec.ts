@@ -211,6 +211,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
         { who: "ME", what: "לשלוח את הסיכום ל-Slack", detail: "כולל את מדדי ה-TSS" },
         { who: "ME", what: "Call Dana." },
         { who: "ME", what: "PR חדש לתיקון הבאג" },
+        { who: "ME", what: "Send דנה the notes" },
       ],
     },
   ]);
@@ -220,7 +221,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   await expect(block).toHaveAttribute("dir", "rtl");
   // The interface's words keep their own order inside the mirrored header, and the
   // header mirrors: "+ Add" at the left end, the count beside the title on the right.
-  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 3 done");
+  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 4 done");
   const add = await page.getByTestId("meeting-actions-add").boundingBox();
   const progress = await page.getByTestId("meeting-actions-progress").boundingBox();
   expect(add?.x ?? 999).toBeLessThan(progress?.x ?? 0);
@@ -281,6 +282,24 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
       return [at("PR"), at("חדש")];
     });
   expect(pr).toBeGreaterThan(word);
+
+  // And an English item naming someone in Hebrew stays an English sentence, in order.
+  const [send, notes] = await block
+    .getByTestId("action-item")
+    .filter({ hasText: "Send" })
+    .getByTestId("action-what")
+    .evaluate((node) => {
+      const text = node.querySelector("bdi")?.firstChild as Text;
+      const at = (part: string) => {
+        const range = document.createRange();
+        const start = text.data.indexOf(part);
+        range.setStart(text, start);
+        range.setEnd(text, start + part.length);
+        return range.getBoundingClientRect().x;
+      };
+      return [at("Send"), at("notes")];
+    });
+  expect(send).toBeLessThan(notes);
 
   // In the inbox the row follows its own words.
   await gotoApp(page, "/actions");
