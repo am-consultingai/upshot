@@ -77,7 +77,7 @@ export function useSpeakerRename(meetingId: string) {
       setSlot(slot, context?.previous?.speaker_names?.[slot]);
       toast({ title: reason(error), tone: "danger" });
     },
-    onSettled: async () => {
+    onSettled: async (_saved, error) => {
       // Search hits carry the name a slot was given.
       void queryClient.invalidateQueries({ queryKey: ["search"] });
       // Another rename still in flight: drop any poll on its way, which would not have
@@ -86,8 +86,10 @@ export function useSpeakerRename(meetingId: string) {
         await queryClient.cancelQueries({ queryKey: key });
         return;
       }
-      // Awaited, so the rename stays pending — and on screen — until the fresh copy lands.
-      await queryClient.invalidateQueries({ queryKey: key });
+      const refetch = queryClient.invalidateQueries({ queryKey: key });
+      // A saved rename stays pending — and on screen — until the fresh copy lands. A
+      // failed one does not wait: its slot is already back, and the overlay must let go.
+      if (!error) await refetch;
     },
   });
 }
