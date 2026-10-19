@@ -47,6 +47,15 @@ export function useSpeakerRename(meetingId: string) {
   const queryClient = useQueryClient();
   const key = ["meeting", meetingId];
   const mutationKey = renameKey(meetingId);
+  /** One slot of the cached meeting, set or cleared, the others left as they are. */
+  const setSlot = (slot: string, name: string | undefined) =>
+    queryClient.setQueryData(key, (old: MeetingDetail | undefined) => {
+      if (!old) return old;
+      const names = { ...(old.speaker_names ?? {}) };
+      if (name) names[slot] = name;
+      else delete names[slot];
+      return { ...old, speaker_names: names };
+    });
   return useMutation({
     mutationKey,
     mutationFn: ({ slot, name }: { slot: string; name: string }) =>
@@ -54,35 +63,31 @@ export function useSpeakerRename(meetingId: string) {
     onMutate: async ({ slot, name }) => {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<MeetingDetail>(key);
-      queryClient.setQueryData(key, (old: MeetingDetail | undefined) => {
-        if (!old) return old;
-        const names = { ...(old.speaker_names ?? {}) };
-        const clean = cleanName(name);
-        if (clean) names[slot] = clean;
-        else delete names[slot];
-        return { ...old, speaker_names: names };
-      });
+      setSlot(slot, cleanName(name) || undefined);
       return { previous };
     },
+    /*
+     * The server's answer is the meeting as stored, so its name for this slot goes in
+     * now: a poll answered while the rename was on its way may have put the old one
+     * back, and the pending overlay stops covering the slot once this settles.
+     */
+    onSuccess: (saved, { slot }) => setSlot(slot, saved.speaker_names?.[slot]),
     // Only the failed slot goes back: another rename still in flight keeps its name.
     onError: (error, { slot }, context) => {
-      const was = context?.previous?.speaker_names?.[slot];
-      queryClient.setQueryData(key, (old: MeetingDetail | undefined) => {
-        if (!old) return old;
-        const names = { ...(old.speaker_names ?? {}) };
-        if (was) names[slot] = was;
-        else delete names[slot];
-        return { ...old, speaker_names: names };
-      });
+      setSlot(slot, context?.previous?.speaker_names?.[slot]);
       toast({ title: reason(error), tone: "danger" });
     },
-    onSettled: () => {
-      // The last rename in flight refetches: an earlier one's fresh copy of the meeting
-      // would not have a later name yet, and would flash the old one back.
-      if (queryClient.isMutating({ mutationKey }) > 1) return;
-      void queryClient.invalidateQueries({ queryKey: key });
+    onSettled: async () => {
       // Search hits carry the name a slot was given.
       void queryClient.invalidateQueries({ queryKey: ["search"] });
+      // Another rename still in flight: drop any poll on its way, which would not have
+      // that rename yet; the last one to settle refetches.
+      if (queryClient.isMutating({ mutationKey }) > 1) {
+        await queryClient.cancelQueries({ queryKey: key });
+        return;
+      }
+      // Awaited, so the rename stays pending — and on screen — until the fresh copy lands.
+      await queryClient.invalidateQueries({ queryKey: key });
     },
   });
 }
