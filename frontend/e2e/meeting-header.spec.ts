@@ -137,6 +137,7 @@ test("more_than_three_speakers_scroll_sideways_in_one_row", async ({ page, seed 
   // One row, no taller than a chip, and about three chips wide.
   expect(box?.height ?? 999).toBeLessThanOrEqual((chip?.height ?? 0) + 8);
   expect(box?.width ?? 999).toBeLessThan((chip?.width ?? 0) * 3.5);
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual((chip?.width ?? 0) * 3);
   const overflows = await row.evaluate((node) => node.scrollWidth > node.clientWidth);
   expect(overflows).toBe(true);
 });
@@ -290,6 +291,7 @@ test("a_press_from_the_keyboard_or_a_screen_reader_opens_the_name_but_a_click_do
 });
 
 test("a_failed_rename_puts_only_its_own_old_name_back", async ({ page, seed }) => {
+  test.setTimeout(45_000);
   await seed([
     {
       id: "e2e-fail",
@@ -318,7 +320,13 @@ test("a_failed_rename_puts_only_its_own_old_name_back", async ({ page, seed }) =
   await first.first().dblclick();
   await page.getByTestId("speaker-name-input").fill("Dana Levi");
   await page.getByTestId("speaker-name-input").press("Enter");
-  // Shown everywhere before the server has answered.
+  // Shown everywhere before the server has answered — and still after the page's next
+  // poll of the meeting, which comes back without it.
+  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Dana Levi");
+  await page.waitForResponse(
+    (response) => response.url().endsWith("/api/meetings/e2e-fail") && response.request().method() === "GET",
+    { timeout: 12_000 },
+  );
   for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Dana Levi");
   await expect(page.locator("[data-testid=talk-share][data-slot=THEM_1]")).toContainText("Dana Levi");
 
@@ -339,7 +347,11 @@ test("a_long_title_stays_on_one_line_and_shows_whole_on_hover", async ({ page, s
   await page.setViewportSize({ width: 1100, height: 800 });
   await seed([{ id: "e2e-long", title: long, state: "RENDERED", started_at: isoAt(0, 10) }]);
   await gotoApp(page, "/m/e2e-long");
-  await expect(page.getByTestId("meeting-title")).toHaveAttribute("title", long);
+  const title = page.getByTestId("meeting-title");
+  await expect(title).toHaveAttribute("title", long);
+  // Cut off on one line, not wrapped.
+  expect(await title.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+  expect((await title.boundingBox())?.height ?? 999).toBeLessThan(40);
 });
 
 test("a_row_menu_in_a_hebrew_block_opens_toward_the_page_under_an_english_interface", async ({ page, seed }) => {

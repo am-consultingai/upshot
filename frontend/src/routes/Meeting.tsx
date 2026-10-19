@@ -10,7 +10,7 @@ import MeetingCalendarCard from "../components/MeetingCalendarCard";
 import MeetingDetailsDialog from "../components/MeetingDetailsDialog";
 import Chapters from "../components/Chapters";
 import MeetingRelated from "../components/MeetingRelated";
-import MeetingSpeakers, { useSpeakerRename } from "../components/MeetingSpeakers";
+import MeetingSpeakers, { useSpeakerNames, useSpeakerRename } from "../components/MeetingSpeakers";
 import MeetingChips from "../components/MeetingChips";
 import Menu from "../components/Menu";
 import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
@@ -287,6 +287,8 @@ export default function MeetingPage() {
     }
   }, [running.length, pipelineBusy, queryClient, id]);
   const renameSpeaker = useSpeakerRename(id);
+  // With any rename still being saved laid over them, so a poll cannot undo one on screen.
+  const speakerNames = useSpeakerNames(id, meeting.data?.speaker_names ?? {});
   const keep = useMutation({
     mutationFn: () => api.keepMeeting(id),
     onSuccess: () => queryClient.invalidateQueries(),
@@ -519,7 +521,7 @@ export default function MeetingPage() {
   // read; the per-track URLs still exist for diagnosis but the UI does not offer them —
   // nobody wants to choose a track before listening to their own meeting.
   const hasAudio = Object.keys(meeting.data.audio_tracks ?? {}).length > 0;
-  const people = speakers(segments, meeting.data.speaker_names ?? {}, meeting.data.calendar?.participants ?? [], {
+  const people = speakers(segments, speakerNames, meeting.data.calendar?.participants ?? [], {
     you: t("meeting.you"),
     them: t("meeting.themSaid"),
     speaker: t("meeting.speakerN"),
