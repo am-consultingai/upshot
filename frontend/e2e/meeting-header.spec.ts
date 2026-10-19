@@ -409,6 +409,52 @@ test("a_saved_rename_stays_on_screen_through_a_poll_and_another_pending_rename",
   await expect(second.first()).toHaveText("Yoni Bar");
 });
 
+test("two_failed_renames_of_one_speaker_leave_neither_name_while_another_is_pending", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-twice",
+      title: "Vendor call",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: turns(["ME", "THEM_1", "THEM_2"], 9),
+    },
+  ]);
+  // Each rename is held by the name it sends; "X" and "Y" are refused, "Z" is saved.
+  const gates: Record<string, () => void> = {};
+  const waits: Record<string, Promise<void>> = {};
+  for (const name of ["X", "Y", "Z"]) waits[name] = new Promise<void>((resolve) => (gates[name] = resolve));
+  await page.route("**/api/meetings/e2e-twice", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.continue();
+      return;
+    }
+    const name = ["X", "Y", "Z"].find((each) => route.request().postData()?.includes(`"${each}"`)) ?? "";
+    await waits[name];
+    if (name === "Z") await route.continue();
+    else await route.fulfill({ status: 500, body: "{}" });
+  });
+  await gotoApp(page, "/m/e2e-twice");
+  await page.getByTestId("meeting-tab-transcript").click();
+  const first = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_1]");
+  const second = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_2]");
+  const rename = async (names: typeof first, name: string) => {
+    await names.first().dblclick();
+    await page.getByTestId("speaker-name-input").fill(name);
+    await page.getByTestId("speaker-name-input").press("Enter");
+    await expect(names.first()).toHaveText(name);
+  };
+  await rename(first, "X");
+  await rename(first, "Y");
+  await rename(second, "Z");
+
+  // Both of THEM_1's renames fail while THEM_2's is still held: the original comes back.
+  gates.X();
+  gates.Y();
+  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Speaker 1");
+  for (const index of [0, 1, 2]) await expect(second.nth(index)).toHaveText("Z");
+  gates.Z();
+});
+
 test("a_long_title_stays_on_one_line_and_shows_whole_on_hover", async ({ page, seed }) => {
   const long = "Quarterly planning with the infrastructure, data and platform teams about the migration";
   await page.setViewportSize({ width: 1100, height: 800 });
