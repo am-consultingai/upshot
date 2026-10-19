@@ -32,8 +32,16 @@ export function useSpeakerRename(meetingId: string) {
       });
       return { previous };
     },
-    onError: (error, _vars, context) => {
-      if (context?.previous) queryClient.setQueryData(key, context.previous);
+    // Only the failed slot goes back: another rename still in flight keeps its name.
+    onError: (error, { slot }, context) => {
+      const was = context?.previous?.speaker_names?.[slot];
+      queryClient.setQueryData(key, (old: MeetingDetail | undefined) => {
+        if (!old) return old;
+        const names = { ...(old.speaker_names ?? {}) };
+        if (was) names[slot] = was;
+        else delete names[slot];
+        return { ...old, speaker_names: names };
+      });
       toast({ title: reason(error), tone: "danger" });
     },
     onSettled: () => {
@@ -48,9 +56,11 @@ export function useSpeakerRename(meetingId: string) {
  * A speaker's name that turns into a field on double-click.
  *
  * Enter or leaving the field saves, Escape puts the name back — the same as the
- * meeting title. In the header the name is also a button, so the keyboard reaches it
- * (Enter or F2 opens the field, and focus comes back to it after Enter or Escape); in
- * the transcript it is not, or every turn would be a tab stop.
+ * meeting title. In the header the name is also a button, so the keyboard and screen
+ * readers reach it: pressing it (Enter, Space, a screen reader's click) or F2 opens the
+ * field, and focus comes back to it after Enter or Escape. A mouse click does not —
+ * that stays a double-click. In the transcript it is not a button, or every turn would
+ * be a tab stop.
  */
 export function SpeakerName({
   person,
@@ -101,6 +111,8 @@ export function SpeakerName({
         maxLength={80}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
+            // Kept from the name button that takes focus back: it would press it and reopen.
+            event.preventDefault();
             refocus.current = focusable;
             event.currentTarget.blur();
           }
@@ -135,8 +147,12 @@ export function SpeakerName({
       data-slot={person.slot}
       title={title}
       onDoubleClick={open}
+      // detail 0: a press from the keyboard or assistive technology, not a mouse click.
+      onClick={(event) => {
+        if (event.detail === 0) open();
+      }}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === "F2") {
+        if (event.key === "F2") {
           event.preventDefault();
           open();
         }
