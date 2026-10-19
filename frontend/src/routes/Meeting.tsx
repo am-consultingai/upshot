@@ -316,15 +316,18 @@ export default function MeetingPage() {
     const heading = titleRef.current;
     const row = heading?.parentElement;
     if (heading && row) {
-      const own = heading.offsetWidth;
+      // Fractional widths, rounded down with a pixel to spare: the row wraps on any
+      // overflow at all, and whole-pixel measurements can be a fraction too generous.
+      const box = heading.getBoundingClientRect();
+      const own = box.width;
       // The heading's footprint is its width less the 1rem it gives back in margin.
-      let free = row.clientWidth - (own - 16);
+      let free = row.getBoundingClientRect().width - (own - 16);
       const chips = heading.nextElementSibling;
       if (chips instanceof HTMLElement) {
-        const sameLine = chips.getBoundingClientRect().top < heading.getBoundingClientRect().bottom;
-        if (sameLine) free -= chips.offsetWidth + 12;
+        const chipsBox = chips.getBoundingClientRect();
+        if (chipsBox.top < box.bottom) free -= chipsBox.width + 12;
       }
-      titleWidth.current = Math.min(Math.max(own, 192), own + Math.max(0, free));
+      titleWidth.current = Math.floor(Math.min(Math.max(own, 192), own + Math.max(0, free) - 1));
     }
     setDraft(meeting.data?.title ?? "");
   };
