@@ -342,6 +342,64 @@ test("a_failed_rename_puts_only_its_own_old_name_back", async ({ page, seed }) =
   for (const index of [0, 1, 2]) await expect(second.nth(index)).toHaveText("Yoni Bar");
 });
 
+test("a_saved_rename_stays_on_screen_through_a_poll_and_another_pending_rename", async ({ page, seed }) => {
+  test.setTimeout(45_000);
+  await seed([
+    {
+      id: "e2e-poll",
+      title: "Vendor call",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: turns(["ME", "THEM_1", "THEM_2"], 9),
+    },
+  ]);
+  // Both renames are held; each is let through to the server when released.
+  const gates: Record<string, () => void> = {};
+  const held = (slot: string) => new Promise<void>((resolve) => (gates[slot] = resolve));
+  const waits = { THEM_1: held("THEM_1"), THEM_2: held("THEM_2") };
+  await page.route("**/api/meetings/e2e-poll", async (route) => {
+    const body = route.request().postData() ?? "";
+    const slot = route.request().method() === "PATCH" ? (["THEM_1", "THEM_2"] as const).find((s) => body.includes(s)) : undefined;
+    if (slot) await waits[slot];
+    await route.continue();
+  });
+  await gotoApp(page, "/m/e2e-poll");
+  await page.getByTestId("meeting-tab-transcript").click();
+  const first = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_1]");
+  const second = page.locator("[data-testid=turn-speaker] [data-testid=speaker-name][data-slot=THEM_2]");
+
+  await first.first().dblclick();
+  await page.getByTestId("speaker-name-input").fill("Dana Levi");
+  await page.getByTestId("speaker-name-input").press("Enter");
+  await second.first().dblclick();
+  await page.getByTestId("speaker-name-input").fill("Yoni Bar");
+  await page.getByTestId("speaker-name-input").press("Enter");
+  // A poll comes back while both are on their way, without either name.
+  await page.waitForResponse(
+    (response) => response.url().endsWith("/api/meetings/e2e-poll") && response.request().method() === "GET",
+    { timeout: 12_000 },
+  );
+
+  // The first is saved while the second is still held: no refetch yet, and its name stays.
+  const saved = page.waitForResponse(
+    (response) => response.url().endsWith("/api/meetings/e2e-poll") && response.request().method() === "PATCH",
+  );
+  gates.THEM_1();
+  await saved;
+  for (const index of [0, 1, 2]) await expect(first.nth(index)).toHaveText("Dana Levi");
+  for (const index of [0, 1, 2]) await expect(second.nth(index)).toHaveText("Yoni Bar");
+
+  const secondSaved = page.waitForResponse(
+    (response) => response.url().endsWith("/api/meetings/e2e-poll") && response.request().method() === "PATCH",
+  );
+  gates.THEM_2();
+  await secondSaved;
+  await page.reload();
+  await page.getByTestId("meeting-tab-transcript").click();
+  await expect(first.first()).toHaveText("Dana Levi");
+  await expect(second.first()).toHaveText("Yoni Bar");
+});
+
 test("a_long_title_stays_on_one_line_and_shows_whole_on_hover", async ({ page, seed }) => {
   const long = "Quarterly planning with the infrastructure, data and platform teams about the migration";
   await page.setViewportSize({ width: 1100, height: 800 });
