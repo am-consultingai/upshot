@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { buttonClass } from "../components/Button";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -303,6 +303,16 @@ export default function MeetingPage() {
   });
   /** The title being typed, or null when the heading is not being edited. */
   const [draft, setDraft] = useState<string | null>(null);
+  /*
+   * How wide the heading is, measured while it shows, so the field that replaces it
+   * takes exactly its room: the chips beside it and the pinned header's height stay
+   * as they were, for a short title and a long one alike.
+   */
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const titleWidth = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (titleRef.current) titleWidth.current = titleRef.current.offsetWidth;
+  });
   // Arrived from the sidebar's "Rename": open straight into the field.
   useEffect(() => {
     if (params.get("rename") !== "1" || !meeting.data) return;
@@ -639,6 +649,7 @@ export default function MeetingPage() {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             {draft === null ? (
               <h1
+                ref={titleRef}
                 className="display min-w-0 max-w-full cursor-text truncate text-[1.5rem] leading-tight"
                 data-testid="meeting-title"
                 // One line now: the whole title on hover. Renaming is a double-click or the ⋯ menu.
@@ -671,8 +682,9 @@ export default function MeetingPage() {
                     event.currentTarget.blur();
                   }
                 }}
-                // The heading's room only: the chips stay on the line and the header keeps its height.
-                className="display min-w-0 flex-1 rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
+                // The heading's room and height exactly (measured above).
+                style={{ width: titleWidth.current ?? undefined }}
+                className="display min-w-0 max-w-full flex-none rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
               />
             )}
             <MeetingChips meeting={meeting.data} onPeople={() => setDetails(true)} />

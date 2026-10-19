@@ -210,6 +210,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
       action_items: [
         { who: "ME", what: "לשלוח את הסיכום ל-Slack", detail: "כולל את מדדי ה-TSS" },
         { who: "ME", what: "Call Dana." },
+        { who: "ME", what: "PR חדש לתיקון הבאג" },
       ],
     },
   ]);
@@ -219,7 +220,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   await expect(block).toHaveAttribute("dir", "rtl");
   // The interface's words keep their own order inside the mirrored header, and the
   // header mirrors: "+ Add" at the left end, the count beside the title on the right.
-  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 2 done");
+  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 3 done");
   const add = await page.getByTestId("meeting-actions-add").boundingBox();
   const progress = await page.getByTestId("meeting-actions-progress").boundingBox();
   expect(add?.x ?? 999).toBeLessThan(progress?.x ?? 0);
@@ -261,6 +262,25 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   });
   expect(stop).toBeGreaterThan(call);
   expect(Math.abs(right - edge)).toBeLessThan(2);
+
+  // A Hebrew item that opens with an English word is still a Hebrew sentence: "PR"
+  // comes first, so it is drawn on the right.
+  const [pr, word] = await block
+    .getByTestId("action-item")
+    .filter({ hasText: "PR חדש" })
+    .getByTestId("action-what")
+    .evaluate((node) => {
+      const text = node.querySelector("bdi")?.firstChild as Text;
+      const at = (part: string) => {
+        const range = document.createRange();
+        const start = text.data.indexOf(part);
+        range.setStart(text, start);
+        range.setEnd(text, start + part.length);
+        return range.getBoundingClientRect().x;
+      };
+      return [at("PR"), at("חדש")];
+    });
+  expect(pr).toBeGreaterThan(word);
 
   // In the inbox the row follows its own words.
   await gotoApp(page, "/actions");
@@ -534,18 +554,26 @@ test("a_row_menu_in_a_hebrew_block_opens_toward_the_page_under_an_english_interf
   expect(Math.abs((menu?.x ?? 0) - (trigger?.x ?? 0))).toBeLessThan(12);
 });
 
-test("renaming_the_title_keeps_the_header_its_height", async ({ page, seed }) => {
-  await page.setViewportSize({ width: 1440, height: 800 });
-  await seed([
-    { id: "e2e-title", title: "Weekly sync", state: "RENDERED", started_at: isoAt(0, 10), duration_s: 1800, turns: turns(["ME", "THEM_1"], 4) },
-  ]);
-  await gotoApp(page, "/m/e2e-title");
-  const header = page.getByTestId("meeting-header");
-  const before = (await header.boundingBox())?.height;
-  await page.getByTestId("meeting-title").dblclick();
-  await expect(page.getByTestId("meeting-title-input")).toBeFocused();
-  expect((await header.boundingBox())?.height).toBe(before);
-});
+for (const [name, title] of [
+  ["short", "Weekly sync"],
+  ["long", "Quarterly planning with the infrastructure, data and platform teams about the migration"],
+] as const) {
+  test(`renaming_a_${name}_title_keeps_the_header_its_height`, async ({ page, seed }) => {
+    // Narrow enough that the long title takes the whole line and the chips wrap beneath.
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await seed([
+      { id: "e2e-title", title, state: "RENDERED", started_at: isoAt(0, 10), duration_s: 1800, turns: turns(["ME", "THEM_1"], 4) },
+    ]);
+    await gotoApp(page, "/m/e2e-title");
+    const header = page.getByTestId("meeting-header");
+    const before = await header.boundingBox();
+    const chips = await page.getByTestId("meeting-chips").boundingBox();
+    await page.getByTestId("meeting-title").dblclick();
+    await expect(page.getByTestId("meeting-title-input")).toBeFocused();
+    expect((await header.boundingBox())?.height).toBe(before?.height);
+    expect((await page.getByTestId("meeting-chips").boundingBox())?.y).toBe(chips?.y);
+  });
+}
 
 test("a_chapter_shows_its_whole_focus_ring", async ({ page, seed }) => {
   await seed([
