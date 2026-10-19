@@ -8,7 +8,8 @@ import type { MessageKey } from "../locales/en";
 import { formatElapsed, formatShortDate } from "../lib/format";
 import MeetingCalendarCard from "../components/MeetingCalendarCard";
 import MeetingDetailsDialog from "../components/MeetingDetailsDialog";
-import MeetingRelated, { Chapters } from "../components/MeetingRelated";
+import Chapters from "../components/Chapters";
+import MeetingRelated from "../components/MeetingRelated";
 import MeetingSpeakers, { useSpeakerRename } from "../components/MeetingSpeakers";
 import MeetingChips from "../components/MeetingChips";
 import Menu from "../components/Menu";
@@ -660,8 +661,11 @@ export default function MeetingPage() {
                 onKeyDown={(event) => {
                   if (event.key === "Enter") event.currentTarget.blur();
                   if (event.key === "Escape") {
+                    // Only cancels: the page's Escape would hand focus to the meeting list.
+                    // The blur is ours, so the cancel path runs and clears the flag.
+                    event.stopPropagation();
                     cancelled.current = true;
-                    setDraft(null);
+                    event.currentTarget.blur();
                   }
                 }}
                 className="display w-full min-w-0 rounded-md bg-surface-2 px-2 py-0.5 text-[1.5rem] leading-tight"
@@ -703,7 +707,11 @@ export default function MeetingPage() {
                 </Tooltip>
               ))}
             </div>
-            <MeetingSpeakers meetingId={id} people={people} className="ms-auto" />
+            <MeetingSpeakers
+                people={people}
+                onRename={(slot, name) => renameSpeaker.mutate({ slot, name })}
+                className="ms-auto"
+              />
           </div>
         </div>
       </header>

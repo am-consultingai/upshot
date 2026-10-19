@@ -129,7 +129,7 @@ export default function ActionItemsBlock({
         >
           <Icon
             icon={ChevronDown}
-            className={`size-3 transition-transform ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
+            className={`size-3 transition-transform ${collapsed ? (dir === "rtl" ? "rotate-90" : "-rotate-90") : ""}`}
           />
         </button>
       </h2>

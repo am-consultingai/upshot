@@ -289,7 +289,10 @@ test("the_header_names_the_speakers_with_real_talk_time", async ({ page }) => {
   // A slot can be named with a double-click, and the name sticks.
   await people.filter({ hasText: "Yoni Bar" }).getByTestId("speaker-name").dblclick();
   await page.getByTestId("speaker-name-input").fill("Yoni Barak");
-  await page.getByTestId("speaker-name-input").press("Enter");
+  await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "PATCH"),
+    page.getByTestId("speaker-name-input").press("Enter"),
+  ]);
   await page.reload();
   await expect(page.getByTestId("meeting-speakers")).toContainText("Yoni Barak");
 
@@ -297,7 +300,10 @@ test("the_header_names_the_speakers_with_real_talk_time", async ({ page }) => {
   await people.filter({ hasText: "You" }).getByTestId("speaker-name").focus();
   await page.keyboard.press("Enter");
   await page.getByTestId("speaker-name-input").fill("Noa Golan");
-  await page.getByTestId("speaker-name-input").press("Enter");
+  await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "PATCH"),
+    page.getByTestId("speaker-name-input").press("Enter"),
+  ]);
   await page.reload();
   await expect(people.nth(0)).toContainText("Noa Golan");
   await expect(people.nth(0)).toHaveAttribute("data-slot", "ME");
@@ -305,11 +311,11 @@ test("the_header_names_the_speakers_with_real_talk_time", async ({ page }) => {
 
 test("related_meetings_say_why", async ({ page }) => {
   await gotoApp(page, "/m/m-onboarding");
-  const related = page.getByTestId("rail-related");
+  const related = page.getByTestId("related-meeting");
   await expect(related.first()).toBeVisible();
   // The Q4 session shares an action item with this one, word for word.
   await expect(related.filter({ hasText: "Q4 roadmap working session" })).toContainText(/shares/);
-  await expect(page.getByTestId("rail-related-reason").first()).not.toBeEmpty();
+  await expect(page.getByTestId("related-reason").first()).not.toBeEmpty();
 });
 
 test("ask_this_meeting_answers_with_a_moment_to_play", async ({ page }) => {
@@ -340,7 +346,7 @@ test("the_transcript_has_named_blocks_chapters_and_a_banded_waveform", async ({ 
   await expect(speakers.first()).toHaveText(/Dana Levi/);
   await expect(page.getByTestId("transcript-turn").first()).toHaveText("(00:00:04)");
 
-  const chapters = page.getByTestId("rail-chapter");
+  const chapters = page.getByTestId("chapter");
   await expect(chapters).toHaveCount(4);
   await expect(chapters.nth(0)).toContainText("The drop-off");
   await expect(chapters.nth(0)).toContainText("00:00 – 00:41");

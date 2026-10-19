@@ -49,7 +49,7 @@ test("hover_highlights_rows_on_a_touch_first_device", async ({ browser }) => {
 
   await gotoApp(page, "/m/m-onboarding");
   await changesOnHover(page, page.getByTestId("meeting-actions").getByTestId("action-item").first());
-  await changesOnHover(page, page.getByTestId("rail-related").first());
+  await changesOnHover(page, page.getByTestId("related-meeting").first());
 
   await gotoApp(page, "/actions");
   await changesOnHover(page, page.getByTestId("action-item").nth(1));
