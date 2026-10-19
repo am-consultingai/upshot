@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buttonClass } from "../components/Button";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -304,19 +304,34 @@ export default function MeetingPage() {
   /** The title being typed, or null when the heading is not being edited. */
   const [draft, setDraft] = useState<string | null>(null);
   /*
-   * How wide the heading is, measured while it shows, so the field that replaces it
-   * takes exactly its room: the chips beside it and the pinned header's height stay
-   * as they were, for a short title and a long one alike.
+   * How wide the field that replaces the heading may be, measured as it opens, while
+   * the heading still shows: its width, or 12rem to type in when that is more — but
+   * never more than the room left beside the chips, so they stay where they are and
+   * the pinned header keeps its height, for a short title and a long one alike.
    */
   const titleRef = useRef<HTMLHeadingElement | null>(null);
   const titleWidth = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    if (titleRef.current) titleWidth.current = titleRef.current.offsetWidth;
-  });
+  const openTitle = () => {
+    titleWidth.current = null;
+    const heading = titleRef.current;
+    const row = heading?.parentElement;
+    if (heading && row) {
+      const own = heading.offsetWidth;
+      // The heading's footprint is its width less the 1rem it gives back in margin.
+      let free = row.clientWidth - (own - 16);
+      const chips = heading.nextElementSibling;
+      if (chips instanceof HTMLElement) {
+        const sameLine = chips.getBoundingClientRect().top < heading.getBoundingClientRect().bottom;
+        if (sameLine) free -= chips.offsetWidth + 12;
+      }
+      titleWidth.current = Math.min(Math.max(own, 192), own + Math.max(0, free));
+    }
+    setDraft(meeting.data?.title ?? "");
+  };
   // Arrived from the sidebar's "Rename": open straight into the field.
   useEffect(() => {
     if (params.get("rename") !== "1" || !meeting.data) return;
-    setDraft(meeting.data.title ?? "");
+    openTitle();
     const next = new URLSearchParams(params);
     next.delete("rename");
     setParams(next, { replace: true });
@@ -626,7 +641,7 @@ export default function MeetingPage() {
                 ]
               : []),
             { id: "details", label: t("meeting.editDetails"), run: () => openMeetingInfo(id) },
-            { id: "rename", label: t("meeting.rename"), run: () => setDraft(meeting.data?.title ?? "") },
+            { id: "rename", label: t("meeting.rename"), run: openTitle },
             { id: "calendar", label: t("meeting.calendarEvent"), run: () => setDetails(true) },
             {
               id: "delete",
@@ -655,7 +670,7 @@ export default function MeetingPage() {
                 data-testid="meeting-title"
                 // One line now: the whole title on hover. Renaming is a double-click or the ⋯ menu.
                 title={meeting.data.title ?? id}
-                onDoubleClick={() => setDraft(meeting.data?.title ?? "")}
+                onDoubleClick={openTitle}
               >
                 {rename.isPending ? rename.variables : (meeting.data.title ?? id)}
               </h1>
@@ -684,7 +699,7 @@ export default function MeetingPage() {
                   }
                 }}
                 // The heading's room and height (measured above), and room to type in a short one.
-                style={{ width: titleWidth.current === null ? undefined : `max(${titleWidth.current}px, 12rem)` }}
+                style={{ width: titleWidth.current ?? undefined }}
                 className="display -mx-2 min-w-0 max-w-[calc(100%+1rem)] flex-none rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
               />
             )}

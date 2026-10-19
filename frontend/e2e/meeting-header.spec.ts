@@ -580,6 +580,43 @@ for (const [name, title] of [
   });
 }
 
+test("renaming_a_short_title_beside_a_full_line_of_tags_keeps_them_on_their_line", async ({ page, seed }) => {
+  await page.setViewportSize({ width: 1400, height: 800 });
+  await seed([
+    {
+      id: "e2e-tags",
+      title: "Sync",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      duration_s: 1800,
+      tags: ["Roadmap", "Infrastructure", "Hiring", "Quarterly"],
+      turns: turns(["ME", "THEM_1"], 4),
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-tags");
+  const chips = page.getByTestId("meeting-chips");
+  await expect(chips.getByTestId("chip-tag")).toHaveCount(4);
+  // Narrow the window until the chips have only 40px to spare on the title's line,
+  // less than the field's 12rem floor would add.
+  const spare = await page.getByTestId("meeting-title").evaluate((heading) => {
+    const row = heading.parentElement as HTMLElement;
+    const chipsNode = heading.nextElementSibling as HTMLElement;
+    return row.clientWidth - (heading.getBoundingClientRect().width - 16) - chipsNode.offsetWidth - 12;
+  });
+  await page.setViewportSize({ width: Math.round(1400 - (spare - 40)), height: 800 });
+  const header = await page.getByTestId("meeting-header").boundingBox();
+  const before = await chips.boundingBox();
+  await page.getByTestId("meeting-title").dblclick();
+  await expect(page.getByTestId("meeting-title-input")).toBeFocused();
+  // The field takes at most the spare room: the chips stay on the title's line, the
+  // same size, and the pinned header keeps its height.
+  const after = await chips.boundingBox();
+  expect(after?.y).toBe(before?.y);
+  expect(after?.width).toBe(before?.width);
+  expect(Math.abs((after?.x ?? 0) - (before?.x ?? 0))).toBeLessThanOrEqual(41);
+  expect((await page.getByTestId("meeting-header").boundingBox())?.height).toBe(header?.height);
+});
+
 test("a_chapter_shows_its_whole_focus_ring", async ({ page, seed }) => {
   await seed([
     {

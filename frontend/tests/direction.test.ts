@@ -30,6 +30,10 @@ describe("a piece of text runs the way its words do", () => {
     expect(directionOf("לעדכן את ה-README ב-GitHub")).toBe("rtl");
     expect(directionOf("לבדוק את ה-Dashboard ב-Grafana")).toBe("rtl");
     expect(directionOf("לשלוח ל-Microsoft את ה-NDA")).toBe("rtl");
+    // Opening with a Hebrew word, however many English ones follow.
+    expect(directionOf("להגדיר Google Analytics")).toBe("rtl");
+    expect(directionOf("לבדוק את Google Cloud Run Jobs API")).toBe("rtl");
+    expect(directionOf("לחדש מנוי Adobe Creative Cloud")).toBe("rtl");
     expect(directionOf("إرسال الملخص")).toBe("rtl");
   });
 

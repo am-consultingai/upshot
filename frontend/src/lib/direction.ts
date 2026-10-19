@@ -28,11 +28,13 @@ export function meetingDirections(meeting: { direction?: string | null; summary_
  * counting letters, where long English names outweigh short Hebrew words
  * ("לעדכן את ה-README ב-GitHub").
  *
- * Inside a right-to-left block (`lean`), any right-to-left word makes it a
- * right-to-left sentence: Hebrew written with English terms in it is the everyday
- * case there. Elsewhere, words (runs of letters) from right-to-left scripts against
- * the others; digits, punctuation and symbols do not count, a tie goes to the first
- * word, and text with no letters at all runs left to right.
+ * A text that opens with a right-to-left word is a right-to-left sentence, however
+ * many English names follow ("להגדיר Google Analytics"): an English sentence does not
+ * open with a Hebrew word. Inside a right-to-left block (`lean`), any right-to-left
+ * word is enough — Hebrew written with English terms in it is the everyday case there.
+ * Otherwise, words (runs of letters) from right-to-left scripts against the others;
+ * digits, punctuation and symbols do not count, a tie goes to the first word, and
+ * text with no letters at all runs left to right.
  */
 const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}]/u;
 const WORD = /\p{L}+/gu;
@@ -43,7 +45,7 @@ export function directionOf(text: string, lean?: Direction): Direction {
   let first: Direction | null = null;
   for (const [word] of text.matchAll(WORD)) {
     const here: Direction = RTL_LETTER.test(word) ? "rtl" : "ltr";
-    if (here === "rtl" && lean === "rtl") return "rtl";
+    if (here === "rtl" && (lean === "rtl" || first === null)) return "rtl";
     first ??= here;
     if (here === "rtl") rtl += 1;
     else ltr += 1;
