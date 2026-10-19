@@ -252,7 +252,7 @@ export default function ActionItemRow({
            * in a Hebrew block keeps its full stop at the end, a Hebrew one that opens with
            * "PR" stays a Hebrew sentence — while the row's direction still aligns it.
            */}
-          <bdi dir={directionOf(item.what)}>{item.what}</bdi>
+          <bdi dir={directionOf(item.what, dir)}>{item.what}</bdi>
         </span>
         {(showMeeting || item.detail) && (
           <span data-testid="action-provenance" className="mt-0.5 block text-sm text-tertiary">
@@ -273,7 +273,7 @@ export default function ActionItemRow({
             {showMeeting && item.detail && " — "}
             {item.detail && (
               <span data-testid="action-detail">
-                <bdi dir={directionOf(item.detail)}>{item.detail}</bdi>
+                <bdi dir={directionOf(item.detail, dir)}>{item.detail}</bdi>
               </span>
             )}
           </span>

@@ -572,6 +572,11 @@ for (const [name, title] of [
     await expect(page.getByTestId("meeting-title-input")).toBeFocused();
     expect((await header.boundingBox())?.height).toBe(before?.height);
     expect((await page.getByTestId("meeting-chips").boundingBox())?.y).toBe(chips?.y);
+    // The field opens with the title whole in it (a long one is as wide as the line).
+    if (name === "short") {
+      const fits = await page.getByTestId("meeting-title-input").evaluate((node) => node.scrollWidth <= node.clientWidth);
+      expect(fits).toBe(true);
+    }
   });
 }
 
@@ -600,3 +605,24 @@ test("a_chapter_shows_its_whole_focus_ring", async ({ page, seed }) => {
   await expect(chapter).toHaveCSS("outline-offset", "-2px");
 });
 
+
+test("a_hebrew_item_full_of_english_terms_runs_right_to_left_under_an_english_summary", async ({ page, seed }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await seed([
+    {
+      id: "e2e-terms",
+      title: "Platform sync",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      summary_html: "<html><body><p>The team reviewed the dashboards.</p></body></html>",
+      turns: [{ speaker: "THEM", at_ms: 1000, text: "Good morning" }],
+      action_items: [{ who: "ME", what: "לעדכן את ה-README ב-GitHub" }],
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-terms");
+  const row = page.getByTestId("meeting-actions").getByTestId("action-item").first();
+  await expect(row).toHaveAttribute("dir", "rtl");
+  const tick = await row.getByTestId("action-toggle").boundingBox();
+  const what = await row.getByTestId("action-what").boundingBox();
+  expect(tick?.x ?? 0).toBeGreaterThan(what?.x ?? 0);
+});
