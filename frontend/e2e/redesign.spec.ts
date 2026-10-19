@@ -235,9 +235,8 @@ test("meeting_chips_carry_date_length_people_and_tags", async ({ page }) => {
   // No calendar strip for a settled match; the bar says "Copy summary".
   await expect(page.getByTestId("meeting-calendar")).toHaveCount(0);
   await expect(page.getByTestId("copy-summary-bar")).toHaveText("Copy summary");
-  // And the rail has no "This meeting" block of When / Open items.
-  await expect(page.getByTestId("meeting-rail").locator("h2", { hasText: /^This meeting$/ })).toHaveCount(0);
-  await expect(page.getByTestId("meeting-rail")).not.toContainText("Open items");
+  // And no rail beside the meeting: its column is the summary's now.
+  await expect(page.getByTestId("meeting-rail")).toHaveCount(0);
 });
 
 test("action_items_read_n_of_m_done_and_can_be_added_and_folded", async ({ page }) => {
@@ -277,25 +276,26 @@ test("the_summary_opens_with_a_lead_and_a_next_step_files_itself", async ({ page
   await expect(page.getByTestId("meeting-actions-progress")).toHaveText("1 of 4 done");
 });
 
-test("in_the_room_names_the_speakers_with_real_talk_time", async ({ page }) => {
+test("the_header_names_the_speakers_with_real_talk_time", async ({ page }) => {
   await gotoApp(page, "/m/m-onboarding");
   const people = page.getByTestId("talk-share");
   await expect(people).toHaveCount(3);
   await expect(people.nth(0)).toContainText("You");
-  await expect(page.getByTestId("rail-people")).toContainText("Dana Levi");
-  await expect(page.getByTestId("rail-people")).toContainText("Yoni Bar");
+  await expect(page.getByTestId("meeting-speakers")).toContainText("Dana Levi");
+  await expect(page.getByTestId("meeting-speakers")).toContainText("Yoni Bar");
   // Seconds from each segment's start and end: Dana 14+17+16+17 = 64 of 100.5 ≈ 64%.
   await expect(people.filter({ hasText: "Dana Levi" })).toContainText("64%");
 
-  // A slot can be named, and the name sticks.
-  await people.filter({ hasText: "Yoni Bar" }).getByTestId("speaker-name").click();
+  // A slot can be named with a double-click, and the name sticks.
+  await people.filter({ hasText: "Yoni Bar" }).getByTestId("speaker-name").dblclick();
   await page.getByTestId("speaker-name-input").fill("Yoni Barak");
   await page.getByTestId("speaker-name-input").press("Enter");
   await page.reload();
-  await expect(page.getByTestId("rail-people")).toContainText("Yoni Barak");
+  await expect(page.getByTestId("meeting-speakers")).toContainText("Yoni Barak");
 
-  // The microphone's voice can be named too (D85).
-  await people.filter({ hasText: "You" }).getByTestId("speaker-name").click();
+  // The microphone's voice can be named too (D85), from the keyboard as well.
+  await people.filter({ hasText: "You" }).getByTestId("speaker-name").focus();
+  await page.keyboard.press("Enter");
   await page.getByTestId("speaker-name-input").fill("Noa Golan");
   await page.getByTestId("speaker-name-input").press("Enter");
   await page.reload();
@@ -344,7 +344,6 @@ test("the_transcript_has_named_blocks_chapters_and_a_banded_waveform", async ({ 
   await expect(chapters).toHaveCount(4);
   await expect(chapters.nth(0)).toContainText("The drop-off");
   await expect(chapters.nth(0)).toContainText("00:00 – 00:41");
-  await expect(page.getByTestId("meeting-rail")).toContainText("Speakers");
 
   // A band per turn, coloured by who was speaking.
   await expect(page.getByTestId("waveform-band")).toHaveCount(7);
@@ -430,10 +429,10 @@ test("the_new_surfaces_mirror_in_hebrew", async ({ page, request }) => {
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByTestId("meeting-actions-progress")).toHaveText("1 מתוך 3 בוצעו");
   await expect(page.getByTestId("copy-summary-bar")).toHaveText("העתקת הסיכום");
-  // The rail sits at the inline end, which in Hebrew is the left.
-  const rail = await page.getByTestId("meeting-rail").boundingBox();
-  const column = await page.getByTestId("summary-html").boundingBox();
-  expect((rail?.x ?? 0) < (column?.x ?? 0)).toBe(true);
+  // The speakers sit at the header's inline end, which in Hebrew is the left.
+  const speakers = await page.getByTestId("meeting-speakers").boundingBox();
+  const tabs = await page.getByTestId("meeting-tabs").boundingBox();
+  expect((speakers?.x ?? 0) < (tabs?.x ?? 0)).toBe(true);
 
   await gotoApp(page, "/actions");
   await expect(page.getByTestId("actions-tab-mine")).toContainText("שלי");

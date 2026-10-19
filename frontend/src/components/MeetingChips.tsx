@@ -27,10 +27,12 @@ import { Icon } from "./Icon";
 export default function MeetingChips({
   meeting,
   onPeople,
+  className = "",
 }: {
   meeting: MeetingDetail;
   /** Opens the invitation and the calendar match. */
   onPeople?: () => void;
+  className?: string;
 }) {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
@@ -76,7 +78,7 @@ export default function MeetingChips({
   const count = people.length + more;
 
   return (
-    <div data-testid="meeting-chips" className="mb-5 flex flex-wrap items-center gap-1.5">
+    <div data-testid="meeting-chips" className={`flex flex-wrap items-center gap-1.5 ${className}`}>
       <Chip icon={Calendar} testid="chip-when" title={`${formatShortDate(when, locale)} · ${formatClock(when.toISOString())}`}>
         <bdi>{formatShortDate(when, locale)}</bdi>
       </Chip>
