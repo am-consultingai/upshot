@@ -207,7 +207,10 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
       summary_html: SUMMARY_HE,
       // The language is the transcript's, so the meeting needs one.
       turns: [{ speaker: "THEM", at_ms: 1000, text: "בוקר טוב" }],
-      action_items: [{ who: "ME", what: "לשלוח את הסיכום ל-Slack", detail: "כולל את מדדי ה-TSS" }],
+      action_items: [
+        { who: "ME", what: "לשלוח את הסיכום ל-Slack", detail: "כולל את מדדי ה-TSS" },
+        { who: "ME", what: "Call Dana." },
+      ],
     },
   ]);
   await gotoApp(page, "/m/e2e-rtl-actions");
@@ -216,7 +219,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   await expect(block).toHaveAttribute("dir", "rtl");
   // The interface's words keep their own order inside the mirrored header, and the
   // header mirrors: "+ Add" at the left end, the count beside the title on the right.
-  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 1 done");
+  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 2 done");
   const add = await page.getByTestId("meeting-actions-add").boundingBox();
   const progress = await page.getByTestId("meeting-actions-progress").boundingBox();
   expect(add?.x ?? 999).toBeLessThan(progress?.x ?? 0);
@@ -242,6 +245,22 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
     return [at("לשלוח"), at("Slack")];
   });
   expect(slack).toBeLessThan(first);
+
+  // An English item in the Hebrew block keeps its own order — the full stop at its end,
+  // on the right — while the row stays right to left, its text right-aligned.
+  const english = block.getByTestId("action-item").filter({ hasText: "Call Dana." });
+  const [call, stop, right, edge] = await english.getByTestId("action-what").evaluate((node) => {
+    const text = node.firstChild as Text;
+    const at = (start: number, end: number) => {
+      const range = document.createRange();
+      range.setStart(text, start);
+      range.setEnd(text, end);
+      return range.getBoundingClientRect();
+    };
+    return [at(0, 4).x, at(text.data.length - 1, text.data.length).x, at(0, text.data.length).right, node.getBoundingClientRect().right];
+  });
+  expect(stop).toBeGreaterThan(call);
+  expect(Math.abs(right - edge)).toBeLessThan(2);
 
   // In the inbox the row follows its own words.
   await gotoApp(page, "/actions");
@@ -514,3 +533,42 @@ test("a_row_menu_in_a_hebrew_block_opens_toward_the_page_under_an_english_interf
   const menu = await page.getByTestId("overflow-menu").boundingBox();
   expect(Math.abs((menu?.x ?? 0) - (trigger?.x ?? 0))).toBeLessThan(12);
 });
+
+test("renaming_the_title_keeps_the_header_its_height", async ({ page, seed }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  await seed([
+    { id: "e2e-title", title: "Weekly sync", state: "RENDERED", started_at: isoAt(0, 10), duration_s: 1800, turns: turns(["ME", "THEM_1"], 4) },
+  ]);
+  await gotoApp(page, "/m/e2e-title");
+  const header = page.getByTestId("meeting-header");
+  const before = (await header.boundingBox())?.height;
+  await page.getByTestId("meeting-title").dblclick();
+  await expect(page.getByTestId("meeting-title-input")).toBeFocused();
+  expect((await header.boundingBox())?.height).toBe(before);
+});
+
+test("a_chapter_shows_its_whole_focus_ring", async ({ page, seed }) => {
+  await seed([
+    {
+      id: "e2e-chapters",
+      title: "Planning",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      turns: turns(["ME", "THEM_1"], 8),
+      chapters: [
+        { title: "Opening", start_ms: 0, end_ms: 30000 },
+        { title: "Budget", start_ms: 30000, end_ms: 72000 },
+      ],
+    },
+  ]);
+  await gotoApp(page, "/m/e2e-chapters");
+  await page.getByTestId("meeting-tab-transcript").click();
+  const chapter = page.getByTestId("chapter").first();
+  await chapter.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(chapter).toBeFocused();
+  // Drawn inside the button, so the sideways-scrolling row cannot clip it.
+  await expect(chapter).toHaveCSS("outline-offset", "-2px");
+});
+

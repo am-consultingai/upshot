@@ -197,6 +197,11 @@ export default function ActionItemRow({
   const context = useContextMenu(items);
 
   const when = item.meeting_started_at ? formatShortDate(item.meeting_started_at, locale) : null;
+  /*
+   * In a right-to-left block each text still orders itself by its own words: an English
+   * item there keeps its full stop at the end. Right-aligned regardless, with the row.
+   */
+  const ownOrder = dir === "rtl" ? "[unicode-bidi:plaintext] text-right" : "";
 
   return (
     <li
@@ -243,7 +248,7 @@ export default function ActionItemRow({
       <div className="min-w-0 flex-1">
         <span
           data-testid="action-what"
-          className={`block text-md leading-snug ${
+          className={`block text-md leading-snug ${ownOrder} ${
             done ? "text-tertiary line-through" : showMeeting ? "text-primary" : "font-medium text-primary"
           }`}
         >
@@ -266,7 +271,11 @@ export default function ActionItemRow({
               </bdi>
             )}
             {showMeeting && item.detail && " — "}
-            {item.detail && <span data-testid="action-detail">{item.detail}</span>}
+            {item.detail && (
+              <span data-testid="action-detail" className={ownOrder}>
+                {item.detail}
+              </span>
+            )}
           </span>
         )}
       </div>
