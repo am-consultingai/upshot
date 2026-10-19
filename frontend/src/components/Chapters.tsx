@@ -23,7 +23,8 @@ export default function Chapters({ chapters, onSeek }: { chapters: Chapter[]; on
               data-testid="chapter"
               data-start-ms={chapter.start_ms}
               onClick={() => onSeek(chapter.start_ms / 1000)}
-              className="block max-w-56 rounded-md px-2 py-1.5 text-start hover:bg-a-200 active:bg-a-300"
+              // The focus ring inside the button: the row scrolls, and clips anything outside it.
+              className="inset-focus-ring block max-w-56 rounded-md px-2 py-1.5 text-start hover:bg-a-200 active:bg-a-300"
             >
               <span className="block truncate text-sm">{chapter.title}</span>
               <span className="mt-px block font-mono text-2xs text-tertiary tabular-nums">

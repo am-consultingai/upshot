@@ -671,7 +671,8 @@ export default function MeetingPage() {
                     event.currentTarget.blur();
                   }
                 }}
-                className="display w-full min-w-0 rounded-md bg-surface-2 px-2 py-0.5 text-[1.5rem] leading-tight"
+                // The heading's room only: the chips stay on the line and the header keeps its height.
+                className="display min-w-0 flex-1 rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
               />
             )}
             <MeetingChips meeting={meeting.data} onPeople={() => setDetails(true)} />
