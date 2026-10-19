@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, reason, type MeetingDetail } from "../api";
 import { useI18n } from "../i18n";
@@ -49,8 +49,8 @@ export function useSpeakerRename(meetingId: string) {
  *
  * Enter or leaving the field saves, Escape puts the name back — the same as the
  * meeting title. In the header the name is also a button, so the keyboard reaches it
- * (Enter or F2 opens the field); in the transcript it is not, or every turn would be
- * a tab stop.
+ * (Enter or F2 opens the field, and focus comes back to it after Enter or Escape); in
+ * the transcript it is not, or every turn would be a tab stop.
  */
 export function SpeakerName({
   person,
@@ -67,6 +67,14 @@ export function SpeakerName({
   const [draft, setDraft] = useState<string | null>(null);
   // Escape has to beat the blur that removing the field fires (see the title rename).
   const cancelled = useRef(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  // Closed with Enter or Escape: the keyboard's place goes back to the name, not the page.
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (draft !== null || !refocus.current) return;
+    refocus.current = false;
+    trigger.current?.focus();
+  }, [draft]);
 
   const commit = () => {
     const next = (draft ?? "").trim();
@@ -90,11 +98,20 @@ export function SpeakerName({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onClick={(event) => event.stopPropagation()}
+        maxLength={80}
         onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Enter") {
+            refocus.current = focusable;
+            event.currentTarget.blur();
+          }
           if (event.key === "Escape") {
+            // The page's Escape hands focus to the meeting list; this one only cancels.
+            event.preventDefault();
+            event.stopPropagation();
+            refocus.current = focusable;
+            // The blur is ours, so the cancel path runs and clears the flag.
             cancelled.current = true;
-            setDraft(null);
+            event.currentTarget.blur();
           }
         }}
         className="no-focus-ring w-full max-w-60 min-w-0 rounded-xs bg-surface-2 px-1 font-normal shadow-[0_0_0_1px_var(--accent)] outline-none"
@@ -108,10 +125,11 @@ export function SpeakerName({
       {person.guessed && <span className="text-tertiary">?</span>}
     </>
   );
-  const title = person.guessed ? t("meeting.speakerGuessed") : t("meeting.renameSpeaker");
+  const title = person.guessed ? t("meeting.speakerGuessed") : t("meeting.renameSpeakerHint");
   const open = () => setDraft(person.name);
   return focusable ? (
     <button
+      ref={trigger}
       type="button"
       data-testid="speaker-name"
       data-slot={person.slot}
@@ -139,25 +157,40 @@ export function SpeakerName({
  * much of the meeting they talked.
  *
  * The row takes at most the room of three chips and scrolls sideways past that, so a
- * meeting of eight people costs the header no more height than a meeting of two.
+ * meeting of eight people costs the header no more height than a meeting of two. The
+ * scrollbar is hidden — on Windows it would add a row under the chips — and the wheel
+ * scrolls the row sideways instead; the chip cut off at the edge says there is more.
  */
 export default function MeetingSpeakers({
-  meetingId,
   people,
+  onRename,
   className = "",
 }: {
-  meetingId: string;
   people: Speaker[];
+  onRename: (slot: string, name: string) => void;
   className?: string;
 }) {
   const { t } = useI18n();
-  const rename = useSpeakerRename(meetingId);
+  const row = useRef<HTMLUListElement | null>(null);
+  // A native listener: React's wheel handler is passive and cannot keep the page still.
+  useEffect(() => {
+    const node = row.current;
+    if (!node) return undefined;
+    const onWheel = (event: WheelEvent) => {
+      if (node.scrollWidth <= node.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      event.preventDefault();
+      node.scrollLeft += getComputedStyle(node).direction === "rtl" ? -event.deltaY : event.deltaY;
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, [people.length]);
   if (people.length === 0) return null;
   return (
     <ul
+      ref={row}
       data-testid="meeting-speakers"
-      aria-label={t("meeting.railSpeakers")}
-      className={`flex max-w-[27rem] min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:thin] ${className}`}
+      aria-label={t("meeting.speakers")}
+      className={`flex max-w-[27rem] min-w-0 gap-1.5 overflow-x-auto [scrollbar-width:none] ${className}`}
     >
       {people.map((person) => (
         <li
@@ -172,7 +205,7 @@ export default function MeetingSpeakers({
           <SpeakerName
             person={person}
             focusable
-            onRename={(slot, name) => rename.mutate({ slot, name })}
+            onRename={onRename}
             className="flex-1 text-primary"
           />
           <span className="font-mono tabular-nums text-tertiary">{Math.round(person.share * 100)}%</span>
