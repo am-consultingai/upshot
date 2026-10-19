@@ -6,7 +6,7 @@ import { useI18n } from "../i18n";
 import { addDays, dayKey } from "../lib/calendar";
 import { daysUntil, dueLabel, nextWeekday } from "../lib/due";
 import { formatShortDate } from "../lib/format";
-import type { Direction } from "../lib/direction";
+import { directionOf, type Direction } from "../lib/direction";
 import { initials, personColour } from "../lib/speakers";
 import DatePicker from "./DatePicker";
 import Menu, { useContextMenu, type MenuItem } from "./Menu";
@@ -197,11 +197,6 @@ export default function ActionItemRow({
   const context = useContextMenu(items);
 
   const when = item.meeting_started_at ? formatShortDate(item.meeting_started_at, locale) : null;
-  /*
-   * In a right-to-left block each text still orders itself by its own words: an English
-   * item there keeps its full stop at the end. Right-aligned regardless, with the row.
-   */
-  const ownOrder = dir === "rtl" ? "[unicode-bidi:plaintext] text-right" : "";
 
   return (
     <li
@@ -210,7 +205,7 @@ export default function ActionItemRow({
       data-done={done ? "true" : "false"}
       data-mine={item.mine ? "true" : "false"}
       data-due-at={item.due_at ?? undefined}
-      dir={dir ?? "auto"}
+      dir={dir ?? directionOf(item.what)}
       aria-current={showMeeting && selected ? "true" : undefined}
       data-selected={showMeeting && selected ? "true" : undefined}
       onContextMenu={context.onContextMenu}
@@ -248,11 +243,16 @@ export default function ActionItemRow({
       <div className="min-w-0 flex-1">
         <span
           data-testid="action-what"
-          className={`block text-md leading-snug ${ownOrder} ${
+          className={`block text-md leading-snug ${
             done ? "text-tertiary line-through" : showMeeting ? "text-primary" : "font-medium text-primary"
           }`}
         >
-          {item.what}
+          {/*
+           * Isolated, so each text orders itself by its own words — an English item in a
+           * Hebrew block keeps its full stop at the end — while the row's direction still
+           * aligns it.
+           */}
+          <bdi>{item.what}</bdi>
         </span>
         {(showMeeting || item.detail) && (
           <span data-testid="action-provenance" className="mt-0.5 block text-sm text-tertiary">
@@ -272,8 +272,8 @@ export default function ActionItemRow({
             )}
             {showMeeting && item.detail && " — "}
             {item.detail && (
-              <span data-testid="action-detail" className={ownOrder}>
-                {item.detail}
+              <span data-testid="action-detail">
+                <bdi>{item.detail}</bdi>
               </span>
             )}
           </span>
