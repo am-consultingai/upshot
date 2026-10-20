@@ -3326,6 +3326,8 @@ def test_router() -> APIRouter:
             # every spec after it there too.
             svc.config.set("setup.done", True)
             svc.config.set("setup.step", "")
+            # The tour likewise: seen, so it does not cover every spec's page.
+            svc.config.set("ui.tour_done", True)
             # The Terms likewise: accepted, unless a spec asks for them pending (D83).
             if svc.terms is not None:
                 svc.config.set("legal.accepted_version", svc.terms.bundled.version)

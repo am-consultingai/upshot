@@ -75,5 +75,29 @@ for (const look of LOOKS) {
       await expect(page.getByTestId("timeline-empty")).toBeVisible();
       expect(await violations(page)).toEqual([]);
     });
+
+    test("the tour and its sample meeting have no serious or critical violations", async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await gotoApp(page, "/");
+      await page.getByTestId("app-title").click();
+      await page.getByTestId("workspace-menu").locator("[data-item=tour]").click();
+      await expect(page.getByTestId("tour-tip")).toHaveAttribute("data-stop", "1");
+      // Joyride shows the card once it is placed; check it shown, not on its way in.
+      const shown = () =>
+        page.evaluate(() => {
+          for (let node = document.querySelector("[data-testid=tour-tip]"); node; node = node.parentElement)
+            if (getComputedStyle(node).opacity !== "1") return false;
+          return document.querySelector("[data-testid=tour-tip]") !== null;
+        });
+      await expect.poll(shown).toBe(true);
+      expect(await violations(page)).toEqual([]);
+      await page.getByTestId("tour-next").click();
+      await page.getByTestId("tour-next").click();
+      await expect(page.getByTestId("tour-tip")).toHaveAttribute("data-stop", "3");
+      await expect.poll(shown).toBe(true);
+      expect(await violations(page)).toEqual([]);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("tour-blocker")).toHaveCount(0, { timeout: 8000 });
+    });
   });
 }

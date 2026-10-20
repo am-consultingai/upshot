@@ -2,10 +2,10 @@ import { useRef, useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
-import { api, reason } from "../api";
+import { api, reason, type Meeting } from "../api";
 import { LANGUAGES, useI18n, type Locale } from "../i18n";
 import { groupByDay } from "../lib/timeline";
-import { formatBytes, formatDayLabel } from "../lib/format";
+import { formatBytes, formatClock, formatDayLabel } from "../lib/format";
 import { applyTheme } from "../theme";
 import { Logo } from "./Logo";
 import MeetingCard from "../components/MeetingCard";
@@ -23,6 +23,9 @@ import { shortcutKey } from "../lib/keys";
 import type { MessageKey } from "../locales/en";
 import { Calendar, Check, ChevronDown, Search, Settings, type LucideIcon } from "lucide-react";
 import { Icon } from "./Icon";
+import { useTour } from "../tour/TourProvider";
+import { SampleTag } from "../tour/SampleMeeting";
+import { isSampleId } from "../tour/sample";
 
 /**
  * The sidebar: navigation and the library, in one 240px column.
@@ -149,7 +152,11 @@ export default function Sidebar() {
     void api.putSettings({ "ui.language": next });
   };
 
-  const items = meetings.data?.meetings ?? [];
+  const tour = useTour();
+  const own = meetings.data?.meetings ?? [];
+  // The tour's sample recordings sit among the user's own while it runs, marked as samples.
+  const sample = tour.sample?.meetings ?? [];
+  const items = [...sample, ...own];
   const byDay = groupByDay(items);
   const recording = Boolean(status.data?.recorder.active || status.data?.recorder.paused);
   const queued = status.data?.queue_depth ?? 0;
@@ -240,6 +247,7 @@ export default function Sidebar() {
                 run: () => setLanguages(workspace),
               },
               { id: "palette", label: t("workspace.commands"), keys: "Ctrl K", separated: true, run: openPalette },
+              { id: "tour", label: t("tour.menu"), separated: true, run: () => tour.start("replay") },
             ]}
           />
         )}
@@ -288,6 +296,8 @@ export default function Sidebar() {
       <button
         type="button"
         data-testid={recording ? "stop-recording" : "start-recording"}
+        // The tour's first stop: one anchor whichever state the button is in.
+        data-tour="record"
         aria-busy={start.isPending || stop.isPending}
         onClick={() => (recording ? stop.mutate() : start.mutate())}
         className={`mx-2.5 mb-2 flex min-h-[var(--height-control)] items-center gap-2.5 rounded-md px-2.5 py-1.5 text-start text-sm leading-tight font-medium shadow-[var(--shadow-ring),var(--shadow-sm),var(--shadow-edge)] ${
@@ -352,7 +362,7 @@ export default function Sidebar() {
         >
           {t("timeline.recent")}
         </span>
-        <span className="font-mono text-2xs text-tertiary tabular-nums">{items.length}</span>
+        <span className="font-mono text-2xs text-tertiary tabular-nums">{own.length}</span>
         <LibraryFilter filter={libraryFilter} />
         {queued > 0 ? (
           <span
@@ -408,6 +418,15 @@ export default function Sidebar() {
          * one button that starts it — the same one at the top of this column, here
          * where the eye already is.
          */}
+        {sample.length > 0 && (
+          <p
+            data-testid="tour-sample-note"
+            data-tour-sample
+            className="mx-2 mt-1 mb-1 rounded-md bg-accent-quiet px-2 py-1.5 text-2xs leading-snug text-accent"
+          >
+            {t("tour.sampleNote")}
+          </p>
+        )}
         {meetings.isSuccess && items.length === 0 && (
           <EmptyState
             compact
@@ -430,13 +449,26 @@ export default function Sidebar() {
             }
           />
         )}
-        {byDay.map(([day, group]) => (
-          <div key={day} data-testid="timeline-day" data-day={day} className="mb-1">
+        {byDay.map(([day, group]) => {
+          // A day that holds only samples burns whole, its date with it. Keyed apart, so a
+          // real recording arriving for that day gets a fresh block, not the burnt one.
+          const onlySamples = group.every((meeting) => isSampleId(meeting.id));
+          return (
+          <div
+            key={onlySamples ? `${day}:sample` : day}
+            data-testid="timeline-day"
+            data-day={day}
+            data-tour-sample={onlySamples ? "" : undefined}
+            className="mb-1"
+          >
             {/* Sticky, so a long day keeps its date in view while it scrolls past. */}
             <h2 className="sticky top-0 z-[2] -mx-2 bg-surface-1 px-4 pt-2.5 pb-1 text-2xs uppercase tracking-wide text-tertiary">
               {formatDayLabel(day, locale, t)}
             </h2>
-            {group.map((meeting) => (
+            {group.map((meeting) =>
+              isSampleId(meeting.id) ? (
+                <SampleRow key={meeting.id} meeting={meeting} selected={meeting.id === openId} />
+              ) : (
               <MeetingCard
                 key={meeting.id}
                 meeting={meeting}
@@ -445,9 +477,11 @@ export default function Sidebar() {
                 onResummarize={() => resummarize.mutate(meeting.id)}
                 onDelete={() => void askToDelete(meeting.id, meeting.title ?? meeting.id)}
               />
-            ))}
+              ),
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/*
@@ -471,6 +505,35 @@ export default function Sidebar() {
         </span>
       </div>
     </nav>
+  );
+}
+
+/**
+ * One of the tour's sample recordings: a link to its page and nothing else. The real row's
+ * menu would act on the server, where a sample does not exist.
+ */
+function SampleRow({ meeting, selected }: { meeting: Meeting; selected: boolean }) {
+  return (
+    <article
+      data-testid="meeting-card"
+      data-meeting-id={meeting.id}
+      data-tour-sample
+      data-selected={selected ? "true" : undefined}
+      className={`ma-row relative rounded-md ${selected ? "bg-a-100 hover:bg-a-200" : "hover:bg-a-200 active:bg-a-300"}`}
+    >
+      <NavLink to={`/m/${meeting.id}`} data-testid="meeting-link" className="flex items-start gap-2 rounded-md py-1.5 ps-2 pe-2">
+        <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-success" />
+        <span className="min-w-0 flex-1">
+          <span data-testid="meeting-name" className="flex items-center gap-1.5 text-sm text-primary">
+            <span className="min-w-0 truncate">{meeting.title}</span>
+            <SampleTag />
+          </span>
+          <span className="mt-px block truncate font-mono text-2xs text-tertiary tabular-nums">
+            {formatClock(meeting.started_at)}
+          </span>
+        </span>
+      </NavLink>
+    </article>
   );
 }
 
