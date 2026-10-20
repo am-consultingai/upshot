@@ -31,10 +31,12 @@ interface Tour {
   running: boolean;
   /** The sample, while the tour runs; null otherwise. */
   sample: TourSample | null;
+  /** The stop on screen ("record", "calendar", "summary", "ai"), or null. */
+  stop: string | null;
   start: (origin: Origin) => void;
 }
 
-const TourContext = createContext<Tour>({ running: false, sample: null, start: () => undefined });
+const TourContext = createContext<Tour>({ running: false, sample: null, stop: null, start: () => undefined });
 
 export function useTour(): Tour {
   return useContext(TourContext);
@@ -89,6 +91,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
   const [origin, setOrigin] = useState<Origin>("setup");
   const [run, setRun] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [stop, setStop] = useState<string | null>(null);
   const controls = useRef<Controls | null>(null);
   const busy = useRef(false);
   const finishing = useRef(false);
@@ -170,6 +173,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
       if (!sample || finishing.current) return;
       finishing.current = true;
       setRun(false);
+      setStop(null);
       setEnding(true);
       log(outcome === "done" ? { event: "ended", outcome } : { event: "ended", outcome, stop: data?.stop ?? 0, of: data?.of ?? 0 });
       void api
@@ -310,6 +314,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
   const onEvent = useCallback(
     (data: EventData, given: Controls) => {
       controls.current = given;
+      if (data.type === EVENTS.TOOLTIP) setStop(typeof data.step?.id === "string" ? data.step.id : null);
       if (data.type !== EVENTS.TOUR_END && data.type !== EVENTS.TOUR_STATUS) return;
       if (data.status === STATUS.FINISHED) void finish("done", data.step?.data as TourStepData | undefined);
       else if (data.status === STATUS.SKIPPED) void finish("skipped", data.step?.data as TourStepData | undefined);
@@ -370,7 +375,10 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
     return () => window.removeEventListener("keydown", onKey, true);
   }, [run, ending, rtl, origin, finish, steps]);
 
-  const value = useMemo<Tour>(() => ({ running: run || ending, sample, start }), [run, ending, sample, start]);
+  const value = useMemo<Tour>(
+    () => ({ running: run || ending, sample, stop, start }),
+    [run, ending, sample, stop, start],
+  );
 
   return (
     <TourContext.Provider value={value}>
