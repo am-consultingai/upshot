@@ -42,9 +42,8 @@ export default function ActionItemsBlock({
   /** Bumped from outside (a "next action" in the summary) to open the add row pre-filled. */
   addRequest?: { text: string; at: number } | null;
   /**
-   * The summary's direction. The block runs the same way as the notes beneath it,
-   * whatever the interface language; in a left-to-right summary each item still
-   * follows its own words, so a Hebrew item there reads right to left.
+   * The meeting transcript's direction, whatever the interface language: the block's
+   * own row (title, count, + Add) mirrors with its items, which run the same way.
    */
   dir?: Direction;
 }) {
@@ -136,7 +135,7 @@ export default function ActionItemsBlock({
       {!collapsed && (
         <ul className="divide-y divide-line-subtle">
           {items.map((item) => (
-            <ActionItemRow key={item.id} item={item} showMeeting={false} dir={dir === "rtl" ? "rtl" : undefined} />
+            <ActionItemRow key={item.id} item={item} showMeeting={false} />
           ))}
           {items.length === 0 && !adding && (
             <li className="px-2.5 py-2 text-sm text-tertiary">
