@@ -83,6 +83,16 @@ class CrashReporter:
     def enabled(self) -> bool:
         return self.available and self.consent == "on"
 
+    def forget_kept(self) -> int:
+        """Crash reports were switched off: delete those kept for later, so none goes out."""
+        from app.diagnostics.client import drop_events
+
+        try:
+            return sum(drop_events(self.home / box) for box in ("outbox", "outbox-ui"))
+        except OSError:  # a file in use goes next time; switching off must not fail on it
+            log.exception("could not delete kept crash reports")
+            return 0
+
     def install_id(self) -> str:
         """Random, made the first time a report is sent, and linked to nothing."""
         value = str(self.config.get("diagnostics.install_id") or "")
