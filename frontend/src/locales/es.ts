@@ -154,7 +154,7 @@ export const es: Record<MessageKey, string> = {
   "settings.groupAppearance": "Apariencia",
   "settings.providerUnlisted": "Los resúmenes están configurados con «{provider}», que no es ninguna de las opciones siguientes, así que no hay ninguna seleccionada. Elija una para cambiarlo.",
   "settings.groupSubscription": "Su suscripción de IA",
-  "settings.groupSubscriptionHint": "Resuma con una suscripción que ya paga: Claude o ChatGPT. Upshot usa la herramienta oficial de línea de comandos con la sesión iniciada en este equipo, así que no hay clave de API ni cargos adicionales; se aplican los límites de uso de su plan.",
+  "settings.groupSubscriptionHint": "Resuma con una suscripción que ya paga: Claude, ChatGPT o Gemini. Upshot usa la herramienta oficial de línea de comandos con la sesión iniciada en este equipo, así que no hay clave de API ni cargos adicionales; se aplican los límites de uso de su plan.",
   "settings.groupApiKeys": "Claves de API",
   "settings.groupApiKeysHint": "Resuma mediante la API de pago de un proveedor. La clave se crea en su consola y se factura por uso. Se guarda en el Administrador de credenciales de Windows de este equipo, nunca en un archivo.",
   "settings.groupNone": "Sin IA",

@@ -31,7 +31,7 @@ interface Tour {
   running: boolean;
   /** The sample, while the tour runs; null otherwise. */
   sample: TourSample | null;
-  /** The stop on screen ("record", "calendar", "summary", "ai"), or null. */
+  /** The card on screen ("welcome", "record", "calendar", "summary", "ai"), or null. */
   stop: string | null;
   start: (origin: Origin) => void;
 }
