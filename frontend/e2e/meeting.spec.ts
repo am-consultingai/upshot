@@ -30,11 +30,18 @@ test("rename_edits_the_title_in_place", async ({ page, seed }) => {
     { id: "e2e-rename", title: "Weekly sync", state: "RENDERED", started_at: isoAt(0, 10) },
   ]);
   await gotoApp(page, "/m/e2e-rename");
+  // Every change sent, so a cancel that saved anyway shows even though the later save
+  // overwrites it on screen.
+  const sent: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "PATCH") sent.push(request.postData() ?? "");
+  });
 
   // Escape leaves the name as it was. The title itself is the control: double-click it.
   await page.getByTestId("meeting-title").dblclick();
   await page.getByTestId("meeting-title-input").fill("Not this");
   await page.getByTestId("meeting-title-input").press("Escape");
+  await expect(page.getByTestId("meeting-title-input")).toHaveCount(0);
   await expect(page.getByTestId("meeting-title")).toHaveText("Weekly sync");
 
   // Enter saves exactly what was typed — nothing appended. Rename is in the ⋯ menu too.
@@ -42,7 +49,14 @@ test("rename_edits_the_title_in_place", async ({ page, seed }) => {
   await page.locator("[data-testid=overflow-menu-item][data-item=rename]").click();
   await expect(page.getByTestId("meeting-title-input")).toHaveValue("Weekly sync");
   await page.getByTestId("meeting-title-input").fill("Budget review with Dana");
-  await page.getByTestId("meeting-title-input").press("Enter");
+  await Promise.all([
+    page.waitForResponse(
+      (response) => response.url().endsWith("/api/meetings/e2e-rename") && response.request().method() === "PATCH",
+    ),
+    page.getByTestId("meeting-title-input").press("Enter"),
+  ]);
+  // The cancelled title was never sent: anything from the Escape went before this save.
+  expect(sent.some((body) => body.includes("Not this"))).toBe(false);
   await expect(page.getByTestId("meeting-title")).toHaveText("Budget review with Dana");
   await page.reload();
   await expect(page.getByTestId("meeting-title")).toHaveText("Budget review with Dana");

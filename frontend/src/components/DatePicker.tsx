@@ -41,7 +41,8 @@ export default function DatePicker({
   useLayoutEffect(() => {
     const rect = anchor.getBoundingClientRect();
     const height = surface.current?.offsetHeight ?? 260;
-    const rtl = document.documentElement.dir === "rtl";
+    // The anchor's own direction: a Hebrew action item under an English interface runs right to left.
+    const rtl = getComputedStyle(anchor).direction === "rtl";
     let left = rtl ? rect.right - 212 : rect.left;
     left = Math.max(8, Math.min(left, window.innerWidth - 220));
     let top = rect.bottom + 6;
