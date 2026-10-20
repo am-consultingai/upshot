@@ -78,6 +78,8 @@ def test_only_the_fixed_fields_are_taken(api, caplog) -> None:  # type: ignore[n
     assert client.post("/api/tour/event", json=too_far).status_code == 422
     # Each moment needs its own fields: no line is written from a guess.
     assert client.post("/api/tour/event", json={"event": "ended"}).status_code == 422
+    skipped_somewhere = {"event": "ended", "outcome": "skipped"}
+    assert client.post("/api/tour/event", json=skipped_somewhere).status_code == 422
     assert client.post("/api/tour/event", json={"event": "started"}).status_code == 422
     assert client.post("/api/tour/event", json={"event": "sample_removed"}).status_code == 422
     # A title has no field to travel in: an unknown key is ignored, never logged.

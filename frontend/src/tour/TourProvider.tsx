@@ -183,6 +183,15 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
       log({ event: "sample_removed", items: sample.meetings.length + sample.events.length, burnt: lit.length });
       setSample(null);
       controls.current = null;
+      // Whatever burnt and is still on the page once the sample is gone is not a sample:
+      // it gets its looks back (React does not reset styles it did not set).
+      requestAnimationFrame(() => {
+        for (const piece of lit) {
+          if (!piece.isConnected) continue;
+          for (const name of ["mask-image", "-webkit-mask-image", "visibility", "opacity", "transition"])
+            piece.style.removeProperty(name);
+        }
+      });
       if (isSampleId(path.current.split("/m/")[1])) navigate("/", { replace: true });
       setEnding(false);
       finishing.current = false;
@@ -331,7 +340,8 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
         event.stopPropagation();
         // Before Joyride's first event there are no controls to skip with yet.
         if (given) given.skip("button_skip");
-        else void finish("skipped", undefined);
+        // The card that is opening is the first one: the welcome after setup, else stop 1.
+        else void finish("skipped", steps[0]?.data as TourStepData | undefined);
       } else if (event.key === forward) {
         event.preventDefault();
         event.stopPropagation();
@@ -358,7 +368,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [run, ending, rtl, origin, finish]);
+  }, [run, ending, rtl, origin, finish, steps]);
 
   const value = useMemo<Tour>(() => ({ running: run || ending, sample, start }), [run, ending, sample, start]);
 
