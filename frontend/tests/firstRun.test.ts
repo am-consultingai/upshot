@@ -4,7 +4,9 @@ import {
   chooseSummarizer,
   crumbOf,
   initialTicks,
+  keepSaved,
   resumeAt,
+  summaryOrder,
   stepsFor,
   withoutUnneeded,
   type CliFacts,
@@ -32,14 +34,21 @@ const ticks = (over: Partial<Record<"claude" | "codex" | "antigravity", boolean>
 });
 
 describe("stepsFor", () => {
-  it("ends on the sound check, and never asks about the model or the CPU/GPU", () => {
-    // How to record is on the sound check, whose Done finishes setup: no summary screen.
-    expect(stepsFor({ calendarAvailable: true })).toEqual(["welcome", "calendar", "services", "ai", "key", "audio"]);
+  it("ends on how to record, after the sound check, and never asks about the model or the CPU/GPU", () => {
+    // One question per screen (setup plan, 2026-10-20): how to record has its own, whose
+    // Done finishes setup.
+    expect(stepsFor({ calendarAvailable: true })).toEqual([
+      "welcome", "calendar", "services", "ai", "key", "audio", "capture",
+    ]);
+  });
+
+  it("shows the sound check and how to record as one stop on the track", () => {
+    expect(crumbOf("capture")).toBe("audio");
   });
 
   it("asks about crash reports just before the sound check, only where they can be sent (D87)", () => {
     expect(stepsFor({ calendarAvailable: true, reportsAvailable: true })).toEqual([
-      "welcome", "calendar", "services", "ai", "key", "reports", "audio",
+      "welcome", "calendar", "services", "ai", "key", "reports", "audio", "capture",
     ]);
     expect(stepsFor({ calendarAvailable: true, reportsAvailable: false })).not.toContain("reports");
     const track = [...new Set(stepsFor({ calendarAvailable: true, reportsAvailable: true }).map(crumbOf))];
@@ -144,6 +153,42 @@ describe("chooseSummarizer (Setup 8)", () => {
 
   it("a usable subscription wins over a key", () => {
     expect(chooseSummarizer(all, clis({ claude: ready }), "gemini").provider).toBe("claude-subscription");
+  });
+});
+
+describe("keepSaved (setup reopened after an install, D69)", () => {
+  const none = { provider: "none", fallback: "" } as const;
+
+  it("keeps a key or a local model chosen before when the AI steps end on none", () => {
+    expect(keepSaved(none, { provider: "gemini", fallback: "" })).toEqual({ provider: "gemini", fallback: "" });
+    expect(keepSaved(none, { provider: "ollama", fallback: "" })).toEqual({ provider: "ollama", fallback: "" });
+  });
+
+  it("drops a saved subscription fallback, which setup has just decided on", () => {
+    expect(keepSaved(none, { provider: "gemini", fallback: "codex-subscription" })).toEqual({
+      provider: "gemini",
+      fallback: "",
+    });
+  });
+
+  it("lets a subscription that works now win over what was saved", () => {
+    const now = { provider: "claude-subscription", fallback: "" } as const;
+    expect(keepSaved(now, { provider: "gemini", fallback: "" })).toEqual(now);
+  });
+
+  it("does not keep a subscription setup found no longer works", () => {
+    expect(keepSaved(none, { provider: "codex-subscription", fallback: "" })).toEqual(none);
+  });
+
+  it("writes none on a first run, with nothing saved", () => {
+    expect(keepSaved(none, null)).toEqual(none);
+  });
+});
+
+describe("summaryOrder (the line under the plans question)", () => {
+  it("is the ticked plans in the order they write summaries", () => {
+    expect(summaryOrder(ticks({ antigravity: true, claude: true }))).toEqual(["claude", "antigravity"]);
+    expect(summaryOrder(ticks())).toEqual([]);
   });
 });
 
