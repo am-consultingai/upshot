@@ -976,7 +976,7 @@ export const en = {
   "firstRun.audio.title": "Sound check",
   "firstRun.audio.lead": "A quick check that both sides of a call will be recorded.",
   "firstRun.audio.play": "Play test sound",
-  "firstRun.audio.idle": "Play the test sound and listen for a short chime.",
+  "firstRun.audio.idle": "Checks that Upshot hears your computer's sound.",
   "firstRun.audio.mic": "Microphone",
   "firstRun.audio.speakers": "Computer audio",
   "firstRun.audio.playing": "Playing a test sound…",

@@ -969,7 +969,7 @@ export const he: Record<MessageKey, string> = {
   "firstRun.audio.title": "בדיקת שמע",
   "firstRun.audio.lead": "בדיקה קצרה לוודא ששני הצדדים של השיחה יוקלטו.",
   "firstRun.audio.play": "השמעת צליל בדיקה",
-  "firstRun.audio.idle": "השמיעו את צליל הבדיקה והקשיבו לצליל קצר.",
+  "firstRun.audio.idle": "בודק ש-Upshot שומע את הצליל של המחשב.",
   "firstRun.audio.mic": "מיקרופון",
   "firstRun.audio.speakers": "שמע המחשב",
   "firstRun.audio.playing": "משמיע צליל בדיקה…",

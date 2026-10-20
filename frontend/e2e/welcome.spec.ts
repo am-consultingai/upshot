@@ -10,6 +10,7 @@
  * setup-mock.spec.ts.
  */
 import type { Page } from "@playwright/test";
+import { CSRF, SESSION } from "../playwright.config";
 import { expect, gotoApp, gotoSettings, reset, test } from "./fixtures";
 
 test.beforeEach(async ({ page, seedBody }) => {
@@ -61,8 +62,11 @@ async function toKeyStep(page: Page): Promise<void> {
 }
 
 test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library", async ({ page }) => {
-  // What summarizes before setup: no paid plan and no key keeps it (D69), not "none".
-  const before = (await (await page.request.get("/api/settings")).json()).config.llm.provider;
+  // A true first install: nothing summarizes yet (the e2e seed sets the fake provider).
+  await page.request.put("/api/settings", {
+    headers: { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` },
+    data: { values: { "llm.provider": "none" } },
+  });
   await gotoApp(page, "/");
   await expect(page).toHaveURL(/\/welcome$/);
   await expect(page.getByTestId("setup-step-welcome")).toBeVisible();
@@ -117,7 +121,7 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   const settings = await (await page.request.get("/api/settings")).json();
   expect(settings.config.setup.done).toBe(true);
   expect(settings.config.setup.step).toBe("");
-  expect(settings.config.llm.provider).toBe(before);
+  expect(settings.config.llm.provider).toBe("none");
   expect(settings.config.detection.mode).toBe("shadow");
   expect(settings.config.detection.decided).toBe(true);
 
@@ -242,7 +246,9 @@ test("scenes_hold_still_and_play_once_when_asked", async ({ page }) => {
   expect(await running(page, "scene-calendar")).toBe(0);
   await page.getByTestId("scene-show").click();
   await expect.poll(() => running(page, "scene-calendar")).toBeGreaterThan(0);
-  await expect(page.getByTestId("scene-show")).toBeDisabled();
+  // Pressed again while playing it does nothing, and keeps the keyboard focus.
+  await expect(page.getByTestId("scene-show")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("scene-show")).toBeFocused();
 });
 
 test("under_reduced_motion_nothing_plays_by_itself", async ({ page }) => {
@@ -253,9 +259,14 @@ test("under_reduced_motion_nothing_plays_by_itself", async ({ page }) => {
   expect(await running(page, "scene-hero")).toBe(0);
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("scene-calendar")).toBeVisible();
+  const clock = () =>
+    page.evaluate(
+      () => document.querySelector('[data-testid="scene-calendar"]')?.getAnimations({ subtree: true })[0]?.currentTime,
+    );
+  const still = await clock();
   await page.getByTestId("scene-show").click();
-  // Stepped, not moved: frames are shown, the clocks stay stopped.
-  await page.waitForTimeout(400);
+  // Stepped, not moved: the clocks stay stopped, on another frame than the still one.
+  await expect.poll(clock).not.toBe(still);
   expect(await running(page, "scene-calendar")).toBe(0);
 });
 
