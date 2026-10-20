@@ -33,12 +33,16 @@ test.afterEach(async ({ page, request }) => {
   await reset(request);
 });
 
-/** From the welcome to the services step, the calendar skipped. */
+/** From the welcome to the AI plans question, which comes first (setup plan, O5). */
 async function toServices(page: Page): Promise<void> {
   await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-services")).toBeVisible();
+}
+
+/** Past the calendar, skipped: it follows the plans question. */
+async function skipCalendar(page: Page): Promise<void> {
   await expect(page.getByTestId("setup-step-calendar")).toBeVisible();
   await page.getByTestId("setup-skip").click();
-  await expect(page.getByTestId("setup-step-services")).toBeVisible();
 }
 
 /** On to the AI step with a Google AI plan chosen (D75, D79). */
@@ -46,10 +50,19 @@ async function toAiStep(page: Page): Promise<void> {
   await toServices(page);
   await page.getByTestId("service-antigravity").click();
   await page.getByTestId("setup-next").click();
+  await skipCalendar(page);
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
 }
 
-/** No plan paid for: the connect step is passed over and the key step comes next. */
+/** On to the calendar, with no plan paid for. */
+async function toCalendar(page: Page): Promise<void> {
+  await toServices(page);
+  await page.getByTestId("services-none").click();
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-calendar")).toBeVisible();
+}
+
+/** No plan paid for: the connect step is passed over and the no-plan step comes next. */
 async function toKeyStep(page: Page): Promise<void> {
   await toServices(page);
   // The plans question wants an answer: Continue alone says so and stays.
@@ -58,7 +71,14 @@ async function toKeyStep(page: Page): Promise<void> {
   await expect(page.getByTestId("setup-step-services")).toBeVisible();
   await page.getByTestId("services-none").click();
   await page.getByTestId("setup-next").click();
+  await skipCalendar(page);
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
+}
+
+/** The no-plan step answered with transcripts only. */
+async function transcriptsOnly(page: Page): Promise<void> {
+  await page.getByTestId("key-choice-none").click();
+  await page.getByTestId("setup-next").click();
 }
 
 test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library", async ({ page }) => {
@@ -76,15 +96,20 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   await expect(page.getByTestId("device-plan")).toHaveCount(0);
 
   await toKeyStep(page);
-  // Nothing ticked: no connect step, and a key is offered on a step of its own — which the
-  // track shows as part of "AI setup", not a stop of its own.
-  await expect(page.getByTestId("setup-crumb-aiSetup")).toHaveAttribute("aria-current", "step");
+  // Nothing ticked: no connect step, and the no-plan step asks how summaries get written —
+  // part of the "Connect AI" stop, not a stop of its own.
+  await expect(page.getByTestId("setup-crumb-connect")).toHaveAttribute("aria-current", "step");
   await expect(page.getByTestId("setup-crumb-key")).toHaveCount(0);
+  // An answer is needed: Continue does nothing until one is chosen. Playwright will not
+  // press an aria-disabled button; a person's mouse does.
+  await page.getByTestId("setup-next").click({ force: true });
+  await expect(page.getByTestId("setup-step-key")).toBeVisible();
+  await page.getByTestId("key-choice-key").click();
   await expect(page.getByTestId("key-offer")).toBeVisible();
   await expect(page.getByTestId("key-get-gemini")).toHaveAttribute("href", "https://aistudio.google.com/apikey");
   // Gemini's key only: other providers' keys are for Settings.
   await expect(page.getByTestId("key-provider-anthropic")).toHaveCount(0);
-  await page.getByTestId("setup-skip").click();
+  await transcriptsOnly(page);
 
   // The sound check: the microphone meter moves on the synthetic tone, and the
   // computer-audio test plays when asked, not on arrival.
@@ -106,13 +131,24 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   });
   await page.getByTestId("setup-next").click();
 
-  // How to record has its own screen, with detect and notify already chosen (D64), and
-  // its Done finishes setup: there is no summary screen after it.
+  // How to record has its own screen, with detect and notify already chosen (D64).
   await expect(page.getByTestId("setup-step-capture")).toBeVisible();
   await expect(page.getByTestId("capture-lead")).toContainText("notice when a meeting starts");
   await expect(page.getByTestId("capture-off")).toHaveCount(0);
   await expect(page.getByTestId("capture-shadow")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("setup-finish")).toHaveText("Done");
+  await page.getByTestId("setup-next").click();
+
+  // Finish says what was set up, one line each with Change (setup plan, §3.6).
+  await expect(page.getByTestId("setup-step-finish")).toBeVisible();
+  await expect(page.getByTestId("done-calendar")).toContainText("Not connected");
+  await expect(page.getByTestId("done-summaries")).toContainText("Transcripts only");
+  await expect(page.getByTestId("done-capture")).toContainText("Notify me when a call starts");
+  await expect(page.getByTestId("done-audio")).toContainText(/working|not heard/);
+  // Change opens that step; walking on comes back to Finish, the last step.
+  await page.getByTestId("done-change-capture").click();
+  await expect(page.getByTestId("setup-step-capture")).toBeVisible();
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-finish")).toHaveText("Start using Upshot");
   await page.getByTestId("setup-finish").click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("rail")).toBeVisible();
@@ -146,6 +182,7 @@ test("a_google_ai_plan_gets_its_own_card_and_the_key_only_follows_if_it_is_not_s
   // Not signed in (this server cannot install it): the key step comes next.
   await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
+  await page.getByTestId("key-choice-key").click();
   await expect(page.getByTestId("key-offer")).toBeVisible();
   await page.getByTestId("setup-back").click();
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
@@ -220,6 +257,7 @@ test("a_signed_in_subscription_passes_the_key_step_over", async ({ page }) => {
   // Already working, so already ticked.
   await expect(page.getByTestId("service-antigravity")).toHaveAttribute("aria-checked", "true");
   await page.getByTestId("setup-next").click();
+  await skipCalendar(page);
   await expect(page.getByTestId("ai-ready-antigravity")).toBeVisible();
   await expect(page.getByTestId("setup-crumb-key")).toHaveCount(0);
   await page.getByTestId("setup-next").click();
@@ -242,8 +280,7 @@ test("scenes_hold_still_and_play_once_when_asked", async ({ page }) => {
   // Nothing loops beside a question (setup plan, 2026-10-20): Google's pages rest on the
   // consent screen until "Show me", which plays them once.
   await gotoApp(page, "/welcome");
-  await toServices(page);
-  await page.getByTestId("setup-back").click();
+  await toCalendar(page);
   await expect(page.getByTestId("scene-calendar")).toBeVisible();
   expect(await running(page, "scene-calendar")).toBe(0);
   await page.getByTestId("scene-show").click();
@@ -259,7 +296,7 @@ test("under_reduced_motion_nothing_plays_by_itself", async ({ page }) => {
   await gotoApp(page, "/welcome");
   await expect(page.getByTestId("scene-hero")).toBeVisible();
   expect(await running(page, "scene-hero")).toBe(0);
-  await page.getByTestId("setup-next").click();
+  await toCalendar(page);
   await expect(page.getByTestId("scene-calendar")).toBeVisible();
   const clock = () =>
     page.evaluate(
@@ -305,7 +342,7 @@ test("a_slow_device_list_is_not_reported_as_no_microphone", async ({ page }) => 
   });
   await gotoApp(page, "/welcome");
   await toKeyStep(page);
-  await page.getByTestId("setup-skip").click();
+  await transcriptsOnly(page);
   await expect(page.getByTestId("setup-step-audio")).toBeVisible();
   await expect(page.getByTestId("setup-step-audio")).not.toContainText("No microphone found");
   release();
@@ -370,7 +407,7 @@ for (const [language, welcome] of [
 
 test("closing_googles_tab_puts_the_connect_button_back", async ({ page }) => {
   await gotoApp(page, "/welcome");
-  await page.getByTestId("setup-next").click();
+  await toCalendar(page);
   const popup = page.waitForEvent("popup");
   await page.getByTestId("calendar-connect").click();
   await expect(page.getByTestId("calendar-connect")).toHaveAttribute("aria-busy", "true");
@@ -393,9 +430,9 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     page.getByTestId("setup-next").or(page.getByTestId("setup-skip")).or(page.getByTestId("setup-finish")).first();
   const first = await where();
   await page.getByTestId("setup-next").click();
-  // "I don't pay for any of these" passes the connect step over (D75) and offers the key
-  // on a step of its own; how to record is last, and its forward is Done.
-  const steps = ["calendar", "services", "key", "audio", "capture"];
+  // "I don't pay for any of these" passes the connect step over (D75) and asks how
+  // summaries get written on a step of its own; Finish is last, and its forward ends setup.
+  const steps = ["services", "calendar", "key", "audio", "capture", "finish"];
   for (const step of steps) {
     await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
     const now = await where();
@@ -409,6 +446,7 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     expect(Math.abs(endEdge(now.forward) - endEdge(first.forward))).toBeLessThan(2);
     expect(endEdge(now.forward)).toBeLessThan(width);
     if (step === "services") await page.getByTestId("services-none").click();
+    if (step === "key") await page.getByTestId("key-choice-none").click();
     if (step !== steps.at(-1)) await forwardButton().click();
   }
 });
@@ -432,7 +470,7 @@ test("a_second_calendar_can_be_added_in_setup", async ({ page }) => {
     });
   });
   await gotoApp(page, "/welcome");
-  await page.getByTestId("setup-next").click();
+  await toCalendar(page);
   await expect(page.getByTestId("calendar-connected")).toContainText("dana@example.com");
 
   await page.getByTestId("calendar-add").click();
@@ -443,4 +481,93 @@ test("a_second_calendar_can_be_added_in_setup", async ({ page }) => {
   await expect(page.getByTestId("calendar-connected")).toContainText("noa@example.com");
   await page.waitForTimeout(2000);
   await expect(page.getByTestId("calendar-add")).toBeVisible();
+});
+
+/** Settings as a setup finished before left them: setup reopened after an install (D69). */
+async function earlier(page: Page, values: Record<string, unknown>): Promise<void> {
+  await page.request.put("/api/settings", {
+    headers: { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` },
+    data: { values: { "detection.decided": true, ...values } },
+  });
+}
+
+test("setup_reopened_after_an_install_opens_on_the_review_and_keeps_every_choice", async ({ page }) => {
+  await earlier(page, { "detection.mode": "on", "llm.provider": "gemini", "llm.fallback_provider": "" });
+  await gotoApp(page, "/");
+  await expect(page.getByTestId("setup-step-finish")).toBeVisible();
+  await expect(page.locator("h1")).toHaveText("Welcome back. Here's your setup.");
+  await expect(page.getByTestId("done-capture")).toContainText("Record calls automatically");
+  await expect(page.getByTestId("done-summaries")).toContainText("Gemini, with your key");
+  await expect(page.getByTestId("setup-back")).toHaveCount(0);
+  await page.getByTestId("setup-finish").click();
+  await expect(page).toHaveURL(/\/$/);
+  const config = (await (await page.request.get("/api/settings")).json()).config;
+  expect(config.detection.mode).toBe("on");
+  expect(config.llm.provider).toBe("gemini");
+  expect(config.setup.done).toBe(true);
+});
+
+test("detection_switched_off_in_settings_stays_off_when_setup_reopens", async ({ page }) => {
+  await earlier(page, { "detection.mode": "off" });
+  await gotoApp(page, "/");
+  await expect(page.getByTestId("done-capture")).toContainText("Off");
+  // How to record shows neither way chosen; going on without one leaves it off.
+  await page.getByTestId("done-change-capture").click();
+  await expect(page.getByTestId("capture-shadow")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("capture-on")).toHaveAttribute("aria-checked", "false");
+  await page.getByTestId("setup-next").click();
+  await page.getByTestId("setup-finish").click();
+  await expect(page).toHaveURL(/\/$/);
+  const config = (await (await page.request.get("/api/settings")).json()).config;
+  expect(config.detection.mode).toBe("off");
+});
+
+test("transcripts_only_is_an_answer_even_over_a_key_set_before", async ({ page }) => {
+  await earlier(page, { "detection.mode": "shadow", "llm.provider": "gemini" });
+  await gotoApp(page, "/");
+  await page.getByTestId("done-change-summaries").click();
+  await page.getByTestId("services-none").click();
+  await page.getByTestId("setup-next").click();
+  await skipCalendar(page);
+  // Keeping the key is offered, and chosen, until another answer is picked.
+  await expect(page.getByTestId("key-choice-keep")).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("key-choice-keep")).toContainText("Keep Gemini, with your key");
+  await transcriptsOnly(page);
+  await page.getByTestId("setup-next").click(); // sound check
+  await page.getByTestId("setup-next").click(); // how to record
+  await expect(page.getByTestId("done-summaries")).toContainText("Transcripts only");
+  await page.getByTestId("setup-finish").click();
+  await expect(page).toHaveURL(/\/$/);
+  expect((await (await page.request.get("/api/settings")).json()).config.llm.provider).toBe("none");
+});
+
+test("connect_ai_takes_one_plan_per_screen", async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  // Both installed and signed out here, whatever this machine really has.
+  await page.route("**/api/llm/status*", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    body.providers = body.providers.map((p: { id: string; needs: string }) =>
+      p.id === "claude-subscription" || p.id === "codex-subscription"
+        ? { ...p, ready: true, installed: true, signed_in: false, account: undefined }
+        : p.needs === "cli"
+          ? { ...p, ready: false, signed_in: null, account: undefined }
+          : p,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await gotoApp(page, "/welcome");
+  await toServices(page);
+  await page.getByTestId("service-claude").click();
+  await page.getByTestId("service-codex").click();
+  await page.getByTestId("setup-next").click();
+  await skipCalendar(page);
+  await expect(page.getByTestId("ai-count")).toHaveText("1 of 2");
+  await expect(page.getByTestId("ai-card-claude")).toBeVisible();
+  await expect(page.getByTestId("ai-card-codex")).toHaveCount(0);
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("ai-count")).toHaveText("2 of 2");
+  await expect(page.getByTestId("ai-card-codex")).toBeVisible();
+  await page.getByTestId("setup-back").click();
+  await expect(page.getByTestId("ai-card-claude")).toBeVisible();
 });

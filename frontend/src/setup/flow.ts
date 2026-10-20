@@ -6,43 +6,45 @@
  * the summaries. What the user confirms on the mock is what ships.
  */
 
-export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "reports" | "audio" | "capture";
+export type StepId = "welcome" | "services" | "calendar" | "ai" | "key" | "audio" | "capture" | "finish";
 
 /**
- * What the progress track shows: the three AI screens are one stop on it, "AI setup"
- * (product owner, 2026-09-28), so the track does not grow and shrink as the key step
- * comes and goes.
+ * What the progress track shows: six stops, named for what they ask (setup plan,
+ * 2026-10-20). Connecting the AI and the key are one stop, and so are the sound check and
+ * how to record, so the track does not grow and shrink as steps come and go.
  */
-export type CrumbId = "welcome" | "calendar" | "aiSetup" | "reports" | "audio";
+export type CrumbId = "welcome" | "plans" | "calendar" | "connect" | "recording" | "finish";
 
 export function crumbOf(step: StepId): CrumbId {
-  if (step === "services" || step === "ai" || step === "key") return "aiSetup";
-  // The sound check and how to record are one stop: both are about the recording.
-  return step === "capture" ? "audio" : step;
+  if (step === "services") return "plans";
+  if (step === "ai" || step === "key") return "connect";
+  if (step === "audio" || step === "capture") return "recording";
+  return step;
 }
 
 /**
  * The steps, in order, for this machine.
  *
- * The speech model is not among them: fetching it is the installer's job (D65), and setup
- * never asks for it. A build with no Google client cannot connect a calendar, so that
- * step is hidden, not shown broken. There is no CPU/GPU step: the device is chosen
- * automatically. The sound check comes next, then how meetings are recorded, one question
- * per screen (setup plan, 2026-10-20), whose Done finishes setup.
+ * Which AI plans the user pays for comes before the calendar, so their helpers install in
+ * the background while the calendar is connected, and nobody waits on them (setup plan,
+ * O5). The speech model is not among the steps: fetching it is the installer's job (D65).
+ * A build with no Google client cannot connect a calendar, so that step is hidden, not
+ * shown broken. There is no CPU/GPU step. Finish shows what was set up, with a Change on
+ * each line and the crash-report question (D87), and is where setup reopens after an
+ * install (D69).
  */
-export function stepsFor(machine: { calendarAvailable: boolean; reportsAvailable?: boolean }): StepId[] {
+export function stepsFor(machine: { calendarAvailable: boolean }): StepId[] {
   return [
     "welcome",
-    ...(machine.calendarAvailable ? (["calendar"] as const) : []),
-    // Which AI services the user pays for, before any is set up (D75).
+    // Which AI plans the user pays for, before any is set up (D75).
     "services",
+    ...(machine.calendarAvailable ? (["calendar"] as const) : []),
     "ai",
-    // An API key, only when no subscription was signed in (`withoutUnneeded`).
+    // No paid plan connected: a key, or transcripts only (`withoutUnneeded`).
     "key",
-    // Crash reports, asked once (D87), and only in a build that can send them.
-    ...(machine.reportsAvailable ? (["reports"] as const) : []),
     "audio",
     "capture",
+    "finish",
   ];
 }
 
@@ -58,7 +60,10 @@ export const DEFAULT_CAPTURE: CaptureMode = "shadow";
 /** Everything setup saves when it finishes. */
 export interface SetupChoices {
   summarizer: Summarizer;
-  capture: CaptureMode;
+  /** null leaves `detection.*` as it is: detection was switched off in Settings (D69). */
+  capture: CaptureMode | null;
+  /** The crash-report answer, where the build can send them (D87). */
+  reports: boolean | null;
 }
 
 /**
@@ -163,6 +168,23 @@ export function keepSaved(chosen: Summarizer, saved: Summarizer | null): Summari
 }
 
 const SUBSCRIPTIONS = new Set<string>(Object.values(CLI_PROVIDER));
+
+/** A provider that is one of the subscription CLIs setup connects. */
+export function isSubscription(provider: string): boolean {
+  return SUBSCRIPTIONS.has(provider);
+}
+
+/**
+ * What the no-plan step chose: a key, transcripts only, or keeping a key or local model
+ * set before (offered only on a reopened setup that has one).
+ */
+export type KeyChoice = "key" | "none" | "keep";
+
+/** The summaries finishing writes: `keepSaved`, unless the user chose transcripts only. */
+export function finalSummarizer(chosen: Summarizer, saved: Summarizer | null, keyChoice: KeyChoice | null): Summarizer {
+  if (keyChoice === "none" && chosen.provider === "none") return { provider: "none", fallback: "" };
+  return keepSaved(chosen, saved);
+}
 
 /** The ticked subscriptions in the order they would write summaries (`CLI_IDS`). */
 export function summaryOrder(ticked: Record<CliId, boolean>): CliId[] {
