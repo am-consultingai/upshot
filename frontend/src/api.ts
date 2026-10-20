@@ -113,6 +113,8 @@ export interface ActionItem {
   done_at: string | null;
   meeting_title: string | null;
   meeting_started_at: string | null;
+  /** Which way its meeting's transcript runs, which is the way the item runs too. */
+  meeting_direction?: "ltr" | "rtl";
 }
 
 /** One transcript turn that matched a search, with the sentence it matched in. */
