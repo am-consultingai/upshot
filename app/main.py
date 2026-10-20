@@ -99,6 +99,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     from app.diagnostics.api import router as diagnostics_router
     from app.diagnostics.feedback_api import router as feedback_router
     from app.legal.api import router as legal_router
+    from app.tour import router as tour_router
     from app.transcription.api import router as transcription_router
     from app.transcription.api import ui_router as transcription_ui_router
     from app.updates.api import router as updates_router
@@ -141,6 +142,7 @@ def create_app(services: Services | None = None, *, config: Config | None = None
     app.include_router(updates_router)
     app.include_router(diagnostics_router)
     app.include_router(feedback_router)
+    app.include_router(tour_router)
     # The longer prefix first: a mount matches every path under it, and /mcp would take
     # /mcp/ext/ too.
     app.router.routes.append(
