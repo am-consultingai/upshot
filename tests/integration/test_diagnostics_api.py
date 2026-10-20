@@ -45,3 +45,13 @@ def test_the_last_report_is_shown_exactly_as_it_was_sent(api) -> None:  # type: 
     event = reporter.report_exception(RuntimeError("disk full"), where="test")
     shown = api.client().get("/api/diagnostics").json()
     assert shown["available"] is True and shown["last_report"] == event
+
+
+def test_switching_reports_off_deletes_those_kept_for_later(api) -> None:  # type: ignore[no-untyped-def]
+    outbox = api.services.reporter.home / "outbox"
+    outbox.mkdir(parents=True)
+    (outbox / "1-event.json").write_text("{}", encoding="utf-8")
+    (outbox / "2-feedback.json").write_text("{}", encoding="utf-8")
+    client = api.client()
+    client.put("/api/settings", json={"values": {"diagnostics.crash_reports": "off"}})
+    assert sorted(p.name for p in outbox.iterdir()) == ["2-feedback.json"]

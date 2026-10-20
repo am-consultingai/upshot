@@ -169,3 +169,34 @@ def test_transcript_size_is_coarse() -> None:
         "20k-60k",
         "60k+",
     ]
+
+
+def test_feedback_never_carries_out_a_crash_report_kept_before_reports_were_switched_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+
+    from app.diagnostics.client import SentryClient
+
+    bodies: list[bytes] = []
+    online = {"up": False}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if not online["up"]:
+            raise httpx.ConnectError("offline", request=request)
+        bodies.append(request.content)
+        return httpx.Response(200)
+
+    monkeypatch.setattr(
+        SentryClient, "_client", lambda self: httpx.Client(transport=httpx.MockTransport(handle))
+    )
+    # 1. Reports on, offline: a crash report is kept.
+    SentryClient(DSN, tmp_path / "diagnostics" / "outbox").send("event", {"n": 1})
+    # 2. The user switches crash reports off.
+    made, _ = sender(tmp_path)
+    made._send = None
+    made.config.set("diagnostics.crash_reports", "off")
+    # 3. Feedback, online: only the feedback goes.
+    online["up"] = True
+    assert made.send(Feedback(kind="idea", message="More colours."))["sent"] is True
+    assert [json.loads(b.decode().split("\n")[1])["type"] for b in bodies] == ["feedback"]
