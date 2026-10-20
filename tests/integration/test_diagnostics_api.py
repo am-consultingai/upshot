@@ -55,3 +55,17 @@ def test_switching_reports_off_deletes_those_kept_for_later(api) -> None:  # typ
     client = api.client()
     client.put("/api/settings", json={"values": {"diagnostics.crash_reports": "off"}})
     assert sorted(p.name for p in outbox.iterdir()) == ["2-feedback.json"]
+
+
+def test_a_start_with_reports_off_deletes_those_kept_for_later(app_home: Path) -> None:
+    """Switched off some other way than Settings, say by editing the file: nothing waits."""
+    from app import paths
+    from app.services import build
+
+    outbox = paths.app_home() / "diagnostics" / "outbox"
+    outbox.mkdir(parents=True)
+    (outbox / "1-event.json").write_text("{}", encoding="utf-8")
+    (outbox / "2-feedback.json").write_text("{}", encoding="utf-8")
+    built = build(with_worker=False, with_recorder=False)
+    built.conn.close()
+    assert sorted(p.name for p in outbox.iterdir()) == ["2-feedback.json"]
