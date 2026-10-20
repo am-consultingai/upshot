@@ -310,8 +310,14 @@ export default function App() {
   const assistant = useAssistantToggle();
   const sendToSetup =
     saved.isSuccess && setupPending(saved.data?.config) && !welcoming && !termsGate && legal.isSuccess;
-  // The first-run tour, once, on arriving from setup — unless it was already seen.
-  const tourDue = celebrate && saved.isSuccess && savedConfig?.ui?.tour_done !== true;
+  /*
+   * The first-run tour, once, on arriving from setup — unless it was already seen. The
+   * arrival is held: the confetti clears it from the history entry when it ends, at once
+   * under reduced motion, which can be before the settings saying "not seen" have loaded.
+   */
+  const fromSetup = useRef(false);
+  if (celebrate) fromSetup.current = true;
+  const tourDue = fromSetup.current && saved.isSuccess && savedConfig?.ui?.tour_done !== true;
 
   return (
     <I18nContext.Provider value={value}>
