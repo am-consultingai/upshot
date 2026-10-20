@@ -241,6 +241,8 @@ class ActionItem:
     #: Filled in by :meth:`Dao.action_items`; the row itself does not carry it.
     meeting_title: str | None = None
     meeting_started_at: str | None = None
+    #: The meeting's transcript language, which decides which way the item runs.
+    meeting_language: str | None = None
     #: The lighter second line: why it matters, what it unblocks, who is waiting.
     detail: str | None = None
     #: YYYY-MM-DD. The stored value, or — for a row that has none — ``due`` resolved
@@ -255,7 +257,14 @@ class ActionItem:
         return self.done_at is not None
 
     def as_dict(self) -> dict[str, Any]:
-        return {**asdict(self), "done": self.done}
+        from app.asr.languages import direction_for
+
+        # An item runs the way its meeting's transcript does, whatever words it mixes in.
+        return {
+            **asdict(self),
+            "done": self.done,
+            "meeting_direction": direction_for(self.meeting_language),
+        }
 
 
 #: Fields an action item accepts from the summarizer, the seed and the API alike.
@@ -422,6 +431,7 @@ def _row_to_action(row: sqlite3.Row) -> ActionItem:
         done_at=row["done_at"],
         meeting_title=row["meeting_title"],
         meeting_started_at=row["meeting_started_at"],
+        meeting_language=row["meeting_language"],
         detail=row["detail"],
         due_at=_resolved_due_at(row["due_at"], row["due"], row["meeting_started_at"]),
         snoozed_until=row["snoozed_until"],
@@ -1060,7 +1070,8 @@ class Dao:
             where.append("a.done_at IS NULL")
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         rows = self.conn.execute(
-            "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at "
+            "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at, "
+            "m.language AS meeting_language "
             f"FROM action_items a JOIN meetings m ON m.id = a.meeting_id {clause} "
             "ORDER BY a.mine DESC, m.started_at DESC, a.seq ASC LIMIT ?",
             [*args, limit],
@@ -1083,7 +1094,8 @@ class Dao:
 
     def action_item(self, item_id: int) -> ActionItem | None:
         row = self.conn.execute(
-            "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at "
+            "SELECT a.*, m.title AS meeting_title, m.started_at AS meeting_started_at, "
+            "m.language AS meeting_language "
             f"FROM action_items a JOIN meetings m ON m.id = a.meeting_id "
             f"WHERE a.id = ? AND {visible('m')}",
             (item_id,),

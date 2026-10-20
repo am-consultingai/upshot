@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ActionItem } from "../api";
 import { useI18n } from "../i18n";
+import type { Direction } from "../lib/direction";
 import ActionItemRow from "./ActionItemRow";
 import Tooltip from "./Tooltip";
 import Button from "./Button";
@@ -34,11 +35,17 @@ export default function ActionItemsBlock({
   meetingId,
   items,
   addRequest,
+  dir = "ltr",
 }: {
   meetingId: string;
   items: ActionItem[];
   /** Bumped from outside (a "next action" in the summary) to open the add row pre-filled. */
   addRequest?: { text: string; at: number } | null;
+  /**
+   * The meeting transcript's direction, whatever the interface language: the block's
+   * own row (title, count, + Add) mirrors with its items, which run the same way.
+   */
+  dir?: Direction;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -86,14 +93,16 @@ export default function ActionItemsBlock({
     <section
       data-testid="meeting-actions"
       data-collapsed={collapsed ? "true" : undefined}
+      dir={dir}
       className="mb-7 rounded-xl bg-surface-1 px-1.5 pt-2.5 pb-1.5 shadow-[var(--shadow-ring-subtle)]"
     >
       <h2 className="mb-1 flex items-center gap-2 px-2 text-sm font-semibold tracking-snug">
-        {t("meeting.actionItems")}
+        {/* The interface's words, isolated: in a block that runs the other way they keep their own order. */}
+        <bdi>{t("meeting.actionItems")}</bdi>
         {items.length > 0 && (
-          <span data-testid="meeting-actions-progress" className="font-mono text-2xs font-normal text-tertiary tabular-nums">
+          <bdi data-testid="meeting-actions-progress" className="font-mono text-2xs font-normal text-tertiary tabular-nums">
             {t("meeting.doneOf").replace("{done}", String(done)).replace("{total}", String(items.length))}
-          </span>
+          </bdi>
         )}
         <Tooltip label={t("meeting.addAction")} hint={t("help.addAction")}>
         <Button
@@ -105,7 +114,7 @@ export default function ActionItemsBlock({
           variant="ghost"
           className="ms-auto"
         >
-          + {t("meeting.addAction")}
+          <bdi>+ {t("meeting.addAction")}</bdi>
         </Button>
         </Tooltip>
         <button
@@ -119,7 +128,7 @@ export default function ActionItemsBlock({
         >
           <Icon
             icon={ChevronDown}
-            className={`size-3 transition-transform ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
+            className={`size-3 transition-transform ${collapsed ? (dir === "rtl" ? "rotate-90" : "-rotate-90") : ""}`}
           />
         </button>
       </h2>
@@ -129,13 +138,16 @@ export default function ActionItemsBlock({
             <ActionItemRow key={item.id} item={item} showMeeting={false} />
           ))}
           {items.length === 0 && !adding && (
-            <li className="px-2.5 py-2 text-sm text-tertiary">{t("meeting.noActionItems")}</li>
+            <li className="px-2.5 py-2 text-sm text-tertiary">
+              <bdi>{t("meeting.noActionItems")}</bdi>
+            </li>
           )}
           {adding && (
             <li className="flex items-center gap-2.5 px-2.5 py-2">
               <span aria-hidden="true" className="size-4.5 shrink-0 rounded-full shadow-[inset_0_0_0_1.5px_var(--border-strong)]" />
               <input
                 data-testid="meeting-actions-input"
+                dir="auto"
                 autoFocus
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}

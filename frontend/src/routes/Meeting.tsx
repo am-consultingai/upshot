@@ -8,7 +8,9 @@ import type { MessageKey } from "../locales/en";
 import { formatElapsed, formatShortDate } from "../lib/format";
 import MeetingCalendarCard from "../components/MeetingCalendarCard";
 import MeetingDetailsDialog from "../components/MeetingDetailsDialog";
-import MeetingRail from "../components/MeetingRail";
+import Chapters from "../components/Chapters";
+import MeetingRelated from "../components/MeetingRelated";
+import MeetingSpeakers, { useSpeakerNames, useSpeakerRename } from "../components/MeetingSpeakers";
 import MeetingChips from "../components/MeetingChips";
 import Menu from "../components/Menu";
 import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
@@ -284,6 +286,9 @@ export default function MeetingPage() {
       queryClient.invalidateQueries({ queryKey: ["meetings"] });
     }
   }, [running.length, pipelineBusy, queryClient, id]);
+  const renameSpeaker = useSpeakerRename(id);
+  // With any rename still being saved laid over them, so a poll cannot undo one on screen.
+  const speakerNames = useSpeakerNames(id, meeting.data?.speaker_names ?? {});
   const keep = useMutation({
     mutationFn: () => api.keepMeeting(id),
     onSuccess: () => queryClient.invalidateQueries(),
@@ -298,10 +303,38 @@ export default function MeetingPage() {
   });
   /** The title being typed, or null when the heading is not being edited. */
   const [draft, setDraft] = useState<string | null>(null);
+  /*
+   * How wide the field that replaces the heading may be, measured as it opens, while
+   * the heading still shows: its width, or 12rem to type in when that is more — but
+   * never more than the room left beside the chips, so they stay where they are and
+   * the pinned header keeps its height, for a short title and a long one alike.
+   */
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  const titleWidth = useRef<number | null>(null);
+  const openTitle = () => {
+    titleWidth.current = null;
+    const heading = titleRef.current;
+    const row = heading?.parentElement;
+    if (heading && row) {
+      // Fractional widths, rounded down with a pixel to spare: the row wraps on any
+      // overflow at all, and whole-pixel measurements can be a fraction too generous.
+      const box = heading.getBoundingClientRect();
+      const own = box.width;
+      // The heading's footprint is its width less the 1rem it gives back in margin.
+      let free = row.getBoundingClientRect().width - (own - 16);
+      const chips = heading.nextElementSibling;
+      if (chips instanceof HTMLElement) {
+        const chipsBox = chips.getBoundingClientRect();
+        if (chipsBox.top < box.bottom) free -= chipsBox.width + 12;
+      }
+      titleWidth.current = Math.floor(Math.min(Math.max(own, 192), own + Math.max(0, free) - 1));
+    }
+    setDraft(meeting.data?.title ?? "");
+  };
   // Arrived from the sidebar's "Rename": open straight into the field.
   useEffect(() => {
     if (params.get("rename") !== "1" || !meeting.data) return;
-    setDraft(meeting.data.title ?? "");
+    openTitle();
     const next = new URLSearchParams(params);
     next.delete("rename");
     setParams(next, { replace: true });
@@ -516,7 +549,7 @@ export default function MeetingPage() {
   // read; the per-track URLs still exist for diagnosis but the UI does not offer them —
   // nobody wants to choose a track before listening to their own meeting.
   const hasAudio = Object.keys(meeting.data.audio_tracks ?? {}).length > 0;
-  const people = speakers(segments, meeting.data.speaker_names ?? {}, meeting.data.calendar?.participants ?? [], {
+  const people = speakers(segments, speakerNames, meeting.data.calendar?.participants ?? [], {
     you: t("meeting.you"),
     them: t("meeting.themSaid"),
     speaker: t("meeting.speakerN"),
@@ -611,7 +644,7 @@ export default function MeetingPage() {
                 ]
               : []),
             { id: "details", label: t("meeting.editDetails"), run: () => openMeetingInfo(id) },
-            { id: "rename", label: t("meeting.rename"), run: () => setDraft(meeting.data?.title ?? "") },
+            { id: "rename", label: t("meeting.rename"), run: openTitle },
             { id: "calendar", label: t("meeting.calendarEvent"), run: () => setDetails(true) },
             {
               id: "delete",
@@ -623,55 +656,110 @@ export default function MeetingPage() {
           ]}
         />
       </div>
+      {/*
+       * The title, its facts, who spoke and the two pills stay put while the summary or
+       * the transcript scrolls beneath them: they are how you know which meeting you
+       * are in and how you switch between its two halves. Two rows, not five — the
+       * space comes from putting things side by side, not from smaller type.
+       */}
+      <header data-testid="meeting-header" className="flex-none border-b border-line-subtle px-8 pt-3 pb-2.5">
+        <div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            {draft === null ? (
+              <h1
+                ref={titleRef}
+                // The field's padding, given back in margin: measured, the heading is as wide as the field.
+                className="display -mx-2 min-w-0 max-w-[calc(100%+1rem)] cursor-text truncate px-2 text-[1.5rem] leading-tight"
+                data-testid="meeting-title"
+                // One line now: the whole title on hover. Renaming is a double-click or the ⋯ menu.
+                title={meeting.data.title ?? id}
+                onDoubleClick={openTitle}
+              >
+                {rename.isPending ? rename.variables : (meeting.data.title ?? id)}
+              </h1>
+            ) : (
+              /*
+               * The heading becomes the field, at the heading's size, so renaming
+               * reads as editing the name in place rather than filling in a form.
+               * Enter or leaving the field saves; Escape puts the old name back.
+               */
+              <input
+                data-testid="meeting-title-input"
+                aria-label={t("meeting.rename")}
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onFocus={(event) => event.currentTarget.select()}
+                onBlur={commitRename}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    // Only cancels: the page's Escape would hand focus to the meeting list.
+                    // The blur is ours, so the cancel path runs and clears the flag.
+                    event.stopPropagation();
+                    cancelled.current = true;
+                    event.currentTarget.blur();
+                  }
+                }}
+                // The heading's room and height (measured above), and room to type in a short one.
+                style={{ width: titleWidth.current ?? undefined }}
+                className="display -mx-2 min-w-0 max-w-[calc(100%+1rem)] flex-none rounded-md bg-surface-2 px-2 text-[1.5rem] leading-tight"
+              />
+            )}
+            <MeetingChips meeting={meeting.data} onPeople={() => setDetails(true)} />
+          </div>
+          <div className="mt-2 flex items-center gap-3">
+            {/*
+             * Summary and transcript as two pills, not a stack. Circleback ships
+             * exactly this pair and Otter the same; Fathom's five peer tabs scan
+             * measurably worse.
+             */}
+            <div
+              data-testid="meeting-tabs"
+              className="flex w-max shrink-0 gap-0.5 rounded-md bg-surface-3 p-0.5"
+              role="tablist"
+            >
+              {(["summary", "transcript"] as const).map((value) => (
+                <Tooltip
+                  key={value}
+                  label={t(value === "summary" ? "meeting.summary" : "meeting.transcript")}
+                  hint={t(value === "summary" ? "help.tabSummary" : "help.tabTranscript")}
+                >
+                <button
+                  type="button"
+                  role="tab"
+                  data-testid={`meeting-tab-${value}`}
+                  aria-selected={tab === value}
+                  onClick={() => setTab(value)}
+                  className={`h-control-sm rounded-sm px-3.5 text-sm ${
+                    tab === value
+                      ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
+                      : "text-secondary hover:bg-a-200 hover:text-primary"
+                  }`}
+                >
+                  {t(value === "summary" ? "meeting.summary" : "meeting.transcript")}
+                </button>
+                </Tooltip>
+              ))}
+            </div>
+            <MeetingSpeakers
+                people={people}
+                onRename={(slot, name) => renameSpeaker.mutate({ slot, name })}
+                className="ms-auto"
+              />
+          </div>
+        </div>
+      </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div ref={setScroller} data-meeting-scroller className="min-w-0 flex-1 overflow-y-auto">
           {/*
-           * A reading measure, not the width of the window. Every application in this
-           * category caps it and they land within sixty pixels of each other —
-           * Granola 640, Reflect 672, Obsidian 700 — because prose stops being
-           * readable somewhere past 80 characters a line. The minimap sits in the
-           * margin beside it, where it costs no reading width.
+           * The width of the pane. This used to be a 37rem reading measure beside a rail,
+           * and below the widest windows the rail hid and left its column empty; any cap
+           * leaves that same empty strip on a wide enough window, so the summary and the
+           * transcript take the pane. The minimap sits in the margin beside the column.
            */}
-          <div className="flex gap-6 px-8 pt-7">
-            <div className="w-full min-w-0 max-w-[37rem]">
-              <header className="mb-3">
-                {draft === null ? (
-                  <h1
-                    className="display cursor-text text-[2rem]"
-                    data-testid="meeting-title"
-                    title={t("meeting.rename")}
-                    onDoubleClick={() => setDraft(meeting.data?.title ?? "")}
-                  >
-                    {rename.isPending ? rename.variables : (meeting.data.title ?? id)}
-                  </h1>
-                ) : (
-                  /*
-                   * The heading becomes the field, at the heading's size, so renaming
-                   * reads as editing the name in place rather than filling in a form.
-                   * Enter or leaving the field saves; Escape puts the old name back.
-                   */
-                  <input
-                    data-testid="meeting-title-input"
-                    aria-label={t("meeting.rename")}
-                    autoFocus
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onFocus={(event) => event.currentTarget.select()}
-                    onBlur={commitRename}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") event.currentTarget.blur();
-                      if (event.key === "Escape") {
-                        cancelled.current = true;
-                        setDraft(null);
-                      }
-                    }}
-                    className="display w-full min-w-0 rounded-md bg-surface-2 px-2 py-0.5 text-[2rem]"
-                  />
-                )}
-              </header>
-
-              <MeetingChips meeting={meeting.data} onPeople={() => setDetails(true)} />
-
+          <div className="flex gap-6 px-8 pt-5">
+            <div className="w-full min-w-0 flex-1">
               {meeting.data.description && (
                 <p
                   data-testid="meeting-description"
@@ -699,40 +787,6 @@ export default function MeetingPage() {
                   startPicking={assigning}
                 />
               )}
-
-              {/*
-               * Summary and transcript as two pills, not a stack. Circleback ships
-               * exactly this pair and Otter the same; Fathom's five peer tabs scan
-               * measurably worse.
-               */}
-              <div
-                data-testid="meeting-tabs"
-                className="mb-6 flex w-max gap-0.5 rounded-md bg-surface-3 p-0.5"
-                role="tablist"
-              >
-                {(["summary", "transcript"] as const).map((value) => (
-                  <Tooltip
-                    key={value}
-                    label={t(value === "summary" ? "meeting.summary" : "meeting.transcript")}
-                    hint={t(value === "summary" ? "help.tabSummary" : "help.tabTranscript")}
-                  >
-                  <button
-                    type="button"
-                    role="tab"
-                    data-testid={`meeting-tab-${value}`}
-                    aria-selected={tab === value}
-                    onClick={() => setTab(value)}
-                    className={`h-control-sm rounded-sm px-3.5 text-sm ${
-                      tab === value
-                        ? "bg-raised text-primary shadow-[var(--shadow-sm),var(--shadow-ring-subtle),var(--shadow-edge)]"
-                        : "text-secondary hover:bg-a-200 hover:text-primary"
-                    }`}
-                  >
-                    {t(value === "summary" ? "meeting.summary" : "meeting.transcript")}
-                  </button>
-                  </Tooltip>
-                ))}
-              </div>
 
               {meeting.data.evidence.length > 0 && tab === "summary" && (
                 <p className="mb-4 text-sm text-secondary" data-testid="recorded-because">
@@ -787,6 +841,7 @@ export default function MeetingPage() {
                   meetingId={id}
                   items={meeting.data.action_items ?? []}
                   addRequest={addRequest}
+                  dir={directions.transcript}
                 />
               )}
 
@@ -968,6 +1023,9 @@ export default function MeetingPage() {
                 ))}
               {/* Was it good? Up or down, sent only when the user sends it (D87, D3). */}
               {tab === "summary" && summary.data && <SummaryRating meetingId={meeting.data.id} />}
+              {tab === "summary" && (
+                <MeetingRelated meetingId={id} transcribed={segments.length > 0} onSeek={seekTo} />
+              )}
 
               {tab === "transcript" && transcript.isLoading && (
                 <Loading testid="transcript-loading">
@@ -992,6 +1050,9 @@ export default function MeetingPage() {
                 />
               )}
               {tab === "transcript" && segments.length > 0 && (
+                <Chapters chapters={meeting.data.chapters ?? []} onSeek={seekTo} />
+              )}
+              {tab === "transcript" && segments.length > 0 && (
                 <Transcript
                   ref={findRef}
                   segments={segments}
@@ -1005,6 +1066,7 @@ export default function MeetingPage() {
                     playerRef.current?.seek(seconds);
                     setPlayhead(seconds);
                   }}
+                  onRenameSpeaker={(slot, name) => renameSpeaker.mutate({ slot, name })}
                 />
               )}
             </div>
@@ -1014,11 +1076,6 @@ export default function MeetingPage() {
           </div>
         </div>
 
-        {/*
-         * The rail. The reading column is capped on purpose; what was wrong was
-         * leaving the rest of the pane empty.
-         */}
-        <MeetingRail meeting={meeting.data} segments={segments} tab={tab} onSeek={seekTo} />
       </div>
 
       {hasAudio && tab === "transcript" && (
@@ -1062,15 +1119,16 @@ function MeetingSkeleton() {
         <Skeleton className="h-3 w-24" />
         <Skeleton className="ms-auto h-7 w-24 rounded-md" />
       </div>
-      <div className="px-8 pt-7">
-        <div className="w-full max-w-[37rem]">
-          <Skeleton className="mb-4 h-8 w-2/3 rounded-md" />
-          <div className="mb-5 flex gap-1.5">
-            <Skeleton className="h-6 w-24 rounded-full" />
-            <Skeleton className="h-6 w-14 rounded-full" />
-            <Skeleton className="h-6 w-20 rounded-full" />
-          </div>
-          <Skeleton className="mb-7 h-7 w-44 rounded-md" />
+      <div className="border-b border-line-subtle px-8 pt-3 pb-2.5">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-7 w-72 rounded-md" />
+          <Skeleton className="h-6 w-24 rounded-full" />
+          <Skeleton className="h-6 w-14 rounded-full" />
+        </div>
+        <Skeleton className="mt-2 h-7 w-44 rounded-md" />
+      </div>
+      <div className="px-8 pt-5">
+        <div className="w-full">
           <SkeletonProse lines={4} className="mb-6" />
           <SkeletonProse lines={5} />
         </div>

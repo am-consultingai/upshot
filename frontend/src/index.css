@@ -164,6 +164,15 @@ kbd {
 }
 
 /*
+ * The same clipping inside a row that scrolls sideways (the transcript's chapters):
+ * the ring is drawn inside the control instead, so it is whole. Declared here for the
+ * same reason.
+ */
+.inset-focus-ring:focus-visible {
+  outline-offset: -2px;
+}
+
+/*
  * Selection and focus are two different things and must look it.
  *
  * The selected row stays filled whether or not the list has focus — it is what
