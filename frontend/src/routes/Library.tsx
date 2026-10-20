@@ -77,7 +77,7 @@ export default function Library() {
   const stored = ((settings.data?.config ?? {}) as UiConfig).ui ?? {};
   /*
    * The tour shows this week in the week view (Upshot's default), whatever was left on
-   * screen, and puts it back afterwards: nothing it shows is remembered as the user's choice.
+   * screen. It is not remembered as the user's choice: `ui.calendar_span` is untouched.
    */
   const tour = useTour();
   const span: CalendarSpan = tour.running ? "week" : (override.span ?? stored.calendar_span ?? "week");

@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { TooltipRenderProps } from "react-joyride";
 import { useI18n } from "../i18n";
 import Button from "../components/Button";
@@ -27,18 +28,21 @@ export interface TourStepData {
 export default function TourTooltip({ step, isLastStep, backProps, primaryProps, skipProps, tooltipProps }: TooltipRenderProps) {
   const { t } = useI18n();
   const data = step.data as TourStepData;
+  // The dialog is named by its title.
+  const titleId = useId();
 
   if (data.kind === "welcome") {
     return (
       <div
         {...tooltipProps}
+        aria-labelledby={titleId}
         data-testid="tour-welcome"
         className="w-[min(calc(100vw-32px),380px)] rounded-xl bg-raised p-5.5 text-start text-primary shadow-[var(--shadow-ring),var(--shadow-lg)]"
       >
         <span className="mb-3 grid size-9 place-items-center rounded-lg bg-accent text-on-accent">
           <Logo className="w-4.5" />
         </span>
-        <h2 className="display mb-1.5 text-[1.375rem] leading-tight">{t(data.title)}</h2>
+        <h2 id={titleId} className="display mb-1.5 text-[1.375rem] leading-tight">{t(data.title)}</h2>
         <p className="mb-3.5 text-sm text-secondary">{t(data.body)}</p>
         <ol className="mb-4 flex flex-wrap gap-1.5" aria-label={t("tour.label")}>
           {(data.stops ?? []).map((key, index) => (
@@ -68,6 +72,7 @@ export default function TourTooltip({ step, isLastStep, backProps, primaryProps,
   return (
     <div
       {...tooltipProps}
+      aria-labelledby={titleId}
       data-testid="tour-tip"
       data-stop={data.stop}
       className="w-[min(calc(100vw-32px),320px)] rounded-[10px] bg-raised px-4 pt-3.5 pb-3 text-start text-primary shadow-[var(--shadow-ring),var(--shadow-lg)]"
@@ -78,7 +83,7 @@ export default function TourTooltip({ step, isLastStep, backProps, primaryProps,
           {count}
         </span>
       </div>
-      <h2 className="mb-1 text-[0.9375rem] font-semibold tracking-snug">{t(data.title)}</h2>
+      <h2 id={titleId} className="mb-1 text-[0.9375rem] font-semibold tracking-snug">{t(data.title)}</h2>
       <p className="mb-3 text-sm text-secondary">
         {t(data.body)}
         {data.keys && (

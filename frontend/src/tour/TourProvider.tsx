@@ -139,10 +139,10 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
           .catch(() => undefined)
           .finally(() =>
             log({
-          event: "sample_created",
-          recordings: built.meetings.length,
-          events: built.events.length,
-          own_events: built.ownInWeek,
+              event: "sample_created",
+              recordings: built.meetings.length,
+              events: built.events.length,
+              own_events: built.ownInWeek,
               borrowed: built.borrowed,
             }),
           );
@@ -166,7 +166,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
       finishing.current = true;
       setRun(false);
       setEnding(true);
-      log(outcome === "done" ? { event: "ended", outcome } : { event: "ended", outcome, stop: data?.stop ?? 0, of: data?.of ?? 4 });
+      log(outcome === "done" ? { event: "ended", outcome } : { event: "ended", outcome, stop: data?.stop ?? 0, of: data?.of ?? 0 });
       void api
         .putSettings({ "ui.tour_done": true })
         .then(() => queryClient.invalidateQueries({ queryKey: ["settings"] }))
@@ -228,7 +228,8 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
           skipScroll: true,
           before: async () => {
             await toHome();
-            if (pick) await waitFor(() => document.querySelector(pick), 2500);
+            // Within Joyride's own wait for this hook (beforeTimeout).
+            if (pick) await waitFor(() => document.querySelector(pick), 1500);
             if (pick) document.querySelector(pick)?.scrollIntoView({ block: "center", inline: "nearest" });
           },
         },
@@ -275,6 +276,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
                 title: "tour.welcomeTitle",
                 body: "tour.welcomeBody",
                 stops: ["tour.stopRecord", "tour.stopCalendar", "tour.stopSummary", "tour.stopAi"],
+                of: stops.length,
               } satisfies TourStepData,
             },
           ]
@@ -303,7 +305,8 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
   /*
    * While the tour is up it owns the keyboard: Esc skips, the arrows step (mirrored right
    * to left), and nothing reaches the app underneath — Ctrl+R must not start a recording
-   * from behind the tour.
+   * from behind the tour. The card's own buttons still take Enter, Space and Tab; no
+   * shortcut chord gets through even from there, and Tab outside the card goes back into it.
    */
   useEffect(() => {
     if (!run && !ending) return undefined;
@@ -320,7 +323,9 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        given?.skip("button_skip");
+        // Before Joyride's first event there are no controls to skip with yet.
+        if (given) given.skip("button_skip");
+        else void finish("skipped", undefined);
       } else if (event.key === forward) {
         event.preventDefault();
         event.stopPropagation();
@@ -330,14 +335,22 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
         event.stopPropagation();
         const first = origin === "setup" ? 1 : 0;
         if (given && given.info().index > first) given.prev();
-      } else if (!inTip && event.key !== "Tab") {
+      } else {
+        const chord = event.ctrlKey || event.metaKey || event.altKey;
+        if (inTip && !chord) return;
         event.stopPropagation();
-        if (event.ctrlKey || event.metaKey || event.key.length === 1) event.preventDefault();
+        event.preventDefault();
+        if (event.key === "Tab") {
+          document
+            .querySelector("[data-testid=tour-tip],[data-testid=tour-welcome]")
+            ?.querySelector<HTMLElement>("button[data-testid=tour-next]")
+            ?.focus();
+        }
       }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [run, ending, rtl, origin]);
+  }, [run, ending, rtl, origin, finish]);
 
   const value = useMemo<Tour>(() => ({ running: run || ending, sample, start }), [run, ending, sample, start]);
 
