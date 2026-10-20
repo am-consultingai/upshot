@@ -1,5 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
-import type { CliFacts, CliId, KeyProviderId, SetupChoices, StepId } from "./flow";
+import type { CaptureMode, CliFacts, CliId, KeyProviderId, SetupChoices, StepId, Summarizer } from "./flow";
 import type { Locale } from "../i18n";
 
 /**
@@ -68,6 +68,11 @@ export interface SetupSnapshot {
   savedStep: StepId | null;
   /** Crash reports (D87): asked only in a build that can send them. */
   reports: { available: boolean; consent: "unset" | "on" | "off" };
+  /**
+   * What an earlier run of setup chose, for setup reopened after an install (D69): the
+   * recording mode it opens on, and the summaries kept when nothing new is chosen.
+   */
+  saved: { capture: CaptureMode | null; summarizer: Summarizer | null };
 }
 
 export interface SetupBackend {

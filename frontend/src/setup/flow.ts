@@ -6,7 +6,7 @@
  * the summaries. What the user confirms on the mock is what ships.
  */
 
-export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "reports" | "audio";
+export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "reports" | "audio" | "capture";
 
 /**
  * What the progress track shows: the three AI screens are one stop on it, "AI setup"
@@ -16,7 +16,9 @@ export type StepId = "welcome" | "calendar" | "services" | "ai" | "key" | "repor
 export type CrumbId = "welcome" | "calendar" | "aiSetup" | "reports" | "audio";
 
 export function crumbOf(step: StepId): CrumbId {
-  return step === "services" || step === "ai" || step === "key" ? "aiSetup" : step;
+  if (step === "services" || step === "ai" || step === "key") return "aiSetup";
+  // The sound check and how to record are one stop: both are about the recording.
+  return step === "capture" ? "audio" : step;
 }
 
 /**
@@ -25,8 +27,8 @@ export function crumbOf(step: StepId): CrumbId {
  * The speech model is not among them: fetching it is the installer's job (D65), and setup
  * never asks for it. A build with no Google client cannot connect a calendar, so that
  * step is hidden, not shown broken. There is no CPU/GPU step: the device is chosen
- * automatically. The last step is the sound check, with how meetings are recorded under
- * it, and its Done finishes setup: there is no summary screen (product owner, 2026-09-28).
+ * automatically. The sound check comes next, then how meetings are recorded, one question
+ * per screen (setup plan, 2026-10-20), whose Done finishes setup.
  */
 export function stepsFor(machine: { calendarAvailable: boolean; reportsAvailable?: boolean }): StepId[] {
   return [
@@ -40,6 +42,7 @@ export function stepsFor(machine: { calendarAvailable: boolean; reportsAvailable
     // Crash reports, asked once (D87), and only in a build that can send them.
     ...(machine.reportsAvailable ? (["reports"] as const) : []),
     "audio",
+    "capture",
   ];
 }
 
@@ -119,7 +122,8 @@ export function cliUsable(cli: CliFacts): boolean {
 }
 
 export interface Summarizer {
-  provider: ProviderId;
+  /** Any provider Settings offers: setup itself only ever picks a `ProviderId`. */
+  provider: ProviderId | (string & {});
   /** Used when the provider reports its quota spent; "" for none. */
   fallback: ProviderId | "";
 }
@@ -143,6 +147,26 @@ export function chooseSummarizer(
     return { provider: CLI_PROVIDER[usable[0]], fallback: usable[1] ? CLI_PROVIDER[usable[1]] : "" };
   }
   return { provider: checkedKey ?? "none", fallback: "" };
+}
+
+/**
+ * What finishing writes, when setup reopens on choices made before (D69). A provider setup
+ * cannot offer or check — an API key's, a local model's — stays when the AI steps end on
+ * "none": passing the key step over is not asking to switch summaries off. A subscription
+ * is not kept that way: whether it still works is known, and `chooseSummarizer` decided.
+ */
+export function keepSaved(chosen: Summarizer, saved: Summarizer | null): Summarizer {
+  if (chosen.provider !== "none" || !saved || saved.provider === "none") return chosen;
+  if (SUBSCRIPTIONS.has(saved.provider)) return chosen;
+  // Its fallback is kept only if it is not a subscription: that one setup has just decided.
+  return { provider: saved.provider, fallback: SUBSCRIPTIONS.has(saved.fallback) ? "" : saved.fallback };
+}
+
+const SUBSCRIPTIONS = new Set<string>(Object.values(CLI_PROVIDER));
+
+/** The ticked subscriptions in the order they would write summaries (`CLI_IDS`). */
+export function summaryOrder(ticked: Record<CliId, boolean>): CliId[] {
+  return CLI_IDS.filter((id) => ticked[id]);
 }
 
 /** Pre-tick a card when its CLI already works: there is nothing to ask. */

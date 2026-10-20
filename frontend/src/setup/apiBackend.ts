@@ -2,7 +2,7 @@ import { api, type AudioLevel, type CalendarStatus, type LlmProvider } from "../
 import type { Locale } from "../i18n";
 import type { CalendarPhase, CliPhase, CliSnapshot, SetupBackend, SetupSnapshot } from "./backend";
 import { CHIME_SECONDS, chime } from "./chime";
-import { CLI_PROVIDER, type CliId, type KeyProviderId, type SetupChoices, type StepId } from "./flow";
+import { CLI_PROVIDER, type CliId, type KeyProviderId, type SetupChoices, type StepId, type Summarizer } from "./flow";
 
 /**
  * First-run setup on the real application (epic z8tj1hb01k): the same screens the mock
@@ -55,6 +55,25 @@ function cliFacts(row: LlmProvider | undefined, id: CliId): Omit<CliSnapshot, "p
   };
 }
 
+/**
+ * What an earlier setup (or Settings since) chose, for setup reopened after an install
+ * (D69). A mode setup does not offer ("off") is not a choice to reopen on.
+ */
+function savedChoices(config: {
+  detection?: { mode?: string; decided?: boolean };
+  llm?: { provider?: string; fallback_provider?: string };
+}): SetupSnapshot["saved"] {
+  const mode = config.detection?.decided ? config.detection.mode : undefined;
+  const provider = config.llm?.provider;
+  return {
+    capture: mode === "shadow" || mode === "on" ? mode : null,
+    summarizer:
+      provider && provider !== "none"
+        ? { provider, fallback: (config.llm?.fallback_provider ?? "") as Summarizer["fallback"] }
+        : null,
+  };
+}
+
 export class ApiSetupBackend implements SetupBackend {
   private state: SetupSnapshot;
   private listeners = new Set<() => void>();
@@ -79,7 +98,11 @@ export class ApiSetupBackend implements SetupBackend {
       api.calendarStatus().catch(() => null),
       api.diagnostics().catch(() => null),
     ]);
-    const config = settings.config as { setup?: { step?: string } };
+    const config = settings.config as {
+      setup?: { step?: string; done?: boolean };
+      detection?: { mode?: string; decided?: boolean };
+      llm?: { provider?: string; fallback_provider?: string };
+    };
     const saved = config.setup?.step;
     const backend = new ApiSetupBackend({
       calendar: {
@@ -97,6 +120,7 @@ export class ApiSetupBackend implements SetupBackend {
       speakers: { phase: "idle", level: 0 },
       savedStep: saved ? (saved as StepId) : null,
       reports: { available: !!diagnostics?.available, consent: diagnostics?.consent ?? "unset" },
+      saved: savedChoices(config),
     });
     backend.opensExternally = !!calendar?.opens_externally;
     backend.learnClis();
