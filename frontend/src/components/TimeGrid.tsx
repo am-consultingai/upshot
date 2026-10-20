@@ -123,6 +123,7 @@ export function OpenBalloon({
       data-testid="chip-open"
       data-count={count}
       data-tour-balloon={tour}
+      // A marker only: the badge leaves with the calendar stop, before any fire.
       data-tour-sample={tour === "sample" ? "" : undefined}
       aria-label={said}
       className={`grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-3xs font-semibold leading-none text-canvas tabular-nums ${

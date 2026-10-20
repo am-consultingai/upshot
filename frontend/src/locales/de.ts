@@ -154,7 +154,7 @@ export const de: Record<MessageKey, string> = {
   "settings.groupAppearance": "Darstellung",
   "settings.providerUnlisted": "Zusammenfassungen sind auf „{provider}“ eingestellt, was keine der folgenden Optionen ist – daher ist keine ausgewählt. Wählen Sie eine aus, um dies zu ändern.",
   "settings.groupSubscription": "Ihr KI-Abonnement",
-  "settings.groupSubscriptionHint": "Fassen Sie mit einem Abonnement zusammen, das Sie bereits bezahlen – Claude oder ChatGPT. Upshot steuert das offizielle Befehlszeilentool, das auf diesem Computer angemeldet ist. Es gibt also keinen API-Schlüssel und keine Zusatzkosten; es gelten die Nutzungslimits Ihres Plans.",
+  "settings.groupSubscriptionHint": "Fassen Sie mit einem Abonnement zusammen, das Sie bereits bezahlen – Claude, ChatGPT oder Gemini. Upshot steuert das offizielle Befehlszeilentool, das auf diesem Computer angemeldet ist. Es gibt also keinen API-Schlüssel und keine Zusatzkosten; es gelten die Nutzungslimits Ihres Plans.",
   "settings.groupApiKeys": "API-Schlüssel",
   "settings.groupApiKeysHint": "Fassen Sie über die kostenpflichtige API eines Anbieters zusammen. Sie erstellen den Schlüssel in dessen Konsole, abgerechnet wird nach Nutzung. Der Schlüssel wird in der Windows-Anmeldeinformationsverwaltung auf diesem Computer gespeichert, nie in einer Datei.",
   "settings.groupNone": "Keine KI",
