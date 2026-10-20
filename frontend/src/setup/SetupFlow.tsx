@@ -150,7 +150,10 @@ export default function SetupFlow({
   const crumbAt = crumbs.indexOf(crumbOf(step));
   const openCrumb = (crumb: CrumbId) => {
     const first = walk.find((s) => crumbOf(s) === crumb);
-    if (first) setStep(first);
+    if (first) {
+      setCameBack(false);
+      setStep(first);
+    }
   };
 
   // A key counts only where the key step is offered: a subscription that works wins.
