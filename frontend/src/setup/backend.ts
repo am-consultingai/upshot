@@ -72,7 +72,14 @@ export interface SetupSnapshot {
    * What an earlier run of setup chose, for setup reopened after an install (D69): the
    * recording mode it opens on, and the summaries kept when nothing new is chosen.
    */
-  saved: { capture: CaptureMode | null; summarizer: Summarizer | null };
+  saved: {
+    capture: CaptureMode | null;
+    summarizer: Summarizer | null;
+    /** Detection switched off in Settings: setup offers no "off", so it leaves it alone. */
+    detectionOff: boolean;
+    /** Setup was finished before: it reopens on the review of what was chosen (D69). */
+    reopened: boolean;
+  };
 }
 
 export interface SetupBackend {
@@ -98,8 +105,6 @@ export interface SetupBackend {
   /** Keep the language chosen in setup as the app's language. */
   setLanguage(language: Locale): void;
   saveStep(step: StepId): void;
-  /** The answer to "send crash reports?", saved at once (D87). */
-  setCrashReports(on: boolean): void;
   finish(choices: SetupChoices): Promise<void>;
 }
 
