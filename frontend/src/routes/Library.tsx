@@ -24,6 +24,7 @@ import type { CalendarEvent } from "../api";
 import Button from "../components/Button";
 import { ChevronLeft, ChevronRight, FoldVertical } from "lucide-react";
 import { Icon } from "../components/Icon";
+import { useTour } from "../tour/TourProvider";
 
 /** Explicit, so the message keys stay type-checked rather than cast away. */
 const SPAN_LABEL = {
@@ -74,7 +75,16 @@ export default function Library() {
 
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const stored = ((settings.data?.config ?? {}) as UiConfig).ui ?? {};
-  const span: CalendarSpan = override.span ?? stored.calendar_span ?? "week";
+  /*
+   * The tour shows this week in the week view (Upshot's default), whatever was left on
+   * screen, and puts it back afterwards: nothing it shows is remembered as the user's choice.
+   */
+  const tour = useTour();
+  const span: CalendarSpan = tour.running ? "week" : (override.span ?? stored.calendar_span ?? "week");
+  const touring = tour.running;
+  useEffect(() => {
+    if (touring) setAnchor(startOfDay(new Date()));
+  }, [touring]);
 
   // Remembered the way the language setting is, so the screen opens as it was left.
   // Applied locally first: waiting for a round trip to redraw makes a toggle feel broken.
@@ -138,8 +148,10 @@ export default function Library() {
     enabled: !reading,
   });
   const [openEvent, setOpenEvent] = useState<CalendarEvent | null>(null);
-  const events = calendarEvents.data?.events ?? [];
-  const windowed = inRange.data?.meetings ?? [];
+  // The tour's sample joins the week only when it made events for it (./tour/sample.ts).
+  const sampleEvents = tour.sample?.events ?? [];
+  const events = [...(calendarEvents.data?.events ?? []), ...sampleEvents];
+  const windowed = [...(inRange.data?.meetings ?? []), ...(sampleEvents.length > 0 ? (tour.sample?.meetings ?? []) : [])];
   const period = periodParts(span, anchor, locale);
 
   return (
