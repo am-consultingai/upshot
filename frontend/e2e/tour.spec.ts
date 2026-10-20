@@ -65,6 +65,11 @@ test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, s
   await expect(tip).toHaveAttribute("data-stop", "2");
   await expect(page.getByTestId("span-week")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-testid=calendar-timegrid] [data-event^=tour-sample-]").first()).toBeVisible();
+  // The picked meeting's open-items balloon pulses: its own three items.
+  const pulsing = page.locator("[data-testid=calendar-timegrid] [data-tour-balloon]");
+  await expect(pulsing).toHaveCount(1);
+  await expect(pulsing).toHaveAttribute("data-tour-balloon", "pulse");
+  await expect(pulsing).toHaveAttribute("data-count", "3");
 
   // 3 · The sample meeting's page, drawn without asking the server.
   await next(page);
@@ -111,6 +116,12 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   const tip = page.getByTestId("tour-tip");
   await expect(tip).toHaveAttribute("data-stop", "2");
   await expect(page.locator("[data-testid=calendar-timegrid] [data-event^=tour-sample-]")).toHaveCount(0);
+  // The user's event has no open items, so the tour gives it a sample balloon to point at.
+  const balloon = page
+    .getByTestId("calendar-gevent")
+    .filter({ hasText: "Interview: Noa" })
+    .locator("[data-tour-balloon=sample]");
+  await expect(balloon).toBeVisible();
   // The sample recordings borrow the user's titles, and are marked as samples.
   const sampleRows = page.locator("[data-testid=meeting-card][data-meeting-id^=tour-sample-]");
   await expect(sampleRows).toHaveCount(2);
@@ -121,6 +132,7 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   await expect(page.getByTestId("tour-blocker")).toHaveCount(0, { timeout: 8000 });
   await expect(page.getByTestId("toaster")).toContainText("Replay it from the workspace menu");
   await expect(sampleRows).toHaveCount(0);
+  await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
   await expect(page.locator("[data-testid=meeting-card][data-meeting-id=own-standup]")).toBeVisible();
   expect(sampleRequests).toEqual([]);
   // Back on the month the user chose, which was never overwritten.
