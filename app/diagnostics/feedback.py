@@ -161,7 +161,11 @@ class FeedbackSender:
                 from app.diagnostics.client import SentryClient
 
                 assert self.dsn
-                sent = SentryClient(self.dsn, self.home / "outbox").send("feedback", payload, files)
+                # The outbox is shared: a crash report kept from before the user switched
+                # them off must not go out with this.
+                reports = self.config.get("diagnostics.crash_reports") == "on"
+                client = SentryClient(self.dsn, self.home / "outbox", events=reports)
+                sent = client.send("feedback", payload, files)
         except Exception:  # never lose the user's words to an error here
             log.exception("could not send feedback")
         log.info("feedback %s %s", payload["tags"]["reference"], "sent" if sent else "kept")

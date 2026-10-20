@@ -5,6 +5,9 @@ project the DSN names, authenticated by the DSN's public key, which only lets a 
 send. Every item is written to ``<app home>/diagnostics/outbox/`` first and removed once
 Sentry accepts it, so a report made offline goes out when the network is back. The outbox
 keeps at most ``OUTBOX_MAX`` items: a machine offline for a month does not fill its disk.
+
+Feedback shares the outbox with crash reports, so a client that may not send crash reports
+(``events=False``: the user switched them off) drops a kept one instead of delivering it.
 """
 
 from __future__ import annotations
@@ -94,10 +97,13 @@ def envelope(
 
 
 class SentryClient:
-    def __init__(self, dsn: str, outbox: Path, *, http: httpx.Client | None = None) -> None:
+    def __init__(
+        self, dsn: str, outbox: Path, *, http: httpx.Client | None = None, events: bool = True
+    ) -> None:
         self.dsn = Dsn.parse(dsn)
         self.outbox = outbox
         self._http = http
+        self.events = events
 
     def send(
         self,
@@ -124,6 +130,9 @@ class SentryClient:
                 body = envelope(kept["type"], kept["payload"], files)
             except (OSError, ValueError, KeyError):
                 path.unlink(missing_ok=True)  # a broken item would block the rest for ever
+                continue
+            if kept["type"] == "event" and not self.events:
+                path.unlink(missing_ok=True)  # kept before crash reports were switched off
                 continue
             try:
                 response = self._client().post(
@@ -170,3 +179,12 @@ class SentryClient:
                 timeout=HTTP_TIMEOUT_S, headers={"User-Agent": f"Upshot/{build_info().version}"}
             )
         return self._http
+
+
+def drop_events(outbox: Path) -> int:
+    """Delete the crash reports kept in ``outbox``; feedback stays. How many went."""
+    dropped = 0
+    for path in outbox.glob("*-event.json") if outbox.is_dir() else []:
+        path.unlink(missing_ok=True)
+        dropped += 1
+    return dropped

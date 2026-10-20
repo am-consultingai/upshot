@@ -1835,6 +1835,10 @@ def put_settings(request: Request, body: SettingsPut) -> dict[str, Any]:
     svc.config.validate()
     svc.config.save()
     svc.events.publish("settings", changed=sorted(body.values))
+    switched = "diagnostics.crash_reports" in body.values
+    if switched and body.values["diagnostics.crash_reports"] != "on" and svc.reporter is not None:
+        # Switched off: nothing kept from before goes out later (D87).
+        svc.reporter.forget_kept()
     if (
         "updates.channel" in body.values
         and svc.updates is not None

@@ -186,6 +186,10 @@ def build(
 
     # Crash reports, only with consent and a DSN (D87).
     services.reporter = CrashReporter(cfg)
+    if services.reporter.consent != "on":
+        # Switched off some other way (the file, an environment variable): nothing kept
+        # from before goes out if they come back on.
+        services.reporter.forget_kept()
     from app.llm import model_choice
 
     # What models each provider offers, asked for in the background once the app runs.
