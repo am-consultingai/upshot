@@ -70,14 +70,23 @@ def test_a_week_with_events_and_borrowed_titles_say_so(api, caplog) -> None:  # 
     ]
 
 
-def test_only_the_fixed_fields_are_taken(api) -> None:  # type: ignore[no-untyped-def]
+def test_only_the_fixed_fields_are_taken(api, caplog) -> None:  # type: ignore[no-untyped-def]
     client = api.client()
+    caplog.set_level(logging.INFO, logger="app.tour")
     assert client.post("/api/tour/event", json={"event": "anything"}).status_code == 422
-    assert client.post("/api/tour/event", json={"event": "ended", "stop": 999}).status_code == 422
+    too_far = {"event": "ended", "outcome": "skipped", "stop": 999}
+    assert client.post("/api/tour/event", json=too_far).status_code == 422
+    # Each moment needs its own fields: no line is written from a guess.
+    assert client.post("/api/tour/event", json={"event": "ended"}).status_code == 422
+    assert client.post("/api/tour/event", json={"event": "started"}).status_code == 422
+    assert client.post("/api/tour/event", json={"event": "sample_removed"}).status_code == 422
     # A title has no field to travel in: an unknown key is ignored, never logged.
     extra = {"event": "started", "origin": "replay", "title": "Board prep"}
     response = client.post("/api/tour/event", json=extra)
     assert response.status_code == 200
+    lines = [record.getMessage() for record in caplog.records if record.name == "app.tour"]
+    assert lines == ["tour started (replay)"]
+    assert not any("Board prep" in line for line in lines)
 
 
 def test_the_tour_has_its_own_setting(api) -> None:  # type: ignore[no-untyped-def]

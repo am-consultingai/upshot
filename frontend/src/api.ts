@@ -664,7 +664,6 @@ export interface NoticeList {
   entries: NoticeEntry[];
 }
 
-/** Feedback from inside the app (D87): what the form sends. */
 /** What the tour tells the server: which moment, and the counts that go with it (app/tour.py). */
 export type TourEventBody =
   | { event: "started"; origin: "setup" | "replay" }
@@ -672,6 +671,7 @@ export type TourEventBody =
   | { event: "ended"; outcome: "done" | "skipped"; stop?: number; of?: number }
   | { event: "sample_removed"; items: number; burnt: number };
 
+/** Feedback from inside the app (D87): what the form sends. */
 export interface FeedbackBody {
   kind: "idea" | "problem" | "praise" | "other";
   message: string;
