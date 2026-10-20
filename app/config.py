@@ -70,6 +70,9 @@ DEFAULTS: dict[str, Any] = {
         # new user finds out what "Up next" or "Ask this meeting" is for — and one
         # checkbox in Settings turns them off for someone who no longer needs them.
         "tooltips_off": False,
+        # The first-run tour (app/tour.py) was seen, finished or skipped. Its own flag, not
+        # setup.done: a reinstall reopens setup (D69), and the tour must not come back with it.
+        "tour_done": False,
     },
     # Follow the meeting: the language it was spoken in, read from its transcript
     # (app/asr/language.py). Defaulting summaries to English meant an English write-up
