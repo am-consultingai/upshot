@@ -1,46 +1,51 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LANGUAGES, useI18n, type Locale, type MessageKey } from "../i18n";
 import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
+import FinishStep, { hasSummaryName, summaryName } from "./FinishStep";
 import KeyStep from "./KeyStep";
 import ServicesStep from "./ServicesStep";
-import { AudioStep, CaptureStep, ReportsStep, WelcomeStep } from "./Steps";
+import { AudioStep, CaptureStep, WelcomeStep } from "./Steps";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import {
+  CLI_IDS,
   DEFAULT_CAPTURE,
   NO_CLIS,
   chooseSummarizer,
   crumbOf,
+  finalSummarizer,
   initialTicks,
-  keepSaved,
+  isSubscription,
   resumeAt,
   stepsFor,
   withoutUnneeded,
   type CaptureMode,
   type CliId,
   type CrumbId,
+  type KeyChoice,
   type StepId,
 } from "./flow";
 
 const LABEL: Record<CrumbId, MessageKey> = {
   welcome: "firstRun.step.welcome",
+  plans: "firstRun.step.services",
   calendar: "firstRun.step.calendar",
-  aiSetup: "firstRun.step.aiSetup",
-  reports: "firstRun.step.reports",
+  connect: "firstRun.step.ai",
   // The sound check and how to record: both about the recording (setup plan, 2026-10-20).
-  audio: "firstRun.step.capture",
+  recording: "firstRun.step.capture",
+  finish: "firstRun.step.done",
 };
 
 /**
- * First-run setup: Welcome → Google Calendar → AI setup (services, connecting them, and a
- * key when none connected) → Sound check → how to record, ending on Done (epic z8tj1hb01k,
- * D75, D79; setup plan, 2026-10-20).
+ * First-run setup: Welcome → AI plans → Google Calendar → Connect AI (or a key, when no
+ * plan connected) → Sound check → how to record → Finish (epic z8tj1hb01k, D75, D79,
+ * D105; setup plan, 2026-10-20).
  *
  * Which steps exist is decided once, when setup opens. Two of them follow the AI choices
- * as they change: Connect AI appears once a service is ticked, and API key only while no
- * ticked service is signed in (`withoutUnneeded`). The progress track shows the three AI
- * screens as one stop. The step reached is saved as it changes, so an app closed
- * half-way reopens where it was left.
+ * as they change: Connect AI appears once a plan is ticked, and the key only while no
+ * ticked plan is signed in (`withoutUnneeded`). The step reached is saved as it changes,
+ * so an app closed half-way reopens where it was left; setup finished before reopens on
+ * Finish, the review of what was chosen (D69).
  */
 export default function SetupFlow({
   onFinished,
@@ -54,16 +59,28 @@ export default function SetupFlow({
   const backend = useSetupBackend();
   const snapshot = useSetupSnapshot();
 
-  const [allSteps] = useState(() =>
-    stepsFor({ calendarAvailable: snapshot.calendar.available, reportsAvailable: snapshot.reports.available }),
+  const [allSteps] = useState(() => stepsFor({ calendarAvailable: snapshot.calendar.available }));
+  const { reopened } = snapshot.saved;
+  // Reopened after an install, setup opens on what was chosen before (D69). Detection
+  // switched off in Settings stays off unless a way to record is chosen here: null.
+  const [capture, setCapture] = useState<CaptureMode | null>(
+    snapshot.saved.capture ?? (snapshot.saved.detectionOff ? null : DEFAULT_CAPTURE),
   );
-  // Reopened after an install, setup opens on what was chosen before (D69).
-  const [capture, setCapture] = useState<CaptureMode>(snapshot.saved.capture ?? DEFAULT_CAPTURE);
+  // A key or local model set before is offered to keep, and chosen, on the no-plan step.
+  const savedOwn = snapshot.saved.summarizer && !isSubscription(snapshot.saved.summarizer.provider)
+    ? snapshot.saved.summarizer
+    : null;
+  const [keyChoice, setKeyChoice] = useState<KeyChoice | null>(savedOwn ? "keep" : null);
+  // Crash reports, ticked unless the answer was no (decision Z8tj1hnz80).
+  const [reports, setReports] = useState(snapshot.reports.consent !== "off");
   // "I don't pay for any of these": an answer, so the plans question can insist on one.
   const [noPlan, setNoPlan] = useState(false);
-  const [step, setStep] = useState<StepId>(() => resumeAt(allSteps, startAt ?? snapshot.savedStep));
-  // Said once, on the step setup reopened on, and gone as soon as the user moves.
-  const [resumed, setResumed] = useState(() => !startAt && step !== allSteps[0]);
+  const [step, setStep] = useState<StepId>(() =>
+    resumeAt(allSteps, startAt ?? snapshot.savedStep ?? (reopened ? "finish" : null)),
+  );
+  // Said once, on the step setup was left on, and gone as soon as the user moves. Finish
+  // after an install says "Welcome back" itself.
+  const [resumed, setResumed] = useState(() => !startAt && step !== allSteps[0] && !!snapshot.savedStep);
   // Pre-ticked from what already works — once that is known, and only if the user has
   // not ticked anything themselves by then.
   const [ticked, setTickedState] = useState<Record<CliId, boolean>>(() =>
@@ -79,6 +96,31 @@ export default function SetupFlow({
     // Only when the facts arrive; later changes are the user's own doing.
   }, [snapshot.cliKnown]);
   const [finishing, setFinishing] = useState(false);
+  // Which helpers were already here when the facts arrived, so a track does not show an
+  // install that never happened — and does show one setup itself did.
+  const [installedAtStart, setInstalledAtStart] = useState<Record<CliId, boolean> | null>(null);
+  useEffect(() => {
+    if (snapshot.cliKnown && !installedAtStart) {
+      const { claude, codex, antigravity } = snapshot.cli;
+      setInstalledAtStart({ claude: claude.installed, codex: codex.installed, antigravity: antigravity.installed });
+    }
+  }, [snapshot.cliKnown, snapshot.cli, installedAtStart]);
+
+  // Each ticked plan's helper installs once the user moves on from the plans question, in
+  // the background, while the calendar is connected (setup plan, O5). Once each: a
+  // failed install waits for Try again on its sign-in screen.
+  const started = useRef(new Set<CliId>());
+  const pastPlans = allSteps.indexOf(step) > allSteps.indexOf("services");
+  useEffect(() => {
+    if (!pastPlans || !snapshot.cliKnown) return;
+    for (const id of CLI_IDS) {
+      const cli = snapshot.cli[id];
+      if (ticked[id] && !cli.installed && cli.phase === "idle" && !started.current.has(id)) {
+        started.current.add(id);
+        backend.install(id);
+      }
+    }
+  }, [pastPlans, snapshot.cliKnown, snapshot.cli, ticked, backend]);
 
   useEffect(() => backend.saveStep(step), [backend, step]);
   const [opened] = useState(step);
@@ -92,28 +134,45 @@ export default function SetupFlow({
   const steps = withoutUnneeded(allSteps, ticked, snapshot.cli);
   const walk = allSteps.filter((s) => s === step || steps.includes(s));
   const index = walk.indexOf(step);
-  const next = () => setStep(walk[Math.min(index + 1, walk.length - 1)]);
-  const back = () => setStep(walk[Math.max(index - 1, 0)]);
-  // The track: each stop once, the AI screens as one. A stop reached earlier opens on
-  // its first screen.
+  // Which way the last move went: a step with screens of its own (Connect AI) opens on its
+  // last one when entered with Back.
+  const [cameBack, setCameBack] = useState(false);
+  const next = () => {
+    setCameBack(false);
+    setStep(walk[Math.min(index + 1, walk.length - 1)]);
+  };
+  const back = () => {
+    setCameBack(true);
+    setStep(walk[Math.max(index - 1, 0)]);
+  };
+  // The track: each stop once. A stop reached earlier opens on its first screen.
   const crumbs = [...new Set(allSteps.map(crumbOf))];
   const crumbAt = crumbs.indexOf(crumbOf(step));
   const openCrumb = (crumb: CrumbId) => {
     const first = walk.find((s) => crumbOf(s) === crumb);
-    if (first) setStep(first);
+    if (first) {
+      setCameBack(false);
+      setStep(first);
+    }
   };
 
   // A key counts only where the key step is offered: a subscription that works wins.
-  // Ending on none keeps a key or local model chosen before: passing over isn't removing.
-  const summarizer = keepSaved(
-    chooseSummarizer(ticked, snapshot.cli, snapshot.key.phase === "valid" ? snapshot.key.provider : null),
+  // Ending on none keeps a key or local model chosen before, unless transcripts only was
+  // the answer: passing over isn't removing.
+  const summarizer = finalSummarizer(
+    chooseSummarizer(
+      ticked,
+      snapshot.cli,
+      keyChoice === "key" && snapshot.key.phase === "valid" ? snapshot.key.provider : null,
+    ),
     snapshot.saved.summarizer,
+    keyChoice,
   );
 
   const finish = async () => {
     setFinishing(true);
     try {
-      await backend.finish({ summarizer, capture });
+      await backend.finish({ summarizer, capture, reports: snapshot.reports.available ? reports : null });
       onFinished();
     } finally {
       setFinishing(false);
@@ -193,15 +252,15 @@ export default function SetupFlow({
         </select>
       </div>
         {/* A line kept for it whether it shows or not, so it cannot push the step down. */}
-        <p data-testid={resumed ? "setup-resumed" : undefined} className="h-4 text-xs leading-4 text-secondary">
-          {resumed ? t("firstRun.resumed") : ""}
+        <p data-testid={resumed && !(reopened && step === "finish") ? "setup-resumed" : undefined} className="h-4 text-xs leading-4 text-secondary">
+          {resumed && !(reopened && step === "finish") ? t("firstRun.resumed") : ""}
         </p>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-4">
       {step === "welcome" && <WelcomeStep onNext={next} />}
-      {step === "calendar" && <CalendarStep onNext={next} onBack={back} />}
+      {step === "calendar" && <CalendarStep ticked={ticked} onNext={next} onBack={back} />}
       {step === "services" && (
         <ServicesStep
           chosen={ticked}
@@ -212,15 +271,32 @@ export default function SetupFlow({
           onBack={back}
         />
       )}
-      {step === "ai" && <AiStep ticked={ticked} onNext={next} onBack={back} />}
-      {step === "key" && <KeyStep onNext={next} onBack={back} />}
-      {step === "reports" && <ReportsStep onNext={next} onBack={back} />}
+      {step === "ai" && (
+        <AiStep ticked={ticked} installedAtStart={installedAtStart} cameBack={cameBack} onNext={next} onBack={back} />
+      )}
+      {step === "key" && (
+        <KeyStep
+          choice={keyChoice}
+          onChoice={setKeyChoice}
+          keep={savedOwn ? (hasSummaryName(savedOwn.provider) ? summaryName(savedOwn.provider, t) : "") : null}
+          onNext={next}
+          onBack={back}
+        />
+      )}
       {step === "audio" && <AudioStep onNext={next} onBack={back} />}
-      {step === "capture" && (
-        <CaptureStep
-          mode={capture}
-          onChange={setCapture}
+      {step === "capture" && <CaptureStep mode={capture} onChange={setCapture} onNext={next} onBack={back} />}
+      {step === "finish" && (
+        <FinishStep
+          summarizer={summarizer}
+          capture={capture}
+          reports={reports}
+          onReports={setReports}
+          reopened={reopened}
           finishing={finishing}
+          onChange={(target) => {
+            setCameBack(false);
+            setStep(target);
+          }}
           onFinish={() => void finish()}
           onBack={back}
         />

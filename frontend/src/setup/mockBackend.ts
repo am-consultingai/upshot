@@ -111,7 +111,7 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
     speakers: { phase: "idle", level: 0 },
     savedStep: null,
     reports: { available: true, consent: "unset" },
-    saved: { capture: null, summarizer: null },
+    saved: { capture: null, summarizer: null, detectionOff: false, reopened: false },
   };
   switch (id) {
     case "fresh":
@@ -136,7 +136,12 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
     case "no-google-client":
       return { ...base, calendar: { available: false, phase: "idle", accounts: [] } };
     case "reopened-key":
-      return { ...base, saved: { capture: "on", summarizer: { provider: "gemini", fallback: "" } } };
+      return {
+        ...base,
+        calendar: { ...base.calendar, phase: "connected", accounts: [{ id: "a1", address: "dana.levi@example.com" }] },
+        reports: { available: true, consent: "on" },
+        saved: { capture: "on", summarizer: { provider: "gemini", fallback: "" }, detectionOff: false, reopened: true },
+      };
   }
 }
 
@@ -282,10 +287,6 @@ export class MockSetupBackend implements SetupBackend {
 
   /** Nothing to keep: the page's own language state is the whole of it in the mock. */
   setLanguage(): void {}
-
-  setCrashReports(on: boolean): void {
-    this.set({ ...this.state, reports: { ...this.state.reports, consent: on ? "on" : "off" } });
-  }
 
   saveStep(step: StepId): void {
     try {

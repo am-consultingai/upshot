@@ -17,7 +17,7 @@ async function consent(page: import("@playwright/test").Page): Promise<string> {
   return (await (await page.request.get("/api/diagnostics")).json()).consent;
 }
 
-test("setup asks once, just before the sound check, with nothing chosen for the user", async ({
+test("setup asks once, as a tick on Finish, ticked unless the answer was no", async ({
   page,
   seedBody,
 }) => {
@@ -33,20 +33,23 @@ test("setup asks once, just before the sound check, with nothing chosen for the 
   });
   await gotoApp(page, "/");
   await page.getByTestId("setup-next").click();
-  await page.getByTestId("setup-skip").click(); // calendar
   await page.getByTestId("services-none").click();
-  await page.getByTestId("setup-next").click(); // services
+  await page.getByTestId("setup-next").click(); // AI plans
+  await page.getByTestId("setup-skip").click(); // calendar
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
-  await page.getByTestId("setup-skip").click(); // key
-  await expect(page.getByTestId("setup-step-reports")).toBeVisible();
-  await expect(page.getByTestId("setup-crumb-reports")).toHaveAttribute("aria-current", "step");
-  await expect(page.getByTestId("setup-step-reports")).toContainText("Never in a report");
+  await page.getByTestId("key-choice-none").click();
+  await page.getByTestId("setup-next").click(); // no plan
+  await page.getByTestId("setup-next").click(); // sound check
+  await page.getByTestId("setup-next").click(); // how to record
+  await expect(page.getByTestId("setup-step-finish")).toBeVisible();
+  await expect(page.getByTestId("setup-crumb-finish")).toHaveAttribute("aria-current", "step");
+  await expect(page.getByTestId("setup-step-finish")).toContainText("Error details only, never your meetings");
+  // Ticked for the user (product owner, decision Z8tj1hnz80); nothing saved until Finish.
   expect(await consent(page)).toBe("unset");
-  await expect(page.getByTestId("reports-yes")).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("reports-no").click();
+  await expect(page.getByTestId("done-reports")).toBeChecked();
+  await page.getByTestId("done-reports").uncheck();
   expect(await consent(page)).toBe("unset");
-  await page.getByTestId("setup-next").click();
-  await expect(page.getByTestId("setup-step-audio")).toBeVisible();
+  await page.getByTestId("setup-finish").click();
   await expect.poll(() => consent(page)).toBe("off");
 });
 

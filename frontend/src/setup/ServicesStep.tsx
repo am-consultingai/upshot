@@ -89,7 +89,6 @@ export default function ServicesStep({
       <div
         role="group"
         aria-label={t("firstRun.services.title")}
-        aria-invalid={unanswered > 0 || undefined}
         aria-describedby={unanswered > 0 ? "services-unanswered" : undefined}
         className="flex flex-col gap-2"
       >

@@ -2,18 +2,59 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import Button, { Spinner, buttonClass } from "../components/Button";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
-import type { KeyProviderId } from "./flow";
+import type { KeyChoice, KeyProviderId } from "./flow";
 import { Note, StepFrame, fill } from "./ui";
 
 /**
- * Setup: an API key, offered only when no subscription was signed in on the step before
- * (product owner, 2026-09-28). A subscription that works makes this step disappear; one
- * ticked and left unfinished, or none ticked at all, brings it here. Skipping it is a
- * choice too: meetings are then transcribed and stop there (D63).
+ * Setup: no paid plan connected, so how summaries get written (setup plan, §3.4b). Shown
+ * only when no ticked plan is signed in, ticking none included (product owner,
+ * 2026-09-28). An answer, not a skip: a free Gemini key, transcripts only (D63), or, on
+ * setup reopened with one, keeping the key or local model already in use (D69).
  */
-export default function KeyStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+export default function KeyStep({
+  choice,
+  onChoice,
+  keep,
+  onNext,
+  onBack,
+}: {
+  choice: KeyChoice | null;
+  onChoice: (choice: KeyChoice) => void;
+  /** What summarizes now, when it is a key or a local model, by name ("" when it has
+   *  none of its own); null hides "keep". */
+  keep: string | null;
+  onNext: () => void;
+  onBack: () => void;
+}) {
   const { t } = useI18n();
   const { key } = useSetupSnapshot();
+  const ready = choice === "none" || choice === "keep" || (choice === "key" && key.phase === "valid");
+  const option = (value: KeyChoice, title: string, why: string) => {
+    const on = choice === value;
+    return (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={on}
+        data-testid={`key-choice-${value}`}
+        onClick={() => onChoice(value)}
+        className={`flex w-full items-start gap-3 rounded-xl bg-raised px-4 py-3.5 text-start shadow-sm ring-inset hover:bg-a-100 ${
+          on ? "ring-2 ring-accent" : "ring-1 ring-line-subtle"
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full ${on ? "bg-accent" : "ring-1 ring-line-strong"}`}
+        >
+          {on && <span className="size-1.5 rounded-full bg-on-accent" />}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-base font-medium">{title}</span>
+          <span className="block text-sm text-secondary">{why}</span>
+        </span>
+      </button>
+    );
+  };
   return (
     <StepFrame
       id="key"
@@ -21,22 +62,38 @@ export default function KeyStep({ onNext, onBack }: { onNext: () => void; onBack
       lead={<p data-testid="key-lead">{t("firstRun.key.stepLead")}</p>}
       footer={
         <>
-          {key.phase === "valid" ? (
-            <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
-              {t("firstRun.continue")}
-            </Button>
-          ) : (
-            <Button data-testid="setup-skip" variant="ghost" size="md" onClick={onNext}>
-              {t("firstRun.skip")}
-            </Button>
-          )}
+          <Button
+            data-testid="setup-next"
+            variant="primary"
+            size="md"
+            aria-disabled={!ready}
+            className={ready ? "" : "cursor-not-allowed opacity-50 hover:brightness-100"}
+            onClick={() => ready && onNext()}
+          >
+            {t("firstRun.continue")}
+          </Button>
           <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
           </Button>
         </>
       }
     >
-      <KeyOffer />
+      <div role="radiogroup" aria-label={t("firstRun.key.stepTitle")} className="flex flex-col gap-2">
+        {keep !== null &&
+          option(
+            "keep",
+            keep ? fill(t("firstRun.key.keep"), { provider: keep }) : t("firstRun.key.keepCurrent"),
+            t("firstRun.key.keepWhy"),
+          )}
+        {option("key", t("firstRun.key.title"), t("firstRun.key.lead"))}
+        {option("none", t("firstRun.key.none"), t("firstRun.key.noneWhy"))}
+      </div>
+      {/* After the choices, not between them: a radiogroup holds only its radios. */}
+      {choice === "key" && (
+        <div className="mt-3">
+          <KeyOffer />
+        </div>
+      )}
     </StepFrame>
   );
 }
@@ -76,22 +133,16 @@ function KeyOffer() {
 
   return (
     <section data-testid="key-offer" className="rounded-xl bg-raised px-5 py-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-medium">{t("firstRun.key.title")}</h2>
-          <p className="text-xs text-tertiary">{t("firstRun.key.lead")}</p>
-        </div>
-        <a
-          data-testid="key-get-gemini"
-          href={GEMINI.console}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonClass("primary", "md")}
-          onClick={() => backend.chooseKeyProvider("gemini")}
-        >
-          {t("firstRun.key.getGemini")}
-        </a>
-      </div>
+      <a
+        data-testid="key-get-gemini"
+        href={GEMINI.console}
+        target="_blank"
+        rel="noreferrer"
+        className={buttonClass("primary", "md")}
+        onClick={() => backend.chooseKeyProvider("gemini")}
+      >
+        {t("firstRun.key.getGemini")}
+      </a>
 
       <form
         className="mt-4"
