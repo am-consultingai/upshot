@@ -41,10 +41,14 @@ export default function CalendarStep({
   const { t } = useI18n();
   const backend = useSetupBackend();
   const { calendar, cli } = useSetupSnapshot();
-  // Only helpers that install now, seen through to installed: one already here is news to nobody.
+  // Only helpers that install now, seen through to installed: one already here is news to
+  // nobody. A ref filled during render: it only ever grows, and only from the snapshot.
   const seen = useRef(new Set<CliId>());
   for (const id of CLI_IDS) if (ticked[id] && cli[id].phase === "installing") seen.current.add(id);
-  const installs = CLI_IDS.filter((id) => seen.current.has(id));
+  // A failed install says nothing here: its sign-in screen says so, with Try again.
+  const installs = CLI_IDS.filter(
+    (id) => seen.current.has(id) && (cli[id].phase === "installing" || cli[id].installed),
+  );
   const { phase, accounts } = calendar;
   const connected = accounts.length > 0;
   // Google's consent screen is 46-76% of the 11-second clock (setup.css, "su-g-").

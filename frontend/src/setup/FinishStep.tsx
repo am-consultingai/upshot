@@ -1,5 +1,5 @@
 import { useI18n, type MessageKey } from "../i18n";
-import Button from "../components/Button";
+import Button, { Spinner } from "../components/Button";
 import { useSetupSnapshot } from "./backend";
 import type { CaptureMode, StepId, Summarizer } from "./flow";
 import { StepFrame, fill } from "./ui";
@@ -60,6 +60,10 @@ export default function FinishStep({
   const { t } = useI18n();
   const snapshot = useSetupSnapshot();
   const { calendar, speakers } = snapshot;
+  // Reopened after an install, Finish is the first screen, and what is signed in arrives
+  // seconds later: until then the summaries are unknown, and Finish waits rather than
+  // write "none" over a plan that works (PR #66 review).
+  const known = snapshot.cliKnown;
   const name = (provider: string) => summaryName(provider, t);
   const summaries = summarizer.fallback
     ? fill(t("firstRun.done.sumThen"), { first: name(summarizer.provider), second: name(summarizer.fallback) })
@@ -74,7 +78,7 @@ export default function FinishStep({
       ok: calendar.accounts.length > 0,
       step: calendar.available ? "calendar" : null,
     },
-    { id: "summaries", label: "firstRun.done.summaries", value: summaries, ok: summarizer.provider !== "none", step: "services" },
+    { id: "summaries", label: "firstRun.done.summaries", value: summaries, ok: known && summarizer.provider !== "none", step: "services" },
     {
       id: "capture",
       label: "firstRun.done.capture",
@@ -104,7 +108,7 @@ export default function FinishStep({
       lead={<p>{t(reopened ? "firstRun.done.againLead" : "firstRun.done.lead")}</p>}
       footer={
         <>
-          <Button data-testid="setup-finish" busy={finishing} variant="primary" size="md" onClick={onFinish}>
+          <Button data-testid="setup-finish" busy={finishing || !known} variant="primary" size="md" onClick={onFinish}>
             {t(reopened ? "firstRun.done.looksGood" : "firstRun.done.start")}
           </Button>
           {!reopened && (
@@ -123,18 +127,23 @@ export default function FinishStep({
                 {row.ok ? "✓" : "–"}
               </span>
               <dt className="w-28 shrink-0 text-sm text-secondary">{t(row.label)}</dt>
-              <dd className="min-w-0 flex-1 text-sm font-medium [overflow-wrap:anywhere]">{row.value}</dd>
-              {row.step && (
-                <button
-                  type="button"
-                  data-testid={`done-change-${row.id}`}
-                  onClick={() => onChange(row.step!)}
-                  className="shrink-0 text-sm text-accent underline underline-offset-2"
-                  aria-label={`${t("firstRun.done.change")}: ${t(row.label)}`}
-                >
-                  {t("firstRun.done.change")}
-                </button>
-              )}
+              {/* Change sits inside the dd: a dl holds only dt and dd (axe, definition-list). */}
+              <dd className="flex min-w-0 flex-1 items-center gap-3 text-sm">
+                <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+                  {row.id === "summaries" && !known ? <Spinner className="text-tertiary" /> : row.value}
+                </span>
+                {row.step && (
+                  <button
+                    type="button"
+                    data-testid={`done-change-${row.id}`}
+                    onClick={() => onChange(row.step!)}
+                    className="shrink-0 text-accent underline underline-offset-2"
+                    aria-label={`${t("firstRun.done.change")}: ${t(row.label)}`}
+                  >
+                    {t("firstRun.done.change")}
+                  </button>
+                )}
+              </dd>
             </div>
           ))}
         </dl>

@@ -950,7 +950,7 @@ export const es: Record<MessageKey, string> = {
   "firstRun.done.sumThen": "{first} y, después, {second}",
   "firstRun.done.captureOff": "Desactivado",
   "firstRun.done.audioUnchecked": "Sin comprobar",
-  "firstRun.done.again": "Bienvenido de nuevo. Esta es su configuración.",
+  "firstRun.done.again": "Hola de nuevo. Esta es su configuración.",
   "firstRun.done.againLead": "Upshot se ha actualizado. Todo lo que eligió se conserva.",
   "firstRun.done.lead": "Esto es lo que hará Upshot. Puede cambiarlo todo ahora o más tarde en Configuración.",
   "firstRun.done.looksGood": "Todo bien",
