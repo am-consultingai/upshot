@@ -576,6 +576,11 @@ test("connect_ai_takes_one_plan_per_screen", async ({ page }) => {
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
   await page.getByTestId("setup-back").click();
   await expect(page.getByTestId("ai-count")).toHaveText("2 of 2");
+  // A stop on the track opens on its first screen, whichever way the last move went.
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-key")).toBeVisible();
+  await page.getByTestId("setup-crumb-connect").click();
+  await expect(page.getByTestId("ai-count")).toHaveText("1 of 2");
 });
 
 test("finish_after_an_install_waits_for_the_plans_before_it_can_write_summaries", async ({ page }) => {
