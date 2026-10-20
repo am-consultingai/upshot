@@ -39,7 +39,7 @@ async function cutOff(page: Page): Promise<string[]> {
 async function speak(request: import("@playwright/test").APIRequestContext, language: string) {
   await request.put("/api/settings", {
     headers: HEADERS,
-    data: { values: { "ui.language": language, "detection.decided": true, "llm.provider": "fake" } },
+    data: { values: { "ui.language": language, "llm.provider": "fake" } },
   });
 }
 
@@ -61,16 +61,14 @@ for (const language of LANGUAGES) {
     await gotoApp(page, "/welcome");
     for (const [step, next] of [
       ["welcome", ["setup-next"]],
-      ["calendar", ["setup-skip"]],
-      // The plans question wants an answer before Continue.
+      // The plans question wants an answer before Continue; it comes before the calendar.
       ["services", ["services-none", "setup-next"]],
-      ["key", ["setup-skip"]],
+      ["calendar", ["setup-skip"]],
+      ["key", ["key-choice-none", "setup-next"]],
       ["audio", ["setup-next"]],
-      ["capture", []],
+      ["capture", ["setup-next"]],
+      ["finish", []],
     ] as const) {
-      if (step === "audio" && (await page.getByTestId("setup-step-reports").isVisible())) {
-        await page.getByTestId("setup-next").click();
-      }
       await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
       expect(await cutOff(page), step).toEqual([]);
       // The lead never runs under what follows it.
@@ -91,12 +89,12 @@ test("on_a_short_screen_the_last_two_steps_fit_unscrolled", async ({ page, seedB
   await speak(request, "en");
   await gotoApp(page, "/welcome");
   await page.getByTestId("setup-next").click();
-  await page.getByTestId("setup-skip").click(); // calendar
   await page.getByTestId("services-none").click();
   await page.getByTestId("setup-next").click();
+  await page.getByTestId("setup-skip").click(); // calendar
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
-  await page.getByTestId("setup-skip").click();
-  if (await page.getByTestId("setup-step-reports").isVisible()) await page.getByTestId("setup-next").click();
+  await page.getByTestId("key-choice-none").click();
+  await page.getByTestId("setup-next").click();
   for (const step of ["audio", "capture"]) {
     await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
     const content = page.getByTestId("setup-content");

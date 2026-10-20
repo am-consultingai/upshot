@@ -1,10 +1,17 @@
 import { useEffect, useRef } from "react";
-import { useI18n } from "../i18n";
-import Button from "../components/Button";
+import { useI18n, type MessageKey } from "../i18n";
+import Button, { Spinner } from "../components/Button";
 import { CopySignInLink } from "../components/CopySignInLink";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import { Note, StepFrame, fill } from "./ui";
+import { CLI_IDS, type CliId } from "./flow";
 import { CalendarScene, SceneFrame, useScene } from "./visuals";
+
+const NAME: Record<CliId, MessageKey> = {
+  claude: "firstRun.ai.claude.name",
+  codex: "firstRun.ai.codex.name",
+  antigravity: "firstRun.ai.antigravity.name",
+};
 
 /**
  * Setup 2: Google Calendar, encouraged and never required.
@@ -21,10 +28,23 @@ import { CalendarScene, SceneFrame, useScene } from "./visuals";
  * plays once on "Show me"; the numbered steps say the same in words. While Google's page
  * is open the scene goes, so only the wait is on screen (setup plan, 2026-10-20).
  */
-export default function CalendarStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+export default function CalendarStep({
+  ticked,
+  onNext,
+  onBack,
+}: {
+  /** The plans chosen on the step before: their helpers install while this one is open. */
+  ticked: Record<CliId, boolean>;
+  onNext: () => void;
+  onBack: () => void;
+}) {
   const { t } = useI18n();
   const backend = useSetupBackend();
-  const { calendar } = useSetupSnapshot();
+  const { calendar, cli } = useSetupSnapshot();
+  // Only helpers that install now, seen through to installed: one already here is news to nobody.
+  const seen = useRef(new Set<CliId>());
+  for (const id of CLI_IDS) if (ticked[id] && cli[id].phase === "installing") seen.current.add(id);
+  const installs = CLI_IDS.filter((id) => seen.current.has(id));
   const { phase, accounts } = calendar;
   const connected = accounts.length > 0;
   // Google's consent screen is 46-76% of the 11-second clock (setup.css, "su-g-").
@@ -160,6 +180,26 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
         )}
         <p className="max-w-prose text-xs leading-relaxed text-tertiary">{t("firstRun.calendar.privacy")}</p>
       </div>
+      {installs.length > 0 && (
+        // The AI helpers chosen a step ago, installing meanwhile: nothing to do, just seen.
+        <ul data-testid="calendar-installs" className="mt-3 space-y-1 px-1 text-xs text-tertiary">
+          {installs.map((id) => (
+            <li key={id} data-testid={`calendar-install-${id}`} className="flex items-center gap-2">
+              {cli[id].phase === "installing" ? (
+                <>
+                  <Spinner className="text-accent" />
+                  {fill(t("firstRun.ai.installing"), { name: t(NAME[id]) })}
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true" className="text-success">✓</span>
+                  {fill(t("firstRun.ai.installedBehind"), { name: t(NAME[id]) })}
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </StepFrame>
   );
 }
