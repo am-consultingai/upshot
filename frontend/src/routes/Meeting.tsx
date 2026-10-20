@@ -841,7 +841,7 @@ export default function MeetingPage() {
                   meetingId={id}
                   items={meeting.data.action_items ?? []}
                   addRequest={addRequest}
-                  dir={dir}
+                  dir={directions.transcript}
                 />
               )}
 

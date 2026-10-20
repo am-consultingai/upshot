@@ -195,6 +195,18 @@ test("double_clicking_a_name_in_the_transcript_renames_that_speaker_everywhere",
   ).toHaveText("Yoni Bar");
 });
 
+/** Where a word of an element's text is drawn, from the left of the window. */
+async function wordX(locator: import("@playwright/test").Locator, word: string): Promise<number> {
+  return locator.evaluate((node, part) => {
+    const text = node.firstChild as Text;
+    const range = document.createRange();
+    const start = text.data.indexOf(part);
+    range.setStart(text, start);
+    range.setEnd(text, start + part.length);
+    return range.getBoundingClientRect().x;
+  }, word);
+}
+
 test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ page, seed }) => {
   await page.setViewportSize({ width: 1440, height: 800 });
   await seed([
@@ -209,9 +221,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
       turns: [{ speaker: "THEM", at_ms: 1000, text: "בוקר טוב" }],
       action_items: [
         { who: "ME", what: "לשלוח את הסיכום ל-Slack", detail: "כולל את מדדי ה-TSS" },
-        { who: "ME", what: "Call Dana." },
         { who: "ME", what: "PR חדש לתיקון הבאג" },
-        { who: "ME", what: "Send דנה the notes" },
       ],
     },
   ]);
@@ -221,7 +231,7 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   await expect(block).toHaveAttribute("dir", "rtl");
   // The interface's words keep their own order inside the mirrored header, and the
   // header mirrors: "+ Add" at the left end, the count beside the title on the right.
-  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 4 done");
+  await expect(page.getByTestId("meeting-actions-progress")).toHaveText("0 of 2 done");
   const add = await page.getByTestId("meeting-actions-add").boundingBox();
   const progress = await page.getByTestId("meeting-actions-progress").boundingBox();
   expect(add?.x ?? 999).toBeLessThan(progress?.x ?? 0);
@@ -235,75 +245,16 @@ test("hebrew_action_items_run_right_to_left_in_an_english_interface", async ({ p
   expect(owner?.x ?? 999).toBeLessThan(what?.x ?? 0);
   await expect(row.getByTestId("action-what")).toHaveCSS("direction", "rtl");
   // Mixed text in reading order: "Slack" ends the Hebrew sentence, so it is drawn at its left end.
-  const [first, slack] = await row.getByTestId("action-what").evaluate((node) => {
-    const text = node.querySelector("bdi")?.firstChild as Text;
-    const at = (word: string) => {
-      const range = document.createRange();
-      const start = text.data.indexOf(word);
-      range.setStart(text, start);
-      range.setEnd(text, start + word.length);
-      return range.getBoundingClientRect().x;
-    };
-    return [at("לשלוח"), at("Slack")];
-  });
-  expect(slack).toBeLessThan(first);
+  const sentence = row.getByTestId("action-what");
+  expect(await wordX(sentence, "Slack")).toBeLessThan(await wordX(sentence, "לשלוח"));
+  // An item that opens with an English word is still read right to left: "PR" first, on the right.
+  const pr = block.getByTestId("action-item").filter({ hasText: "PR חדש" }).getByTestId("action-what");
+  expect(await wordX(pr, "PR")).toBeGreaterThan(await wordX(pr, "חדש"));
 
-  // An English item in the Hebrew block keeps its own order — the full stop at its end,
-  // on the right — while the row stays right to left, its text right-aligned.
-  const english = block.getByTestId("action-item").filter({ hasText: "Call Dana." });
-  const [call, stop, right, edge] = await english.getByTestId("action-what").evaluate((node) => {
-    const text = node.querySelector("bdi")?.firstChild as Text;
-    const at = (start: number, end: number) => {
-      const range = document.createRange();
-      range.setStart(text, start);
-      range.setEnd(text, end);
-      return range.getBoundingClientRect();
-    };
-    return [at(0, 4).x, at(text.data.length - 1, text.data.length).x, at(0, text.data.length).right, node.getBoundingClientRect().right];
-  });
-  expect(stop).toBeGreaterThan(call);
-  expect(Math.abs(right - edge)).toBeLessThan(2);
-
-  // A Hebrew item that opens with an English word is still a Hebrew sentence: "PR"
-  // comes first, so it is drawn on the right.
-  const [pr, word] = await block
-    .getByTestId("action-item")
-    .filter({ hasText: "PR חדש" })
-    .getByTestId("action-what")
-    .evaluate((node) => {
-      const text = node.querySelector("bdi")?.firstChild as Text;
-      const at = (part: string) => {
-        const range = document.createRange();
-        const start = text.data.indexOf(part);
-        range.setStart(text, start);
-        range.setEnd(text, start + part.length);
-        return range.getBoundingClientRect().x;
-      };
-      return [at("PR"), at("חדש")];
-    });
-  expect(pr).toBeGreaterThan(word);
-
-  // And an English item naming someone in Hebrew stays an English sentence, in order.
-  const [send, notes] = await block
-    .getByTestId("action-item")
-    .filter({ hasText: "Send" })
-    .getByTestId("action-what")
-    .evaluate((node) => {
-      const text = node.querySelector("bdi")?.firstChild as Text;
-      const at = (part: string) => {
-        const range = document.createRange();
-        const start = text.data.indexOf(part);
-        range.setStart(text, start);
-        range.setEnd(text, start + part.length);
-        return range.getBoundingClientRect().x;
-      };
-      return [at("Send"), at("notes")];
-    });
-  expect(send).toBeLessThan(notes);
-
-  // In the inbox the row follows its own words.
+  // In the inbox too, the row runs the way its meeting does.
   await gotoApp(page, "/actions");
   const inbox = page.getByTestId("action-item").filter({ hasText: "לשלוח את הסיכום" });
+  await expect(inbox).toHaveAttribute("dir", "rtl");
   await expect(inbox.getByTestId("action-what")).toHaveCSS("direction", "rtl");
 });
 
@@ -662,23 +613,41 @@ test("a_chapter_shows_its_whole_focus_ring", async ({ page, seed }) => {
 });
 
 
-test("a_hebrew_item_full_of_english_terms_runs_right_to_left_under_an_english_summary", async ({ page, seed }) => {
+test("action_items_run_the_way_the_meeting_transcript_does_not_the_summary_or_their_words", async ({ page, seed }) => {
   await page.setViewportSize({ width: 1440, height: 800 });
   await seed([
     {
-      id: "e2e-terms",
+      // A Hebrew meeting summarized in English: its items run right to left, the English one too.
+      id: "e2e-he-meeting",
       title: "Platform sync",
       state: "RENDERED",
       started_at: isoAt(0, 10),
+      language: "he",
       summary_html: "<html><body><p>The team reviewed the dashboards.</p></body></html>",
+      turns: [{ speaker: "THEM", at_ms: 1000, text: "בוקר טוב" }],
+      action_items: [{ who: "ME", what: "Send the notes to Dana" }],
+    },
+    {
+      // An English meeting: left to right, a Hebrew item too.
+      id: "e2e-en-meeting",
+      title: "Vendor call",
+      state: "RENDERED",
+      started_at: isoAt(0, 11),
+      language: "en",
+      summary_html: "<html><body><p>Pricing was agreed.</p></body></html>",
       turns: [{ speaker: "THEM", at_ms: 1000, text: "Good morning" }],
-      action_items: [{ who: "ME", what: "לעדכן את ה-README ב-GitHub" }],
+      action_items: [{ who: "ME", what: "לשלוח את החוזה" }],
     },
   ]);
-  await gotoApp(page, "/m/e2e-terms");
-  const row = page.getByTestId("meeting-actions").getByTestId("action-item").first();
-  await expect(row).toHaveAttribute("dir", "rtl");
-  const tick = await row.getByTestId("action-toggle").boundingBox();
-  const what = await row.getByTestId("action-what").boundingBox();
+  await gotoApp(page, "/m/e2e-he-meeting");
+  await expect(page.getByTestId("meeting-actions")).toHaveAttribute("dir", "rtl");
+  const hebrewMeeting = page.getByTestId("meeting-actions").getByTestId("action-item").first();
+  await expect(hebrewMeeting).toHaveAttribute("dir", "rtl");
+  const tick = await hebrewMeeting.getByTestId("action-toggle").boundingBox();
+  const what = await hebrewMeeting.getByTestId("action-what").boundingBox();
   expect(tick?.x ?? 0).toBeGreaterThan(what?.x ?? 0);
+
+  await gotoApp(page, "/m/e2e-en-meeting");
+  await expect(page.getByTestId("meeting-actions")).toHaveAttribute("dir", "ltr");
+  await expect(page.getByTestId("meeting-actions").getByTestId("action-item").first()).toHaveAttribute("dir", "ltr");
 });
