@@ -98,9 +98,10 @@ test.describe("setupmock_", () => {
     await expect(page.getByTestId("ai-code-antigravity")).toHaveCount(0);
   });
 
-  test("setupmock_walkthrough: the speaker test runs by itself", async ({ page, seedBody }) => {
+  test("setupmock_walkthrough: the speaker test runs when asked", async ({ page, seedBody }) => {
     await seedBody({ reset: true });
     await open(page, "scenario=fresh&step=audio");
+    await page.getByTestId("speaker-play").click();
     await expect(page.getByTestId("speaker-test")).toHaveAttribute("data-phase", "heard", { timeout: 5000 });
   });
 

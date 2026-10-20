@@ -34,7 +34,8 @@ test("setup asks once, just before the sound check, with nothing chosen for the 
   await gotoApp(page, "/");
   await page.getByTestId("setup-next").click();
   await page.getByTestId("setup-skip").click(); // calendar
-  await page.getByTestId("setup-skip").click(); // services
+  await page.getByTestId("services-none").click();
+  await page.getByTestId("setup-next").click(); // services
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
   await page.getByTestId("setup-skip").click(); // key
   await expect(page.getByTestId("setup-step-reports")).toBeVisible();

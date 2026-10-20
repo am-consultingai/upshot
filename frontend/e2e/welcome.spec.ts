@@ -10,6 +10,7 @@
  * setup-mock.spec.ts.
  */
 import type { Page } from "@playwright/test";
+import { CSRF, SESSION } from "../playwright.config";
 import { expect, gotoApp, gotoSettings, reset, test } from "./fixtures";
 
 test.beforeEach(async ({ page, seedBody }) => {
@@ -48,14 +49,24 @@ async function toAiStep(page: Page): Promise<void> {
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
 }
 
-/** Nothing chosen: the connect step is passed over and the key step comes next. */
+/** No plan paid for: the connect step is passed over and the key step comes next. */
 async function toKeyStep(page: Page): Promise<void> {
   await toServices(page);
-  await page.getByTestId("setup-skip").click();
+  // The plans question wants an answer: Continue alone says so and stays.
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("services-unanswered")).toBeVisible();
+  await expect(page.getByTestId("setup-step-services")).toBeVisible();
+  await page.getByTestId("services-none").click();
+  await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
 }
 
 test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library", async ({ page }) => {
+  // A true first install: nothing summarizes yet (the e2e seed sets the fake provider).
+  await page.request.put("/api/settings", {
+    headers: { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` },
+    data: { values: { "llm.provider": "none" } },
+  });
   await gotoApp(page, "/");
   await expect(page).toHaveURL(/\/welcome$/);
   await expect(page.getByTestId("setup-step-welcome")).toBeVisible();
@@ -75,9 +86,10 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
   await expect(page.getByTestId("key-provider-anthropic")).toHaveCount(0);
   await page.getByTestId("setup-skip").click();
 
-  // The sound check runs by itself: the microphone meter moves on the synthetic tone,
-  // and the computer-audio test plays and finishes without being asked.
+  // The sound check: the microphone meter moves on the synthetic tone, and the
+  // computer-audio test plays when asked, not on arrival.
   await expect(page.getByTestId("setup-step-audio")).toBeVisible();
+  await expect(page.getByTestId("speaker-test")).toHaveAttribute("data-phase", "idle");
   await expect
     .poll(
       async () =>
@@ -85,12 +97,18 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
       { timeout: 10_000 },
     )
     .toBeGreaterThan(0);
+  await page.getByTestId("speaker-play").click();
+  await expect(page.getByTestId("speaker-test")).not.toHaveAttribute("data-phase", "idle");
+  // The button stays while the sound plays, so the keyboard focus stays on it.
+  await expect(page.getByTestId("speaker-play")).toBeFocused();
   await expect(page.getByTestId("speaker-test")).not.toHaveAttribute("data-phase", "playing", {
     timeout: 10_000,
   });
+  await page.getByTestId("setup-next").click();
 
-  // How to record is on the same step, with detect and notify already chosen (D64), and
+  // How to record has its own screen, with detect and notify already chosen (D64), and
   // its Done finishes setup: there is no summary screen after it.
+  await expect(page.getByTestId("setup-step-capture")).toBeVisible();
   await expect(page.getByTestId("capture-lead")).toContainText("notice when a meeting starts");
   await expect(page.getByTestId("capture-off")).toHaveCount(0);
   await expect(page.getByTestId("capture-shadow")).toHaveAttribute("aria-checked", "true");
@@ -133,16 +151,29 @@ test("a_google_ai_plan_gets_its_own_card_and_the_key_only_follows_if_it_is_not_s
   await expect(page.getByTestId("setup-step-ai")).toBeVisible();
 });
 
-test("the_services_button_says_what_it_will_install", async ({ page }) => {
+test("the_plans_question_says_who_writes_the_summaries_and_none_is_an_answer_of_its_own", async ({
+  page,
+}) => {
   await gotoApp(page, "/welcome");
   await toServices(page);
+  await expect(page.locator("h1")).toHaveText("Which AI plans do you pay for?");
+  await expect(page.getByTestId("services-lead")).toContainText("Free accounts won't work here");
   await page.getByTestId("service-claude").click();
-  await expect(page.getByTestId("setup-next")).toHaveText("Install Claude");
+  await expect(page.getByTestId("services-order")).toHaveText("Claude will write your summaries.");
   await page.getByTestId("service-antigravity").click();
   await page.getByTestId("service-codex").click();
-  await expect(page.getByTestId("setup-next")).toHaveText("Install Claude, ChatGPT, and Gemini");
-  await page.getByTestId("setup-language").selectOption("he");
-  await expect(page.getByTestId("setup-next")).toContainText("התקנת");
+  // In the order they are used, whatever order they were ticked in.
+  await expect(page.getByTestId("services-order")).toHaveText(
+    "Claude will write your summaries. When its limit runs out, ChatGPT takes over. " +
+      "Gemini is a spare, used if one of these isn't set up.",
+  );
+  // "I don't pay for any of these" clears the ticks, and a tick clears it.
+  await page.getByTestId("services-none").click();
+  await expect(page.getByTestId("service-claude")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("services-order")).toHaveCount(0);
+  await page.getByTestId("service-codex").click();
+  await expect(page.getByTestId("services-none")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("setup-next")).toHaveText("Continue");
 });
 
 test("continue_waits_while_a_helper_installs_and_says_so", async ({ page }) => {
@@ -195,16 +226,50 @@ test("a_signed_in_subscription_passes_the_key_step_over", async ({ page }) => {
   await expect(page.getByTestId("setup-step-audio")).toBeVisible();
 });
 
-test("setup_moves_even_when_the_system_asks_for_reduced_motion", async ({ page }) => {
-  // Windows reports "reduce" whenever its animation effects are off, which many machines
-  // are by default (a VM, remote desktop, performance settings); setup looked frozen there.
+/** How many of a scene's animations are running now. */
+async function running(page: Page, testId: string): Promise<number> {
+  return page.evaluate(
+    (id) =>
+      document
+        .querySelector(`[data-testid="${id}"]`)
+        ?.getAnimations({ subtree: true })
+        .filter((a) => a.playState === "running").length ?? -1,
+    testId,
+  );
+}
+
+test("scenes_hold_still_and_play_once_when_asked", async ({ page }) => {
+  // Nothing loops beside a question (setup plan, 2026-10-20): Google's pages rest on the
+  // consent screen until "Show me", which plays them once.
+  await gotoApp(page, "/welcome");
+  await toServices(page);
+  await page.getByTestId("setup-back").click();
+  await expect(page.getByTestId("scene-calendar")).toBeVisible();
+  expect(await running(page, "scene-calendar")).toBe(0);
+  await page.getByTestId("scene-show").click();
+  await expect.poll(() => running(page, "scene-calendar")).toBeGreaterThan(0);
+  // Pressed again while playing it does nothing, and keeps the keyboard focus.
+  await expect(page.getByTestId("scene-show")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("scene-show")).toBeFocused();
+});
+
+test("under_reduced_motion_nothing_plays_by_itself", async ({ page }) => {
+  // The welcome plays once on arrival, but not for someone who asked for less motion.
   await page.emulateMedia({ reducedMotion: "reduce" });
   await gotoApp(page, "/welcome");
-  await expect(page.getByTestId("setup-step-welcome")).toBeVisible();
-  const running = await page.evaluate(
-    () => document.querySelector(".su-bar")?.getAnimations().filter((a) => a.playState === "running").length ?? 0,
-  );
-  expect(running).toBeGreaterThan(0);
+  await expect(page.getByTestId("scene-hero")).toBeVisible();
+  expect(await running(page, "scene-hero")).toBe(0);
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("scene-calendar")).toBeVisible();
+  const clock = () =>
+    page.evaluate(
+      () => document.querySelector('[data-testid="scene-calendar"]')?.getAnimations({ subtree: true })[0]?.currentTime,
+    );
+  const still = await clock();
+  await page.getByTestId("scene-show").click();
+  // Stepped, not moved: the clocks stay stopped, on another frame than the still one.
+  await expect.poll(clock).not.toBe(still);
+  expect(await running(page, "scene-calendar")).toBe(0);
 });
 
 test("closing_the_app_half_way_reopens_setup_where_it_was_left", async ({ page }) => {
@@ -328,9 +393,9 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     page.getByTestId("setup-next").or(page.getByTestId("setup-skip")).or(page.getByTestId("setup-finish")).first();
   const first = await where();
   await page.getByTestId("setup-next").click();
-  // "None of these" on the services step passes the connect step over (D75) and offers
-  // the key on a step of its own; the sound check is last, and its forward is Done.
-  const steps = ["calendar", "services", "key", "audio"];
+  // "I don't pay for any of these" passes the connect step over (D75) and offers the key
+  // on a step of its own; how to record is last, and its forward is Done.
+  const steps = ["calendar", "services", "key", "audio", "capture"];
   for (const step of steps) {
     await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
     const now = await where();
@@ -343,6 +408,7 @@ test("the_progress_track_the_title_and_the_buttons_stay_put_from_step_to_step", 
     const endEdge = (box: { x: number; width: number }) => Math.round(box.x + box.width);
     expect(Math.abs(endEdge(now.forward) - endEdge(first.forward))).toBeLessThan(2);
     expect(endEdge(now.forward)).toBeLessThan(width);
+    if (step === "services") await page.getByTestId("services-none").click();
     if (step !== steps.at(-1)) await forwardButton().click();
   }
 });
