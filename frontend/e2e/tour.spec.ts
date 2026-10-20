@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { CSRF, SESSION } from "../playwright.config";
-import { expect, gotoApp, isoAt, minutesFromNow, test } from "./fixtures";
+import { expect, gotoApp, isoAt, minutesAgo, minutesFromNow, test } from "./fixtures";
 
 /**
  * The first-run tour (z8tj1hmy14): four stops on a sample meeting, then the sample burns.
@@ -65,11 +65,17 @@ test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, s
   await expect(tip).toHaveAttribute("data-stop", "2");
   await expect(page.getByTestId("span-week")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-testid=calendar-timegrid] [data-event^=tour-sample-]").first()).toBeVisible();
-  // The picked meeting's open-items balloon pulses: its own three items.
+  // The picked meeting's open-items balloon pulses: the sample recording's own three items.
+  // Before noon on the week's first day that recording falls in last week, and the stop
+  // points at a sample event with none: then it shows a sample count instead.
   const pulsing = page.locator("[data-testid=calendar-timegrid] [data-tour-balloon]");
   await expect(pulsing).toHaveCount(1);
-  await expect(pulsing).toHaveAttribute("data-tour-balloon", "pulse");
-  await expect(pulsing).toHaveAttribute("data-count", "3");
+  if ((await page.locator("[data-testid=calendar-timegrid] [data-event=tour-sample-e1]").count()) > 0) {
+    await expect(pulsing).toHaveAttribute("data-tour-balloon", "pulse");
+    await expect(pulsing).toHaveAttribute("data-count", "3");
+  } else {
+    await expect(pulsing).toHaveAttribute("data-tour-balloon", "sample");
+  }
 
   // 3 · The sample meeting's page, drawn without asking the server.
   await next(page);
@@ -141,6 +147,36 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   expect((await settings.json()).config.ui.calendar_span).toBe("month");
   await page.getByTestId("span-week").click();
   await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Interview: Noa" })).toBeVisible();
+});
+
+test("the_badge_pulses_on_a_recording_drawn_as_its_calendar_event", async ({ page, seedBody }) => {
+  // The latest of the week is the recording (it started after its event), drawn as the event.
+  await seedBody({
+    reset: true,
+    meetings: [
+      {
+        id: "own-recorded",
+        title: "Design review",
+        state: "RENDERED",
+        started_at: minutesAgo(88),
+        duration_s: 1500,
+        calendar: { calendar_id: "primary", event_id: "own-event" },
+        action_items: [{ what: "Send the notes" }, { what: "Book the room" }],
+      },
+    ],
+    calendar_events: [{ id: "own-event", title: "Design review", start: minutesAgo(90), end: minutesAgo(60) }],
+  });
+  await gotoApp(page, "/");
+  await replayFromMenu(page);
+  // Only on the calendar stop.
+  await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
+  await next(page);
+  const balloon = page.locator("[data-testid=calendar-timegrid] [data-event=own-event] [data-tour-balloon]");
+  await expect(balloon).toHaveAttribute("data-tour-balloon", "pulse");
+  await expect(balloon).toHaveAttribute("data-count", "2");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("tour-blocker")).toHaveCount(0, { timeout: 8000 });
+  await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
 });
 
 test("after_setup_it_starts_by_itself_once_with_a_welcome_in_any_language", async ({ page, seedBody }) => {

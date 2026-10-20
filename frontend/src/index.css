@@ -587,7 +587,7 @@ kbd {
     transform: scale(1);
   }
   50% {
-    transform: scale(1.2);
+    transform: scale(1.15);
     background-color: var(--accent);
     color: var(--accent-ink);
   }
