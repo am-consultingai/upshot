@@ -44,8 +44,23 @@ test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, s
   await expect(page.getByTestId("rail").getByTestId("tour-sample-note")).toBeVisible();
   await expect(page.getByTestId("rail").getByTestId("tour-sample-tag")).toHaveCount(2);
 
-  // 2 · The week: empty, so sample events fill it.
+  // The tour holds the keyboard: Ctrl+R records nothing behind it, from the card or the page.
+  const recordCalls: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/recording/")) recordCalls.push(request.url());
+  });
+  // Aimed at the record button behind the overlay (Joyride's focus trap takes focus back to
+  // the card, so Enter there is the card's own Next), then from the card itself.
+  await page.evaluate(() => document.querySelector<HTMLElement>("[data-tour=record]")?.focus());
+  await page.keyboard.press("Control+r");
+  // And from the card's own button.
+  await page.getByTestId("tour-next").focus();
+  await page.keyboard.press("Control+r");
+  await expect(tip).toHaveAttribute("data-stop", "1");
+  expect(recordCalls).toEqual([]);
   await next(page);
+
+  // 2 · The week: empty, so sample events fill it.
   await expect(tip).toHaveAttribute("data-stop", "2");
   await expect(page.getByTestId("span-week")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-testid=calendar-timegrid] [data-event^=tour-sample-]").first()).toBeVisible();
