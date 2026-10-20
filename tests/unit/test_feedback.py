@@ -190,7 +190,7 @@ def test_feedback_never_carries_out_a_crash_report_kept_before_reports_were_swit
     monkeypatch.setattr(
         SentryClient, "_client", lambda self: httpx.Client(transport=httpx.MockTransport(handle))
     )
-    # 1. Reports on, offline: a crash report is kept.
+    # 1. Kept while reports were on and the machine offline: a crash report.
     SentryClient(DSN, tmp_path / "diagnostics" / "outbox").send("event", {"n": 1})
     # 2. The user switches crash reports off.
     made, _ = sender(tmp_path)

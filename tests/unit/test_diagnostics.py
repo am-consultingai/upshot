@@ -348,17 +348,17 @@ def test_a_kept_crash_report_is_dropped_not_sent_once_reports_are_off(tmp_path: 
 
 
 def test_switching_reports_off_forgets_those_kept_but_not_feedback(tmp_path: Path) -> None:
+    made, _ = reporter(tmp_path, consent="off")
     sentry = Sentry()
     sentry.offline = True
-    client = sentry.client(tmp_path)
+    client = sentry.client(made.home)
     client.send("event", {"n": 1})
     client.send("feedback", {"m": "hello"})
-    (tmp_path / "outbox-ui").mkdir()
-    (tmp_path / "outbox-ui" / "1-event.json").write_text("{}", encoding="utf-8")
-    made, _ = reporter(tmp_path, consent="off")
-    made.home = tmp_path
+    (made.home / "outbox-ui").mkdir()
+    (made.home / "outbox-ui" / "1-event.json").write_text("{}", encoding="utf-8")
     assert made.forget_kept() == 2
-    assert [p.name.split("-")[1] for p in (tmp_path / "outbox").glob("*.json")] == ["feedback.json"]
+    kept = [p.name.split("-")[1] for p in (made.home / "outbox").glob("*.json")]
+    assert kept == ["feedback.json"]
     assert drop_events(tmp_path / "missing") == 0
 
 
