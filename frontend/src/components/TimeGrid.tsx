@@ -29,6 +29,7 @@ import { MenuSurface, type MenuAnchor } from "./Menu";
 import MeetingDetailsDialog from "./MeetingDetailsDialog";
 import { AudioWaveform, Calendar, CircleAlert } from "lucide-react";
 import { Icon } from "./Icon";
+import { isSampleId } from "../tour/sample";
 
 /** 48px an hour: a 30-minute meeting holds a title and a time, and a working day fits. */
 const PX_PER_MINUTE = 0.8;
@@ -560,10 +561,15 @@ export default function TimeGrid({
     past: boolean;
     /** Open action items, for the balloon. */
     open?: number;
+    /** One of the tour's samples (./tour/sample.ts), tagged as such. */
+    sample?: boolean;
   }) => {
     const short = input.minutes < SHORT_MINUTES;
     return {
+      // A tour sample is drawn with a dashed edge, so it reads as made up even where its tag is cut.
       className: `absolute flex gap-1.25 overflow-hidden rounded-xs text-start ${CHIP[input.kind]} ${
+        input.sample ? "outline-1 -outline-offset-1 outline-dashed outline-[var(--accent)]" : ""
+      } ${
         short ? "items-center px-1.25 py-px" : "px-1.25 py-0.75"
       } ${input.past && input.kind !== "live" ? "opacity-90" : ""}`,
       style: {
@@ -595,6 +601,7 @@ export default function TimeGrid({
                 className="mt-px block truncate font-mono text-3xs text-secondary"
               >
                 {chipWhen(input.kind, input.start, input.length, words)}
+                {input.sample && <span data-testid="tour-sample-tag"> · {t("tour.sampleTag")}</span>}
               </span>
             )}
           </span>
@@ -859,6 +866,7 @@ export default function TimeGrid({
                       slot,
                       past,
                       open: wasRecorded ? byId.get(event.meeting_id as string)?.actions_open : undefined,
+                      sample: isSampleId(event.event_id),
                     });
                     if (wasRecorded) {
                       return (
@@ -916,6 +924,7 @@ export default function TimeGrid({
                     slot,
                     past: end < Date.now(),
                     open: meeting.actions_open,
+                    sample: isSampleId(meeting.id),
                   });
                   return (
                     <Link
