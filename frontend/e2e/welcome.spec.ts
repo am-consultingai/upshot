@@ -570,4 +570,41 @@ test("connect_ai_takes_one_plan_per_screen", async ({ page }) => {
   await expect(page.getByTestId("ai-card-codex")).toBeVisible();
   await page.getByTestId("setup-back").click();
   await expect(page.getByTestId("ai-card-claude")).toBeVisible();
+  // Back into it from the step after opens on the plan just left, not the first.
+  await page.getByTestId("setup-next").click();
+  await page.getByTestId("setup-next").click();
+  await expect(page.getByTestId("setup-step-key")).toBeVisible();
+  await page.getByTestId("setup-back").click();
+  await expect(page.getByTestId("ai-count")).toHaveText("2 of 2");
+});
+
+test("finish_after_an_install_waits_for_the_plans_before_it_can_write_summaries", async ({ page }) => {
+  // A subscription that works, but whose facts arrive late: Finish must not write "none".
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/llm/status*", async (route) => {
+    await held;
+    const response = await route.fetch();
+    const body = await response.json();
+    body.providers = body.providers.map((p: { id: string; needs: string }) =>
+      p.id === "claude-subscription"
+        ? { ...p, ready: true, installed: true, signed_in: true, account: "dana@example.com" }
+        : p.needs === "cli"
+          ? { ...p, ready: false, signed_in: null, account: undefined }
+          : p,
+    );
+    await route.fulfill({ response, json: body });
+  });
+  await earlier(page, { "detection.mode": "shadow", "llm.provider": "claude-subscription" });
+  await gotoApp(page, "/");
+  await expect(page.getByTestId("setup-step-finish")).toBeVisible();
+  await expect(page.getByTestId("setup-finish")).toHaveAttribute("aria-busy", "true");
+  release();
+  await expect(page.getByTestId("setup-finish")).toHaveAttribute("aria-busy", "false");
+  await expect(page.getByTestId("done-summaries")).toContainText("Claude");
+  await page.getByTestId("setup-finish").click();
+  await expect(page).toHaveURL(/\/$/);
+  const config = (await (await page.request.get("/api/settings")).json()).config;
+  expect(config.llm.provider).toBe("claude-subscription");
 });

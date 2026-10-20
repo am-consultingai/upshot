@@ -86,9 +86,14 @@ export default function KeyStep({
             t("firstRun.key.keepWhy"),
           )}
         {option("key", t("firstRun.key.title"), t("firstRun.key.lead"))}
-        {choice === "key" && <KeyOffer />}
         {option("none", t("firstRun.key.none"), t("firstRun.key.noneWhy"))}
       </div>
+      {/* After the choices, not between them: a radiogroup holds only its radios. */}
+      {choice === "key" && (
+        <div className="mt-3">
+          <KeyOffer />
+        </div>
+      )}
     </StepFrame>
   );
 }

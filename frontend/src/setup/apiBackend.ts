@@ -92,8 +92,8 @@ export class ApiSetupBackend implements SetupBackend {
 
   /**
    * Everything the first screen needs to decide which steps there are, read once. What
-   * the CLIs are follows on its own: it can take seconds, and nothing before the AI step
-   * needs it.
+   * the CLIs are follows on its own: it can take seconds. The plans question shows it
+   * once known, and Finish waits for it (`cliKnown`) before it can write the summaries.
    */
   static async create(): Promise<ApiSetupBackend> {
     const [settings, calendar, diagnostics] = await Promise.all([

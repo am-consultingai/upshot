@@ -47,10 +47,13 @@ function status(cli: CliSnapshot): { tone: Tone; label: MessageKey } {
 export default function AiStep({
   ticked,
   installedAtStart,
+  cameBack,
   onNext,
   onBack,
 }: {
   ticked: Record<CliId, boolean>;
+  /** Entered with Back from the step after: open on the last plan, the one just left. */
+  cameBack: boolean;
   /** Which helpers were here when setup opened: their track shows no install. */
   installedAtStart: Record<CliId, boolean> | null;
   onNext: () => void;
@@ -60,7 +63,7 @@ export default function AiStep({
   const snapshot = useSetupSnapshot();
   const chosenCli = CLI_IDS.filter((id) => ticked[id]);
   // One service per screen (setup plan, §3.4): one sign-in at a time, then the next.
-  const [at, setAt] = useState(0);
+  const [at, setAt] = useState(() => (cameBack ? chosenCli.length - 1 : 0));
   const index = Math.min(at, Math.max(chosenCli.length - 1, 0));
   const current = chosenCli[index];
   const last = index >= chosenCli.length - 1;
@@ -135,7 +138,7 @@ export default function AiStep({
       }
     >
       {chosenCli.length > 1 && (
-        <p data-testid="ai-count" className="mb-2 px-1 text-xs text-tertiary">
+        <p data-testid="ai-count" aria-live="polite" className="mb-2 px-1 text-xs text-tertiary">
           {fill(t("firstRun.ai.count"), { n: index + 1, total: chosenCli.length })}
         </p>
       )}

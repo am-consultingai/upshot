@@ -134,8 +134,17 @@ export default function SetupFlow({
   const steps = withoutUnneeded(allSteps, ticked, snapshot.cli);
   const walk = allSteps.filter((s) => s === step || steps.includes(s));
   const index = walk.indexOf(step);
-  const next = () => setStep(walk[Math.min(index + 1, walk.length - 1)]);
-  const back = () => setStep(walk[Math.max(index - 1, 0)]);
+  // Which way the last move went: a step with screens of its own (Connect AI) opens on its
+  // last one when entered with Back.
+  const [cameBack, setCameBack] = useState(false);
+  const next = () => {
+    setCameBack(false);
+    setStep(walk[Math.min(index + 1, walk.length - 1)]);
+  };
+  const back = () => {
+    setCameBack(true);
+    setStep(walk[Math.max(index - 1, 0)]);
+  };
   // The track: each stop once. A stop reached earlier opens on its first screen.
   const crumbs = [...new Set(allSteps.map(crumbOf))];
   const crumbAt = crumbs.indexOf(crumbOf(step));
@@ -240,8 +249,8 @@ export default function SetupFlow({
         </select>
       </div>
         {/* A line kept for it whether it shows or not, so it cannot push the step down. */}
-        <p data-testid={resumed ? "setup-resumed" : undefined} className="h-4 text-xs leading-4 text-secondary">
-          {resumed ? t("firstRun.resumed") : ""}
+        <p data-testid={resumed && !(reopened && step === "finish") ? "setup-resumed" : undefined} className="h-4 text-xs leading-4 text-secondary">
+          {resumed && !(reopened && step === "finish") ? t("firstRun.resumed") : ""}
         </p>
       </header>
 
@@ -259,7 +268,9 @@ export default function SetupFlow({
           onBack={back}
         />
       )}
-      {step === "ai" && <AiStep ticked={ticked} installedAtStart={installedAtStart} onNext={next} onBack={back} />}
+      {step === "ai" && (
+        <AiStep ticked={ticked} installedAtStart={installedAtStart} cameBack={cameBack} onNext={next} onBack={back} />
+      )}
       {step === "key" && (
         <KeyStep
           choice={keyChoice}
@@ -279,7 +290,10 @@ export default function SetupFlow({
           onReports={setReports}
           reopened={reopened}
           finishing={finishing}
-          onChange={setStep}
+          onChange={(target) => {
+            setCameBack(false);
+            setStep(target);
+          }}
           onFinish={() => void finish()}
           onBack={back}
         />
