@@ -960,7 +960,7 @@ export const fr: Record<MessageKey, string> = {
   "firstRun.done.reportsWhat": "Ce que contient un rapport",
   "firstRun.key.keep": "Garder {provider}",
   "firstRun.done.sum.ollama": "Ollama (un modèle local)",
-  "firstRun.key.keepCurrent": "Garder ce que vous utilisez",
+  "firstRun.key.keepCurrent": "Garder ce que vous utilisez actuellement",
   "firstRun.key.keepWhy": "Ce qui rédige vos résumés aujourd'hui reste inchangé.",
   "firstRun.key.none": "Transcriptions seules pour l'instant",
   "firstRun.key.noneWhy": "Pas de résumés. Ajoutez un abonnement quand vous voulez dans les Paramètres.",
