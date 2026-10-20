@@ -169,25 +169,28 @@ export function AudioStep({ onNext, onBack }: { onNext: () => void; onBack: () =
           <div data-testid="speaker-test" data-phase={speakers.phase} className="space-y-3">
             <SpeakerScene phase={speakers.phase} level={speakers.level} />
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Note tone={speakers.phase === "heard" ? "good" : speakers.phase === "silent" ? "warn" : "neutral"}>
-                {speakers.phase === "heard"
-                  ? t("firstRun.audio.heard")
-                  : speakers.phase === "silent"
-                    ? t("firstRun.audio.silent")
-                    : speakers.phase === "playing"
-                      ? t("firstRun.audio.playing")
-                      : t("firstRun.audio.idle")}
-              </Note>
-              {speakers.phase !== "playing" && (
-                <Button
-                  data-testid={tested ? "speaker-again" : "speaker-play"}
-                  variant={tested ? "ghost" : "secondary"}
-                  size="sm"
-                  onClick={() => backend.testSpeakers()}
-                >
-                  {t(tested ? "firstRun.audio.again" : "firstRun.audio.play")}
-                </Button>
-              )}
+              <span role="status">
+                <Note tone={speakers.phase === "heard" ? "good" : speakers.phase === "silent" ? "warn" : "neutral"}>
+                  {speakers.phase === "heard"
+                    ? t("firstRun.audio.heard")
+                    : speakers.phase === "silent"
+                      ? t("firstRun.audio.silent")
+                      : speakers.phase === "playing"
+                        ? t("firstRun.audio.playing")
+                        : t("firstRun.audio.idle")}
+                </Note>
+              </span>
+              {/* Stays while the sound plays, aria-disabled: taking it away dropped the focus. */}
+              <Button
+                data-testid="speaker-play"
+                aria-disabled={speakers.phase === "playing"}
+                variant={tested ? "ghost" : "secondary"}
+                size="sm"
+                className={speakers.phase === "playing" ? "opacity-50" : ""}
+                onClick={() => speakers.phase !== "playing" && backend.testSpeakers()}
+              >
+                {t(tested ? "firstRun.audio.again" : "firstRun.audio.play")}
+              </Button>
             </div>
           </div>
         </Panel>
