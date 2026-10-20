@@ -99,6 +99,8 @@ test("a_new_install_opens_on_setup_and_skipping_everything_lands_in_the_library"
     .toBeGreaterThan(0);
   await page.getByTestId("speaker-play").click();
   await expect(page.getByTestId("speaker-test")).not.toHaveAttribute("data-phase", "idle");
+  // The button stays while the sound plays, so the keyboard focus stays on it.
+  await expect(page.getByTestId("speaker-play")).toBeFocused();
   await expect(page.getByTestId("speaker-test")).not.toHaveAttribute("data-phase", "playing", {
     timeout: 10_000,
   });

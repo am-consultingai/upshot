@@ -164,6 +164,13 @@ describe("keepSaved (setup reopened after an install, D69)", () => {
     expect(keepSaved(none, { provider: "ollama", fallback: "" })).toEqual({ provider: "ollama", fallback: "" });
   });
 
+  it("drops a saved subscription fallback, which setup has just decided on", () => {
+    expect(keepSaved(none, { provider: "gemini", fallback: "codex-subscription" })).toEqual({
+      provider: "gemini",
+      fallback: "",
+    });
+  });
+
   it("lets a subscription that works now win over what was saved", () => {
     const now = { provider: "claude-subscription", fallback: "" } as const;
     expect(keepSaved(now, { provider: "gemini", fallback: "" })).toEqual(now);
