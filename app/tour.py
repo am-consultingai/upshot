@@ -47,7 +47,8 @@ class TourEvent(BaseModel):
     @model_validator(mode="after")
     def _has_its_fields(self) -> TourEvent:
         """Each moment comes with what its line says, so the log never fills a gap in."""
-        missing = [name for name in REQUIRED[self.event] if getattr(self, name) is None]
+        need = REQUIRED[self.event] + (REQUIRED["skipped"] if self.outcome == "skipped" else ())
+        missing = [name for name in need if getattr(self, name) is None]
         if missing:
             raise ValueError(f"{self.event} needs {', '.join(missing)}")
         return self
@@ -57,6 +58,8 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "started": ("origin",),
     "sample_created": ("recordings", "events", "own_events", "borrowed"),
     "ended": ("outcome",),
+    # Where it was skipped is part of the line: never guessed as the welcome card.
+    "skipped": ("stop", "of"),
     "sample_removed": ("items", "burnt"),
 }
 

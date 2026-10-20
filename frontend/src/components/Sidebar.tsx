@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
-import { api, reason } from "../api";
+import { api, reason, type Meeting } from "../api";
 import { LANGUAGES, useI18n, type Locale } from "../i18n";
 import { groupByDay } from "../lib/timeline";
 import { formatBytes, formatClock, formatDayLabel } from "../lib/format";
@@ -26,7 +26,6 @@ import { Icon } from "./Icon";
 import { useTour } from "../tour/TourProvider";
 import { SampleTag } from "../tour/SampleMeeting";
 import { isSampleId } from "../tour/sample";
-import type { Meeting } from "../api";
 
 /**
  * The sidebar: navigation and the library, in one 240px column.
@@ -450,13 +449,16 @@ export default function Sidebar() {
             }
           />
         )}
-        {byDay.map(([day, group]) => (
+        {byDay.map(([day, group]) => {
+          // A day that holds only samples burns whole, its date with it. Keyed apart, so a
+          // real recording arriving for that day gets a fresh block, not the burnt one.
+          const onlySamples = group.every((meeting) => isSampleId(meeting.id));
+          return (
           <div
-            key={day}
+            key={onlySamples ? `${day}:sample` : day}
             data-testid="timeline-day"
             data-day={day}
-            // A day that holds only samples burns whole, its date with it.
-            data-tour-sample={group.every((meeting) => isSampleId(meeting.id)) ? "" : undefined}
+            data-tour-sample={onlySamples ? "" : undefined}
             className="mb-1"
           >
             {/* Sticky, so a long day keeps its date in view while it scrolls past. */}
@@ -478,7 +480,8 @@ export default function Sidebar() {
               ),
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/*
