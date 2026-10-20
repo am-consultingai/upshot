@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { CSRF, SESSION } from "../playwright.config";
-import { expect, gotoApp, isoAt, minutesFromNow, test } from "./fixtures";
+import { localIso } from "../src/tour/sample";
+import { expect, gotoApp, test } from "./fixtures";
 
 /**
  * The first-run tour (z8tj1hmy14): four stops on a sample meeting, then the sample burns.
@@ -10,6 +11,19 @@ import { expect, gotoApp, isoAt, minutesFromNow, test } from "./fixtures";
  */
 
 const HEADERS = { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` };
+
+/*
+ * The page's clock is held on a Wednesday afternoon, and every seeded time is set from it.
+ * What the tour shows depends on the week and the hour (an empty week gets samples; the
+ * sample was recorded today after noon, else yesterday), and a spec that ran on the real
+ * clock failed for an hour or so at each end of every week.
+ */
+const NOW = new Date(2026, 9, 21, 15, 0);
+
+/** NOW plus some minutes, as a local time with its offset. */
+function at(minutes: number): string {
+  return localIso(new Date(NOW.getTime() + minutes * 60_000));
+}
 
 /** Every request the page makes that names a sample, in its address or its body: there must be none. */
 function watchSampleRequests(page: Page, ...needles: string[]): string[] {
@@ -31,6 +45,7 @@ async function next(page: Page) {
 }
 
 test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, seedBody }) => {
+  await page.clock.setFixedTime(NOW);
   await seedBody({ reset: true });
   const sampleRequests = watchSampleRequests(page);
   await gotoApp(page, "/");
@@ -65,6 +80,11 @@ test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, s
   await expect(tip).toHaveAttribute("data-stop", "2");
   await expect(page.getByTestId("span-week")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-testid=calendar-timegrid] [data-event^=tour-sample-]").first()).toBeVisible();
+  // The picked meeting's open-items balloon pulses: the sample recording's own three items.
+  const pulsing = page.locator("[data-testid=calendar-timegrid] [data-tour-balloon]");
+  await expect(pulsing).toHaveCount(1);
+  await expect(pulsing).toHaveAttribute("data-tour-balloon", "pulse");
+  await expect(pulsing).toHaveAttribute("data-count", "3");
 
   // 3 · The sample meeting's page, drawn without asking the server.
   await next(page);
@@ -93,11 +113,12 @@ test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, s
 });
 
 test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", async ({ page, seedBody }) => {
+  await page.clock.setFixedTime(NOW);
   // The user left the calendar on the month: the tour shows the week and remembers nothing.
   await seedBody({
     reset: true,
-    meetings: [{ id: "own-standup", title: "Team standup", state: "RENDERED", started_at: isoAt(1, 9), duration_s: 900 }],
-    calendar_events: [{ id: "own-interview", title: "Interview: Noa", start: minutesFromNow(60), end: minutesFromNow(120) }],
+    meetings: [{ id: "own-standup", title: "Team standup", state: "RENDERED", started_at: at(-30 * 60), duration_s: 900 }],
+    calendar_events: [{ id: "own-interview", title: "Interview: Noa", start: at(60), end: at(120) }],
   });
   await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "ui.calendar_span": "month" } } });
   // The borrowed title is the user's own, so only the tour's lines may carry it: none do.
@@ -111,6 +132,12 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   const tip = page.getByTestId("tour-tip");
   await expect(tip).toHaveAttribute("data-stop", "2");
   await expect(page.locator("[data-testid=calendar-timegrid] [data-event^=tour-sample-]")).toHaveCount(0);
+  // The user's event has no open items, so the tour gives it a sample balloon to point at.
+  const balloon = page
+    .getByTestId("calendar-gevent")
+    .filter({ hasText: "Interview: Noa" })
+    .locator("[data-tour-balloon=sample]");
+  await expect(balloon).toBeVisible();
   // The sample recordings borrow the user's titles, and are marked as samples.
   const sampleRows = page.locator("[data-testid=meeting-card][data-meeting-id^=tour-sample-]");
   await expect(sampleRows).toHaveCount(2);
@@ -121,6 +148,7 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   await expect(page.getByTestId("tour-blocker")).toHaveCount(0, { timeout: 8000 });
   await expect(page.getByTestId("toaster")).toContainText("Replay it from the workspace menu");
   await expect(sampleRows).toHaveCount(0);
+  await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
   await expect(page.locator("[data-testid=meeting-card][data-meeting-id=own-standup]")).toBeVisible();
   expect(sampleRequests).toEqual([]);
   // Back on the month the user chose, which was never overwritten.
@@ -131,7 +159,41 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Interview: Noa" })).toBeVisible();
 });
 
+test("the_badge_pulses_on_a_recording_drawn_as_its_calendar_event", async ({ page, seedBody }) => {
+  await page.clock.setFixedTime(NOW);
+  // The latest of the week is the recording (it started after its event), drawn as the event.
+  await seedBody({
+    reset: true,
+    meetings: [
+      {
+        id: "own-recorded",
+        title: "Design review",
+        state: "RENDERED",
+        started_at: at(-88),
+        duration_s: 1500,
+        calendar: { calendar_id: "primary", event_id: "own-event" },
+        action_items: [{ what: "Send the notes" }, { what: "Book the room" }],
+      },
+    ],
+    calendar_events: [{ id: "own-event", title: "Design review", start: at(-90), end: at(-60) }],
+  });
+  await gotoApp(page, "/");
+  await replayFromMenu(page);
+  // Only on the calendar stop: the record stop has the sample and the grid, and no badge.
+  await expect(page.getByTestId("tour-tip")).toHaveAttribute("data-stop", "1");
+  await expect(page.getByTestId("calendar-timegrid")).toBeVisible();
+  await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
+  await next(page);
+  const balloon = page.locator("[data-testid=calendar-timegrid] [data-event=own-event] [data-tour-balloon]");
+  await expect(balloon).toHaveAttribute("data-tour-balloon", "pulse");
+  await expect(balloon).toHaveAttribute("data-count", "2");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("tour-blocker")).toHaveCount(0, { timeout: 8000 });
+  await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
+});
+
 test("after_setup_it_starts_by_itself_once_with_a_welcome_in_any_language", async ({ page, seedBody }) => {
+  await page.clock.setFixedTime(NOW);
   await seedBody({ reset: true });
   // In Hebrew: the saved language arrives just after the page starts, and once cancelled
   // the start of the tour with it.
@@ -161,6 +223,7 @@ test("after_setup_it_starts_by_itself_once_with_a_welcome_in_any_language", asyn
 });
 
 test("in_hebrew_the_count_and_keys_read_left_to_right_and_arrows_mirror", async ({ page, seedBody }) => {
+  await page.clock.setFixedTime(NOW);
   await seedBody({ reset: true });
   await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "ui.language": "he" } } });
   await gotoApp(page, "/");

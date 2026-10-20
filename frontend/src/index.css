@@ -576,6 +576,35 @@ kbd {
   animation: ma-pulse 1.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
 }
 
+/*
+ * The tour's calendar stop: the open-items balloon on the meeting it points at swells
+ * and takes the accent, over and over, so the eye goes to it. Still, and accented, when
+ * motion is reduced.
+ */
+@keyframes ma-tour-balloon {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+    background-color: var(--accent);
+    color: var(--accent-ink);
+  }
+}
+
+.ma-tour-balloon {
+  animation: ma-tour-balloon 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ma-tour-balloon {
+    animation: none;
+    background-color: var(--accent);
+    color: var(--accent-ink);
+  }
+}
+
 /* A live day in the month view: red alone says it, without the pulse, when motion is reduced. */
 @media (prefers-reduced-motion: reduce) {
   .ma-dot-live {

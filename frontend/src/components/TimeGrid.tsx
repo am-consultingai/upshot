@@ -30,6 +30,10 @@ import MeetingDetailsDialog from "./MeetingDetailsDialog";
 import { AudioWaveform, Calendar, CircleAlert } from "lucide-react";
 import { Icon } from "./Icon";
 import { isSampleId } from "../tour/sample";
+import { useTour } from "../tour/TourProvider";
+
+/** The open items the tour shows on a meeting it points at that has none of its own. */
+const SAMPLE_OPEN = 2;
 
 /** 48px an hour: a 30-minute meeting holds a title and a time, and a working day fits. */
 const PX_PER_MINUTE = 0.8;
@@ -99,16 +103,32 @@ const CHIP: Record<ChipKind, string> = {
  * as a week of finished business. The count is the open ones only — a meeting whose
  * commitments are all done has nothing to flag.
  */
-export function OpenBalloon({ count, label }: { count: number | undefined; label: string }) {
+export function OpenBalloon({
+  count,
+  label,
+  tour,
+}: {
+  count: number | undefined;
+  label: string;
+  /** On the meeting the tour points at: it pulses, and "sample" when the tour made it up. */
+  tour?: "pulse" | "sample";
+}) {
   const { t } = useI18n();
   if (!count) return null;
+  // A count the tour made up says so, in words and with the samples' dashed edge.
+  const said = label.replace("{n}", String(count)) + (tour === "sample" ? ` · ${t("tour.sampleTag")}` : "");
   return (
-    <Tooltip label={label.replace("{n}", String(count))} hint={t("help.balloon")}>
+    <Tooltip label={said} hint={tour === "sample" ? undefined : t("help.balloon")}>
     <span
       data-testid="chip-open"
       data-count={count}
-      aria-label={label.replace("{n}", String(count))}
-      className="grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-3xs font-semibold leading-none text-canvas tabular-nums"
+      data-tour-balloon={tour}
+      // A marker only: the badge leaves with the calendar stop, before any fire.
+      data-tour-sample={tour === "sample" ? "" : undefined}
+      aria-label={said}
+      className={`grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-3xs font-semibold leading-none text-canvas tabular-nums ${
+        tour ? "ma-tour-balloon" : ""
+      } ${tour === "sample" ? "outline-1 outline-offset-0 outline-dashed outline-[var(--accent)]" : ""}`}
     >
       {count}
     </span>
@@ -175,6 +195,7 @@ function CombinedBlock({
   minutes,
   style,
   onEvent,
+  picked = false,
 }: {
   event: CalendarEvent;
   meeting: Meeting;
@@ -182,6 +203,8 @@ function CombinedBlock({
   minutes: number;
   style: React.CSSProperties;
   onEvent?: (event: CalendarEvent) => void;
+  /** The tour's calendar stop points here: it shows the recording's open items, pulsing. */
+  picked?: boolean;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -322,6 +345,13 @@ function CombinedBlock({
             </span>
           )}
         </span>
+        {picked && (
+          <OpenBalloon
+            count={meeting.actions_open || SAMPLE_OPEN}
+            label={t("timeline.actionsOpen")}
+            tour={meeting.actions_open ? "pulse" : "sample"}
+          />
+        )}
       </button>
       {short ? (
         <span className="flex shrink-0 items-center gap-1" data-testid="calendar-combined-strip">
@@ -437,6 +467,9 @@ export default function TimeGrid({
   onUnfold?: () => void;
 }) {
   const { t, locale } = useI18n();
+  // The meeting the tour's calendar stop points at, while that stop is on screen.
+  const tour = useTour();
+  const tourPick = tour.stop === "calendar" ? (tour.sample?.pick ?? null) : null;
   // The event keeps its name and its slot; a recording of it only marks the block. A
   // recording with no event of its own still draws as itself.
   const recorded = recordedIds(events);
@@ -563,8 +596,17 @@ export default function TimeGrid({
     open?: number;
     /** One of the tour's samples (./tour/sample.ts), tagged as such. */
     sample?: boolean;
+    /** The block the tour's calendar stop points at. */
+    picked?: boolean;
   }) => {
     const short = input.minutes < SHORT_MINUTES;
+    /*
+     * The tour's calendar stop points at this block to show what the balloon means: its
+     * own balloon pulses, and one with no open items gets a sample count, marked as such,
+     * for as long as the stop is on screen.
+     */
+    const balloon = input.picked ? (input.open ? input.open : SAMPLE_OPEN) : input.open;
+    const balloonTour = input.picked ? (input.open ? "pulse" : "sample") : undefined;
     return {
       // A tour sample is drawn with a dashed edge, so it reads as made up even where its tag is cut.
       className: `absolute flex gap-1.25 overflow-hidden rounded-xs text-start ${CHIP[input.kind]} ${
@@ -605,7 +647,7 @@ export default function TimeGrid({
               </span>
             )}
           </span>
-          <OpenBalloon count={input.open} label={t("timeline.actionsOpen")} />
+          <OpenBalloon count={balloon} label={t("timeline.actionsOpen")} tour={balloonTour} />
         </>
       ),
     };
@@ -842,6 +884,10 @@ export default function TimeGrid({
                           meeting={pair.meeting}
                           minutes={minutes}
                           onEvent={onEvent}
+                          picked={
+                            (tourPick?.kind === "event" && tourPick.id === event.event_id) ||
+                            (tourPick?.kind === "meeting" && tourPick.id === pair.meeting.id)
+                          }
                           style={{
                             top: fold.y(startMinute),
                             height: Math.max(16, fold.y(startMinute + minutes) - fold.y(startMinute)),
@@ -867,6 +913,10 @@ export default function TimeGrid({
                       past,
                       open: wasRecorded ? byId.get(event.meeting_id as string)?.actions_open : undefined,
                       sample: isSampleId(event.event_id),
+                      // The pick is the event, or the recording it is drawn as.
+                      picked:
+                        (tourPick?.kind === "event" && tourPick.id === event.event_id) ||
+                        (tourPick?.kind === "meeting" && wasRecorded && tourPick.id === event.meeting_id),
                     });
                     if (wasRecorded) {
                       return (
@@ -925,6 +975,7 @@ export default function TimeGrid({
                     past: end < Date.now(),
                     open: meeting.actions_open,
                     sample: isSampleId(meeting.id),
+                    picked: tourPick?.kind === "meeting" && tourPick.id === meeting.id,
                   });
                   return (
                     <Link
