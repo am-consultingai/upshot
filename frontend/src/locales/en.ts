@@ -152,7 +152,7 @@ export const en = {
   "settings.groupAppearance": "Appearance",
   "settings.providerUnlisted": "Summaries are set to \u201c{provider}\u201d, which is not one of the options below — so none of them is selected. Pick one to change it.",
   "settings.groupSubscription": "Your AI subscription",
-  "settings.groupSubscriptionHint": "Summarize with a subscription you already pay for — Claude or ChatGPT. Upshot drives the official command-line tool signed in on this computer, so there is no API key and no extra charge; your plan's usage limits apply.",
+  "settings.groupSubscriptionHint": "Summarize with a subscription you already pay for — Claude, ChatGPT or Gemini. Upshot drives the official command-line tool signed in on this computer, so there is no API key and no extra charge; your plan's usage limits apply.",
   "settings.groupApiKeys": "API keys",
   "settings.groupApiKeysHint": "Summarize through a provider's paid API. You create the key in their console and it is billed per use. The key is kept in Windows Credential Manager on this computer, never in a file.",
   "settings.groupNone": "No AI",

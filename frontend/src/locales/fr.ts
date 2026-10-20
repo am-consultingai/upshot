@@ -154,7 +154,7 @@ export const fr: Record<MessageKey, string> = {
   "settings.groupAppearance": "Apparence",
   "settings.providerUnlisted": "Les résumés sont configurés sur « {provider} », qui ne fait pas partie des options ci-dessous — aucune n'est donc sélectionnée. Choisissez-en une pour le changer.",
   "settings.groupSubscription": "Votre abonnement IA",
-  "settings.groupSubscriptionHint": "Résumez avec un abonnement que vous payez déjà — Claude ou ChatGPT. Upshot pilote l'outil officiel en ligne de commande connecté sur cet ordinateur : pas de clé API ni de frais supplémentaires ; les limites d'utilisation de votre forfait s'appliquent.",
+  "settings.groupSubscriptionHint": "Résumez avec un abonnement que vous payez déjà — Claude, ChatGPT ou Gemini. Upshot pilote l'outil officiel en ligne de commande connecté sur cet ordinateur : pas de clé API ni de frais supplémentaires ; les limites d'utilisation de votre forfait s'appliquent.",
   "settings.groupApiKeys": "Clés API",
   "settings.groupApiKeysHint": "Résumez via l'API payante d'un fournisseur. Vous créez la clé dans sa console et elle est facturée à l'usage. La clé est conservée dans le Gestionnaire d'identification Windows de cet ordinateur, jamais dans un fichier.",
   "settings.groupNone": "Sans IA",

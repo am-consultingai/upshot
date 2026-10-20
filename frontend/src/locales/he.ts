@@ -150,7 +150,7 @@ export const he: Record<MessageKey, string> = {
   "settings.groupAppearance": "מראה",
   "settings.providerUnlisted": "הסיכומים מוגדרים ל\u201c{provider}\u201d, שאינו אחת מהאפשרויות למטה — ולכן אף אחת מהן אינה מסומנת. בחר אחת כדי לשנות.",
   "settings.groupSubscription": "מנוי ה-AI שלכם",
-  "settings.groupSubscriptionHint": "סיכום עם מנוי שכבר משלמים עליו — Claude או ChatGPT. Upshot מפעיל את כלי שורת הפקודה הרשמי שמחובר במחשב הזה, כך שאין מפתח API ואין חיוב נוסף; מגבלות השימוש של המנוי חלות.",
+  "settings.groupSubscriptionHint": "סיכום עם מנוי שכבר משלמים עליו — Claude, ChatGPT או Gemini. Upshot מפעיל את כלי שורת הפקודה הרשמי שמחובר במחשב הזה, כך שאין מפתח API ואין חיוב נוסף; מגבלות השימוש של המנוי חלות.",
   "settings.groupApiKeys": "מפתחות API",
   "settings.groupApiKeysHint": "סיכום דרך ה-API בתשלום של הספק. את המפתח יוצרים בקונסולה שלו והחיוב לפי שימוש. המפתח נשמר ב-Windows Credential Manager במחשב הזה, אף פעם לא בקובץ.",
   "settings.groupNone": "בלי AI",
