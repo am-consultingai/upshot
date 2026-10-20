@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
@@ -28,97 +28,6 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
       <p data-testid="welcome-length" className="mt-5 text-center text-sm text-secondary">
         {t("firstRun.welcome.length")}
       </p>
-    </StepFrame>
-  );
-}
-
-/**
- * Crash reports, asked once (D87). Two choices, Share chosen for the user, and the one
- * Continue (product owner, 2026-10-08): the choice is saved when the user moves on. Going
- * Back to it shows what was saved. Shown only in a build that can send them.
- */
-export function ReportsStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const { t } = useI18n();
-  const backend = useSetupBackend();
-  const { reports } = useSetupSnapshot();
-  const [share, setShare] = useState(reports.consent !== "off");
-  const choices: { on: boolean; label: MessageKey }[] = [
-    { on: true, label: "firstRun.reports.yes" },
-    { on: false, label: "firstRun.reports.no" },
-  ];
-  return (
-    <StepFrame
-      id="reports"
-      title="firstRun.reports.title"
-      lead={<p>{t("firstRun.reports.lead")}</p>}
-      footer={
-        <>
-          <Button
-            data-testid="setup-next"
-            variant="primary"
-            size="md"
-            onClick={() => {
-              backend.setCrashReports(share);
-              onNext();
-            }}
-          >
-            {t("firstRun.continue")}
-          </Button>
-          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
-            {t("firstRun.back")}
-          </Button>
-        </>
-      }
-    >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Panel title="firstRun.reports.sentTitle">
-          <p className="text-sm text-secondary">{t("firstRun.reports.sent")}</p>
-        </Panel>
-        <Panel title="firstRun.reports.neverTitle">
-          <p className="text-sm text-secondary">{t("firstRun.reports.never")}</p>
-        </Panel>
-      </div>
-      <div
-        role="radiogroup"
-        aria-label={t("firstRun.reports.title")}
-        className="mt-4 flex flex-wrap items-center justify-center gap-3"
-      >
-        {choices.map(({ on, label }) => {
-          const chosen = share === on;
-          return (
-            <button
-              key={label}
-              type="button"
-              role="radio"
-              aria-checked={chosen}
-              data-testid={on ? "reports-yes" : "reports-no"}
-              onClick={() => setShare(on)}
-              className={`flex items-center gap-2 rounded-xl bg-raised px-4 py-2.5 text-sm shadow-sm ring-inset hover:bg-a-100 ${
-                chosen ? "font-medium ring-2 ring-accent" : "ring-1 ring-line-subtle"
-              }`}
-            >
-              <span
-                aria-hidden="true"
-                className={`grid size-4 shrink-0 place-items-center rounded-full ${chosen ? "bg-accent" : "ring-1 ring-line-strong"}`}
-              >
-                {chosen && <span className="size-1.5 rounded-full bg-on-accent" />}
-              </span>
-              {t(label)}
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-3 text-center text-xs text-tertiary">
-        {t("firstRun.reports.later")}{" "}
-        <a href="https://upshot.amconsultingai.com/privacy.html" target="_blank" rel="noreferrer" className="underline">
-          {t("firstRun.reports.privacy")}
-        </a>
-      </p>
-      {reports.consent !== "unset" && (
-        <p data-testid="reports-answered" className="sr-only">
-          {reports.consent}
-        </p>
-      )}
     </StepFrame>
   );
 }
@@ -180,14 +89,13 @@ export function AudioStep({ onNext, onBack }: { onNext: () => void; onBack: () =
                         : t("firstRun.audio.idle")}
                 </Note>
               </span>
-              {/* Stays while the sound plays, aria-disabled: taking it away dropped the focus. */}
+              {/* Stays while the sound plays, busy: taking it away dropped the focus. */}
               <Button
                 data-testid="speaker-play"
-                aria-disabled={speakers.phase === "playing"}
+                busy={speakers.phase === "playing"}
                 variant={tested ? "ghost" : "secondary"}
                 size="sm"
-                className={speakers.phase === "playing" ? "opacity-50" : ""}
-                onClick={() => speakers.phase !== "playing" && backend.testSpeakers()}
+                onClick={() => backend.testSpeakers()}
               >
                 {t(tested ? "firstRun.audio.again" : "firstRun.audio.play")}
               </Button>
@@ -200,21 +108,19 @@ export function AudioStep({ onNext, onBack }: { onNext: () => void; onBack: () =
 }
 
 /**
- * How meetings get recorded, the last question, on its own screen: "detect and notify"
- * is chosen for the user (D64), or what was chosen before when setup reopens (D69), and
- * Done finishes setup. The pictures hold still.
+ * How meetings get recorded, one question on its own screen: "detect and notify" is chosen
+ * for the user (D64), or what was chosen before when setup reopens (D69). Detection that
+ * was switched off in Settings shows neither chosen; Continue then leaves it off.
  */
 export function CaptureStep({
   mode,
   onChange,
-  finishing,
-  onFinish,
+  onNext,
   onBack,
 }: {
-  mode: CaptureMode;
+  mode: CaptureMode | null;
   onChange: (mode: CaptureMode) => void;
-  finishing: boolean;
-  onFinish: () => void;
+  onNext: () => void;
   onBack: () => void;
 }) {
   const { t } = useI18n();
@@ -225,8 +131,8 @@ export function CaptureStep({
       lead={<p data-testid="capture-lead">{t("firstRun.capture.lead")}</p>}
       footer={
         <>
-          <Button data-testid="setup-finish" busy={finishing} variant="primary" size="md" onClick={onFinish}>
-            {t("firstRun.done.finish")}
+          <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
+            {t("firstRun.continue")}
           </Button>
           <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
@@ -280,7 +186,7 @@ const CAPTURE_OPTIONS: { mode: CaptureMode; title: MessageKey; why: MessageKey }
 ];
 
 /** The two ways to record, as radio cards, each with a still picture of what it does. */
-function CaptureChoice({ mode, onChange }: { mode: CaptureMode; onChange: (mode: CaptureMode) => void }) {
+function CaptureChoice({ mode, onChange }: { mode: CaptureMode | null; onChange: (mode: CaptureMode) => void }) {
   const { t } = useI18n();
   return (
     <section data-testid="capture-choice">

@@ -4,6 +4,7 @@ import {
   chooseSummarizer,
   crumbOf,
   initialTicks,
+  finalSummarizer,
   keepSaved,
   resumeAt,
   summaryOrder,
@@ -34,30 +35,19 @@ const ticks = (over: Partial<Record<"claude" | "codex" | "antigravity", boolean>
 });
 
 describe("stepsFor", () => {
-  it("ends on how to record, after the sound check, and never asks about the model or the CPU/GPU", () => {
-    // One question per screen (setup plan, 2026-10-20): how to record has its own, whose
-    // Done finishes setup.
+  it("asks about AI plans before the calendar and ends on Finish, never on the model or the CPU/GPU", () => {
+    // The plans come first so their helpers install while the calendar is connected (O5);
+    // Finish shows what was set up and asks about crash reports (setup plan, §3.6).
     expect(stepsFor({ calendarAvailable: true })).toEqual([
-      "welcome", "calendar", "services", "ai", "key", "audio", "capture",
+      "welcome", "services", "calendar", "ai", "key", "audio", "capture", "finish",
     ]);
   });
 
-  it("shows the sound check and how to record as one stop on the track", () => {
-    expect(crumbOf("capture")).toBe("audio");
-  });
-
-  it("asks about crash reports just before the sound check, only where they can be sent (D87)", () => {
-    expect(stepsFor({ calendarAvailable: true, reportsAvailable: true })).toEqual([
-      "welcome", "calendar", "services", "ai", "key", "reports", "audio", "capture",
-    ]);
-    expect(stepsFor({ calendarAvailable: true, reportsAvailable: false })).not.toContain("reports");
-    const track = [...new Set(stepsFor({ calendarAvailable: true, reportsAvailable: true }).map(crumbOf))];
-    expect(track).toEqual(["welcome", "calendar", "aiSetup", "reports", "audio"]);
-  });
-
-  it("shows the three AI screens as one stop on the track", () => {
+  it("shows six stops on the track, named for what they ask", () => {
     const track = [...new Set(stepsFor({ calendarAvailable: true }).map(crumbOf))];
-    expect(track).toEqual(["welcome", "calendar", "aiSetup", "audio"]);
+    expect(track).toEqual(["welcome", "plans", "calendar", "connect", "recording", "finish"]);
+    expect(crumbOf("key")).toBe("connect");
+    expect(crumbOf("audio")).toBe("recording");
   });
 
   it("hides the calendar step in a build that cannot connect one", () => {
@@ -182,6 +172,25 @@ describe("keepSaved (setup reopened after an install, D69)", () => {
 
   it("writes none on a first run, with nothing saved", () => {
     expect(keepSaved(none, null)).toEqual(none);
+  });
+});
+
+describe("finalSummarizer (the no-plan step's answer)", () => {
+  const none = { provider: "none", fallback: "" } as const;
+  const key = { provider: "gemini", fallback: "" } as const;
+
+  it("writes none when transcripts only was chosen, even over a saved key", () => {
+    expect(finalSummarizer(none, key, "none")).toEqual(none);
+  });
+
+  it("keeps a saved key when it was kept, or the step never came", () => {
+    expect(finalSummarizer(none, key, "keep")).toEqual(key);
+    expect(finalSummarizer(none, key, null)).toEqual(key);
+  });
+
+  it("lets a working subscription win whatever was answered", () => {
+    const claude = { provider: "claude-subscription", fallback: "" } as const;
+    expect(finalSummarizer(claude, key, "none")).toEqual(claude);
   });
 });
 

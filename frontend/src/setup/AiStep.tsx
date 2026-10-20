@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import Button, { Spinner } from "../components/Button";
 import { useSetupBackend, useSetupSnapshot, type CliSnapshot } from "./backend";
@@ -23,9 +23,6 @@ const BY: Record<CliId, MessageKey> = {
   antigravity: "firstRun.ai.antigravity.by",
 };
 
-function installedNow(cli: Record<CliId, CliSnapshot>): Record<CliId, boolean> {
-  return { claude: cli.claude.installed, codex: cli.codex.installed, antigravity: cli.antigravity.installed };
-}
 const BUSY = new Set(["installing", "signing-in", "testing"]);
 
 /** The badge in a card's corner: what is on this machine, before anything is done. */
@@ -49,47 +46,36 @@ function status(cli: CliSnapshot): { tone: Tone; label: MessageKey } {
  */
 export default function AiStep({
   ticked,
+  installedAtStart,
+  cameBack,
   onNext,
   onBack,
 }: {
   ticked: Record<CliId, boolean>;
+  /** Entered with Back from the step after: open on the last plan, the one just left. */
+  cameBack: boolean;
+  /** Which helpers were here when setup opened: their track shows no install. */
+  installedAtStart: Record<CliId, boolean> | null;
   onNext: () => void;
   onBack: () => void;
 }) {
   const { t } = useI18n();
-  const backend = useSetupBackend();
   const snapshot = useSetupSnapshot();
-  // Which CLIs were already here, so their track does not show an install that never
-  // happened. Fixed when the facts arrive, not when an install later changes them.
-  const [installedAtStart, setInstalledAtStart] = useState<Record<CliId, boolean> | null>(() =>
-    snapshot.cliKnown ? installedNow(snapshot.cli) : null,
-  );
-  useEffect(() => {
-    if (snapshot.cliKnown && !installedAtStart) setInstalledAtStart(installedNow(snapshot.cli));
-  }, [snapshot.cliKnown, snapshot.cli, installedAtStart]);
-  // A chosen service that is not installed starts installing as soon as this step opens,
-  // once each: a failed install waits for Try again rather than starting over by itself.
-  const started = useRef(new Set<CliId>());
-  useEffect(() => {
-    if (!snapshot.cliKnown) return;
-    for (const id of CLI_IDS) {
-      const cli = snapshot.cli[id];
-      if (ticked[id] && !cli.installed && cli.phase === "idle" && !started.current.has(id)) {
-        started.current.add(id);
-        backend.install(id);
-      }
-    }
-  }, [snapshot.cliKnown, snapshot.cli, ticked, backend]);
-
   const chosenCli = CLI_IDS.filter((id) => ticked[id]);
+  // One service per screen (setup plan, §3.4): one sign-in at a time, then the next.
+  const [at, setAt] = useState(() => (cameBack ? chosenCli.length - 1 : 0));
+  const index = Math.min(at, Math.max(chosenCli.length - 1, 0));
+  const current = chosenCli[index];
+  const last = index >= chosenCli.length - 1;
   const chosen = chooseSummarizer(ticked, snapshot.cli, null);
   const unfinished = chosenCli.filter((id) => {
     const cli = snapshot.cli[id];
     return !cliUsable(cli) && !BUSY.has(cli.phase) && !(cli.signedIn === true && cli.plan === "free");
   });
   // Moving on mid-install would leave a helper half there (product owner, 2026-09-28):
-  // Continue is greyed out while any chosen one installs, and says why when pressed.
-  const installing = chosenCli.some((id) => snapshot.cli[id].phase === "installing");
+  // Continue is greyed out while this one installs, and says why when pressed. The others
+  // go on installing behind it.
+  const installing = !!current && snapshot.cli[current].phase === "installing";
   const [waitNote, setWaitNote] = useState(false);
   useEffect(() => {
     if (!waitNote) return;
@@ -126,7 +112,7 @@ export default function AiStep({
               variant="primary"
               size="md"
               className={installing ? "cursor-not-allowed opacity-50 hover:brightness-100" : ""}
-              onClick={() => (installing ? setWaitNote(true) : onNext())}
+              onClick={() => (installing ? setWaitNote(true) : last ? onNext() : setAt(index + 1))}
             >
               {t("firstRun.continue")}
             </Button>
@@ -140,25 +126,33 @@ export default function AiStep({
               </span>
             )}
           </span>
-          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
+          <Button
+            data-testid="setup-back"
+            variant="ghost"
+            size="md"
+            onClick={() => (index > 0 ? setAt(index - 1) : onBack())}
+          >
             {t("firstRun.back")}
           </Button>
         </>
       }
     >
-      <div className="space-y-3">
-        {chosenCli.map((id) => (
-          <CliCard
-            key={id}
-            id={id}
-            cli={snapshot.cli[id]}
-            known={snapshot.cliKnown}
-            skipInstall={installedAtStart?.[id] ?? false}
-          />
-        ))}
-      </div>
+      {chosenCli.length > 1 && (
+        <p data-testid="ai-count" aria-live="polite" className="mb-2 px-1 text-xs text-tertiary">
+          {fill(t("firstRun.ai.count"), { n: index + 1, total: chosenCli.length })}
+        </p>
+      )}
+      {current && (
+        <CliCard
+          key={current}
+          id={current}
+          cli={snapshot.cli[current]}
+          known={snapshot.cliKnown}
+          skipInstall={installedAtStart?.[current] ?? false}
+        />
+      )}
 
-      <div className="mt-3 space-y-1 px-1">
+      <div className={`mt-3 space-y-1 px-1 ${last ? "" : "hidden"}`}>
         {chosen.fallback && (
           <Note tone="good" testId="ai-both">
             {fill(t("firstRun.services.uses.two"), {
