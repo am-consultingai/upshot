@@ -128,7 +128,7 @@ export function OpenBalloon({
       aria-label={said}
       className={`grid h-4 min-w-4 shrink-0 place-items-center self-start rounded-full bg-primary px-1 font-mono text-3xs font-semibold leading-none text-canvas tabular-nums ${
         tour ? "ma-tour-balloon" : ""
-      } ${tour === "sample" ? "outline-1 outline-offset-1 outline-dashed outline-[var(--accent)]" : ""}`}
+      } ${tour === "sample" ? "outline-1 outline-offset-0 outline-dashed outline-[var(--accent)]" : ""}`}
     >
       {count}
     </span>
