@@ -63,7 +63,7 @@ def test_a_week_with_events_and_borrowed_titles_say_so(api, caplog) -> None:  # 
     lines = [record.getMessage() for record in caplog.records if record.name == "app.tour"]
     assert lines == [
         "sample created for the tour: 2 recordings, 0 calendar events; "
-        "the week has 6 of the user's events, so none were added; "
+        "the week has 6 of the user's meetings, so no sample events were added; "
         "titles borrowed from the user's meetings",
         "tour skipped at the welcome card",
         "tour done",
