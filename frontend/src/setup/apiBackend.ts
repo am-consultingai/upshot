@@ -67,6 +67,9 @@ function savedChoices(config: {
   const provider = config.llm?.provider;
   return {
     capture: mode === "shadow" || mode === "on" ? mode : null,
+    detectionOff: mode === "off",
+    // Only finishing setup (or the old library question) decides detection.
+    reopened: !!config.detection?.decided,
     summarizer:
       provider && provider !== "none"
         ? { provider, fallback: (config.llm?.fallback_provider ?? "") as Summarizer["fallback"] }
@@ -417,25 +420,20 @@ export class ApiSetupBackend implements SetupBackend {
     void api.putSettings({ "ui.language": language }).catch(() => undefined);
   }
 
-  setCrashReports(on: boolean): void {
-    const consent = on ? "on" : "off";
-    this.set({ ...this.state, reports: { ...this.state.reports, consent } });
-    void api.putSettings({ "diagnostics.crash_reports": consent }).catch(() => undefined);
-  }
-
   saveStep(step: StepId): void {
     if (this.state.savedStep === step) return;
     this.set({ ...this.state, savedStep: step });
     void api.putSettings({ "setup.step": step }).catch(() => undefined);
   }
 
-  async finish({ summarizer, capture }: SetupChoices): Promise<void> {
+  async finish({ summarizer, capture, reports }: SetupChoices): Promise<void> {
     await api.putSettings({
       "llm.provider": summarizer.provider,
       "llm.fallback_provider": summarizer.fallback,
-      // Answered here, so the library never asks it again (CaptureChoice is gone).
-      "detection.mode": capture,
-      "detection.decided": true,
+      // Answered here, so the library never asks it again. Left alone when it was switched
+      // off in Settings and not changed here: setup does not offer "off" (D69).
+      ...(capture ? { "detection.mode": capture, "detection.decided": true } : {}),
+      ...(reports === null ? {} : { "diagnostics.crash_reports": reports ? "on" : "off" }),
       "setup.done": true,
       "setup.step": "",
     });
