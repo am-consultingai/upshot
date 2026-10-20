@@ -19,7 +19,8 @@ export type ScenarioId =
   | "installed-signed-out"
   | "old-cli"
   | "claude-free"
-  | "no-google-client";
+  | "no-google-client"
+  | "reopened-key";
 
 /** Dev tooling, English only: these labels never reach a user. */
 export const SCENARIOS: { id: ScenarioId; label: string }[] = [
@@ -28,6 +29,7 @@ export const SCENARIOS: { id: ScenarioId; label: string }[] = [
   { id: "both-ready", label: "Claude and Codex both installed and signed in" },
   { id: "installed-signed-out", label: "Both installed, neither signed in" },
   { id: "old-cli", label: "Old Claude CLI: sign-in state unknown" },
+  { id: "reopened-key", label: "Reopened after an install: a Gemini key, recording automatically" },
   { id: "claude-free", label: "Claude signed in on a free account" },
   { id: "no-google-client", label: "Build without a Google client" },
 ];
@@ -109,6 +111,7 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
     speakers: { phase: "idle", level: 0 },
     savedStep: null,
     reports: { available: true, consent: "unset" },
+    saved: { capture: null, summarizer: null },
   };
   switch (id) {
     case "fresh":
@@ -132,6 +135,8 @@ export function scenarioSnapshot(id: ScenarioId): SetupSnapshot {
       return { ...base, cli: { ...base.cli, claude: cli("claude", ready("free")) } };
     case "no-google-client":
       return { ...base, calendar: { available: false, phase: "idle", accounts: [] } };
+    case "reopened-key":
+      return { ...base, saved: { capture: "on", summarizer: { provider: "gemini", fallback: "" } } };
   }
 }
 

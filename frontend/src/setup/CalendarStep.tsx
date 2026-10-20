@@ -4,7 +4,7 @@ import Button from "../components/Button";
 import { CopySignInLink } from "../components/CopySignInLink";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import { Note, StepFrame, fill } from "./ui";
-import { CalendarScene } from "./visuals";
+import { CalendarScene, SceneFrame, useScene } from "./visuals";
 
 /**
  * Setup 2: Google Calendar, encouraged and never required.
@@ -16,6 +16,10 @@ import { CalendarScene } from "./visuals";
  * way a sign-in can end without an account (a permission unticked on Google's page, a
  * cancel, five minutes of nothing) says what happened and leaves both Try again and
  * Skip in reach.
+ *
+ * The scene of Google's pages rests on the consent screen, the one people stop at, and
+ * plays once on "Show me"; the numbered steps say the same in words. While Google's page
+ * is open the scene goes, so only the wait is on screen (setup plan, 2026-10-20).
  */
 export default function CalendarStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const { t } = useI18n();
@@ -23,6 +27,8 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
   const { calendar } = useSetupSnapshot();
   const { phase, accounts } = calendar;
   const connected = accounts.length > 0;
+  // Google's consent screen is 46-76% of the 11-second clock (setup.css, "su-g-").
+  const scene = useScene({ still: 6.8, length: 11, frames: [1, 3.5, 6.8, 9.5] });
 
   // Only the first connection made on this visit moves on: someone who comes Back to a
   // calendar that is already connected came back to look at it, and someone who adds
@@ -71,11 +77,21 @@ export default function CalendarStep({ onNext, onBack }: { onNext: () => void; o
       }
     >
       <div className="space-y-4 rounded-xl bg-raised px-5 py-5 shadow-sm">
-        <CalendarScene phase={phase} account={accounts[0]?.address} />
-        {!connected && (
-          <p data-testid="calendar-how" className="text-center text-sm text-secondary">
-            {t("firstRun.calendar.how")}
-          </p>
+        {connected ? (
+          <CalendarScene phase={phase} account={accounts[0]?.address} />
+        ) : (
+          phase !== "waiting" && (
+            <>
+              <SceneFrame caption="firstRun.scene.preview" scene={scene}>
+                <CalendarScene phase={phase} />
+              </SceneFrame>
+              <ol data-testid="calendar-how" className="list-inside list-decimal space-y-1 text-sm text-secondary">
+                <li>{t("firstRun.calendar.step1")}</li>
+                <li>{t("firstRun.calendar.step2")}</li>
+                <li>{t("firstRun.calendar.step3")}</li>
+              </ol>
+            </>
+          )
         )}
         {connected ? (
           <div className="space-y-3">

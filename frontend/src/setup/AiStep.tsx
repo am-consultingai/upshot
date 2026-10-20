@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n, type MessageKey } from "../i18n";
 import Button, { Spinner } from "../components/Button";
 import { useSetupBackend, useSetupSnapshot, type CliSnapshot } from "./backend";
-import { CLI_IDS, chooseSummarizer, cliUsable, type CliId } from "./flow";
+import { CLI_IDS, CLI_PROVIDER, chooseSummarizer, cliUsable, type CliId } from "./flow";
 import { Badge, Note, StepFrame, fill, type Tone } from "./ui";
 import { VendorLogo } from "./logos";
-import { StageTrack, VendorSignInScene } from "./visuals";
+import { SceneFrame, StageTrack, VendorSignInScene, useScene } from "./visuals";
 
 const NAME: Record<CliId, MessageKey> = {
   claude: "firstRun.ai.claude.name",
@@ -159,7 +159,14 @@ export default function AiStep({
       </div>
 
       <div className="mt-3 space-y-1 px-1">
-        {chosen.fallback && <Note tone="good" testId="ai-both">{t("firstRun.ai.both")}</Note>}
+        {chosen.fallback && (
+          <Note tone="good" testId="ai-both">
+            {fill(t("firstRun.services.uses.two"), {
+              first: t(NAME[providerCli(chosen.provider)]),
+              second: t(NAME[providerCli(chosen.fallback)]),
+            })}
+          </Note>
+        )}
         {unfinished.map((id) => (
           <Note key={id} tone="neutral" testId={`ai-unfinished-${id}`}>
             {fill(t("firstRun.ai.unfinished"), { name: t(NAME[id]) })}
@@ -277,7 +284,7 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
       <div data-testid={`ai-signin-intro-${id}`} className="space-y-3">
         <StageTrack current="signin" skipInstall={skipInstall} />
         <p className="text-sm text-secondary">{t(INTRO[id])}</p>
-        <VendorSignInScene vendor={id} />
+        <SignInScene id={id} />
         <Button data-testid={`ai-signin-${id}`} variant="primary" size="md" onClick={() => backend.signIn(id)}>
           {fill(t("firstRun.ai.signinButton"), { name })}
         </Button>
@@ -293,10 +300,11 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
 }
 
 /**
- * Sign-in. The vendor's tool has opened its page in the browser; the scene shows what
- * happens there. The link stays in reach in case the browser did not come forward, and
- * Claude's code is pasted back here, where Upshot passes it on (D75). Pasting it is
- * enough: there is no button to find afterwards. Once a code is on its way the form gives
+ * Sign-in. The vendor's tool has opened its page in the browser, and nothing here moves
+ * beside the code field (setup plan, 2026-10-20). The link stays in reach in case the
+ * browser did not come forward, and Claude's code is pasted back here, where Upshot
+ * passes it on (D75). Pasting it is enough: there is no button to find afterwards. Once
+ * a code is on its way the form gives
  * way to "Checking the code…", and the same code is never sent twice (pasting sends it,
  * and Done used to send it again). Antigravity's code goes into its own window instead.
  */
@@ -315,7 +323,6 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
   return (
     <div data-testid={`ai-signing-in-${id}`} className="space-y-3">
       <StageTrack current="signin" skipInstall={skipInstall} />
-      <VendorSignInScene vendor={id} />
       {cli.signinNeedsCode && cli.codeInWindow ? (
         <Busy testId={`ai-code-in-window-${id}`}>{t("firstRun.ai.pasteCodeWindow")}</Busy>
       ) : cli.signinNeedsCode && sent ? (
@@ -395,6 +402,25 @@ function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipIns
       <p className="text-xs text-tertiary">{t("firstRun.ai.neverSees")}</p>
     </div>
   );
+}
+
+/**
+ * What signing in looks like, resting on the vendor's own "allow" page (43-61% of its
+ * 12-second clock, setup.css "su-v-") and played once on "Show me". It is shown before
+ * sign-in only: once the browser is open, nothing moves beside the code field.
+ */
+function SignInScene({ id }: { id: CliId }) {
+  const scene = useScene({ still: 6.2, length: 12, frames: [1, 3.5, 6.2, 8.8] });
+  return (
+    <SceneFrame caption="firstRun.scene.preview" scene={scene}>
+      <VendorSignInScene vendor={id} />
+    </SceneFrame>
+  );
+}
+
+/** The CLI a subscription provider runs on: `chooseSummarizer` names only those. */
+function providerCli(provider: string): CliId {
+  return CLI_IDS.find((id) => CLI_PROVIDER[id] === provider) ?? "claude";
 }
 
 function Busy({ children, testId }: { children: React.ReactNode; testId?: string }) {

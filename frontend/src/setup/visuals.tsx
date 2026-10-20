@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { directionFor, useI18n, type MessageKey } from "../i18n";
 import type { CalendarPhase, SpeakerPhase } from "./backend";
 import type { CaptureMode, CliId } from "./flow";
@@ -31,6 +31,94 @@ const C = {
 };
 
 const delay = (s: number): CSSProperties => ({ animationDelay: `${s}s` });
+
+/* ---------------------------------------------------------------- Motion */
+
+const reducedMotion = () =>
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** A reduced-motion "Show me" holds each key frame this long. */
+const STEP_MS = 1600;
+
+/**
+ * How a scene moves (setup motion rules, product owner 2026-10-20): it never loops beside
+ * a question. It rests on a still frame, `still` seconds into its clock, that tells the
+ * whole story by itself; `play` runs it once from the start, `length` seconds, and it
+ * comes back to rest. Under reduced motion `play` steps through `frames` (seconds)
+ * instead of moving. The keyframes in setup.css stay the drawing; this only holds and
+ * runs their clocks, so a browser without the animation API shows them as they are.
+ */
+export function useScene({ still, length, frames, autoplay = false }: {
+  still: number;
+  length: number;
+  frames: number[];
+  autoplay?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const at = useCallback((seconds: number, run: boolean) => {
+    const el = ref.current;
+    if (!el || typeof el.getAnimations !== "function") return;
+    for (const animation of el.getAnimations({ subtree: true })) {
+      animation.currentTime = seconds * 1000;
+      if (run) animation.play();
+      else animation.pause();
+    }
+  }, []);
+  // Every render: a part of the scene that mounts later starts its clock afresh.
+  useLayoutEffect(() => {
+    if (!playing) at(still, false);
+  });
+  const play = useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setPlaying(true);
+    const done = () => {
+      setPlaying(false);
+      at(still, false);
+    };
+    if (reducedMotion()) {
+      frames.forEach((frame, i) => timers.current.push(setTimeout(() => at(frame, false), i * STEP_MS)));
+      timers.current.push(setTimeout(done, frames.length * STEP_MS));
+    } else {
+      at(0, true);
+      timers.current.push(setTimeout(done, length * 1000));
+    }
+  }, [at, still, length, frames]);
+  useEffect(() => {
+    if (autoplay && !reducedMotion()) play();
+    return () => timers.current.forEach(clearTimeout);
+    // Once, when the scene first shows.
+  }, []);
+  return { ref, playing, play };
+}
+
+/** A scene with a line saying what it shows and "Show me", which plays it once. */
+export function SceneFrame({ caption, scene, children }: {
+  caption: MessageKey;
+  scene: ReturnType<typeof useScene>;
+  children: ReactNode;
+}) {
+  const { t } = useI18n();
+  return (
+    <figure className="space-y-2">
+      <div ref={scene.ref}>{children}</div>
+      <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-tertiary">
+        <span>{t(caption)}</span>
+        <button
+          type="button"
+          data-testid="scene-show"
+          disabled={scene.playing}
+          onClick={scene.play}
+          className="text-accent underline underline-offset-2 disabled:opacity-50"
+        >
+          {t("firstRun.showMe")}
+        </button>
+      </figcaption>
+    </figure>
+  );
+}
 
 function Scene({ viewBox, className = "", children }: { viewBox: string; className?: string; children: ReactNode }) {
   return (
@@ -78,10 +166,14 @@ function Tile({ label, children }: { label: MessageKey; children: ReactNode }) {
   );
 }
 
-/** Record → transcript → summary: the whole product in one loop. */
+/**
+ * Record → transcript → summary: the whole product, played once when the welcome opens
+ * and then still, with the transcript written and the summary ticked off.
+ */
 export function HeroFlow() {
+  const scene = useScene({ still: 5, length: 5, frames: [5], autoplay: true });
   return (
-    <div data-testid="scene-hero" className="flex flex-wrap items-start justify-center gap-2">
+    <div ref={scene.ref} data-testid="scene-hero" className="flex flex-wrap items-start justify-center gap-2">
       <Tile label="firstRun.welcome.stage.record">
         <Scene viewBox="0 0 100 64" className="w-28">
           <rect x="14" y="10" width="18" height="30" rx="9" fill={C.accent} />
@@ -490,7 +582,7 @@ export function StageTrack({ current, failed = false, skipInstall = false }: { c
                   : active
                     ? failed
                       ? "bg-danger text-on-accent"
-                      : "su-pulse bg-accent text-on-accent"
+                      : "bg-accent text-on-accent"
                     : "bg-surface-3 text-tertiary"
               }`}
             >
@@ -553,11 +645,10 @@ export function SpeakerScene({ phase, level }: { phase: SpeakerPhase; level: num
 /* ---------------------------------------------------------------- Recording */
 
 /**
- * One picture per capture mode: a notification sliding in over a call, or a
- * recording that starts by itself. Only the chosen one moves.
+ * One still picture per capture mode: a notification over a call, or a recording under
+ * way. They sit inside the choice, so they hold still (setup plan, 2026-10-20).
  */
-export function CaptureScene({ mode, active }: { mode: CaptureMode; active: boolean }) {
-  const moving = (name: string) => (active ? name : undefined);
+export function CaptureScene({ mode }: { mode: CaptureMode }) {
   return (
     <Scene viewBox="0 0 160 80" className="h-20 w-40">
       {mode === "shadow" && (
@@ -569,7 +660,7 @@ export function CaptureScene({ mode, active }: { mode: CaptureMode; active: bool
           <rect x="24" y="48" width="24" height="10" rx="5" fill={C.surface3} />
           <rect x="68" y="48" width="24" height="10" rx="5" fill={C.surface3} />
           {/* The notification. */}
-          <g className={moving("su-toast")}>
+          <g>
             <rect x="92" y="40" width="62" height="32" rx="6" fill={C.raised} stroke={C.accent} strokeWidth="1.5" />
             <path d="M104 62h10M106 62v-7a3 3 0 0 1 6 0v7" fill="none" stroke={C.accent} strokeWidth="1.8" strokeLinecap="round" />
             <circle cx="109" cy="52" r="1.2" fill={C.accent} />
@@ -581,7 +672,7 @@ export function CaptureScene({ mode, active }: { mode: CaptureMode; active: bool
       {mode === "on" && (
         <>
           <circle cx="36" cy="40" r="14" fill="var(--color-danger-quiet)" />
-          <circle cx="36" cy="40" r="7" fill="var(--color-danger)" className={moving("su-blink")} />
+          <circle cx="36" cy="40" r="7" fill="var(--color-danger)" />
           {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
             <rect
               key={i}
@@ -592,8 +683,6 @@ export function CaptureScene({ mode, active }: { mode: CaptureMode; active: bool
               rx="2.5"
               fill={C.accent}
               opacity={0.5 + (i % 3) * 0.2}
-              className={moving("su-bar")}
-              style={delay(i * 0.1)}
             />
           ))}
         </>

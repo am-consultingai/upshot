@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { useI18n, type MessageKey } from "../i18n";
@@ -10,7 +10,7 @@ import type { CaptureMode } from "./flow";
 import { Note, StepFrame } from "./ui";
 import { CaptureScene, HeroFlow, SpeakerScene } from "./visuals";
 
-/** Record → transcript → summary, shown rather than said. */
+/** Record → transcript → summary, shown rather than said, and how long setup takes. */
 export function WelcomeStep({ onNext }: { onNext: () => void }) {
   const { t } = useI18n();
   return (
@@ -25,6 +25,9 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
       }
     >
       <HeroFlow />
+      <p data-testid="welcome-length" className="mt-5 text-center text-sm text-secondary">
+        {t("firstRun.welcome.length")}
+      </p>
     </StepFrame>
   );
 }
@@ -131,44 +134,26 @@ function Panel({ title, children }: { title: MessageKey; children: ReactNode }) 
 }
 
 /**
- * The last step: the sound check, then how meetings get recorded, and Done.
- *
- * The microphone needs the user to speak; the computer's audio does not: Upshot plays its
- * own test sound the moment the step opens and listens for it on the loopback, so that
- * half is a self-test with nothing to press. The recording choice sits under it, with
- * "detect and notify" chosen (D64), and Done finishes setup: there is no summary screen
- * after it (product owner, 2026-09-28).
+ * The sound check, one task on its own screen (setup plan, 2026-10-20). The microphone
+ * needs the user to speak; the computer's audio is a self-test: Upshot plays its own test
+ * sound and listens for it on the loopback. It plays when the user presses Play, not on
+ * arrival, so nothing sounds or moves before anyone asked.
  */
-export function AudioStep({
-  mode,
-  onChange,
-  finishing,
-  onFinish,
-  onBack,
-}: {
-  mode: CaptureMode;
-  onChange: (mode: CaptureMode) => void;
-  finishing: boolean;
-  onFinish: () => void;
-  onBack: () => void;
-}) {
+export function AudioStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const { t } = useI18n();
   const backend = useSetupBackend();
   const { speakers } = useSetupSnapshot();
-
-  // Once per visit; "Play again" is the way to repeat it.
-  useEffect(() => {
-    if (backend.snapshot().speakers.phase === "idle") backend.testSpeakers();
-  }, [backend]);
+  const tested = speakers.phase === "heard" || speakers.phase === "silent";
 
   return (
     <StepFrame
       id="audio"
       title="firstRun.audio.title"
+      lead={<p>{t("firstRun.audio.lead")}</p>}
       footer={
         <>
-          <Button data-testid="setup-finish" busy={finishing} variant="primary" size="md" onClick={onFinish}>
-            {t("firstRun.done.finish")}
+          <Button data-testid="setup-next" variant="primary" size="md" onClick={onNext}>
+            {t("firstRun.continue")}
           </Button>
           <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
             {t("firstRun.back")}
@@ -189,17 +174,63 @@ export function AudioStep({
                   ? t("firstRun.audio.heard")
                   : speakers.phase === "silent"
                     ? t("firstRun.audio.silent")
-                    : t("firstRun.audio.playing")}
+                    : speakers.phase === "playing"
+                      ? t("firstRun.audio.playing")
+                      : t("firstRun.audio.idle")}
               </Note>
-              {(speakers.phase === "heard" || speakers.phase === "silent") && (
-                <Button data-testid="speaker-again" variant="ghost" size="sm" onClick={() => backend.testSpeakers()}>
-                  {t("firstRun.audio.again")}
+              {speakers.phase !== "playing" && (
+                <Button
+                  data-testid={tested ? "speaker-again" : "speaker-play"}
+                  variant={tested ? "ghost" : "secondary"}
+                  size="sm"
+                  onClick={() => backend.testSpeakers()}
+                >
+                  {t(tested ? "firstRun.audio.again" : "firstRun.audio.play")}
                 </Button>
               )}
             </div>
           </div>
         </Panel>
       </div>
+    </StepFrame>
+  );
+}
+
+/**
+ * How meetings get recorded, the last question, on its own screen: "detect and notify"
+ * is chosen for the user (D64), or what was chosen before when setup reopens (D69), and
+ * Done finishes setup. The pictures hold still.
+ */
+export function CaptureStep({
+  mode,
+  onChange,
+  finishing,
+  onFinish,
+  onBack,
+}: {
+  mode: CaptureMode;
+  onChange: (mode: CaptureMode) => void;
+  finishing: boolean;
+  onFinish: () => void;
+  onBack: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <StepFrame
+      id="capture"
+      title="firstRun.capture.title"
+      lead={<p data-testid="capture-lead">{t("firstRun.capture.lead")}</p>}
+      footer={
+        <>
+          <Button data-testid="setup-finish" busy={finishing} variant="primary" size="md" onClick={onFinish}>
+            {t("firstRun.done.finish")}
+          </Button>
+          <Button data-testid="setup-back" variant="ghost" size="md" onClick={onBack}>
+            {t("firstRun.back")}
+          </Button>
+        </>
+      }
+    >
       <CaptureChoice mode={mode} onChange={onChange} />
     </StepFrame>
   );
@@ -245,22 +276,12 @@ const CAPTURE_OPTIONS: { mode: CaptureMode; title: MessageKey; why: MessageKey }
   { mode: "on", title: "firstRun.capture.auto", why: "firstRun.capture.autoWhy" },
 ];
 
-/**
- * How meetings get recorded: the question the library used to ask in a banner over the
- * calendar on first run (CaptureChoice, now gone), with "detect and notify" chosen for
- * the user (D64).
- */
+/** The two ways to record, as radio cards, each with a still picture of what it does. */
 function CaptureChoice({ mode, onChange }: { mode: CaptureMode; onChange: (mode: CaptureMode) => void }) {
   const { t } = useI18n();
   return (
-    <section data-testid="capture-choice" className="mt-4">
-      <h2 id="setup-capture-title" className="text-base font-medium">
-        {t("firstRun.capture.title")}
-      </h2>
-      <p data-testid="capture-lead" className="mb-3 text-sm text-secondary">
-        {t("firstRun.capture.lead")}
-      </p>
-      <div role="radiogroup" aria-labelledby="setup-capture-title" className="grid gap-3 sm:grid-cols-2">
+    <section data-testid="capture-choice">
+      <div role="radiogroup" aria-label={t("firstRun.capture.title")} className="grid gap-3 sm:grid-cols-2">
         {CAPTURE_OPTIONS.map((option) => {
           const chosen = option.mode === mode;
           return (
@@ -278,7 +299,7 @@ function CaptureChoice({ mode, onChange }: { mode: CaptureMode; onChange: (mode:
               {/* The scene at 3/5 of its 160x80, whole: it scales by its viewBox. Small
                   enough that the title keeps to one line and the step fits unscrolled. */}
               <div className="grid h-12 w-24 shrink-0 place-items-center overflow-hidden rounded-lg bg-surface-2 [&_svg]:h-12 [&_svg]:w-24">
-                <CaptureScene mode={option.mode} active={chosen} />
+                <CaptureScene mode={option.mode} />
               </div>
               <span className="flex min-w-0 flex-col gap-1">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
