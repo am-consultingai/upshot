@@ -926,7 +926,7 @@ export const fr: Record<MessageKey, string> = {
   "firstRun.audio.title": "Test du son",
   "firstRun.audio.lead": "Une vérification rapide pour s'assurer que les deux côtés d'un appel seront enregistrés.",
   "firstRun.audio.play": "Jouer le son de test",
-  "firstRun.audio.idle": "Jouez le son de test et écoutez un court carillon.",
+  "firstRun.audio.idle": "Vérifie qu'Upshot entend le son de votre ordinateur.",
   "firstRun.audio.mic": "Microphone",
   "firstRun.audio.speakers": "Audio de l'ordinateur",
   "firstRun.audio.playing": "Lecture d'un son de test…",

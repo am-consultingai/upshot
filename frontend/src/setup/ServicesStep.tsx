@@ -43,21 +43,22 @@ export default function ServicesStep({
   const { t } = useI18n();
   const snapshot = useSetupSnapshot();
   const order = summaryOrder(chosen);
-  const [unanswered, setUnanswered] = useState(false);
+  // Counted, not a flag: each Continue with no answer is announced again.
+  const [unanswered, setUnanswered] = useState(0);
   const ready = (id: CliId) => snapshot.cliKnown && cliUsable(snapshot.cli[id]);
   const name = (id: CliId) => t(NAME[id]);
 
   const tick = (id: CliId) => {
-    setUnanswered(false);
+    setUnanswered(0);
     onNoPlan(false);
     onChange({ ...chosen, [id]: !chosen[id] });
   };
   const none = () => {
-    setUnanswered(false);
+    setUnanswered(0);
     onNoPlan(!noPlan);
     if (!noPlan) onChange(Object.fromEntries(CLI_IDS.map((id) => [id, false])) as Record<CliId, boolean>);
   };
-  const forward = () => (order.length || noPlan ? onNext() : setUnanswered(true));
+  const forward = () => (order.length || noPlan ? onNext() : setUnanswered((n) => n + 1));
 
   const row = (on: boolean) =>
     `flex w-full items-center gap-3.5 rounded-xl bg-raised px-4 py-3.5 text-start shadow-sm ring-inset hover:bg-a-100 ${
@@ -80,8 +81,8 @@ export default function ServicesStep({
         </>
       }
     >
-      {unanswered && (
-        <p role="alert" data-testid="services-unanswered" className="mb-3 text-sm font-medium text-danger">
+      {unanswered > 0 && (
+        <p key={unanswered} role="alert" data-testid="services-unanswered" className="mb-3 text-sm font-medium text-danger">
           {t("firstRun.services.required")}
         </p>
       )}
@@ -131,24 +132,25 @@ export default function ServicesStep({
       >
         <span
           aria-hidden="true"
-          className={`grid size-5 shrink-0 place-items-center rounded-full ${noPlan ? "ring-2 ring-accent" : "ring-1 ring-line-strong"}`}
+          className={`grid size-5 shrink-0 place-items-center rounded-md text-xs ${
+            noPlan ? "bg-accent text-on-accent" : "ring-1 ring-line-strong"
+          }`}
         >
-          {noPlan && <span className="size-2.5 rounded-full bg-accent" />}
+          {noPlan ? "✓" : ""}
         </span>
         <span className="text-base">{t("firstRun.services.none")}</span>
       </button>
-      {order.length > 0 && (
-        <p
-          role="status"
-          data-testid="services-order"
-          className="mt-4 rounded-xl bg-accent-quiet px-4 py-3 text-sm text-primary"
-        >
-          {order.length === 1
-            ? fill(t("firstRun.services.uses.one"), { first: name(order[0]) })
-            : fill(t("firstRun.services.uses.two"), { first: name(order[0]), second: name(order[1]) })}
-          {order[2] && <> {fill(t("firstRun.services.spare"), { name: name(order[2]) })}</>}
-        </p>
-      )}
+      {/* Always in the page, so a screen reader hears the line when it fills. */}
+      <div role="status">
+        {order.length > 0 && (
+          <p data-testid="services-order" className="mt-4 rounded-xl bg-accent-quiet px-4 py-3 text-sm text-primary">
+            {order.length === 1
+              ? fill(t("firstRun.services.uses.one"), { first: name(order[0]) })
+              : fill(t("firstRun.services.uses.two"), { first: name(order[0]), second: name(order[1]) })}
+            {order[2] && <> {fill(t("firstRun.services.spare"), { name: name(order[2]) })}</>}
+          </p>
+        )}
+      </div>
       <p data-testid="services-next" className="mt-4 text-center text-sm text-secondary">
         {t(noPlan ? "firstRun.services.nextNone" : "firstRun.services.next")}
       </p>
