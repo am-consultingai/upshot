@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { CSRF, SESSION } from "../playwright.config";
+import { localIso } from "../src/tour/sample";
 import { expect, gotoApp, test } from "./fixtures";
 
 /**
@@ -19,16 +20,9 @@ const HEADERS = { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=
  */
 const NOW = new Date(2026, 9, 21, 15, 0);
 
-/** NOW plus some minutes, as the server writes a local time. */
+/** NOW plus some minutes, as a local time with its offset. */
 function at(minutes: number): string {
-  const date = new Date(NOW.getTime() + minutes * 60_000);
-  const pad = (value: number) => String(Math.abs(value)).padStart(2, "0");
-  const offset = -date.getTimezoneOffset();
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:00` +
-    `${offset >= 0 ? "+" : "-"}${pad(Math.trunc(offset / 60))}:${pad(offset % 60)}`
-  );
+  return localIso(new Date(NOW.getTime() + minutes * 60_000));
 }
 
 /** Every request the page makes that names a sample, in its address or its body: there must be none. */
@@ -185,7 +179,9 @@ test("the_badge_pulses_on_a_recording_drawn_as_its_calendar_event", async ({ pag
   });
   await gotoApp(page, "/");
   await replayFromMenu(page);
-  // Only on the calendar stop.
+  // Only on the calendar stop: the record stop has the sample and the grid, and no badge.
+  await expect(page.getByTestId("tour-tip")).toHaveAttribute("data-stop", "1");
+  await expect(page.getByTestId("calendar-timegrid")).toBeVisible();
   await expect(page.locator("[data-tour-balloon]")).toHaveCount(0);
   await next(page);
   const balloon = page.locator("[data-testid=calendar-timegrid] [data-event=own-event] [data-tour-balloon]");
