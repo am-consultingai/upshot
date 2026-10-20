@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { I18nContext, applyLocale, catalogues, isLocale, type Locale, type MessageKey } from "./i18n";
@@ -32,6 +32,9 @@ import MeetingInfoHost from "./components/MeetingInfoDialog";
 import AssistantPanel from "./components/assistant/AssistantPanel";
 import AssistantLauncher from "./components/assistant/AssistantLauncher";
 import Confetti from "./components/Confetti";
+import TourProvider from "./tour/TourProvider";
+import SampleMeeting from "./tour/SampleMeeting";
+import { isSampleId } from "./tour/sample";
 import { useRecordingControls } from "./lib/recording";
 import { shortcutKey, typing } from "./lib/keys";
 import { refetchAll, refetchAllSoon } from "./lib/refetchAll";
@@ -192,7 +195,7 @@ export default function App() {
    */
   const saved = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const savedConfig = saved.data?.config as
-    | { ui?: { language?: string; theme?: string; tooltips_off?: boolean } }
+    | { ui?: { language?: string; theme?: string; tooltips_off?: boolean; tour_done?: boolean } }
     | undefined;
   useEffect(() => {
     const language = savedConfig?.ui?.language;
@@ -307,9 +310,18 @@ export default function App() {
   const assistant = useAssistantToggle();
   const sendToSetup =
     saved.isSuccess && setupPending(saved.data?.config) && !welcoming && !termsGate && legal.isSuccess;
+  /*
+   * The first-run tour, once, on arriving from setup — unless it was already seen. The
+   * arrival is held: the confetti clears it from the history entry when it ends, at once
+   * under reduced motion, which can be before the settings saying "not seen" have loaded.
+   */
+  const fromSetup = useRef(false);
+  if (celebrate) fromSetup.current = true;
+  const tourDue = fromSetup.current && saved.isSuccess && savedConfig?.ui?.tour_done !== true;
 
   return (
     <I18nContext.Provider value={value}>
+      <TourProvider autoStart={tourDue}>
       <div className="flex h-screen overflow-hidden bg-canvas text-primary" data-testid="app">
         <CommandPalette />
         <Toaster />
@@ -359,7 +371,7 @@ export default function App() {
                  * library does not render at all.
                  */}
                 <Route path="/" element={<></>} />
-                <Route path="/m/:id" element={<MeetingPage />} />
+                <Route path="/m/:id" element={<MeetingRoute />} />
               </Route>
               {/* The inbox carries its own bar and rail, like a meeting, so it is not in a Full column. */}
               <Route path="/actions" element={<ActionsPage />} />
@@ -384,8 +396,15 @@ export default function App() {
         {!welcoming && assistant.open && <AssistantPanel onClose={assistant.close} />}
         {!welcoming && <AssistantLauncher open={assistant.open} onToggle={assistant.toggle} />}
       </div>
+      </TourProvider>
     </I18nContext.Provider>
   );
+}
+
+/** A meeting, or the tour's sample meeting, which has nothing on the server to ask for. */
+function MeetingRoute() {
+  const { id } = useParams();
+  return isSampleId(id) ? <SampleMeeting /> : <MeetingPage />;
 }
 
 /** /transcriptions?tab=… → Settings → App requests, with the same tab. */

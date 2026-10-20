@@ -664,6 +664,13 @@ export interface NoticeList {
   entries: NoticeEntry[];
 }
 
+/** What the tour tells the server: which moment, and the counts that go with it (app/tour.py). */
+export type TourEventBody =
+  | { event: "started"; origin: "setup" | "replay" }
+  | { event: "sample_created"; recordings: number; events: number; own_events: number; borrowed: boolean }
+  | { event: "ended"; outcome: "done" | "skipped"; stop?: number; of?: number }
+  | { event: "sample_removed"; items: number; burnt: number };
+
 /** Feedback from inside the app (D87): what the form sends. */
 export interface FeedbackBody {
   kind: "idea" | "problem" | "praise" | "other";
@@ -809,6 +816,12 @@ export const api = {
   /** An error the page caught; the server reports it only with consent (D87, C5). */
   reportClientError: (body: { kind: string; message: string; stack: string }) =>
     request<{ reported: boolean }>("/api/diagnostics/client-error", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  /** One line in the app log about the first-run tour: counts only, never a title. */
+  tourEvent: (body: TourEventBody) =>
+    request<{ logged: boolean }>("/api/tour/event", {
       method: "POST",
       body: JSON.stringify(body),
     }),

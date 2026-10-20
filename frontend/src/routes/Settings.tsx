@@ -20,6 +20,7 @@ import SettingsNav, { useSection, type SettingsSection } from "../components/Set
 import Tooltip from "../components/Tooltip";
 import { useSetupWarnings } from "../lib/setup";
 import { DETECTION_MODES } from "../lib/detection";
+import TourReplay from "../tour/TourReplay";
 
 /** Language endonyms are data, not copy: they are never translated. */
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", he: "עברית", auto: "auto" };
@@ -328,7 +329,12 @@ export default function Settings() {
       {section === "requests" && <AppRequests />}
       {section === "storage" && <StorageSettings />}
       {section === "privacy" && <PrivacySettings />}
-      {section === "about" && <UpdateSettings />}
+      {section === "about" && (
+        <>
+          <UpdateSettings />
+          <TourReplay />
+        </>
+      )}
       </div>
     </section>
     </PinnedContext.Provider>
