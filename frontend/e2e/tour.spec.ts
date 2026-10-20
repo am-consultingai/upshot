@@ -140,6 +140,8 @@ test("after_setup_it_starts_by_itself_once_with_a_welcome_in_any_language", asyn
     data: { values: { "ui.tour_done": false, "ui.language": "he" } },
   });
   expect(put.ok()).toBeTruthy();
+  // Reduced motion: the confetti ends at once and clears the arrival before much else loads.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await gotoApp(page, "/");
   // As setup leaves it: the arrival is marked in the history entry, and read on load.
   await page.evaluate(() => window.history.replaceState({ usr: { celebrate: true }, key: "setup", idx: 0 }, "", "/"));
