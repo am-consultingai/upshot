@@ -27,7 +27,8 @@ const LABEL: Record<CrumbId, MessageKey> = {
   calendar: "firstRun.step.calendar",
   aiSetup: "firstRun.step.aiSetup",
   reports: "firstRun.step.reports",
-  audio: "firstRun.step.audio",
+  // The sound check and how to record: both about the recording (setup plan, 2026-10-20).
+  audio: "firstRun.step.capture",
 };
 
 /**

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { directionFor, useI18n, type MessageKey } from "../i18n";
 import type { CalendarPhase, SpeakerPhase } from "./backend";
 import type { CaptureMode, CliId } from "./flow";
@@ -101,15 +101,17 @@ export function SceneFrame({ caption, scene, children }: {
   children: ReactNode;
 }) {
   const { t } = useI18n();
+  const captionId = useId();
   return (
     <figure className="space-y-2">
       <div ref={scene.ref}>{children}</div>
       <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-tertiary">
-        <span>{t(caption)}</span>
+        <span id={captionId}>{t(caption)}</span>
         {/* aria-disabled, not disabled: a disabled button drops the keyboard focus. */}
         <button
           type="button"
           data-testid="scene-show"
+          aria-describedby={captionId}
           aria-disabled={scene.playing}
           onClick={() => !scene.playing && scene.play()}
           className="text-accent underline underline-offset-2 aria-disabled:opacity-50"

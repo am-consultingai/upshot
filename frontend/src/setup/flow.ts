@@ -157,7 +157,9 @@ export function chooseSummarizer(
  */
 export function keepSaved(chosen: Summarizer, saved: Summarizer | null): Summarizer {
   if (chosen.provider !== "none" || !saved || saved.provider === "none") return chosen;
-  return SUBSCRIPTIONS.has(saved.provider) ? chosen : saved;
+  if (SUBSCRIPTIONS.has(saved.provider)) return chosen;
+  // Its fallback is kept only if it is not a subscription: that one setup has just decided.
+  return { provider: saved.provider, fallback: SUBSCRIPTIONS.has(saved.fallback) ? "" : saved.fallback };
 }
 
 const SUBSCRIPTIONS = new Set<string>(Object.values(CLI_PROVIDER));

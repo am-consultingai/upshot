@@ -82,11 +82,17 @@ export default function ServicesStep({
       }
     >
       {unanswered > 0 && (
-        <p key={unanswered} role="alert" data-testid="services-unanswered" className="mb-3 text-sm font-medium text-danger">
+        <p key={unanswered} id="services-unanswered" role="alert" data-testid="services-unanswered" className="mb-3 text-sm font-medium text-danger">
           {t("firstRun.services.required")}
         </p>
       )}
-      <div role="group" aria-label={t("firstRun.services.title")} className="flex flex-col gap-2">
+      <div
+        role="group"
+        aria-label={t("firstRun.services.title")}
+        aria-invalid={unanswered > 0 || undefined}
+        aria-describedby={unanswered > 0 ? "services-unanswered" : undefined}
+        className="flex flex-col gap-2"
+      >
         {VENDORS.map((vendor) => {
           const on = chosen[vendor.id];
           return (
