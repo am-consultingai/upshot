@@ -304,9 +304,9 @@ function CliProgress({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; sk
  * beside the code field (setup plan, 2026-10-20). The link stays in reach in case the
  * browser did not come forward, and Claude's code is pasted back here, where Upshot
  * passes it on (D75). Pasting it is enough: there is no button to find afterwards. Once
- * a code is on its way the form gives
- * way to "Checking the code…", and the same code is never sent twice (pasting sends it,
- * and Done used to send it again). Antigravity's code goes into its own window instead.
+ * a code is on its way the form gives way to "Checking the code…", and the same code is
+ * never sent twice (pasting sends it, and Done used to send it again). Antigravity's code
+ * goes into its own window instead.
  */
 function SignIn({ id, cli, skipInstall }: { id: CliId; cli: CliSnapshot; skipInstall: boolean }) {
   const { t } = useI18n();

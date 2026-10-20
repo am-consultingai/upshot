@@ -106,12 +106,13 @@ export function SceneFrame({ caption, scene, children }: {
       <div ref={scene.ref}>{children}</div>
       <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs text-tertiary">
         <span>{t(caption)}</span>
+        {/* aria-disabled, not disabled: a disabled button drops the keyboard focus. */}
         <button
           type="button"
           data-testid="scene-show"
-          disabled={scene.playing}
-          onClick={scene.play}
-          className="text-accent underline underline-offset-2 disabled:opacity-50"
+          aria-disabled={scene.playing}
+          onClick={() => !scene.playing && scene.play()}
+          className="text-accent underline underline-offset-2 aria-disabled:opacity-50"
         >
           {t("firstRun.showMe")}
         </button>
