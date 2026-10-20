@@ -601,7 +601,21 @@ test("finish_after_an_install_waits_for_the_plans_before_it_can_write_summaries"
     );
     await route.fulfill({ response, json: body });
   });
-  await earlier(page, { "detection.mode": "shadow", "llm.provider": "claude-subscription" });
+  // The server refuses a subscription whose CLI is not on this machine (CI has none), so the
+  // saved provider is read as the page sees it, and what Finish writes is caught on its way.
+  await earlier(page, { "detection.mode": "shadow" });
+  const written: Record<string, unknown>[] = [];
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PUT") {
+      written.push(route.request().postDataJSON().values);
+      await route.fulfill({ json: await (await page.request.get("/api/settings")).json() });
+      return;
+    }
+    const response = await route.fetch();
+    const body = await response.json();
+    body.config.llm.provider = "claude-subscription";
+    await route.fulfill({ response, json: body });
+  });
   await gotoApp(page, "/");
   await expect(page.getByTestId("setup-step-finish")).toBeVisible();
   await expect(page.getByTestId("setup-finish")).toHaveAttribute("aria-busy", "true");
@@ -609,7 +623,5 @@ test("finish_after_an_install_waits_for_the_plans_before_it_can_write_summaries"
   await expect(page.getByTestId("setup-finish")).toHaveAttribute("aria-busy", "false");
   await expect(page.getByTestId("done-summaries")).toContainText("Claude");
   await page.getByTestId("setup-finish").click();
-  await expect(page).toHaveURL(/\/$/);
-  const config = (await (await page.request.get("/api/settings")).json()).config;
-  expect(config.llm.provider).toBe("claude-subscription");
+  await expect.poll(() => written.find((v) => "setup.done" in v)?.["llm.provider"]).toBe("claude-subscription");
 });
