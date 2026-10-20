@@ -98,6 +98,25 @@ def test_the_meeting_payload_carries_its_items(api) -> None:  # type: ignore[no-
     assert [item["what"] for item in payload["action_items"]] == ["write the spec"]
 
 
+def test_an_item_runs_the_way_its_meeting_transcript_does(api) -> None:  # type: ignore[no-untyped-def]
+    # Whatever words the item mixes in: the meeting's language decides, on the meeting
+    # page and in the inbox alike.
+    _meeting(api, "m-he", "פגישת צוות", "2026-09-20T09:00:00Z")
+    _meeting(api, "m-en", "Platform sync", "2026-09-20T10:00:00Z")
+    api.services.dao.update_meeting("m-he", language="he")
+    api.services.dao.update_meeting("m-en", language="en")
+    api.services.dao.replace_action_items("m-he", [("ME", "Send the PR to Dana", None, None)])
+    api.services.dao.replace_action_items("m-en", [("ME", "לשלוח את הסיכום", None, None)])
+
+    items = {
+        item["meeting_id"]: item for item in api.client().get("/api/action-items").json()["items"]
+    }
+    assert items["m-he"]["meeting_direction"] == "rtl"
+    assert items["m-en"]["meeting_direction"] == "ltr"
+    meeting = api.client().get("/api/meetings/m-he").json()
+    assert meeting["action_items"][0]["meeting_direction"] == "rtl"
+
+
 def test_the_list_says_what_each_meeting_still_owes(api) -> None:  # type: ignore[no-untyped-def]
     """The timeline answers "what is outstanding" without opening anything.
 

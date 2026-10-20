@@ -6,7 +6,7 @@ import { useI18n } from "../i18n";
 import { addDays, dayKey } from "../lib/calendar";
 import { daysUntil, dueLabel, nextWeekday } from "../lib/due";
 import { formatShortDate } from "../lib/format";
-import { directionOf, type Direction } from "../lib/direction";
+import { textDirection } from "../lib/direction";
 import { initials, personColour } from "../lib/speakers";
 import DatePicker from "./DatePicker";
 import Menu, { useContextMenu, type MenuItem } from "./Menu";
@@ -90,7 +90,6 @@ export default function ActionItemRow({
   showMeeting = true,
   selected = false,
   onFocusRow,
-  dir,
 }: {
   item: ActionItem;
   /** Off on the meeting page, where the meeting is the page you are already on. */
@@ -98,12 +97,6 @@ export default function ActionItemRow({
   /** The inbox's keyboard selection. */
   selected?: boolean;
   onFocusRow?: () => void;
-  /**
-   * Which way the row runs. Unset, it follows the item's own words, whatever the
-   * interface language: a Hebrew item puts its tick on the right and its owner on
-   * the left, an English one the other way round.
-   */
-  dir?: Direction;
 }) {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
@@ -205,7 +198,9 @@ export default function ActionItemRow({
       data-done={done ? "true" : "false"}
       data-mine={item.mine ? "true" : "false"}
       data-due-at={item.due_at ?? undefined}
-      dir={dir ?? directionOf(item.what)}
+      // The way its meeting's transcript runs, whatever the interface language and whatever
+      // words it mixes in: a Hebrew meeting's item has its tick on the right, its owner on the left.
+      dir={textDirection(item.meeting_direction)}
       aria-current={showMeeting && selected ? "true" : undefined}
       data-selected={showMeeting && selected ? "true" : undefined}
       onContextMenu={context.onContextMenu}
@@ -247,12 +242,7 @@ export default function ActionItemRow({
             done ? "text-tertiary line-through" : showMeeting ? "text-primary" : "font-medium text-primary"
           }`}
         >
-          {/*
-           * Isolated in its own direction, so it reads in its own order — an English item
-           * in a Hebrew block keeps its full stop at the end, a Hebrew one that opens with
-           * "PR" stays a Hebrew sentence — while the row's direction still aligns it.
-           */}
-          <bdi dir={directionOf(item.what, dir)}>{item.what}</bdi>
+          {item.what}
         </span>
         {(showMeeting || item.detail) && (
           <span data-testid="action-provenance" className="mt-0.5 block text-sm text-tertiary">
@@ -272,9 +262,7 @@ export default function ActionItemRow({
             )}
             {showMeeting && item.detail && " — "}
             {item.detail && (
-              <span data-testid="action-detail">
-                <bdi dir={directionOf(item.detail, dir)}>{item.detail}</bdi>
-              </span>
+              <span data-testid="action-detail">{item.detail}</span>
             )}
           </span>
         )}
