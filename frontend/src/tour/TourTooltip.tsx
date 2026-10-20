@@ -52,15 +52,25 @@ export default function TourTooltip({ step, isLastStep, backProps, primaryProps,
           ))}
         </ol>
         <div className="flex items-center gap-2">
+          {/* Named as shown: Joyride's own name for these is "Skip tour" and "Next". */}
           <button
             {...skipProps}
+            aria-label={t("tour.notNow")}
+            title={undefined}
             type="button"
             data-testid="tour-skip"
             className="me-auto rounded-sm px-0.5 py-1 text-xs text-tertiary hover:text-primary hover:underline"
           >
             {t("tour.notNow")}
           </button>
-          <Button {...primaryProps} data-testid="tour-next" variant="primary" size="md">
+          <Button
+            {...primaryProps}
+            aria-label={t("tour.start")}
+            title={undefined}
+            data-testid="tour-next"
+            variant="primary"
+            size="md"
+          >
             {t("tour.start")}
           </Button>
         </div>

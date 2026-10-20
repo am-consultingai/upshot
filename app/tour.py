@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.log import get
 
@@ -43,6 +43,22 @@ class TourEvent(BaseModel):
     #: sample_removed: how many sample items went, and how many burnt on screen.
     items: int | None = Field(default=None, ge=0, le=200)
     burnt: int | None = Field(default=None, ge=0, le=200)
+
+    @model_validator(mode="after")
+    def _has_its_fields(self) -> TourEvent:
+        """Each moment comes with what its line says, so the log never fills a gap in."""
+        missing = [name for name in REQUIRED[self.event] if getattr(self, name) is None]
+        if missing:
+            raise ValueError(f"{self.event} needs {', '.join(missing)}")
+        return self
+
+
+REQUIRED: dict[str, tuple[str, ...]] = {
+    "started": ("origin",),
+    "sample_created": ("recordings", "events", "own_events", "borrowed"),
+    "ended": ("outcome",),
+    "sample_removed": ("items", "burnt"),
+}
 
 
 def describe(body: TourEvent) -> str:

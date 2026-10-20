@@ -68,6 +68,9 @@ const SAMPLE_PIECES = [
   `[data-testid=calendar-timegrid] [data-meeting^="${SAMPLE_PREFIX}"]`,
 ].join(",");
 
+/** The app's own chords (record, assistant, palette): the browser's meaning is held back too. */
+const BROWSER_KEYS = new Set(["KeyR", "KeyJ", "KeyK"]);
+
 function reducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
@@ -148,7 +151,9 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
           );
         setOrigin(from);
         setSample(built);
-        navigate("/");
+        // Only when elsewhere: a navigation here would clear the setup's arrival, and its
+        // confetti with it, and leave a history entry that celebrates again.
+        if (path.current !== "/") navigate("/");
         setRun(true);
       })();
     },
@@ -177,6 +182,7 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
       await burn(lit);
       log({ event: "sample_removed", items: sample.meetings.length + sample.events.length, burnt: lit.length });
       setSample(null);
+      controls.current = null;
       if (isSampleId(path.current.split("/m/")[1])) navigate("/", { replace: true });
       setEnding(false);
       finishing.current = false;
@@ -339,8 +345,10 @@ export default function TourProvider({ autoStart, children }: { autoStart: boole
         const chord = event.ctrlKey || event.metaKey || event.altKey;
         if (inTip && !chord) return;
         event.stopPropagation();
-        event.preventDefault();
-        if (event.key === "Tab") {
+        // A chord reaches no app shortcut now; only the browser's own on the app's keys are
+        // held back (reload, downloads, search), so zoom still works during the tour.
+        if (!chord || BROWSER_KEYS.has(event.code)) event.preventDefault();
+        if (!chord && event.key === "Tab") {
           document
             .querySelector("[data-testid=tour-tip],[data-testid=tour-welcome]")
             ?.querySelector<HTMLElement>("button[data-testid=tour-next]")

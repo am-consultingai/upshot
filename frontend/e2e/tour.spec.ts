@@ -11,11 +11,12 @@ import { expect, gotoApp, isoAt, minutesFromNow, test } from "./fixtures";
 
 const HEADERS = { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` };
 
-/** Every request the page makes that names a sample: there must be none. */
-function watchSampleRequests(page: Page): string[] {
+/** Every request the page makes that names a sample, in its address or its body: there must be none. */
+function watchSampleRequests(page: Page, ...needles: string[]): string[] {
   const seen: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("tour-sample")) seen.push(request.url());
+    const said = `${request.url()} ${request.postData() ?? ""}`;
+    if (["tour-sample", ...needles].some((needle) => said.includes(needle))) seen.push(request.url());
   });
   return seen;
 }
@@ -92,12 +93,17 @@ test("the_tour_walks_four_stops_on_a_sample_and_burns_it_away", async ({ page, s
 });
 
 test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", async ({ page, seedBody }) => {
+  // The user left the calendar on the month: the tour shows the week and remembers nothing.
   await seedBody({
     reset: true,
     meetings: [{ id: "own-standup", title: "Team standup", state: "RENDERED", started_at: isoAt(1, 9), duration_s: 900 }],
     calendar_events: [{ id: "own-interview", title: "Interview: Noa", start: minutesFromNow(60), end: minutesFromNow(120) }],
   });
+  await page.request.put("/api/settings", { headers: HEADERS, data: { values: { "ui.calendar_span": "month" } } });
+  // The borrowed title is the user's own, so only the tour's lines may carry it: none do.
+  const sampleRequests = watchSampleRequests(page, "Team standup");
   await gotoApp(page, "/");
+  await expect(page.getByTestId("span-month")).toHaveAttribute("aria-pressed", "true");
   await replayFromMenu(page);
   await next(page);
 
@@ -116,6 +122,12 @@ test("a_week_with_the_users_events_gets_no_sample_events_and_their_data_stays", 
   await expect(page.getByTestId("toaster")).toContainText("Replay it from the workspace menu");
   await expect(sampleRows).toHaveCount(0);
   await expect(page.locator("[data-testid=meeting-card][data-meeting-id=own-standup]")).toBeVisible();
+  expect(sampleRequests).toEqual([]);
+  // Back on the month the user chose, which was never overwritten.
+  await expect(page.getByTestId("span-month")).toHaveAttribute("aria-pressed", "true");
+  const settings = await page.request.get("/api/settings");
+  expect((await settings.json()).config.ui.calendar_span).toBe("month");
+  await page.getByTestId("span-week").click();
   await expect(page.getByTestId("calendar-gevent").filter({ hasText: "Interview: Noa" })).toBeVisible();
 });
 
@@ -134,6 +146,11 @@ test("after_setup_it_starts_by_itself_once_with_a_welcome_in_any_language", asyn
   await page.reload();
 
   await expect(page.getByTestId("tour-welcome")).toBeVisible({ timeout: 8000 });
+  // Named as they read, not with Joyride's "Next" and "Skip tour".
+  for (const id of ["tour-next", "tour-skip"]) {
+    const button = page.getByTestId(id);
+    await expect(button).toHaveAccessibleName(((await button.textContent()) ?? "").trim());
+  }
   await page.getByTestId("tour-skip").click();
   await expect(page.getByTestId("tour-blocker")).toHaveCount(0, { timeout: 8000 });
   await expect(page.getByTestId("tour-sample-tag")).toHaveCount(0);
