@@ -1,13 +1,14 @@
 /*
  * Motion for first-run setup's scenes (src/setup/visuals.tsx).
  *
- * Every scene loops on its own clock and explains one thing — what happens when you
- * install, what signing in looks like — so the text beside it can be one line.
+ * Each scene runs on its own clock and explains one thing — what signing in looks like,
+ * what Google's pages ask — so the text beside it can be one line.
  *
- * The scenes play whatever the system's reduced-motion setting says (product owner,
- * 2026-09-27). Windows reports "reduce" whenever its animation effects are off, which
- * performance settings, remote desktops and VMs do on their own, and on such a machine
- * setup looked frozen: the motion is the explanation here, not decoration.
+ * The clocks are not left to loop beside a question (setup plan, 2026-10-20): `useScene`
+ * (visuals.tsx) holds each scene on a still frame that tells the whole story and plays it
+ * once on "Show me". That is also how reduced motion is honoured: the keyframes are not
+ * switched off by the setting, because the still frame is read from them, and under
+ * "reduce" "Show me" steps between frames instead of moving.
  *
  * The scenes hold no text, so right-to-left simply mirrors the whole drawing (`.su-scene`)
  * and every flow runs the way the reader reads.
@@ -310,27 +311,6 @@
   100% { opacity: 0; transform: scale(1.15); }
 }
 .su-wave { transform-box: view-box; transform-origin: 18px 24px; animation: su-wave 1.2s ease-out infinite; }
-
-/* A stage in progress breathes; done and waiting stages hold still. */
-@keyframes su-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-accent) 45%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-accent) 0%, transparent); }
-}
-.su-pulse { animation: su-pulse 1.6s ease-in-out infinite; }
-
-/* Recording: the notification slides in; the record light blinks. */
-@keyframes su-toast {
-  0%, 15% { transform: translateY(14px); opacity: 0; }
-  30%, 85% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(0); opacity: 0; }
-}
-.su-toast { animation: su-toast 3.6s ease-out infinite; }
-
-@keyframes su-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.su-blink { animation: su-blink 1.2s ease-in-out infinite; }
 
 /* The last screen: a tick drawn once, not looped. */
 @keyframes su-draw {

@@ -4,7 +4,7 @@ import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
 import KeyStep from "./KeyStep";
 import ServicesStep from "./ServicesStep";
-import { AudioStep, ReportsStep, WelcomeStep } from "./Steps";
+import { AudioStep, CaptureStep, ReportsStep, WelcomeStep } from "./Steps";
 import { useSetupBackend, useSetupSnapshot } from "./backend";
 import {
   DEFAULT_CAPTURE,
@@ -12,6 +12,7 @@ import {
   chooseSummarizer,
   crumbOf,
   initialTicks,
+  keepSaved,
   resumeAt,
   stepsFor,
   withoutUnneeded,
@@ -31,8 +32,8 @@ const LABEL: Record<CrumbId, MessageKey> = {
 
 /**
  * First-run setup: Welcome → Google Calendar → AI setup (services, connecting them, and a
- * key when none connected) → Sound check and recording, ending on Done (epic z8tj1hb01k,
- * D75, D79).
+ * key when none connected) → Sound check → how to record, ending on Done (epic z8tj1hb01k,
+ * D75, D79; setup plan, 2026-10-20).
  *
  * Which steps exist is decided once, when setup opens. Two of them follow the AI choices
  * as they change: Connect AI appears once a service is ticked, and API key only while no
@@ -55,7 +56,10 @@ export default function SetupFlow({
   const [allSteps] = useState(() =>
     stepsFor({ calendarAvailable: snapshot.calendar.available, reportsAvailable: snapshot.reports.available }),
   );
-  const [capture, setCapture] = useState<CaptureMode>(DEFAULT_CAPTURE);
+  // Reopened after an install, setup opens on what was chosen before (D69).
+  const [capture, setCapture] = useState<CaptureMode>(snapshot.saved.capture ?? DEFAULT_CAPTURE);
+  // "I don't pay for any of these": an answer, so the plans question can insist on one.
+  const [noPlan, setNoPlan] = useState(false);
   const [step, setStep] = useState<StepId>(() => resumeAt(allSteps, startAt ?? snapshot.savedStep));
   // Said once, on the step setup reopened on, and gone as soon as the user moves.
   const [resumed, setResumed] = useState(() => !startAt && step !== allSteps[0]);
@@ -99,10 +103,10 @@ export default function SetupFlow({
   };
 
   // A key counts only where the key step is offered: a subscription that works wins.
-  const summarizer = chooseSummarizer(
-    ticked,
-    snapshot.cli,
-    snapshot.key.phase === "valid" ? snapshot.key.provider : null,
+  // Ending on none keeps a key or local model chosen before: passing over isn't removing.
+  const summarizer = keepSaved(
+    chooseSummarizer(ticked, snapshot.cli, snapshot.key.phase === "valid" ? snapshot.key.provider : null),
+    snapshot.saved.summarizer,
   );
 
   const finish = async () => {
@@ -198,13 +202,21 @@ export default function SetupFlow({
       {step === "welcome" && <WelcomeStep onNext={next} />}
       {step === "calendar" && <CalendarStep onNext={next} onBack={back} />}
       {step === "services" && (
-        <ServicesStep chosen={ticked} onChange={setTicked} onNext={next} onBack={back} />
+        <ServicesStep
+          chosen={ticked}
+          onChange={setTicked}
+          noPlan={noPlan}
+          onNoPlan={setNoPlan}
+          onNext={next}
+          onBack={back}
+        />
       )}
       {step === "ai" && <AiStep ticked={ticked} onNext={next} onBack={back} />}
       {step === "key" && <KeyStep onNext={next} onBack={back} />}
       {step === "reports" && <ReportsStep onNext={next} onBack={back} />}
-      {step === "audio" && (
-        <AudioStep
+      {step === "audio" && <AudioStep onNext={next} onBack={back} />}
+      {step === "capture" && (
+        <CaptureStep
           mode={capture}
           onChange={setCapture}
           finishing={finishing}

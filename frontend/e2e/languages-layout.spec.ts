@@ -60,40 +60,52 @@ for (const language of LANGUAGES) {
     await speak(request, language);
     await gotoApp(page, "/welcome");
     for (const [step, next] of [
-      ["welcome", "setup-next"],
-      ["calendar", "setup-skip"],
-      ["services", "setup-skip"],
-      ["key", null],
+      ["welcome", ["setup-next"]],
+      ["calendar", ["setup-skip"]],
+      // The plans question wants an answer before Continue.
+      ["services", ["services-none", "setup-next"]],
+      ["key", ["setup-skip"]],
+      ["audio", ["setup-next"]],
+      ["capture", []],
     ] as const) {
+      if (step === "audio" && (await page.getByTestId("setup-step-reports").isVisible())) {
+        await page.getByTestId("setup-next").click();
+      }
       await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
       expect(await cutOff(page), step).toEqual([]);
       // The lead never runs under what follows it.
       const lead = page.getByTestId("setup-lead");
       const fits = await lead.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
       expect(fits, `${step}: the lead runs under the step`).toBe(true);
-      if (next) await page.getByTestId(next).click();
+      for (const id of next) await page.getByTestId(id).click();
     }
     await reset(request);
   });
 }
 
-test("on_a_short_screen_a_step_without_a_lead_closes_its_slot", async ({ page, seedBody, request }) => {
-  // The slot became a minimum height for German; the audio step has no lead, and its
-  // slot must still close up on a short screen, where fitting unscrolled comes first
-  // (the PR #20 review).
+test("on_a_short_screen_the_last_two_steps_fit_unscrolled", async ({ page, seedBody, request }) => {
+  // Fitting unscrolled comes first on a short screen (the PR #20 review); the sound check
+  // and how to record are now a screen each, both with a lead (setup plan, 2026-10-20).
   await page.setViewportSize({ width: 1000, height: 600 });
   await seedBody({ setup_done: false });
   await speak(request, "en");
   await gotoApp(page, "/welcome");
   await page.getByTestId("setup-next").click();
   await page.getByTestId("setup-skip").click(); // calendar
-  await page.getByTestId("setup-skip").click(); // services
+  await page.getByTestId("services-none").click();
+  await page.getByTestId("setup-next").click();
   await expect(page.getByTestId("setup-step-key")).toBeVisible();
   await page.getByTestId("setup-skip").click();
   if (await page.getByTestId("setup-step-reports").isVisible()) await page.getByTestId("setup-next").click();
-  await expect(page.getByTestId("setup-step-audio")).toBeVisible();
-  const lead = page.getByTestId("setup-lead");
-  await expect(lead).toBeEmpty();
-  expect((await lead.boundingBox())?.height ?? 0).toBe(0);
+  for (const step of ["audio", "capture"]) {
+    await expect(page.getByTestId(`setup-step-${step}`)).toBeVisible();
+    const content = page.getByTestId("setup-content");
+    const scrolls = await content.evaluate((el) => {
+      const pane = el.closest(".overflow-y-auto");
+      return pane ? pane.scrollHeight > pane.clientHeight + 1 : false;
+    });
+    expect(scrolls, `${step} scrolls on a 600px screen`).toBe(false);
+    if (step === "audio") await page.getByTestId("setup-next").click();
+  }
   await reset(request);
 });
