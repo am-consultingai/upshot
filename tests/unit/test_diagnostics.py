@@ -12,7 +12,7 @@ import pytest
 
 from app.config import Config
 from app.diagnostics import native, scrub
-from app.diagnostics.client import OUTBOX_MAX, SentryClient
+from app.diagnostics.client import OUTBOX_MAX, SentryClient, drop_events
 from app.diagnostics.reporter import CrashReporter, report, set_active
 
 DSN = "https://0123456789abcdef0123456789abcdef@o1.ingest.example.io/42"
@@ -329,6 +329,37 @@ def test_the_outbox_is_bounded(tmp_path: Path) -> None:
     kept = sorted((tmp_path / "outbox").glob("*.json"))
     assert len(kept) == OUTBOX_MAX
     assert json.loads(kept[-1].read_text(encoding="utf-8"))["payload"]["n"] == OUTBOX_MAX + 4
+
+
+def test_a_kept_crash_report_is_dropped_not_sent_once_reports_are_off(tmp_path: Path) -> None:
+    sentry = Sentry()
+    sentry.offline = True
+    sentry.client(tmp_path).send("event", {"n": 1})
+    sentry.offline = False
+    off = SentryClient(
+        DSN,
+        tmp_path / "outbox",
+        http=httpx.Client(transport=httpx.MockTransport(sentry.handle)),
+        events=False,
+    )
+    assert off.send("feedback", {"m": "hello"}) is True
+    assert [json.loads(b.decode().split("\n")[1])["type"] for b in sentry.bodies] == ["feedback"]
+    assert not list((tmp_path / "outbox").glob("*.json"))
+
+
+def test_switching_reports_off_forgets_those_kept_but_not_feedback(tmp_path: Path) -> None:
+    sentry = Sentry()
+    sentry.offline = True
+    client = sentry.client(tmp_path)
+    client.send("event", {"n": 1})
+    client.send("feedback", {"m": "hello"})
+    (tmp_path / "outbox-ui").mkdir()
+    (tmp_path / "outbox-ui" / "1-event.json").write_text("{}", encoding="utf-8")
+    made, _ = reporter(tmp_path, consent="off")
+    made.home = tmp_path
+    assert made.forget_kept() == 2
+    assert [p.name.split("-")[1] for p in (tmp_path / "outbox").glob("*.json")] == ["feedback.json"]
+    assert drop_events(tmp_path / "missing") == 0
 
 
 # ------------------------------------------------------------------ the interface (C5)
