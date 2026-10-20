@@ -30,7 +30,8 @@ class TourEvent(BaseModel):
     event: Literal["started", "sample_created", "ended", "sample_removed"]
     #: started: after first-run setup, or replayed from the menu or Settings.
     origin: Literal["setup", "replay"] | None = None
-    #: sample_created: what the sample holds, and what of the user's it found.
+    #: sample_created: what the sample holds, and how many of the user's own events and
+    #: recordings the week held.
     recordings: int | None = Field(default=None, ge=0, le=100)
     events: int | None = Field(default=None, ge=0, le=100)
     own_events: int | None = Field(default=None, ge=0, le=10_000)
@@ -50,7 +51,7 @@ def describe(body: TourEvent) -> str:
         return f"tour started ({'after setup' if body.origin == 'setup' else 'replay'})"
     if body.event == "sample_created":
         week = (
-            f"the week has {body.own_events} of the user's events, so none were added"
+            f"the week has {body.own_events} of the user's meetings, so no sample events were added"
             if body.own_events
             else "the week was empty, so sample events fill it"
         )
