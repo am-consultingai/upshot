@@ -609,8 +609,14 @@ test("finish_after_an_install_waits_for_the_plans_before_it_can_write_summaries"
     if (route.request().method() === "PUT") {
       // Answered before it is counted: the test may end the moment it is counted, and a
       // request still in flight then would reach the server after all.
+      // The write goes through without the provider the server would refuse, so setup
+      // really finishes and the app stays in the library; the answer carries it back.
       const values = route.request().postDataJSON().values;
-      await route.fulfill({ json: await (await page.request.get("/api/settings")).json() });
+      const { "llm.provider": _provider, ...rest } = values;
+      const response = await route.fetch({ postData: JSON.stringify({ values: rest }) });
+      const body = await response.json();
+      body.config.llm.provider = "claude-subscription";
+      await route.fulfill({ response, json: body });
       written.push(values);
       return;
     }
@@ -627,6 +633,7 @@ test("finish_after_an_install_waits_for_the_plans_before_it_can_write_summaries"
   await expect(page.getByTestId("done-summaries")).toContainText("Claude");
   await page.getByTestId("setup-finish").click();
   await expect.poll(() => written.find((v) => "setup.done" in v)?.["llm.provider"]).toBe("claude-subscription");
-  // Let the stubs finish what they are answering before the spec's own cleanup removes them.
-  await page.unrouteAll({ behavior: "wait" });
+  // And setup is over: the library, not setup again.
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("setup-flow")).toHaveCount(0);
 });
