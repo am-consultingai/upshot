@@ -17,7 +17,7 @@ allowed = [
 # later; a build with --enable-version3 reads LGPL-3.0-or-later and fails until listed there.
 "LGPL-2.1-or-later" = ["soxr", "FFmpeg (Upshot's audio-only build)"]
 "LGPL-3.0-or-later" = ["pystray"]
-"MPL-2.0" = ["certifi", "tqdm"]
+"MPL-2.0" = ["certifi", "tqdm", "Eigen (compiled into sherpa-onnx's module)"]
 "OFL-1.1" = ["Frank Ruhl Libre and IBM Plex Sans Hebrew fonts"]
 
 # Not open-source licences, or open-source ones with an exception; each approved by name.

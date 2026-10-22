@@ -193,3 +193,27 @@ def test_a_gpl_binary_in_a_run_time_package_fails(
         "pkg: av.libs/anything.dll is a GPL component",  # the folder's name counts too
         "pkg: libfoo.so.1 is built with --enable-gpl",  # Linux libraries are read as well
     ]
+
+
+def test_gpl_library_code_in_a_run_time_package_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PyPI's sherpa-onnx: eSpeak NG compiled into a package declared Apache-2.0. Off Windows
+    (CI's Linux job, never shipped) sherpa-onnx alone is let through."""
+    (tmp_path / "_sherpa_onnx.pyd").write_bytes(b"MZ\0espeak_ng_Initialize\0")
+    (tmp_path / "imagequant.so").write_bytes(b"ELF\0liq_image_quantize\0")
+    sherpa = SimpleNamespace(
+        metadata={"Name": "sherpa_onnx"}, files=["_sherpa_onnx.pyd"],
+        locate_file=lambda f: tmp_path / f,
+    )  # fmt: skip
+    other = SimpleNamespace(
+        metadata={"Name": "pkg"}, files=["imagequant.so"], locate_file=lambda f: tmp_path / f
+    )
+    monkeypatch.setattr(gate.notices, "python_packages", lambda: [sherpa, other])
+    assert gate.binary_problems("win32") == [
+        "sherpa_onnx: _sherpa_onnx.pyd contains GPL code (espeak_ng_Initialize)",
+        "pkg: imagequant.so contains GPL code (liq_image_quantize)",
+    ]
+    assert gate.binary_problems("linux") == [
+        "pkg: imagequant.so contains GPL code (liq_image_quantize)",
+    ]

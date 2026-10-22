@@ -107,6 +107,14 @@ a = Analysis(
 # Nothing calls it, and NVIDIA licenses it only for machines with an NVIDIA GPU; GPU
 # transcription was identical and as fast without it on a GTX 1080 and an MX450.
 a.binaries = [entry for entry in a.binaries if not Path(entry[0]).name.lower().startswith("cudnn")]
+# sherpa-onnx's C and C++ API libraries come only with PyPI's sherpa-onnx-core, built with
+# text-to-speech and so with eSpeak NG (GPL). Upshot's own sherpa-onnx needs neither
+# (packaging/sherpa-onnx): its module imports only onnxruntime.dll. Should a venv still hold
+# them, they are not collected (and scripts/check_dist.py would refuse them).
+a.binaries = [
+    entry for entry in a.binaries
+    if Path(entry[0]).name.lower() not in ("sherpa-onnx-c-api.dll", "sherpa-onnx-cxx-api.dll")
+]  # fmt: skip
 # Upshot's own ctranslate2 (licence epic S12) uses Microsoft's OpenMP runtime, vcomp140.dll,
 # from the Visual C++ redistributable. PyInstaller takes a DLL in System32 for part of Windows
 # and may leave it out, but a clean machine need not have it: it is added from the build

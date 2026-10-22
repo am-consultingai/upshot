@@ -5,12 +5,16 @@
 Run by ``packaging/build.ps1`` after PyInstaller. Upshot is not under the GPL, so a GPL
 library in the install folder is a licence violation, whichever package brought it in.
 PyAV did exactly that: its Windows wheel bundles libx264 and libx265, and every build
-shipped them until PyAV was removed (``pyproject.toml``). Two checks:
+shipped them until PyAV was removed (``pyproject.toml``). Three checks:
 
 - file names: the known GPL encoders and PyAV's library folder;
 - inside every ``.dll``/``.pyd``/``.exe``: FFmpeg's configure line, which an FFmpeg build
   carries whatever its file is called. ``--enable-gpl`` alone is not enough: PyAV's
-  FFmpeg links x264 and x265 with ``--enable-version3`` and no ``--enable-gpl`` at all.
+  FFmpeg links x264 and x265 with ``--enable-version3`` and no ``--enable-gpl`` at all;
+- inside the same files: the symbols of GPL libraries a permissively licensed package can
+  link in without its metadata saying so (``GPL_CODE``). PyPI's sherpa-onnx compiles eSpeak NG
+  (GPL-3.0-or-later) and piper-phonemize into its module, for text-to-speech Upshot never
+  uses; Upshot ships its own build without them (``packaging/sherpa-onnx``).
 
 And Intel's runtime libraries (licence epic S12, D100): Upshot ships its own ctranslate2,
 built with Microsoft's OpenMP and oneDNN, because PyPI's carries Intel's OpenMP runtime
@@ -56,6 +60,17 @@ GPL_FLAGS = re.compile(
     + b"|".join(name.replace("_", "[-_]").encode() for name in GPL_LIBRARIES)
     + rb")\b"
 )
+#: The API of GPL libraries, as a binary that links one carries it (exported, or in its
+#: strings): eSpeak NG and the piper phonemizer built on it (GPL-3.0-or-later), the x264 and
+#: x265 encoders (GPL-2.0-or-later), libimagequant (GPL-3.0-or-later). Whole names only:
+#: OpenBLAS has ``scipy_ctgex264_`` and hf_xet ``peak_used_bytes``.
+GPL_CODE = re.compile(
+    rb"(?<![A-Za-z0-9_])("
+    rb"espeak_(?:ng_)?[A-Za-z]+|espeak-ng-data|phonemize_eSpeak|piper::"
+    rb"|x264_(?:encoder|param|picture)_[a-z_]+|x265_(?:encoder|param|picture|api)_[a-z_]+"
+    rb"|liq_(?:attr|image|result|set|get|write|histogram)_[a-z_]+"
+    rb")"
+)
 BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
 
@@ -71,8 +86,11 @@ def problems(root: Path) -> list[str]:
             found.append(f"{path.relative_to(root).as_posix()}: an Intel runtime library")
         elif path.is_file() and path.suffix.lower() in BINARY_SUFFIXES:
             flag = gpl_flag(path)
+            code = None if flag else gpl_code(path)
             if flag:
                 found.append(f"{path.relative_to(root).as_posix()}: built with {flag}")
+            elif code:
+                found.append(f"{path.relative_to(root).as_posix()}: contains GPL code ({code})")
     if "ctranslate2.dll" in names and "vcomp140.dll" not in names:
         found.append("ctranslate2.dll needs Microsoft's vcomp140.dll, which the freeze lacks")
     return found
@@ -80,14 +98,29 @@ def problems(root: Path) -> list[str]:
 
 def gpl_flag(path: Path, chunk: int = 16 << 20) -> str | None:
     """The first GPL configure flag inside ``path``, read in chunks, not whole."""
-    overlap = 64  # longer than any flag, so one split across two chunks is still seen
+    return _first(GPL_FLAGS, path, chunk)
+
+
+def gpl_code(path: Path, chunk: int = 16 << 20) -> str | None:
+    """The first GPL library symbol inside ``path`` (``GPL_CODE``), read in chunks."""
+    return _first(GPL_CODE, path, chunk)
+
+
+def _first(pattern: re.Pattern[bytes], path: Path, chunk: int) -> str | None:
+    overlap = 64  # longer than any flag or symbol, so one split across two chunks is seen
     tail = b""
     with path.open("rb") as handle:
-        while block := handle.read(chunk):
-            match = GPL_FLAGS.search(tail + block)
-            if match:
-                return match.group(0).decode()
-            tail = block[-overlap:]
+        block = handle.read(chunk)
+        while block:
+            following = handle.read(chunk)
+            data = tail + block
+            match = pattern.search(data)
+            # A match that starts in the last ``overlap`` bytes may go on in the next block:
+            # the next pass sees it whole, from the overlap.
+            if match and (match.start() < len(data) - overlap or not following):
+                return match.group(0).decode(errors="replace")
+            tail = data[-overlap:]
+            block = following
     return None
 
 
