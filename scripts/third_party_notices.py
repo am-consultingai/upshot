@@ -476,18 +476,24 @@ def extra_entries() -> list[Entry]:
               " and pybind11, compiled into _sherpa_onnx.pyd by Upshot's own build"
               " (packaging/sherpa-onnx), which leaves out sherpa-onnx's text-to-speech.",
               licence_file("sherpa-onnx-third-party.txt"), kind="other"),
-        Entry(EIGEN, "5.0.1", "MPL-2.0",
+        Entry(EIGEN, "5.0.1", "MPL-2.0 AND Apache-2.0",
               "The header-only linear-algebra library, compiled unmodified into"
-              " _sherpa_onnx.pyd by Upshot's sherpa-onnx build. Eigen also carries files under"
-              " the other licences below.", licence_file("eigen.txt"),
-              source=f"sherpa-onnx-sources.zip (downloads/eigen-eigen-5.0.1.tar.gz) at"
-              f" https://github.com/am-consultingai/upshot/releases/tag/{SHERPA_RELEASE}; also"
-              f" Upshot-{upshot_version()}-sources.zip beside each installer",
+              " _sherpa_onnx.pyd by Upshot's sherpa-onnx build. Some of its files are under the"
+              " other licences below.", licence_file("eigen.txt"),
+              source=f"downloads/eigen-eigen-5.0.1.tar.gz in sherpa-onnx-sources.zip at"
+              f" https://github.com/am-consultingai/upshot/releases/tag/{SHERPA_RELEASE}; also in"
+              f" Upshot-{upshot_version()}-sources.zip (sherpa-onnx/{SHERPA_RELEASE}-sources.zip)"
+              f" at https://github.com/am-consultingai/upshot/releases/tag/v{upshot_version()}",
               kind="other"),
         Entry("onnxruntime (beside sherpa-onnx's module)", "1.27.1", "MIT",
               "onnxruntime.dll in sherpa_onnx\\lib, the prebuilt library sherpa-onnx's build"
-              " links against. Its third-party notices are a subset of those of the onnxruntime"
-              " package listed here.", licence_file("onnxruntime-sherpa.txt"), kind="other"),
+              " links against. Its third-party notices are all among those of the onnxruntime"
+              " package (Python packages, below).", licence_file("onnxruntime-sherpa.txt"),
+              source="Eigen (MPL-2.0), compiled into onnxruntime.dll:"
+              " https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip,"
+              " with onnxruntime's patches in cmake/patches/eigen at"
+              " https://github.com/microsoft/onnxruntime/tree/v1.27.1",
+              kind="other"),
         Entry("NVIDIA cuBLAS (nvidia-cublas-cu12)", "12.9.1.4", "LicenseRef-NVIDIA-CUDA-EULA",
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
               " for GPU transcription; kept beside the libraries with this licence.",
