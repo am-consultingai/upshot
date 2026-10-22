@@ -9,7 +9,10 @@
 # piper-phonemize into _sherpa_onnx.pyd, the module Upshot imports for speaker diarization.
 # Upshot uses only diarization. This is upstream's own recipe for that wheel
 # (.github/workflows/build-wheels-win-x64.yaml at v1.13.6, job build_wheels_win64) with
-# SHERPA_ONNX_ENABLE_TTS=OFF, so neither is fetched or built, and three more changes:
+# SHERPA_ONNX_ENABLE_TTS=OFF, so neither is fetched or built, and four more changes:
+#   - tts-off-names.patch: the module defines two more text-to-speech names as None, as it
+#     already does the others without text-to-speech, since sherpa_onnx/__init__.py imports
+#     them (at v1.13.6 the import fails without);
 #   - no portaudio and no pre-installed onnxruntime: neither is used by the module, and the
 #     build then depends only on what it downloads itself;
 #   - onnxruntime.dll goes into the wheel beside the module, and the wheel no longer requires
@@ -69,6 +72,7 @@ git clone -q --depth 1 --branch "v$SHERPA_VERSION" https://github.com/k2-fsa/she
 [[ "$(git -C sherpa-onnx rev-parse HEAD)" == "$SHERPA_COMMIT" ]] \
   || fail "sherpa-onnx v$SHERPA_VERSION is not commit $SHERPA_COMMIT"
 tar czf "../dist/sources/sherpa-onnx-$SHERPA_VERSION.tar.gz" --exclude=.git sherpa-onnx
+git -C sherpa-onnx apply "$HERE/tts-off-names.patch"
 
 # The wheel, as upstream builds it: only the Python module, linked against onnxruntime.dll.
 CMAKE_ARGS=(
@@ -188,7 +192,7 @@ cat "$ORT_SRC/LICENSE" <(echo) "$ORT_SRC/ThirdPartyNotices.txt" > "$DIST/LICENSE
     echo
   done
 } > "$DIST/LICENSE-third-party.txt"
-cp "$HERE/build.sh" "$DIST/sources/"
+cp "$HERE/build.sh" "$HERE/tts-off-names.patch" "$DIST/sources/"
 printf '%s\n' "${CMAKE_ARGS[@]}" > "$DIST/sources/cmake-args.txt"
 "$PY" -m pip freeze > "$DIST/sources/python-build-tools.txt"
 (cd "$DIST" \
@@ -197,13 +201,14 @@ cat > "$DIST/BUILD.txt" <<EOF
 sherpa-onnx $SHERPA_VERSION (commit $SHERPA_COMMIT), Windows x64 wheel for Python 3.13, for Upshot
 (built by packaging/sherpa-onnx/build.sh).
 Without text-to-speech (SHERPA_ONNX_ENABLE_TTS=OFF): no eSpeak NG and no piper-phonemize are
-fetched, built or linked. onnxruntime.dll (onnxruntime 1.27.1, as sherpa-onnx downloads it) is in
+fetched, built or linked; tts-off-names.patch lets the module import without them. onnxruntime.dll (onnxruntime 1.27.1, as sherpa-onnx downloads it) is in
 the wheel beside the module, which then needs no sherpa-onnx-core.
 Licences: Apache-2.0 (sherpa-onnx); MIT with its third-party notices (onnxruntime); the code compiled
 in from what the build downloads (LICENSE-third-party.txt; downloads.txt names each project).
 Upshot commit: ${GITHUB_SHA:-unknown}.
 sherpa-onnx-sources.zip holds everything it was built from: sherpa-onnx, every archive its CMake
-downloaded (downloads/), build.sh, the exact CMake arguments and the Python build tools.
+downloaded (downloads/), build.sh, the patch, the exact CMake arguments and the Python build
+tools.
 EOF
 cp "$DIST/sources/downloads.txt" "$DIST/downloads.txt"
 (cd "$DIST" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\n' | sort \
