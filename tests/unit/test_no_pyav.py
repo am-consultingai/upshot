@@ -255,6 +255,7 @@ def test_an_empty_binary_is_skipped(tmp_path: Path) -> None:
         (b"used_bytespeak_used_bytes", None),
         (b"\0x264\0libx264 is not linked\0", None),
         (b"_ZN5piper16phonemize_eSpeakERKNSt7", "phonemize_eSpeak"),  # GCC-mangled
+        (b"?phonemes@piper@@YAXXZ", "@piper@@"),  # MSVC-mangled, another piper function
     ],
 )
 def test_gpl_library_code_is_found_by_whole_name(
@@ -268,7 +269,14 @@ def test_gpl_library_code_is_found_by_whole_name(
 def test_a_symbol_split_across_two_chunks_is_still_found(tmp_path: Path) -> None:
     path = tmp_path / "big.dll"
     path.write_bytes(b"\0" * 1000 + b"espeak_ng_Initialize" + b"\0" * 1000)
-    for chunk in (1005, 1010, 1019):  # the boundary inside, and just after, the name
+    for chunk in (1005, 1010, 1019, 1020):  # the boundary inside the name, and at its end
+        assert check_dist.gpl_code(path, chunk=chunk) == "espeak_ng_Initialize"
+
+
+def test_a_tiny_chunk_still_searches_the_start_of_the_file(tmp_path: Path) -> None:
+    path = tmp_path / "small.dll"
+    path.write_bytes(b"espeak_ng_Initialize\0" + b"\0" * 300)
+    for chunk in (1, 10, 64):
         assert check_dist.gpl_code(path, chunk=chunk) == "espeak_ng_Initialize"
 
 
