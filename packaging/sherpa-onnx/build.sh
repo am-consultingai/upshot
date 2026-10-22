@@ -83,8 +83,9 @@ CMAKE_ARGS=(
   export SHERPA_ONNX_SPLIT_PYTHON_PACKAGE=ON SHERPA_ONNX_CMAKE_ARGS="${CMAKE_ARGS[*]}"
   "$PY" setup.py -q bdist_wheel
 )
-BUILD="$(cd sherpa-onnx/build && ls -d temp.*)"
-BUILD="sherpa-onnx/build/$BUILD"
+# setup.py's CMake tree (build/temp.win-amd64-cpython-313/Release).
+BUILD="$(find sherpa-onnx/build -maxdepth 3 -name CMakeCache.txt -printf '%h\n')"
+[[ -n "$BUILD" && "$(echo "$BUILD" | wc -l)" -eq 1 ]] || fail "no single CMake tree: $BUILD"
 grep -qx "SHERPA_ONNX_ENABLE_TTS:BOOL=OFF" "$BUILD/CMakeCache.txt" || fail "TTS is not off"
 
 # What the build downloaded: none of it eSpeak or piper; the archives go into the sources.
@@ -169,6 +170,13 @@ cat "$ORT_SRC/LICENSE" <(echo) "$ORT_SRC/ThirdPartyNotices.txt" > "$DIST/LICENSE
       [[ -f "$src/$file" ]] || continue
       echo "== $name ($file)"; cat "$src/$file"; echo
     done
+  done
+  # Two headers simple-sentencepiece takes from other projects, whose notice is the file's own
+  # leading comment: darts-clone (BSD-2-Clause) and ThreadPool (Zlib).
+  for file in darts.h threadpool.h; do
+    echo "== simple-sentencepiece: $file (notice from the file's header)"
+    awk '{print} /\*\//{exit}' "$BUILD/_deps/simple-sentencepiece-src/ssentencepiece/csrc/$file"
+    echo
   done
 } > "$DIST/LICENSE-third-party.txt"
 cp "$HERE/build.sh" "$DIST/sources/"
