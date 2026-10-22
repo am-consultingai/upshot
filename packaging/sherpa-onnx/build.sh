@@ -96,7 +96,10 @@ BUILD="$(find sherpa-onnx/build -maxdepth 3 -name CMakeCache.txt -printf '%h\n')
 grep -qx "SHERPA_ONNX_ENABLE_TTS:BOOL=OFF" "$BUILD/CMakeCache.txt" || fail "TTS is not off"
 
 # What the build downloaded: none of it eSpeak or piper, configured or fetched.
-! grep -qiE "espeak|piper" "$BUILD/CMakeCache.txt" || fail "the build configured eSpeak or piper"
+# (setup.py itself sets BUILD_ESPEAK_NG_EXE, BUILD_PIPER_PHONMIZE_TESTS and the like to OFF.)
+configured="$(grep -iE "espeak|piper" "$BUILD/CMakeCache.txt" \
+  | grep -vE '^BUILD_(ESPEAK_NG|PIPER_PHONMIZE)_(EXE|TESTS):[A-Z]+=OFF$' || true)"
+[[ -z "$configured" ]] || fail "the build configured eSpeak or piper: $configured"
 for dep in "$BUILD"/_deps/*; do
   [[ ! "$(basename "$dep")" =~ [Ee]speak|[Pp]iper ]] || fail "the build fetched $dep"
 done
