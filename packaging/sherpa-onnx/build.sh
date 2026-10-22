@@ -45,6 +45,7 @@ PYPI_WHEEL_SHA256=3387c754668578612aaf7795f894b631faefb71fd7d7df20c2aa41aa2dbc59
 CMAKE_VERSION=3.31.6
 SETUPTOOLS_VERSION=84.0.0
 WHEEL_VERSION=0.48.0
+PACKAGING_VERSION=26.3
 PEFILE_VERSION=2024.8.26
 
 rm -rf "$WORK/dist"
@@ -59,7 +60,7 @@ fetch() {  # url sha256 file
 fail() { echo "$1" >&2; exit 1; }
 
 "$PY" -m pip install -q "cmake==$CMAKE_VERSION" "setuptools==$SETUPTOOLS_VERSION" \
-  "wheel==$WHEEL_VERSION" "pefile==$PEFILE_VERSION"
+  "wheel==$WHEEL_VERSION" "packaging==$PACKAGING_VERSION" "pefile==$PEFILE_VERSION"
 # The pinned CMake, not the runner's.
 CMAKE_BIN="$(dirname "$(cygpath -u "$("$PY" -c 'import cmake, os; print(os.path.join(cmake.CMAKE_BIN_DIR, "cmake.exe"))')")")"
 export PATH="$CMAKE_BIN:$PATH"
@@ -68,7 +69,9 @@ export PATH="$CMAKE_BIN:$PATH"
 # sherpa-onnx at its release commit. The sources as cloned, before anything builds in the tree.
 # Relative paths only: GNU tar reads "D:/..." as a remote host.
 rm -rf sherpa-onnx
-git clone -q --depth 1 --branch "v$SHERPA_VERSION" https://github.com/k2-fsa/sherpa-onnx.git
+# LF line endings, as upstream's tag holds them (the runner's Git converts to CRLF otherwise).
+git -c core.autocrlf=false clone -q --depth 1 --branch "v$SHERPA_VERSION" \
+  https://github.com/k2-fsa/sherpa-onnx.git
 [[ "$(git -C sherpa-onnx rev-parse HEAD)" == "$SHERPA_COMMIT" ]] \
   || fail "sherpa-onnx v$SHERPA_VERSION is not commit $SHERPA_COMMIT"
 tar czf "../dist/sources/sherpa-onnx-$SHERPA_VERSION.tar.gz" --exclude=.git sherpa-onnx
@@ -92,13 +95,25 @@ BUILD="$(find sherpa-onnx/build -maxdepth 3 -name CMakeCache.txt -printf '%h\n')
 [[ -n "$BUILD" && "$(echo "$BUILD" | wc -l)" -eq 1 ]] || fail "no single CMake tree: $BUILD"
 grep -qx "SHERPA_ONNX_ENABLE_TTS:BOOL=OFF" "$BUILD/CMakeCache.txt" || fail "TTS is not off"
 
-# What the build downloaded: none of it eSpeak or piper; the archives go into the sources.
-DOWNLOADS="$(find "$BUILD/_deps" -maxdepth 4 -path '*-populate-prefix/src/*' -type f \
-  \( -name '*.tar.gz' -o -name '*.tar.bz2' -o -name '*.tgz' -o -name '*.zip' \))"
-[[ -n "$DOWNLOADS" ]] || fail "found none of the build's downloads"
-! ls -d "$BUILD"/_deps/* | grep -qiE "espeak|piper" || fail "the build fetched eSpeak or piper"
-echo "$DOWNLOADS" | xargs -I{} cp {} "$DIST/sources/downloads/"
-ls "$BUILD/_deps" | grep -- '-src$' | sed 's/-src$//' > "$DIST/sources/downloads.txt"
+# What the build downloaded: none of it eSpeak or piper, configured or fetched.
+! grep -qiE "espeak|piper" "$BUILD/CMakeCache.txt" || fail "the build configured eSpeak or piper"
+for dep in "$BUILD"/_deps/*; do
+  [[ ! "$(basename "$dep")" =~ [Ee]speak|[Pp]iper ]] || fail "the build fetched $dep"
+done
+# Each archive goes into the sources, named after its project (upstream's file names are only
+# tags, such as v0.3.0.tar.gz), and every project fetched must have one: upstream takes a copy
+# from Downloads or TEMP when it finds one there, and that copy would be missing.
+projects=0
+for src in "$BUILD"/_deps/*-src; do
+  name="$(basename "$src" -src)"
+  projects=$((projects + 1))
+  archive="$(find "$BUILD/_deps/$name-subbuild" -maxdepth 3 -path '*-populate-prefix/src/*' \
+    -type f \( -name '*.tar.gz' -o -name '*.tar.bz2' -o -name '*.tgz' -o -name '*.zip' \))"
+  [[ -n "$archive" && "$(echo "$archive" | wc -l)" -eq 1 ]] || fail "$name: no single archive"
+  cp "$archive" "$DIST/sources/downloads/$name-$(basename "$archive")"
+  echo "$name" >> "$DIST/sources/downloads.txt"
+done
+[[ $projects -gt 0 ]] || fail "found none of the build's downloads"
 
 # onnxruntime.dll beside the module, and no sherpa-onnx-core.
 ORT_DLL="$BUILD/_deps/onnxruntime-src/lib/onnxruntime.dll"
@@ -134,6 +149,8 @@ open(sys.argv[2], "w", newline="\n").write("".join(name + "\n" for name in names
   "$PYD" "$DIST/imports.txt"
 bad_imports="$(grep -viE '^(python3[0-9]*\.dll|onnxruntime\.dll|kernel32\.dll|advapi32\.dll|api-ms-win-.*\.dll)$' "$DIST/imports.txt" || true)"
 [[ -z "$bad_imports" ]] || fail "the module imports more than it should: $bad_imports"
+grep -qix "onnxruntime.dll" "$DIST/imports.txt" && grep -qix "python313.dll" "$DIST/imports.txt" \
+  || fail "the module does not import onnxruntime.dll and python313.dll"
 # eSpeak NG's and piper's names, whole (a plain "espeak" is also in "OfflineSpeaker"). The same
 # test on PyPI's module must find them, or it proves nothing.
 tts_code() {  # file: prints the eSpeak and piper names in it
@@ -180,11 +197,28 @@ cat "$ORT_SRC/LICENSE" <(echo) "$ORT_SRC/ThirdPartyNotices.txt" > "$DIST/LICENSE
   for src in "$BUILD"/_deps/*-src; do
     name="$(basename "$src" -src)"
     [[ "$name" == onnxruntime ]] && continue
-    for file in $(ls "$src" | grep -iE '^(licen[cs]e|copying|notice)' | sort); do
-      [[ -f "$src/$file" ]] || continue
-      echo "== $name ($file)"; cat "$src/$file"; echo
+    found=0
+    for path in "$src"/*; do
+      file="$(basename "$path")"
+      [[ -f "$path" && "$file" =~ ^([Ll][Ii][Cc][Ee][Nn][CcSs][Ee]|[Cc][Oo][Pp][Yy][Ii][Nn][Gg]|[Nn][Oo][Tt][Ii][Cc][Ee]) ]] \
+        || continue
+      echo "== $name ($file)"; cat "$path"; echo
+      found=$((found + 1))
     done
+    [[ $found -gt 0 ]] || fail "$name: no licence file"
   done
+  # kissfft's COPYING only names its licence; the texts are in its LICENSES folder. (Not every
+  # LICENSES folder: json's holds the GPL text of its build tooling, which is not compiled in.)
+  for file in BSD-3-Clause Unlicense; do
+    echo "== kissfft (LICENSES/$file)"; cat "$BUILD/_deps/kissfft-src/LICENSES/$file"; echo
+  done
+  # nlohmann/json's header holds code by other authors, each credited in an SPDX line beside it
+  # and marked MIT (LICENSE.MIT above): hedley, Abseil's, Bjoern Hoehrmann's UTF-8 decoder,
+  # Florian Loitsch's Grisu2.
+  echo "== json (the copyright lines in nlohmann/json.hpp, under LICENSE.MIT above)"
+  grep -h "SPDX-FileCopyrightText\|SPDX-License-Identifier" \
+    "$BUILD/_deps/json-src/single_include/nlohmann/json.hpp" | sed 's|^ *// *||' | awk '!seen[$0]++'
+  echo
   # Two headers simple-sentencepiece takes from other projects, whose notice is the file's own
   # leading comment: darts-clone (BSD-2-Clause) and ThreadPool (Zlib).
   for file in darts.h threadpool.h; do
@@ -203,8 +237,9 @@ sherpa-onnx $SHERPA_VERSION (commit $SHERPA_COMMIT), Windows x64 wheel for Pytho
 (built by packaging/sherpa-onnx/build.sh).
 Without text-to-speech (SHERPA_ONNX_ENABLE_TTS=OFF): no eSpeak NG and no piper-phonemize are
 fetched, built or linked; tts-off-names.patch lets the module import without them.
-onnxruntime.dll (onnxruntime 1.27.1, as sherpa-onnx downloads it) is in the wheel beside the
-module, which then needs no sherpa-onnx-core.
+onnxruntime.dll (onnxruntime 1.27.1, the prebuilt library sherpa-onnx downloads from its
+maintainer's csukuangfj/onnxruntime-libs release) is in the wheel beside the module, which then
+needs no sherpa-onnx-core.
 Licences: Apache-2.0 (sherpa-onnx); MIT with its third-party notices (onnxruntime); the code compiled
 in from what the build downloads (LICENSE-third-party.txt; downloads.txt names each project).
 Upshot commit: ${GITHUB_SHA:-unknown}.
