@@ -164,7 +164,8 @@ VENV_PY="venv/Scripts/python.exe"
 import numpy as np, sherpa_onnx
 assert sherpa_onnx.OfflineTts is None, "text-to-speech is built in"
 clustering = sherpa_onnx.FastClustering(sherpa_onnx.FastClusteringConfig(num_clusters=2))
-points = np.array([[0.0, 0.0], [0.1, 0.0], [5.0, 5.0], [5.1, 5.0]], dtype=np.float32)
+# Cosine distance, as for speaker embeddings: two directions, two clusters.
+points = np.array([[1.0, 0.0], [0.99, 0.1], [0.0, 1.0], [0.1, 0.99]], dtype=np.float32)
 labels = clustering(points)
 assert labels[0] == labels[1] != labels[2] == labels[3], labels
 print("sherpa_onnx", sherpa_onnx.__file__, "clusters", labels)'
@@ -201,8 +202,9 @@ cat > "$DIST/BUILD.txt" <<EOF
 sherpa-onnx $SHERPA_VERSION (commit $SHERPA_COMMIT), Windows x64 wheel for Python 3.13, for Upshot
 (built by packaging/sherpa-onnx/build.sh).
 Without text-to-speech (SHERPA_ONNX_ENABLE_TTS=OFF): no eSpeak NG and no piper-phonemize are
-fetched, built or linked; tts-off-names.patch lets the module import without them. onnxruntime.dll (onnxruntime 1.27.1, as sherpa-onnx downloads it) is in
-the wheel beside the module, which then needs no sherpa-onnx-core.
+fetched, built or linked; tts-off-names.patch lets the module import without them.
+onnxruntime.dll (onnxruntime 1.27.1, as sherpa-onnx downloads it) is in the wheel beside the
+module, which then needs no sherpa-onnx-core.
 Licences: Apache-2.0 (sherpa-onnx); MIT with its third-party notices (onnxruntime); the code compiled
 in from what the build downloads (LICENSE-third-party.txt; downloads.txt names each project).
 Upshot commit: ${GITHUB_SHA:-unknown}.
