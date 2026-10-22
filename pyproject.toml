@@ -27,11 +27,13 @@ dependencies = [
     "ctranslate2==4.8.1",
     "onnxruntime>=1.20",
     # Speaker diarization, always on (DECISIONS.md D85): ONNX rather than pyannote/torch
-    # (D28). sherpa-onnx-core is listed explicitly: it is a runtime dependency of
-    # sherpa-onnx that resolvers do not always pull in, and without it the import fails
-    # on a missing libonnxruntime.
+    # (D28). On Windows, Upshot's own sherpa-onnx without text-to-speech ([tool.uv.sources]),
+    # which carries onnxruntime.dll itself. Elsewhere PyPI's, which needs sherpa-onnx-core
+    # (resolvers do not always pull it in; without it the import fails on a missing
+    # libonnxruntime). On Windows sherpa-onnx-core must never come in: its C API library is
+    # built with text-to-speech, so with eSpeak NG (GPL).
     "sherpa-onnx>=1.13",
-    "sherpa-onnx-core>=1.13",
+    "sherpa-onnx-core>=1.13; sys_platform != 'win32'",
     "pystray>=0.19; sys_platform == 'win32'",
     "pyaudiowpatch>=0.2.12.7; sys_platform == 'win32'",
     "pywin32>=308; sys_platform == 'win32'",
@@ -77,7 +79,16 @@ override-dependencies = ["av; sys_platform == 'never'"]
 # path is oneDNN, as AMD CPUs already run. Elsewhere (CI on Linux) PyPI's wheel, never shipped.
 # The wheel is for Python 3.13, which the installer is built with; on another Windows Python
 # PyPI's wheel would come back, with Intel's runtime, and scripts/check_dist.py refuses that build.
+#
+# sherpa-onnx on Windows: Upshot's own wheel (packaging/sherpa-onnx/build.sh, published by
+# .github/workflows/sherpa-onnx.yml), built without text-to-speech, because PyPI's links eSpeak NG
+# (GPL-3.0-or-later) and piper-phonemize into the module diarization imports (ClickUp z8tj1hpjbu).
+# Same diarization, speaker turn for turn, at the same speed. Python 3.13 only, as ctranslate2;
+# PyPI's wheel on another Python is refused by scripts/check_dist.py.
 [tool.uv.sources]
+sherpa-onnx = [
+  { url = "https://github.com/am-consultingai/upshot/releases/download/sherpa-onnx-1.13.6-upshot-1/sherpa_onnx-1.13.6-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13'" },
+]
 ctranslate2 = [
   { url = "https://github.com/am-consultingai/upshot/releases/download/ctranslate2-4.8.1-upshot-1/ctranslate2-4.8.1-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13'" },
 ]
