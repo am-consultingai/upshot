@@ -234,3 +234,89 @@ def test_a_flag_split_across_two_chunks_is_found(tmp_path: Path) -> None:
 def test_an_empty_binary_is_skipped(tmp_path: Path) -> None:
     (tmp_path / "empty.dll").write_bytes(b"")
     assert check_dist.problems(tmp_path) == []
+
+
+# ------------------------------------------------------------------ GPL code in a binary
+
+
+@pytest.mark.parametrize(
+    "content, found",
+    [
+        (b"\0espeak_ng_Initialize\0", "espeak_ng_Initialize"),
+        (b"\0espeak_TextToPhonemes\0", "espeak_TextToPhonemes"),
+        (b"%s/espeak-ng-data\0", "espeak-ng-data"),
+        (b"?phonemize_eSpeak@piper@@YAXAEBV", "phonemize_eSpeak"),
+        (b"\0piper::phonemize\0", "piper::"),
+        (b"\0x264_encoder_open_164\0", "x264_encoder_open_"),
+        (b"\0x265_api_get_215\0", "x265_api_get_"),
+        (b"\0liq_image_quantize\0", "liq_image_quantize"),
+        # Names that only contain one: OpenBLAS's LAPACK, hf_xet's memory counters.
+        (b"\0scipy_ctgex264_\0scipy_dtgex264_\0", None),
+        (b"used_bytespeak_used_bytes", None),
+        (b"\0x264\0libx264 is not linked\0", None),
+        (b"_ZN5piper16phonemize_eSpeakERKNSt7", "phonemize_eSpeak"),  # GCC-mangled
+        (b"?phonemes@piper@@YAXXZ", "@piper@@"),  # MSVC-mangled, another piper function
+    ],
+)
+def test_gpl_library_code_is_found_by_whole_name(
+    tmp_path: Path, content: bytes, found: str | None
+) -> None:
+    path = tmp_path / "module.pyd"
+    path.write_bytes(b"MZ" + content)
+    assert check_dist.gpl_code(path) == found
+
+
+def test_a_symbol_split_across_two_chunks_is_still_found(tmp_path: Path) -> None:
+    path = tmp_path / "big.dll"
+    path.write_bytes(b"\0" * 1000 + b"espeak_ng_Initialize" + b"\0" * 1000)
+    for chunk in (1005, 1010, 1019, 1020):  # the boundary inside the name, and at its end
+        assert check_dist.gpl_code(path, chunk=chunk) == "espeak_ng_Initialize"
+
+
+def test_a_tiny_chunk_still_searches_the_start_of_the_file(tmp_path: Path) -> None:
+    path = tmp_path / "small.dll"
+    path.write_bytes(b"espeak_ng_Initialize\0" + b"\0" * 300)
+    for chunk in (1, 10, 64):
+        assert check_dist.gpl_code(path, chunk=chunk) == "espeak_ng_Initialize"
+
+
+def test_a_chunk_boundary_does_not_make_part_of_a_name_whole(tmp_path: Path) -> None:
+    """hf_xet's ``peak_used_bytes`` inside ``used_bytespeak_used_bytes``: with the boundary 64
+    bytes before ``espeak_``, the overlap starts there and must still see the byte before."""
+    prefix = b"\0" * 100 + b"used_byt"
+    path = tmp_path / "hf_xet.pyd"
+    path.write_bytes(prefix + b"espeak_used_bytes" + b"\0" * 200)
+    for chunk in (len(prefix) + 64, len(prefix) + 63, len(prefix) + 65):
+        assert check_dist.gpl_code(path, chunk=chunk) is None
+
+
+def test_the_freeze_is_refused_with_espeak_inside_the_sherpa_module(tmp_path: Path) -> None:
+    lib = tmp_path / "_internal" / "sherpa_onnx" / "lib"
+    lib.mkdir(parents=True)
+    (lib / "_sherpa_onnx.cp313-win_amd64.pyd").write_bytes(b"MZ\0espeak_ng_Initialize\0")
+    (lib / "onnxruntime.dll").write_bytes(b"MZ\0OrtGetApiBase\0")
+    assert check_dist.problems(tmp_path) == [
+        "_internal/sherpa_onnx/lib/_sherpa_onnx.cp313-win_amd64.pyd: contains GPL code"
+        " (espeak_ng_Initialize)"
+    ]
+
+
+def test_windows_gets_upshot_s_sherpa_onnx_and_never_sherpa_onnx_core() -> None:
+    """PyPI's sherpa-onnx and sherpa-onnx-core link eSpeak NG (GPL); the Windows build takes
+    Upshot's wheel from the release the notices name, and no sherpa-onnx-core at all."""
+    import third_party_notices
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    (source,) = project["tool"]["uv"]["sources"]["sherpa-onnx"]
+    assert f"/download/{third_party_notices.SHERPA_RELEASE}/" in source["url"]
+    assert "sys_platform == 'win32'" in source["marker"]
+    assert "sherpa-onnx-core>=1.13; sys_platform != 'win32'" in project["project"]["dependencies"]
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    ours = [
+        p for p in lock["package"]
+        if p["name"] == "sherpa-onnx" and "url" in p["source"]
+    ]  # fmt: skip
+    assert [p["source"]["url"] for p in ours] == [source["url"]]
+    (upshot,) = [p for p in lock["package"] if p["name"] == "upshot"]
+    core = [d for d in upshot["dependencies"] if d["name"] == "sherpa-onnx-core"]
+    assert [d.get("marker") for d in core] == ["sys_platform != 'win32'"]

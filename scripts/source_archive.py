@@ -15,6 +15,9 @@ that was frozen.
   wheel is the source.
 - **FFmpeg:** ``ffmpeg-sources.zip`` from the release the binary came from, checked against
   that release's ``SHA256SUMS`` (which ``build.ps1`` pins and checks).
+- **Eigen** (inside Upshot's sherpa-onnx): ``sherpa-onnx-sources.zip`` from the release the
+  wheel came from, which holds Eigen as the build downloaded it, pinned by SHA-256
+  (``third_party_notices.SHERPA_SOURCES_SHA256``).
 
 An entry with no way to its source stops the build. ``README.txt`` lists each file with its
 version, licence, origin and SHA-256.
@@ -120,6 +123,18 @@ def ffmpeg_source(licence: str, vendor: Path) -> Source:
     )
 
 
+def sherpa_source(name: str, version: str, licence: str) -> Source:
+    tag = notices.SHERPA_RELEASE
+    return Source(
+        name,
+        version,
+        licence,
+        f"{RELEASES}/{tag}/sherpa-onnx-sources.zip",
+        notices.SHERPA_SOURCES_SHA256,
+        f"sherpa-onnx/{tag}-sources.zip",
+    )
+
+
 def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type: ignore[type-arg]
     """One source per entry whose licence asks for it; SourceError for one without a way."""
     sources: list[Source] = []
@@ -128,6 +143,8 @@ def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type
             continue
         if entry["name"] == notices.FFMPEG:
             sources.append(ffmpeg_source(entry["licence"], vendor))
+        elif entry["name"] == notices.EIGEN:
+            sources.append(sherpa_source(entry["name"], entry["version"], entry["licence"]))
         elif entry.get("kind") == "python":
             sources.append(python_source(entry["name"], entry["version"], entry["licence"], lock))
         else:

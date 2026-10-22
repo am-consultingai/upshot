@@ -18,8 +18,9 @@ What it lists:
 - what no package manager knows about (``EXTRA``): the Python runtime, the PyInstaller
   bootloader, ffmpeg (Upshot's audio-only build, its licence read from its configure line),
   the speech models, Silero VAD, the fonts, Tailwind's CSS, what Upshot's ctranslate2 build
-  compiles in (oneDNN, its third-party code, NVIDIA's CUDA runtime), NVIDIA's cuBLAS and the
-  Microsoft runtime.
+  compiles in (oneDNN, its third-party code, NVIDIA's CUDA runtime), what Upshot's sherpa-onnx
+  build compiles in (its third-party code, Eigen) and the onnxruntime.dll beside it, NVIDIA's
+  cuBLAS and the Microsoft runtime.
 
 Each entry carries its licence (SPDX where one fits) and the licence and notice texts the
 package ships; where it ships none, the text is taken from ``packaging/licenses`` (each file
@@ -334,6 +335,14 @@ FFMPEG = "FFmpeg (Upshot's audio-only build)"
 FFMPEG_TEXTS = ("LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
 
 
+#: Upshot's sherpa-onnx (packaging/sherpa-onnx/build.sh): the release its Windows wheel comes
+#: from (pyproject.toml pins the wheel), and the SHA-256 of that release's sources zip, which
+#: holds Eigen's source (MPL-2.0) as the build downloaded it.
+SHERPA_RELEASE = "sherpa-onnx-1.13.6-upshot-1"
+SHERPA_SOURCES_SHA256 = "1c2fceee4a30388811c19b1c31661600ab6a0f0e8dd758777ad396121f0e2dab"
+EIGEN = "Eigen (compiled into sherpa-onnx's module)"
+
+
 def ffmpeg_entry() -> Entry:
     """The licence follows from how this ffmpeg.exe was configured, never from a constant:
     without the binary (a CI job), or when it cannot be run, it is NOASSERTION."""
@@ -460,6 +469,31 @@ def extra_entries() -> list[Entry]:
               "Linked into ctranslate2.dll by its CUDA build and used only on machines with an"
               " NVIDIA GPU; distributable under NVIDIA's CUDA licence below.",
               licence_file("nvidia-cuda-runtime.txt"), kind="other"),
+        Entry("sherpa-onnx's compiled-in third-party code", "1.13.6",
+              "Apache-2.0 AND MIT AND BSD-2-Clause AND BSD-3-Clause AND Zlib",
+              "kaldi-native-fbank, kaldi-decoder, kaldifst, OpenFst, simple-sentencepiece (with"
+              " darts-clone and ThreadPool), nlohmann/json, hclust-cpp (fastcluster), KISS FFT"
+              " and pybind11, compiled into _sherpa_onnx.pyd by Upshot's own build"
+              " (packaging/sherpa-onnx), which leaves out sherpa-onnx's text-to-speech.",
+              licence_file("sherpa-onnx-third-party.txt"), kind="other"),
+        Entry(EIGEN, "5.0.1", "MPL-2.0 AND Apache-2.0 AND BSD-3-Clause",
+              "The header-only linear-algebra library, compiled unmodified into"
+              " _sherpa_onnx.pyd by Upshot's sherpa-onnx build. Some of its files are under the"
+              " other licences below.", licence_file("eigen.txt"),
+              source=f"downloads/eigen-eigen-5.0.1.tar.gz in sherpa-onnx-sources.zip at"
+              f" https://github.com/am-consultingai/upshot/releases/tag/{SHERPA_RELEASE}; also in"
+              f" Upshot-{upshot_version()}-sources.zip (sherpa-onnx/{SHERPA_RELEASE}-sources.zip)"
+              f" at https://github.com/am-consultingai/upshot/releases/tag/v{upshot_version()}",
+              kind="other"),
+        Entry("onnxruntime (beside sherpa-onnx's module)", "1.27.1", "MIT",
+              "onnxruntime.dll in sherpa_onnx\\lib, the prebuilt library sherpa-onnx's build"
+              " links against. Its third-party notices are all among those of the onnxruntime"
+              " package (Python packages, below).", licence_file("onnxruntime-sherpa.txt"),
+              source="Eigen (MPL-2.0), compiled into onnxruntime.dll:"
+              " https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip,"
+              " with onnxruntime's patches in cmake/patches/eigen at"
+              " https://github.com/microsoft/onnxruntime/tree/v1.27.1",
+              kind="other"),
         Entry("NVIDIA cuBLAS (nvidia-cublas-cu12)", "12.9.1.4", "LicenseRef-NVIDIA-CUDA-EULA",
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
               " for GPU transcription; kept beside the libraries with this licence.",

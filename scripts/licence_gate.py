@@ -12,8 +12,9 @@ the interface bundle) and by the build. No option means all three.
   else (GPL, AGPL, a proprietary licence, a licence no metadata declares) fails unless an
   exception approves that component by name.
 - ``--binaries``: every library and program the run-time Python packages install, scanned
-  as ``scripts/check_dist.py`` scans the freeze, for GPL encoders and a GPL FFmpeg. PyAV
-  brought x264 and x265 in through a dependency of a dependency.
+  as ``scripts/check_dist.py`` scans the freeze, for GPL encoders, a GPL FFmpeg and GPL
+  library code. PyAV brought x264 and x265 in through a dependency of a dependency; PyPI's
+  sherpa-onnx links eSpeak NG into a package declared Apache-2.0.
 
 Each failure names the package, its licence, and how to see what pulls it in.
 """
@@ -25,6 +26,8 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+
+from packaging.utils import canonicalize_name
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -154,13 +157,19 @@ def licence_problems(kinds: set[str], policy: dict) -> list[str]:  # type: ignor
 
 #: Contents are read from these, on every platform the gate runs on.
 SCANNED_SUFFIXES = check_dist.BINARY_SUFFIXES | {".so", ".dylib"}
+#: Packages whose GPL code is allowed off Windows only: CI's Linux job installs PyPI's
+#: sherpa-onnx and sherpa-onnx-core, which link eSpeak NG and are never shipped; Windows, where
+#: the installer is built, gets Upshot's own build without it and no sherpa-onnx-core
+#: (pyproject.toml).
+LINUX_CI_ONLY = {"sherpa-onnx", "sherpa-onnx-core"}
 
 
-def binary_problems() -> list[str]:
-    """GPL encoders or a GPL FFmpeg among the files the run-time packages installed, by
-    file or folder name and by content."""
+def binary_problems(platform: str = sys.platform) -> list[str]:
+    """GPL encoders, a GPL FFmpeg or GPL library code among the files the run-time packages
+    installed, by file or folder name and by content."""
     problems = []
     for dist in notices.python_packages():
+        exempt = platform != "win32" and canonicalize_name(dist.metadata["Name"]) in LINUX_CI_ONLY
         if dist.files is None:
             problems.append(f"{dist.metadata['Name']}: no RECORD, so its files cannot be scanned")
             continue
@@ -173,8 +182,11 @@ def binary_problems() -> list[str]:
                 path.suffix.lower() in SCANNED_SUFFIXES or ".so." in path.name
             ) and path.is_file():
                 flag = check_dist.gpl_flag(path)
+                code = None if flag or exempt else check_dist.gpl_code(path)
                 if flag:
                     problems.append(f"{dist.metadata['Name']}: {file} is built with {flag}")
+                elif code:
+                    problems.append(f"{dist.metadata['Name']}: {file} contains GPL code ({code})")
     return problems
 
 
