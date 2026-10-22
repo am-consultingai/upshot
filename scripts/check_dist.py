@@ -64,13 +64,14 @@ GPL_FLAGS = re.compile(
 #: strings): eSpeak NG and the piper phonemizer built on it (GPL-3.0-or-later), the x264 and
 #: x265 encoders (GPL-2.0-or-later), libimagequant (GPL-3.0-or-later). Whole names only:
 #: OpenBLAS has ``scipy_ctgex264_`` and hf_xet ``peak_used_bytes``. ``phonemize_eSpeak`` may
-#: follow a digit: GCC's mangled names put each name's length first (``_ZN5piper16phonemize…``).
+#: follow a digit: GCC's mangled names put each name's length first (``_ZN5piper16phonemize…``);
+#: MSVC's write the namespace after the name (``?phonemize_eSpeak@piper@@``).
 GPL_CODE = re.compile(
     rb"(?<![A-Za-z0-9_])("
     rb"espeak_(?:ng_)?[A-Za-z]+|espeak-ng-data|piper::"
     rb"|x264_(?:encoder|param|picture)_[a-z_]+|x265_(?:encoder|param|picture|api)_[a-z_]+"
     rb"|liq_(?:attr|image|result|set|get|write|histogram)_[a-z_]+"
-    rb")|(?<![A-Za-z_])phonemize_eSpeak"
+    rb")|(?<![A-Za-z_])phonemize_eSpeak|@piper@@"
 )
 BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
@@ -109,6 +110,7 @@ def gpl_code(path: Path, chunk: int = 16 << 20) -> str | None:
 
 def _first(pattern: re.Pattern[bytes], path: Path, chunk: int) -> str | None:
     overlap = 64  # longer than any flag or symbol, so one split across two chunks is seen
+    chunk = max(chunk, overlap + 1)  # a smaller one would leave the first bytes unsearched
     tail = b""
     with path.open("rb") as handle:
         block = handle.read(chunk)

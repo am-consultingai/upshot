@@ -210,7 +210,7 @@ def test_a_missing_notices_file_is_a_clean_failure(
 def test_eigen_is_sourced_from_the_sherpa_onnx_release_it_was_built_from(vendor: Path) -> None:
     entries = [
         entry(archive.notices.FFMPEG, "", "LGPL-2.1-or-later", kind="other"),
-        entry(archive.notices.EIGEN, "5.0.1", "MPL-2.0 AND Apache-2.0", kind="other"),
+        entry(archive.notices.EIGEN, "5.0.1", "MPL-2.0 AND Apache-2.0 AND BSD-3-Clause", "other"),
     ]
     eigen = archive.plan(entries, LOCK, vendor)[1]
     tag = archive.notices.SHERPA_RELEASE
