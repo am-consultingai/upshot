@@ -75,7 +75,9 @@ git -c core.autocrlf=false clone -q --depth 1 --branch "v$SHERPA_VERSION" \
 [[ "$(git -C sherpa-onnx rev-parse HEAD)" == "$SHERPA_COMMIT" ]] \
   || fail "sherpa-onnx v$SHERPA_VERSION is not commit $SHERPA_COMMIT"
 tar czf "../dist/sources/sherpa-onnx-$SHERPA_VERSION.tar.gz" --exclude=.git sherpa-onnx
-git -C sherpa-onnx apply "$HERE/tts-off-names.patch"
+# LF, as the sources: the runner checks this repository out with CRLF.
+tr -d '\r' < "$HERE/tts-off-names.patch" > "$DIST/sources/tts-off-names.patch"
+git -C sherpa-onnx apply "$DIST/sources/tts-off-names.patch"
 
 # The wheel, as upstream builds it: only the Python module, linked against onnxruntime.dll.
 CMAKE_ARGS=(
@@ -230,7 +232,7 @@ cat "$ORT_SRC/LICENSE" <(echo) "$ORT_SRC/ThirdPartyNotices.txt" > "$DIST/LICENSE
     echo
   done
 } > "$DIST/LICENSE-third-party.txt"
-cp "$HERE/build.sh" "$HERE/tts-off-names.patch" "$DIST/sources/"
+cp "$HERE/build.sh" "$DIST/sources/"
 printf '%s\n' "${CMAKE_ARGS[@]}" > "$DIST/sources/cmake-args.txt"
 "$PY" -m pip freeze > "$DIST/sources/python-build-tools.txt"
 (cd "$DIST" \
