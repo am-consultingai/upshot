@@ -130,11 +130,20 @@ open(sys.argv[2], "w", newline="\n").write("".join(name + "\n" for name in names
   "$PYD" "$DIST/imports.txt"
 bad_imports="$(grep -viE '^(python3[0-9]*\.dll|onnxruntime\.dll|kernel32\.dll|advapi32\.dll|api-ms-win-.*\.dll)$' "$DIST/imports.txt" || true)"
 [[ -z "$bad_imports" ]] || fail "the module imports more than it should: $bad_imports"
-# The same test on PyPI's module must find eSpeak, or this test proves nothing.
-TTS_CODE='espeak|piper[-_:]|phonemize'
-grep -aqiE "$TTS_CODE" pypi/sherpa_onnx/lib/_sherpa_onnx.*.pyd || fail "the eSpeak test is blind"
+# eSpeak NG's and piper's names, whole (a plain "espeak" is also in "OfflineSpeaker"). The same
+# test on PyPI's module must find them, or it proves nothing.
+tts_code() {  # file: prints the eSpeak and piper names in it
+  "$PY" -c '
+import re, sys
+names = re.findall(
+    rb"(?<![A-Za-z0-9_])(espeak_(?:ng_)?[A-Za-z]+|espeak-ng-data|phonemize_eSpeak|piper::)",
+    open(sys.argv[1], "rb").read())
+print(" ".join(sorted({n.decode() for n in names})))' "$1"
+}
+[[ -n "$(tts_code pypi/sherpa_onnx/lib/_sherpa_onnx.*.pyd)" ]] || fail "the eSpeak test is blind"
 for file in ours/sherpa_onnx/lib/*; do
-  ! grep -aqiE "$TTS_CODE" "$file" || fail "$file contains eSpeak or piper code"
+  found="$(tts_code "$file")"
+  [[ -z "$found" ]] || fail "$file contains eSpeak or piper code: $found"
 done
 "$PY" -c '
 import sys, zipfile
