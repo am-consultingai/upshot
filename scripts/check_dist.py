@@ -63,13 +63,14 @@ GPL_FLAGS = re.compile(
 #: The API of GPL libraries, as a binary that links one carries it (exported, or in its
 #: strings): eSpeak NG and the piper phonemizer built on it (GPL-3.0-or-later), the x264 and
 #: x265 encoders (GPL-2.0-or-later), libimagequant (GPL-3.0-or-later). Whole names only:
-#: OpenBLAS has ``scipy_ctgex264_`` and hf_xet ``peak_used_bytes``.
+#: OpenBLAS has ``scipy_ctgex264_`` and hf_xet ``peak_used_bytes``. ``phonemize_eSpeak`` may
+#: follow a digit: GCC's mangled names put each name's length first (``_ZN5piper16phonemize…``).
 GPL_CODE = re.compile(
     rb"(?<![A-Za-z0-9_])("
-    rb"espeak_(?:ng_)?[A-Za-z]+|espeak-ng-data|phonemize_eSpeak|piper::"
+    rb"espeak_(?:ng_)?[A-Za-z]+|espeak-ng-data|piper::"
     rb"|x264_(?:encoder|param|picture)_[a-z_]+|x265_(?:encoder|param|picture|api)_[a-z_]+"
     rb"|liq_(?:attr|image|result|set|get|write|histogram)_[a-z_]+"
-    rb")"
+    rb")|(?<![A-Za-z_])phonemize_eSpeak"
 )
 BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
@@ -114,12 +115,14 @@ def _first(pattern: re.Pattern[bytes], path: Path, chunk: int) -> str | None:
         while block:
             following = handle.read(chunk)
             data = tail + block
-            match = pattern.search(data)
+            # The tail keeps one byte more than the overlap, searched already, so that a
+            # lookbehind at the overlap's start sees the byte before it.
+            match = pattern.search(data, 1 if tail else 0)
             # A match that starts in the last ``overlap`` bytes may go on in the next block:
             # the next pass sees it whole, from the overlap.
             if match and (match.start() < len(data) - overlap or not following):
                 return match.group(0).decode(errors="replace")
-            tail = data[-overlap:]
+            tail = data[-(overlap + 1) :]
             block = following
     return None
 

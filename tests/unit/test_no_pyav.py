@@ -254,6 +254,7 @@ def test_an_empty_binary_is_skipped(tmp_path: Path) -> None:
         (b"\0scipy_ctgex264_\0scipy_dtgex264_\0", None),
         (b"used_bytespeak_used_bytes", None),
         (b"\0x264\0libx264 is not linked\0", None),
+        (b"_ZN5piper16phonemize_eSpeakERKNSt7", "phonemize_eSpeak"),  # GCC-mangled
     ],
 )
 def test_gpl_library_code_is_found_by_whole_name(
@@ -271,6 +272,16 @@ def test_a_symbol_split_across_two_chunks_is_still_found(tmp_path: Path) -> None
         assert check_dist.gpl_code(path, chunk=chunk) == "espeak_ng_Initialize"
 
 
+def test_a_chunk_boundary_does_not_make_part_of_a_name_whole(tmp_path: Path) -> None:
+    """hf_xet's ``peak_used_bytes`` inside ``used_bytespeak_used_bytes``: with the boundary 64
+    bytes before ``espeak_``, the overlap starts there and must still see the byte before."""
+    prefix = b"\0" * 100 + b"used_byt"
+    path = tmp_path / "hf_xet.pyd"
+    path.write_bytes(prefix + b"espeak_used_bytes" + b"\0" * 200)
+    for chunk in (len(prefix) + 64, len(prefix) + 63, len(prefix) + 65):
+        assert check_dist.gpl_code(path, chunk=chunk) is None
+
+
 def test_the_freeze_is_refused_with_espeak_inside_the_sherpa_module(tmp_path: Path) -> None:
     lib = tmp_path / "_internal" / "sherpa_onnx" / "lib"
     lib.mkdir(parents=True)
@@ -285,7 +296,6 @@ def test_the_freeze_is_refused_with_espeak_inside_the_sherpa_module(tmp_path: Pa
 def test_windows_gets_upshot_s_sherpa_onnx_and_never_sherpa_onnx_core() -> None:
     """PyPI's sherpa-onnx and sherpa-onnx-core link eSpeak NG (GPL); the Windows build takes
     Upshot's wheel from the release the notices name, and no sherpa-onnx-core at all."""
-    sys.path.insert(0, str(ROOT / "scripts"))
     import third_party_notices
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
@@ -299,3 +309,6 @@ def test_windows_gets_upshot_s_sherpa_onnx_and_never_sherpa_onnx_core() -> None:
         if p["name"] == "sherpa-onnx" and "url" in p["source"]
     ]  # fmt: skip
     assert [p["source"]["url"] for p in ours] == [source["url"]]
+    (upshot,) = [p for p in lock["package"] if p["name"] == "upshot"]
+    core = [d for d in upshot["dependencies"] if d["name"] == "sherpa-onnx-core"]
+    assert [d.get("marker") for d in core] == ["sys_platform != 'win32'"]
