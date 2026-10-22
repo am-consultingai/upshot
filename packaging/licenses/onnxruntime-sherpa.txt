@@ -1,5 +1,5 @@
 onnxruntime 1.27.1 (onnxruntime.dll beside Upshot's sherpa-onnx module): its licence.
-Source: https://github.com/am-consultingai/upshot/releases/download/sherpa-onnx-1.13.6-upshot-1/LICENSE-onnxruntime.txt, up to its third-party notices: each is also in the onnxruntime package's ThirdPartyNotices, reproduced in these notices
+Source: https://github.com/am-consultingai/upshot/releases/download/sherpa-onnx-1.13.6-upshot-1/LICENSE-onnxruntime.txt, its MIT licence only; the third-party notices after it are each also in the onnxruntime package's ThirdPartyNotices, reproduced in these notices
 
 MIT License
 

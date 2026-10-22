@@ -476,7 +476,7 @@ def extra_entries() -> list[Entry]:
               " and pybind11, compiled into _sherpa_onnx.pyd by Upshot's own build"
               " (packaging/sherpa-onnx), which leaves out sherpa-onnx's text-to-speech.",
               licence_file("sherpa-onnx-third-party.txt"), kind="other"),
-        Entry(EIGEN, "5.0.1", "MPL-2.0 AND Apache-2.0",
+        Entry(EIGEN, "5.0.1", "MPL-2.0 AND Apache-2.0 AND BSD-3-Clause",
               "The header-only linear-algebra library, compiled unmodified into"
               " _sherpa_onnx.pyd by Upshot's sherpa-onnx build. Some of its files are under the"
               " other licences below.", licence_file("eigen.txt"),
