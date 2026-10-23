@@ -8,7 +8,8 @@ written into the code: it comes from here, or the script stops and says which ke
     KEY="value"        # quotes around a value are taken off
     KEY=~/somewhere    # a path may start with ~; a relative one is from the repository root
 
-No spaces around ``=``, and double quotes if any: the sandbox kit's cmd reads the same format.
+No spaces around ``=``, double quotes if any, and no comment after a value: the sandbox
+kit's cmd reads the same format.
 """
 
 from __future__ import annotations

@@ -43,15 +43,6 @@ function Read-DotEnv([string]$path) {
     }
     return $values
 }
-$dotEnv = Read-DotEnv (Join-Path $Here '.env')
-$DriveFolder = $dotEnv['UPSHOT_SANDBOX_DRIVE_FOLDER']
-$Agent = "$($dotEnv['UPSHOT_AGENT_DIR'])".TrimEnd('/')
-if ($DriveFolder -notmatch '^[A-Za-z0-9_./-]+$') {
-    throw "UPSHOT_SANDBOX_DRIVE_FOLDER in $(Join-Path $Here '.env') must be a Drive folder such as tools/x"
-}
-if ($Agent -notmatch '^/[A-Za-z0-9_./-]+$') {
-    throw "UPSHOT_AGENT_DIR in $(Join-Path $Here '.env') must be an absolute WSL folder such as /home/<user>/agent"
-}
 $Host.UI.RawUI.WindowTitle = 'Upshot sandbox test'
 $started = Get-Date
 
@@ -89,6 +80,16 @@ function Line-Color([string]$line) {
 
 $pausedRunner = $false
 try {
+    # Inside the try: a wrong .env is reported and the window waits, rather than closing.
+    $dotEnv = Read-DotEnv (Join-Path $Here '.env')
+    $DriveFolder = $dotEnv['UPSHOT_SANDBOX_DRIVE_FOLDER']
+    $Agent = "$($dotEnv['UPSHOT_AGENT_DIR'])".TrimEnd('/')
+    if ($DriveFolder -notmatch '^[A-Za-z0-9_./-]+$') {
+        throw "UPSHOT_SANDBOX_DRIVE_FOLDER in $(Join-Path $Here '.env') must be a Drive folder such as tools/x"
+    }
+    if ($Agent -notmatch '^/[A-Za-z0-9_./-]+$') {
+        throw "UPSHOT_AGENT_DIR in $(Join-Path $Here '.env') must be an absolute WSL folder such as /home/<user>/agent"
+    }
     Write-Host ''
     Write-Host '  Upshot - install test in Windows Sandbox' -ForegroundColor White
     Write-Host '  The installer runs inside a throwaway copy of Windows. This machine is not changed.' -ForegroundColor DarkGray
@@ -137,6 +138,12 @@ try {
     Title 'Test kit'
     $in = Join-Path $Kit 'in'
     New-Item -ItemType Directory -Force -Path $in | Out-Null
+    # The sandbox can write in kit\: never follow a junction it may have left there.
+    foreach ($folder in $Kit, $in, (Join-Path $Kit 'out')) {
+        if ((Test-Path -LiteralPath $folder) -and ((Get-Item -LiteralPath $folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "$folder is a link, not a folder: delete it and run again"
+        }
+    }
     $inWsl = "$(& wsl.exe -e wslpath -a $in)".Trim()
     $listing = & wsl.exe -e python3 "$Agent/drive.py" ls "$DriveFolder/in"
     $zipName = ($listing | Select-String -Pattern 'Upshot-\S+-installer\.zip$' | Select-Object -First 1).Matches.Value
