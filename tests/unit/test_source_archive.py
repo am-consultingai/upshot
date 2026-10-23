@@ -232,4 +232,5 @@ def test_the_eigen_inside_onnxruntime_comes_with_onnxruntime_s_patches(vendor: P
         "onnxruntime-eigen/s390x-build.patch",
         "onnxruntime-eigen/s390x-build-werror.patch",
     ]
-    assert all(len(s.sha256) == 64 for s in archive.plan(entries, LOCK, vendor))
+    pinned = [(url, sha256) for url, sha256, _ in archive.notices.ONNXRUNTIME_EIGEN_FILES]
+    assert [(s.url, s.sha256) for s in archive.plan(entries, LOCK, vendor)[1:]] == pinned

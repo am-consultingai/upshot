@@ -1,4 +1,4 @@
-Eigen at commit 1d8b82b0740839c0de7f1242a3585e3390ff5f33 (its 3.4 branch), compiled into onnxruntime.dll with onnxruntime's patches.
+Eigen at commit 1d8b82b0740839c0de7f1242a3585e3390ff5f33 (3.4.90, Eigen's development branch before 5.0), compiled into onnxruntime.dll with onnxruntime's patches.
 Source: https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33/eigen-1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip (its COPYING files, and the headers of three files, below)
 
 == eigen (COPYING.APACHE)
