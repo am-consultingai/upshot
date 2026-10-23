@@ -15,7 +15,8 @@
 # Everything lands in <Out>: steps.log, steps.json, transcripts, notes, summaries, app.log.
 # Keep this file ASCII.
 param(
-    [string]$Exe = '<build>\dist\upshot\upshot.exe',
+    # The build of this checkout (packaging\build.ps1 writes it to dist\upshot).
+    [string]$Exe = (Join-Path $PSScriptRoot '..\..\..\dist\upshot\upshot.exe'),
     [Parameter(Mandatory = $true)] [string]$ModelPath,
     [Parameter(Mandatory = $true)] [string]$Out,
     # name=audio|reference, several separated by ';'; the reference may be left out.

@@ -10,13 +10,40 @@
 # Nothing is installed on this machine: the installer is unpacked and run only inside the
 # sandbox, and everything in the sandbox is discarded when its window closes.
 #
+# This machine's own values come from .env beside this file (KEY=value lines, never committed):
+#   UPSHOT_SANDBOX_DRIVE_FOLDER  the Drive folder the kit and the installer zip are fetched from
+#   UPSHOT_AGENT_DIR             the folder in this machine's WSL that holds drive.py and STOP
+# The kit is the folder this file is in.
+#
 # Keep this file ASCII: Windows PowerShell 5.1 reads a script without a BOM as ANSI.
 param(
-    [string]$Kit = '<kit folder>',
-    [string]$DriveFolder = '<UPSHOT_SANDBOX_DRIVE_FOLDER>',
+    [string]$Kit = $PSScriptRoot,
+    [ValidateSet('show', 'watch')] [string]$Wsb = 'show',
     [int]$TimeoutMinutes = 40
 )
 $ErrorActionPreference = 'Stop'
+function Read-DotEnv([string]$path) {
+    $values = @{}
+    if (-not (Test-Path -LiteralPath $path)) { return $values }
+    foreach ($raw in Get-Content -LiteralPath $path -Encoding UTF8) {
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $key, $value = $line -split '=', 2
+        if ($null -eq $value) { throw "$path`: expected KEY=value, got '$line'" }
+        $value = $value.Trim()
+        if ($value.Length -ge 2 -and $value[0] -eq $value[-1] -and '"', "'" -contains [string]$value[0]) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $values[$key.Trim()] = $value
+    }
+    return $values
+}
+$dotEnv = Read-DotEnv (Join-Path $Kit '.env')
+foreach ($key in 'UPSHOT_SANDBOX_DRIVE_FOLDER', 'UPSHOT_AGENT_DIR') {
+    if (-not $dotEnv[$key]) { throw "$key is not set: add it to $(Join-Path $Kit '.env')" }
+}
+$DriveFolder = $dotEnv['UPSHOT_SANDBOX_DRIVE_FOLDER']
+$Agent = $dotEnv['UPSHOT_AGENT_DIR'].TrimEnd('/')
 $Host.UI.RawUI.WindowTitle = 'Upshot sandbox test'
 $started = Get-Date
 
@@ -77,10 +104,10 @@ try {
 
     # 2 ---------------------------------------------------------------------------------
     Title "The test machine's test runner"
-    if ((Wsl 'test -e <UPSHOT_AGENT_DIR>/STOP') -eq 0) {
+    if ((Wsl "test -e $Agent/STOP") -eq 0) {
         Good 'already paused (a STOP file exists); left as it is'
     } else {
-        [void](Wsl 'touch <UPSHOT_AGENT_DIR>/STOP')
+        [void](Wsl "touch $Agent/STOP")
         $pausedRunner = $true
         Good 'paused for this run; it starts again when this window finishes'
     }
@@ -101,11 +128,11 @@ try {
     $in = Join-Path $Kit 'in'
     New-Item -ItemType Directory -Force -Path $in | Out-Null
     $inWsl = To-Wsl $in
-    $listing = & wsl.exe -e bash -lc "python3 <UPSHOT_AGENT_DIR>/drive.py ls $DriveFolder/in"
+    $listing = & wsl.exe -e bash -lc "python3 $Agent/drive.py ls $DriveFolder/in"
     $zipName = ($listing | Select-String -Pattern 'Upshot-\S+-installer\.zip$' | Select-Object -First 1).Matches.Value
     if (-not $zipName) { throw "no Upshot-*-installer.zip in Drive $DriveFolder/in" }
     foreach ($small in @("$zipName.sha256", 'upshot-test-signing.cer')) {
-        if ((Wsl "python3 <UPSHOT_AGENT_DIR>/drive.py get $DriveFolder/in/$small $inWsl/$small") -ne 0) { throw "could not fetch $small from Drive" }
+        if ((Wsl "python3 $Agent/drive.py get $DriveFolder/in/$small $inWsl/$small") -ne 0) { throw "could not fetch $small from Drive" }
     }
     $zip = Join-Path $in $zipName
     $want = ((Get-Content -Raw (Join-Path $in "$zipName.sha256")) -split '\s+')[0].ToLower()
@@ -114,7 +141,7 @@ try {
         Good "$zipName is already here and current"
     } else {
         Say "  ...  downloading $zipName from Drive (about 110 MB, a minute or two)" 'Cyan'
-        if ((Wsl "python3 <UPSHOT_AGENT_DIR>/drive.py get $DriveFolder/in/$zipName $inWsl/$zipName") -ne 0) { throw "could not download $zipName" }
+        if ((Wsl "python3 $Agent/drive.py get $DriveFolder/in/$zipName $inWsl/$zipName") -ne 0) { throw "could not download $zipName" }
         $have = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
         if ($have -ne $want) { throw "$zipName does not match its .sha256 after download" }
         Good "$zipName downloaded and verified"
@@ -134,7 +161,12 @@ try {
 
     # 4 ---------------------------------------------------------------------------------
     Title 'Starting the sandbox'
-    Start-Process -FilePath $sandboxExe -ArgumentList "`"$(Join-Path $Kit 'show.wsb')`"" | Out-Null
+    # The .wsb is a template: Windows Sandbox reads no variables, so the kit's own folder is
+    # written into a copy made for this run.
+    $wsbFile = Join-Path $out "$Wsb.wsb"
+    (Get-Content -Raw -Encoding UTF8 (Join-Path $Kit "$Wsb.wsb")).Replace('__KIT__', $Kit) |
+        Set-Content -Encoding UTF8 $wsbFile
+    Start-Process -FilePath $sandboxExe -ArgumentList "`"$wsbFile`"" | Out-Null
     Good 'the Sandbox window is opening; Windows inside it takes about a minute to boot'
     Say '       Watch the Sandbox window: installer, app log, Upshot in Edge, uninstaller.' 'DarkGray'
     Say '       Every step is also printed here as it happens.' 'DarkGray'
@@ -188,7 +220,7 @@ try {
     Bad "$($_.Exception.Message)"
 } finally {
     if ($pausedRunner) {
-        [void](Wsl 'rm -f <UPSHOT_AGENT_DIR>/STOP')
+        [void](Wsl "rm -f $Agent/STOP")
         Good "the test machine's test runner is running again"
     }
     Write-Host ''
