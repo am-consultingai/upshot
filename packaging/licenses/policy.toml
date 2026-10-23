@@ -9,17 +9,21 @@ allowed = [
   "PSF-2.0", "Zlib", "CC0-1.0", "BSL-1.0", "Apache-2.0 WITH LLVM-exception",
 ]
 
-# Copyleft that Upshot may ship only as it does for these components: unmodified and with
-# its source offered; LGPL code also replaceable (a separate program, extension or loose
-# .py files). MPL-2.0 is per file, so unmodified MPL files may be compiled into a larger
-# work (MPL 2.0 §3.3), as Eigen is into sherpa-onnx's module. Anything else under these
-# licences fails until it is added here, deliberately.
+# Copyleft that Upshot may ship only as it does for these components: with its source
+# offered, including any changes made to it; LGPL code also replaceable (a separate
+# program, extension or loose .py files). MPL-2.0 is per file, so MPL files may be compiled
+# into a larger work (MPL 2.0 §3.3), as Eigen is into sherpa-onnx's module (unmodified) and
+# into onnxruntime.dll (with onnxruntime's two patches, offered with its source). Anything else
+# under these licences fails until it is added here, deliberately.
 [conditional]
 # FFmpeg's licence is read from its configure line: Upshot's audio-only build is LGPL-2.1-or-
 # later; a build with --enable-version3 reads LGPL-3.0-or-later and fails until listed there.
 "LGPL-2.1-or-later" = ["soxr", "FFmpeg (Upshot's audio-only build)"]
 "LGPL-3.0-or-later" = ["pystray"]
-"MPL-2.0" = ["certifi", "tqdm", "Eigen (compiled into sherpa-onnx's module)"]
+"MPL-2.0" = [
+  "certifi", "tqdm", "Eigen (compiled into sherpa-onnx's module)",
+  "Eigen (compiled into onnxruntime)",
+]
 "OFL-1.1" = ["Frank Ruhl Libre and IBM Plex Sans Hebrew fonts"]
 
 # Not open-source licences, or open-source ones with an exception; each approved by name.
