@@ -45,9 +45,9 @@ $commit = (git rev-parse --short=12 HEAD).Trim()
 Assert-Exit "git rev-parse"
 $built = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $info = [ordered]@{ version = $version; commit = $commit; built = $built }
-# The official build's Sentry DSNs (D87), from the release settings: the file named by
-# the UPSHOT_RELEASE_LOCAL environment variable (the one copy, kept beside the signing
-# key), else a gitignored packaging\release.local.json in this clone. A DSN only lets the
+# The official build's Sentry DSNs (D87), from the release settings: the file that
+# UPSHOT_RELEASE_SETTINGS in this clone's .env names (gitignored; .env.example lists the keys),
+# else a gitignored packaging\release.local.json in this clone. A DSN only lets the
 # app send crash reports and feedback, so it ships; it stays out of the repository so
 # that a build from source has none and sends nothing. The secrets it lists (the Sentry
 # auth token, the update signing keys) are never read into the build: only the publish
@@ -55,17 +55,34 @@ $info = [ordered]@{ version = $version; commit = $commit; built = $built }
 #
 # Each build clone used to need its own copy, and a clone without one built a signed
 # installer with reports off behind a warning nobody read (machine A, 2026-10-08).
-if ($env:UPSHOT_RELEASE_LOCAL) {
-    $releaseLocal = $env:UPSHOT_RELEASE_LOCAL
-    if (-not (Test-Path $releaseLocal)) { throw "UPSHOT_RELEASE_LOCAL names $releaseLocal, which cannot be read" }
+function Read-DotEnv([string]$path) {
+    $values = @{}
+    if (-not (Test-Path -LiteralPath $path)) { return $values }
+    foreach ($raw in Get-Content -LiteralPath $path -Encoding UTF8) {  # UTF8 also takes a BOM
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $key, $value = $line -split '=', 2
+        if ($null -eq $value) { throw "$path`: expected KEY=value, got '$line'" }
+        $value = $value.Trim()
+        if ($value.Length -ge 2 -and $value[0] -eq $value[-1] -and '"', "'" -contains [string]$value[0]) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $values[$key.Trim()] = $value
+    }
+    return $values
+}
+$dotEnv = Read-DotEnv (Join-Path $root ".env")
+if ($dotEnv['UPSHOT_RELEASE_SETTINGS']) {
+    $releaseLocal = $dotEnv['UPSHOT_RELEASE_SETTINGS']
+    if (-not (Test-Path -LiteralPath $releaseLocal)) { throw "UPSHOT_RELEASE_SETTINGS in .env names $releaseLocal, which cannot be read" }
 } else {
     $releaseLocal = Join-Path $PSScriptRoot "release.local.json"
 }
 $secretFiles = @()
 if ($NoReports) {
     Write-Host "reports: off (-NoReports)"
-} elseif (Test-Path $releaseLocal) {
-    $release = Get-Content -Raw -Encoding UTF8 $releaseLocal | ConvertFrom-Json
+} elseif (Test-Path -LiteralPath $releaseLocal) {
+    $release = Get-Content -Raw -Encoding UTF8 -LiteralPath $releaseLocal | ConvertFrom-Json
     if (-not $release.sentry.desktop.dsn -or -not $release.sentry.frontend.dsn) { throw "$releaseLocal has no DSNs" }
     $info.sentry = [ordered]@{ dsn = $release.sentry.desktop.dsn; frontend_dsn = $release.sentry.frontend.dsn }
     $secretFiles = @($release.secret_files | Where-Object { $_ })
@@ -76,7 +93,7 @@ if ($NoReports) {
     }
     Write-Host "reports: on (DSNs from $releaseLocal)"
 } elseif ($Sign) {
-    throw ("no release settings: set UPSHOT_RELEASE_LOCAL or add packaging\release.local.json " +
+    throw ("no release settings: set UPSHOT_RELEASE_SETTINGS in .env or add packaging\release.local.json " +
         "(see the release runbook), or pass -NoReports for a signed build that sends nothing")
 } else {
     Write-Host "reports: off (no release settings)"

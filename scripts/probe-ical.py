@@ -2,7 +2,7 @@
 
     UP_ICAL_URL=https://calendar.google.com/calendar/ical/.../basic.ics \
         python3 scripts/probe-ical.py
-    python3 scripts/probe-ical.py --url-file <ical-url file>
+    python3 scripts/probe-ical.py --url-file <file holding the secret iCal address>
     python3 scripts/probe-ical.py --watch 120 --for 3h
 
 Two questions, one tool.

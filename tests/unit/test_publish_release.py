@@ -109,7 +109,7 @@ class Release:
         self.installer = tmp_path / f"Upshot-{version}-Setup.exe"
         self.installer.write_bytes(signed_pe(self.cert) + b"payload" * 100)
         self.keys = tmp_path / "keys"
-        monkeypatch.setattr(publish_release.release_key, "DEFAULT_DIR", self.keys)
+        monkeypatch.setattr(publish_release.release_key, "key_dir", lambda: self.keys)
         public = publish_release.release_key.new(self.keys / "update-2026-10.key")
         monkeypatch.setattr(publish_release, "PUBLIC_KEYS", (("test", public),))
         monkeypatch.setattr(publish_release, "project_version", lambda: version)
@@ -336,15 +336,35 @@ def test_a_tampered_beta_manifest_is_not_promoted(
 def test_the_release_settings_are_found_where_build_ps1_finds_them(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The variable first, then the one copy beside the signing key, then the clone's."""
-    home_copy = tmp_path / "home.json"
-    monkeypatch.setattr(publish_release, "RELEASE_LOCAL_HOME", home_copy)
-    monkeypatch.delenv("UPSHOT_RELEASE_LOCAL", raising=False)
+    """The file .env names first, then the clone's; nothing in the code names a folder."""
+    env = tmp_path / ".env"
+    monkeypatch.setattr(publish_release.local_env, "ENV_FILE", env)
     assert publish_release.release_local_path() == publish_release.RELEASE_LOCAL_CLONE
-    home_copy.write_text("{}", encoding="utf-8")
-    assert publish_release.release_local_path() == home_copy
-    monkeypatch.setenv("UPSHOT_RELEASE_LOCAL", str(tmp_path / "named.json"))
+    env.write_text(f"UPSHOT_RELEASE_SETTINGS={tmp_path / 'named.json'}\n", encoding="utf-8")
     assert publish_release.release_local_path() == tmp_path / "named.json"
+
+
+def test_the_sentry_token_comes_from_env_then_the_settings_never_a_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = tmp_path / ".env"
+    monkeypatch.setattr(publish_release.local_env, "ENV_FILE", env)
+    settings_token, env_token = tmp_path / "x" / "t", tmp_path / "y" / "t"  # absolute everywhere
+    assert publish_release.sentry_token_file({}) is None
+    assert publish_release.sentry_token_file({"sentry_token_file": str(settings_token)}) == (
+        settings_token
+    )
+    env.write_text(f"UPSHOT_SENTRY_TOKEN_FILE={env_token}\n", encoding="utf-8")
+    assert publish_release.sentry_token_file({"sentry_token_file": str(settings_token)}) == (
+        env_token
+    )
+    # A relative one is from the repository root, as every path in .env is.
+    assert publish_release.sentry_token_file({"sentry_token_file": "t"}) == env_token
+    env.write_text("", encoding="utf-8")
+    assert publish_release.sentry_token_file({"sentry_token_file": "t"}) == (
+        publish_release.ROOT / "t"
+    )
+    assert publish_release.sentry_release({}, "1.0.0", "abc").startswith("skipped")
 
 
 def publish_stubbed(
