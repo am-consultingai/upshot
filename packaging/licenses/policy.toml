@@ -10,10 +10,10 @@ allowed = [
 ]
 
 # Copyleft that Upshot may ship only as it does for these components: with its source
-# offered, and any change to it with that source; LGPL code also replaceable (a separate
+# offered, including any changes made to it; LGPL code also replaceable (a separate
 # program, extension or loose .py files). MPL-2.0 is per file, so MPL files may be compiled
 # into a larger work (MPL 2.0 §3.3), as Eigen is into sherpa-onnx's module (unmodified) and
-# into onnxruntime.dll (with onnxruntime's two patches, offered beside it). Anything else
+# into onnxruntime.dll (with onnxruntime's two patches, offered with its source). Anything else
 # under these licences fails until it is added here, deliberately.
 [conditional]
 # FFmpeg's licence is read from its configure line: Upshot's audio-only build is LGPL-2.1-or-
