@@ -81,8 +81,8 @@ if ($dotEnv['UPSHOT_RELEASE_SETTINGS']) {
 $secretFiles = @()
 if ($NoReports) {
     Write-Host "reports: off (-NoReports)"
-} elseif (Test-Path $releaseLocal) {
-    $release = Get-Content -Raw -Encoding UTF8 $releaseLocal | ConvertFrom-Json
+} elseif (Test-Path -LiteralPath $releaseLocal) {
+    $release = Get-Content -Raw -Encoding UTF8 -LiteralPath $releaseLocal | ConvertFrom-Json
     if (-not $release.sentry.desktop.dsn -or -not $release.sentry.frontend.dsn) { throw "$releaseLocal has no DSNs" }
     $info.sentry = [ordered]@{ dsn = $release.sentry.desktop.dsn; frontend_dsn = $release.sentry.frontend.dsn }
     $secretFiles = @($release.secret_files | Where-Object { $_ })
