@@ -349,10 +349,21 @@ def test_the_sentry_token_comes_from_env_then_the_settings_never_a_default(
 ) -> None:
     env = tmp_path / ".env"
     monkeypatch.setattr(publish_release.local_env, "ENV_FILE", env)
+    settings_token, env_token = tmp_path / "x" / "t", tmp_path / "y" / "t"  # absolute everywhere
     assert publish_release.sentry_token_file({}) is None
-    assert publish_release.sentry_token_file({"sentry_token_file": "/x/t"}) == Path("/x/t")
-    env.write_text("UPSHOT_SENTRY_TOKEN_FILE=/y/t\n", encoding="utf-8")
-    assert publish_release.sentry_token_file({"sentry_token_file": "/x/t"}) == Path("/y/t")
+    assert publish_release.sentry_token_file({"sentry_token_file": str(settings_token)}) == (
+        settings_token
+    )
+    env.write_text(f"UPSHOT_SENTRY_TOKEN_FILE={env_token}\n", encoding="utf-8")
+    assert publish_release.sentry_token_file({"sentry_token_file": str(settings_token)}) == (
+        env_token
+    )
+    # A relative one is from the repository root, as every path in .env is.
+    assert publish_release.sentry_token_file({"sentry_token_file": "t"}) == env_token
+    env.write_text("", encoding="utf-8")
+    assert publish_release.sentry_token_file({"sentry_token_file": "t"}) == (
+        publish_release.ROOT / "t"
+    )
     assert publish_release.sentry_release({}, "1.0.0", "abc").startswith("skipped")
 
 
