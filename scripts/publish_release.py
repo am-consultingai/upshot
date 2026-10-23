@@ -71,21 +71,25 @@ from app.updates.manifest import (  # noqa: E402
 # By its own folder, not as ``scripts.release_key``: on Windows a dependency installs a
 # top-level ``scripts`` package that shadows this folder (CI, 2026-10-06).
 sys.path.insert(0, str(ROOT / "scripts"))
+import local_env  # noqa: E402
 import release_key  # noqa: E402
 
 SITE_UPDATES = ROOT / "site" / "updates"
 SITE_URL = "https://upshot.amconsultingai.com/updates/"
-#: The release settings: the file UPSHOT_RELEASE_LOCAL names, else the one copy kept
-#: beside the signing key, else a gitignored copy in this checkout (as build.ps1 finds it).
-RELEASE_LOCAL_HOME = Path("<UPSHOT_RELEASE_SETTINGS>").expanduser()
+#: The release settings: the file UPSHOT_RELEASE_SETTINGS in .env names, else a gitignored
+#: copy in this checkout (as build.ps1 finds it).
 RELEASE_LOCAL_CLONE = ROOT / "packaging" / "release.local.json"
 
 
 def release_local_path() -> Path:
-    named = os.environ.get("UPSHOT_RELEASE_LOCAL")
-    if named:
-        return Path(named)
-    return RELEASE_LOCAL_HOME if RELEASE_LOCAL_HOME.is_file() else RELEASE_LOCAL_CLONE
+    return local_env.path("UPSHOT_RELEASE_SETTINGS") or RELEASE_LOCAL_CLONE
+
+
+def sentry_token_file(settings: dict[str, Any]) -> Path | None:
+    """The Sentry token's file: UPSHOT_SENTRY_TOKEN_FILE in .env, else the settings' own
+    ``sentry_token_file``; None when neither names one."""
+    named = local_env.path("UPSHOT_SENTRY_TOKEN_FILE") or settings.get("sentry_token_file")
+    return Path(os.path.expanduser(str(named))) if named else None
 
 
 SIGNING_KEY = "update-2026-10"
@@ -269,13 +273,11 @@ def upload_sourcemaps(
     token goes in the environment, never on the command line or the screen.
     """
     sentry = settings.get("sentry") or {}
-    token_file = Path(
-        os.path.expanduser(str(settings.get("sentry_token_file", "<UPSHOT_SENTRY_TOKEN_FILE>")))
-    )
+    token_file = sentry_token_file(settings)
     project = (sentry.get("frontend") or {}).get("project")
     if not directory.is_dir() or not list(directory.glob("*.map")):
         return f"skipped (no source maps in {directory})"
-    if not token_file.exists() or not project:
+    if token_file is None or not token_file.exists() or not project:
         return "skipped (no Sentry token or front-end project on this machine)"
     command = [
         "npx", "--yes", "@sentry/cli@2", "sourcemaps", "upload",
@@ -292,10 +294,8 @@ def upload_sourcemaps(
 
 def sentry_release(settings: dict[str, Any], version: str, commit: str) -> str:
     sentry = settings.get("sentry") or {}
-    token_file = Path(
-        os.path.expanduser(str(settings.get("sentry_token_file", "<UPSHOT_SENTRY_TOKEN_FILE>")))
-    )
-    if not token_file.exists():
+    token_file = sentry_token_file(settings)
+    if token_file is None or not token_file.exists():
         return "skipped (no Sentry token on this machine)"
     region = "us" if sentry.get("region", "us") == "us" else "de"
     projects = [p["project"] for p in (sentry.get("desktop"), sentry.get("frontend")) if p]
@@ -378,7 +378,7 @@ def publish(args: argparse.Namespace) -> None:
         now=datetime.now(UTC),
         download_base=args.download_base or DOWNLOAD_PREFIX,
     )
-    key = release_key.key_path(release_key.DEFAULT_DIR, args.key)
+    key = release_key.key_path(release_key.key_dir(), args.key)
     if args.download_base and not args.dry_run:
         raise PublishError("--download-base is for a test server, with --dry-run only")
     if args.dry_run:
@@ -435,7 +435,7 @@ def promote(args: argparse.Namespace) -> None:
         "rollout": args.rollout if args.rollout is not None else 10,
         "published": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    key = release_key.key_path(release_key.DEFAULT_DIR, args.key)
+    key = release_key.key_path(release_key.key_dir(), args.key)
     write_signed(manifest, SITE_UPDATES, key)
     run("gh", "release", "edit", f"v{manifest['version']}", "--prerelease=false")
     word = f"at {manifest['rollout']}%"
@@ -451,7 +451,7 @@ def change_rollout(args: argparse.Namespace, rollout: int) -> None:
     manifest = json.loads(current.read_text(encoding="utf-8"))
     check_repository(None)
     manifest["rollout"] = rollout
-    key = release_key.key_path(release_key.DEFAULT_DIR, args.key)
+    key = release_key.key_path(release_key.key_dir(), args.key)
     write_signed(manifest, SITE_UPDATES, key)
     word = "halted" if rollout == 0 else f"at {rollout}%"
     publish_manifest(args.channel, f"updates: {manifest['version']} on {args.channel} {word}")
