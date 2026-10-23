@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -40,18 +41,36 @@ def test_a_required_key_that_is_missing_names_itself(tmp_path: Path) -> None:
         local_env.require_path("UPSHOT_RELEASE_KEY_DIR", "the keys", tmp_path / ".env")
 
 
-def test_every_key_the_code_reads_is_in_env_example() -> None:
-    example = local_env.read(ROOT / ".env.example")
-    code = "\n".join(
-        path.read_text(encoding="utf-8", errors="replace")
-        for folder in ("scripts", "packaging")
-        for path in (ROOT / folder).rglob("*")
-        if path.suffix in {".py", ".ps1", ".cmd"} and path.is_file()
-    )
-    import re
+#: Where the code reads a key from a .env: local_env in Python, Read-DotEnv's table in
+#: PowerShell, the variables the sandbox kit's cmd checks after reading its .env.
+READ_SITES = (
+    re.compile(r"local_env\.(?:get|path|require_path)\(\s*[\"'](\w+)[\"']"),
+    re.compile(r"\$dotEnv\[[\"'](\w+)[\"']\]"),
+    re.compile(r'if "!(\w+)!"==""'),
+)
 
-    used = set(re.findall(r"\bUPSHOT_[A-Z_]+\b", code)) & {
-        k for k in re.findall(r"\b(UPSHOT_[A-Z_]+)\b", code)
-        if f'"{k}"' in code or f"'{k}'" in code or f"%{k}%" in code
-    }  # fmt: skip
-    assert used <= set(example), sorted(used - set(example))
+
+def keys_read() -> set[str]:
+    found: set[str] = set()
+    for folder in ("scripts", "packaging"):
+        for path in (ROOT / folder).rglob("*"):
+            if path.suffix in {".py", ".ps1", ".cmd"} and path.is_file():
+                text = path.read_text(encoding="utf-8", errors="replace")
+                for site in READ_SITES:
+                    found.update(site.findall(text))
+    return found
+
+
+def test_every_key_the_code_reads_from_env_is_in_env_example_and_back() -> None:
+    example = set(local_env.read(ROOT / ".env.example"))
+    read = keys_read()
+    assert read, "no read site found: the patterns no longer match the code"
+    assert read - example == set(), "read but not in .env.example"
+    assert example - read == set(), "in .env.example but read nowhere"
+    assert all(value == "" for value in local_env.read(ROOT / ".env.example").values())
+
+
+def test_a_relative_path_is_from_the_repository_root_and_a_bom_is_read(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_bytes("\ufeffA=packaging/x.json\n".encode())
+    assert local_env.path("A", env) == ROOT / "packaging" / "x.json"
