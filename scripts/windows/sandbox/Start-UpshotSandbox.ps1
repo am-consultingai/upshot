@@ -169,14 +169,14 @@ try {
         if ((WslRun @('python3', "$Agent/drive.py", 'get', "$DriveFolder/in/$small", "$inWsl/$small")) -ne 0) { throw "could not fetch $small from Drive" }
     }
     $zip = Join-Path $in $zipName
-    $want = ((Get-Content -Raw (Join-Path $in "$zipName.sha256")) -split '\s+')[0].ToLower()
-    $have = if (Test-Path $zip) { (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() } else { '' }
+    $want = ((Get-Content -Raw -LiteralPath (Join-Path $in "$zipName.sha256")) -split '\s+')[0].ToLower()
+    $have = if (Test-Path -LiteralPath $zip) { (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower() } else { '' }
     if ($have -eq $want) {
         Good "$zipName is already here and current"
     } else {
         Say "  ...  downloading $zipName from Drive (about 110 MB, a minute or two)" 'Cyan'
         if ((WslRun @('python3', "$Agent/drive.py", 'get', "$DriveFolder/in/$zipName", "$inWsl/$zipName")) -ne 0) { throw "could not download $zipName" }
-        $have = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+        $have = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
         if ($have -ne $want) { throw "$zipName does not match its .sha256 after download" }
         Good "$zipName downloaded and verified"
     }
@@ -186,9 +186,9 @@ try {
     Good "SHA-256 $($want.Substring(0, 16))..."
     # Keep the last run's results rather than overwrite them.
     $out = Join-Path $Kit 'out'
-    if (Test-Path $out) {
-        $previous = "out-" + (Get-Item $out).LastWriteTime.ToString('yyyyMMdd-HHmmss')
-        Rename-Item $out $previous
+    if (Test-Path -LiteralPath $out) {
+        $previous = "out-" + (Get-Item -LiteralPath $out).LastWriteTime.ToString('yyyyMMdd-HHmmss')
+        Rename-Item -LiteralPath $out $previous
         Say "       previous results kept as $previous" 'DarkGray'
     }
     New-Item -ItemType Directory -Force -Path $out | Out-Null
@@ -199,8 +199,8 @@ try {
     # written into a copy made for this run, beside the template, outside the kit.
     $wsbFile = Join-Path $Here "$Wsb.run.wsb"
     $kitXml = [Security.SecurityElement]::Escape($Kit.TrimEnd('\'))
-    (Get-Content -Raw -Encoding UTF8 (Join-Path $Here "$Wsb.wsb")).Replace('__KIT__', $kitXml) |
-        Set-Content -Encoding UTF8 $wsbFile
+    (Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $Here "$Wsb.wsb")).Replace('__KIT__', $kitXml) |
+        Set-Content -Encoding UTF8 -LiteralPath $wsbFile
     Start-Process -FilePath $sandboxExe -ArgumentList "`"$wsbFile`"" | Out-Null
     Good 'the Sandbox window is opening; Windows inside it takes about a minute to boot'
     Say '       Watch the Sandbox window: installer, app log, Upshot in Edge, uninstaller.' 'DarkGray'
