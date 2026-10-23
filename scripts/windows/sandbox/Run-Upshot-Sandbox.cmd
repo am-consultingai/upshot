@@ -13,7 +13,13 @@ set "HERE=!HERE:~0,-1!"
 set "MODE=show"
 if /i "%~1"=="watch" set "MODE=watch"
 if not exist "!HERE!\.env" goto :noenv
-for /f "usebackq eol=# tokens=1,* delims==" %%A in ("!HERE!\.env") do set "%%A=%%~B"
+rem Only the two keys, from .env only: nothing else it holds, and no environment variable.
+set "UPSHOT_SANDBOX_DRIVE_FOLDER="
+set "UPSHOT_AGENT_DIR="
+for /f "usebackq eol=# tokens=1,* delims==" %%A in ("!HERE!\.env") do (
+  if /i "%%A"=="UPSHOT_SANDBOX_DRIVE_FOLDER" set "UPSHOT_SANDBOX_DRIVE_FOLDER=%%~B"
+  if /i "%%A"=="UPSHOT_AGENT_DIR" set "UPSHOT_AGENT_DIR=%%~B"
+)
 if "!UPSHOT_SANDBOX_DRIVE_FOLDER!"=="" goto :noenv
 if "!UPSHOT_AGENT_DIR!"=="" goto :noenv
 if not exist "!HERE!\kit" mkdir "!HERE!\kit"
@@ -28,11 +34,14 @@ for %%F in (Start-UpshotSandbox.ps1 show.wsb watch.wsb) do (
 wsl.exe -e python3 "!UPSHOT_AGENT_DIR!/drive.py" get "!UPSHOT_SANDBOX_DRIVE_FOLDER!/sandbox-test.ps1" "!HEREWSL!/kit/sandbox-test.ps1" || goto :fetchfailed
 echo     kit\sandbox-test.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "!HERE!\Start-UpshotSandbox.ps1" -Wsb !MODE!
-exit /b %errorlevel%
+set "CODE=!errorlevel!"
+if not "!CODE!"=="0" pause
+exit /b !CODE!
 
 :noenv
 echo.
-echo   !HERE!\.env must set UPSHOT_SANDBOX_DRIVE_FOLDER and UPSHOT_AGENT_DIR (KEY=value lines).
+echo   !HERE!\.env must set UPSHOT_SANDBOX_DRIVE_FOLDER and UPSHOT_AGENT_DIR (KEY=value lines,
+echo   saved as UTF-8 without a BOM or as plain ASCII).
 pause
 exit /b 1
 

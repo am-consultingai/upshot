@@ -51,13 +51,22 @@ READ_SITES = (
 
 
 def keys_read() -> set[str]:
+    import subprocess
+
     found: set[str] = set()
-    for folder in ("scripts", "packaging"):
-        for path in (ROOT / folder).rglob("*"):
-            if path.suffix in {".py", ".ps1", ".cmd"} and path.is_file():
-                text = path.read_text(encoding="utf-8", errors="replace")
-                for site in READ_SITES:
-                    found.update(site.findall(text))
+    listed = subprocess.run(
+        ["git", "ls-files", "scripts", "packaging"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()  # tracked files only: a developer's own gitignored scripts do not count
+    for name in listed:
+        path = ROOT / name
+        if path.suffix in {".py", ".ps1", ".cmd"} and path.is_file():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for site in READ_SITES:
+                found.update(site.findall(text))
     return found
 
 
