@@ -46,7 +46,7 @@ def test_a_required_key_that_is_missing_names_itself(tmp_path: Path) -> None:
 READ_SITES = (
     re.compile(r"local_env\.(?:get|path|require_path)\(\s*[\"'](\w+)[\"']"),
     re.compile(r"\$dotEnv\[[\"'](\w+)[\"']\]"),
-    re.compile(r'if "!(\w+)!"==""'),
+    re.compile(r'if "!(\w+)!"=="" goto :noenv'),
 )
 
 

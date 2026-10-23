@@ -89,7 +89,7 @@ def sentry_token_file(settings: dict[str, Any]) -> Path | None:
     """The Sentry token's file: UPSHOT_SENTRY_TOKEN_FILE in .env, else the settings' own
     ``sentry_token_file``; None when neither names one."""
     named = local_env.path("UPSHOT_SENTRY_TOKEN_FILE") or settings.get("sentry_token_file")
-    return Path(os.path.expanduser(str(named))) if named else None
+    return ROOT / Path(os.path.expanduser(str(named))) if named else None
 
 
 SIGNING_KEY = "update-2026-10"
