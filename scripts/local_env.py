@@ -6,7 +6,9 @@ written into the code: it comes from here, or the script stops and says which ke
 
     KEY=value          # a line each; blank lines and lines starting with # are ignored
     KEY="value"        # quotes around a value are taken off
-    KEY=~/somewhere    # a path may start with ~
+    KEY=~/somewhere    # a path may start with ~; a relative one is from the repository root
+
+No spaces around ``=``, and double quotes if any: the sandbox kit's cmd reads the same format.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ def read(path: Path | None = None) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
         return values
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for number, raw in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -44,9 +46,10 @@ def get(key: str, path: Path | None = None) -> str | None:
 
 
 def path(key: str, env_file: Path | None = None) -> Path | None:
-    """``key``'s value as a path, ``~`` expanded, or None when it is not set."""
+    """``key``'s value as a path, ``~`` expanded and a relative one taken from the
+    repository root, or None when it is not set."""
     value = get(key, env_file)
-    return Path(value).expanduser() if value else None
+    return ROOT / Path(value).expanduser() if value else None
 
 
 def require_path(key: str, what: str, env_file: Path | None = None) -> Path:

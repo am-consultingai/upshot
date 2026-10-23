@@ -25,6 +25,8 @@ param(
     [double]$MinRecall = 0.6
 )
 $ErrorActionPreference = 'Stop'
+# Without ..\ in it: the leftover-process check compares it with each process's own path.
+$Exe = [IO.Path]::GetFullPath($Exe)
 # powershell -File hands a list over as one string: separate clips with ';' as well.
 $Clips = @($Clips | ForEach-Object { $_ -split ';' } | Where-Object { $_ })
 . (Join-Path $PSScriptRoot 'upshot-api.ps1')
