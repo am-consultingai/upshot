@@ -1,0 +1,72 @@
+# onnxruntime 1.27.1's third-party notices (LICENSE-onnxruntime.txt of the release
+# sherpa-onnx-1.13.6-upshot-1), one line per section: the SHA-256 of its text with all
+# whitespace runs made one space, then the start of the text. tests/unit/test_third_party_notices.py
+# checks that each is also in the installed onnxruntime package's ThirdPartyNotices.txt.
+eabe4307decb37b4a1c73a9c86a6c4ec4ca31caf47acab856be01c2a9d40b156  Do Not Translate or Localize This software incorporates mate
+50aab4e05cf4d561d6ba053882b71196334291424985e2d76143fcee9e3bc03c  Intel Math Kernel Library (Intel MKL) Intel Simplified Softw
+546ed35c3507a3e35db2be43c73016ad0b543217a3f038dd4b59e56bd1815d42  protocolbuffers/protobuf Copyright 2008 Google Inc. All righ
+478c58a3e4cb93ab7704d17a07e3b72f493d08ebb43f9ee758e4248d2d8fd9cd  madler/zlib The deflate format used by zlib was defined by P
+63fec5c23695879f7ef85e2b8325bdd7f3be16b0e8296f8b6961dde99512ebfe  pybind/pybind11 Copyright (c) 2016 Wenzel Jakob <wenzel.jako
+89b0987afb82d0c3835bdaca3269565fe16769348ec02f82111b9ec144f80ccf  onnx Open Neural Network Exchange Copyright (c) Facebook, In
+2ced2fc3bab685174ce754f5959e20e3f25310f4d7e44102bdc7419836da89c6  Eigen MPL v2.0 Mozilla Public License Version 2.0 ==========
+7ad00d680766a33cb216008be1286875c57c97385b2ff563ee966a1e3c8cb82a  intel/dnnl Copyright 2016-2018 Intel Corporation Apache Lice
+f689d7b02a383fbfd48e7db3070adb3b7419aa0b833305b0badd5f15a3dd14f9  Microsoft GSL Copyright (c) 2015 Microsoft Corporation. All 
+a3a1340e0dbe99a9b15958a34a5ad59401f1f858f551ac2d982ea8c543a9cd18  Tensorflow Copyright 2018 The TensorFlow Authors. All rights
+6cc12669cd26b206a55079c4a4087d2e81f8a184d85a5bd937338112f8b55364  Microsoft Cognitive Toolkit (CNTK) Copyright (c) Microsoft C
+5cbc8ae68dae5dfe4774aaa0be48e053dbffe1b03c5827cff3a52bca4c1f86dc  NumPy License Copyright (c) 2005, NumPy Developers All right
+15a521185d95273560ddf2434d6e56af16c77963a2215940b94dc073cea21d02  Pytorch / Caffe2 From PyTorch: Copyright (c) 2016- Facebook,
+7c28a7559d6238d9234e158e4262fc8b40af6497159fe1a8cbbe271017b3253d  Caffe COPYRIGHT All contributions by the University of Calif
+168a359da8b05d71dcf4590d533211f3783d2fbba18faab7d6a9381becc4df9c  The LLVM Compiler Infrastructure ===========================
+ee25649a3a750fd290f1f715942c78078e8b50b13ff30cade3731852d4d488e7  google/benchmark Apache License Version 2.0, January 2004 ht
+7f7f08f711bd46ab0429e6014d7c0ed8688728954c4cac782e145140c76a7aac  HalideIR Copyright (c) 2016 HalideIR contributors Copyright 
+00aa8b2a9e620de785fcfa12ce0fd6665c263fce82362d1982a3a00780707cb0  Distributed Machine Learning Common Codebase Copyright (c) 2
+42a2f347ace1af758268cb370b29f9ce57d1224dca5c7dc0209b475d439184d3  DLPack: Open In Memory Tensor Structure Apache License Versi
+2ad883acf37adf13a887567ccb21f7d87d7b3c566b8f4e19ceb311a1408db82c  HowardHinnant/date The source code in this project is releas
+030fb59d2750876bfd76af182dae93931bd502076dfe2cdb3282e2aa569da26b  FreeBSD: getopt.c file Copyright (c) 1987, 1993, 1994 The Re
+42cb42743b4733f6409cfb9230a122f5241b8b490bd3a04d7f582b131c83cabd  google/googletest Copyright 2008, Google Inc. All rights res
+ba0879b43e767909f4967e540f1fbc52032eb27b2d86cd59aaeafa21d7650064  G3log : Asynchronous logger with Dynamic Sinks This is free 
+edde9c0787df2f157bac1631c91427ab694de836456d2b38cb6c52dde38d86f3  Scikit-learn Copyright (c) 2007–2018 The scikit-learn develo
+ce5075cc3e12b8b9f7e85c5b9c8051207c82ed330aee6fa8c62834cadd4fa747  google/re2 Copyright (c) 2009 The RE2 Authors. All rights re
+20050788707dec9d3361747ea514425f2306b58723984a891447f6be65487c54  onnx/onnx-tensorrt MIT License Copyright (c) 2018, NVIDIA CO
+b780360579ee21eb6eeacc8f1c767d2bdf55eacdd19f3a8ebe984dcf9cbbebd0  nvidia/cutlass Copyright (c) 2017 - 2022 NVIDIA CORPORATION 
+93604168b6f38fb46dbe208200780e8971e86e2146855fbb777434104598b5e7  Boost Boost Software License - Version 1.0 - August 17th, 20
+36883c32d19fede92f2f2f0a4d261d95582bf9cc909fac57ee60adb6e8c9ff61  JDAI-CV/DNNLibrary Apache License Version 2.0, January 2004 
+8c9eb6711229a803d8498b2223d0670eae846d3e0c9342620fc58c68990ec9ef  google/flatbuffers Apache License Version 2.0, January 2004 
+d9127c3c18b226b210a44221c2d3878aea150123ee9236a0d7045570e5b5b2eb  google/glog Copyright (c) 2008, Google Inc. All rights reser
+53aaf2a2f45511c341432064dfbcffa3634ddf02529fb3b5ebb8884495c189d4  abseil-cpp https://github.com/abseil/abseil-cpp Apache Licen
+3d884cbcad5080e0b440cfff9d319dbe43405795f9999c55c8943b93978c5686  microsoft/wil MIT License Copyright (c) Microsoft Corporatio
+b4a7171b908b2b85466ad20fa969e834c6a0f33f47061fdcfd0baa1a14e468d2  nlohmann/json MIT License Copyright (c) 2013-2019 Niels Lohm
+2b4c8cab30261365981ab20a81346138a73d996e68b01f6a9bc179aa7efdf6fd  dcleblanc/SafeInt MIT License Copyright (c) 2018 Microsoft P
+65353c6f4d6feccbfc1177a289e81074ac638d5efb7b17e730b3377fdac95e96  Open MPI 3-Clause BSD License Most files in this release are
+f346652f5491df5a38ef5ba94c7c73ba1c4e13e919710eebbb6505c0c5cad8fe  The Android Open Source Project Copyright (C) 2017 The Andro
+b6500f9a24c939935db439acc726882be0766d5b340cc9802aa5fb6ea04174cc  mpi4py https://github.com/mpi4py/mpi4py/ ===================
+51c70dadd96c2a3ce82735c8e90f03f55ee34b2e939001b7cf483b264dd455a7  huggingface/transformers Apache License Version 2.0, January
+be89ae7c6f73e17e788b000e6139ce6c8aaab3befbfdaee00b333e1cb7a0a05c  msgpack/msgpack-python Copyright (C) 2008-2011 INADA Naoki <
+8d418e6a30e722e84ec7bf580809da5e4f60c77d37cd5097fded89081cb68ab4  lanpa/tensorboardX MIT License Copyright (c) 2017 Tzu-Wei Hu
+9b836151814cf42aedcb01c4a85739825813ebdc560603fe1c8926dbf42941c9  tensorflow/tensorboard Copyright 2017 The TensorFlow Authors
+92b01e0525d0c18d670ca353901ddea78e07fd86140670c8fd097b72093e5f0d  cerberus Cerberus is a lightweight and extensible data valid
+c835de9934f4652e2799ee17446caee283e2010c2f283e8ccda23aba32ec447d  MurmurHash3 MIT license https://github.com/aappleby/smhasher
+1d493aa4645d3cbd40b089ac6f6303d9a93437b8147e3ef49e2ccfba4f2c9da7  gtest-ios-framework https://github.com/mestevens/gtest-ios-f
+db07d8ea469556657eb5ad9036ece742c6f560ee11252515b9abd46a131f18c4  DLPack https://github.com/dmlc/dlpack Apache License Version
+d3f2e074aa13bf5700241c7188099565e0f641efd57dd87fcb0b692308b6356f  emsdk MIT/Expat license https://github.com/emscripten-core/e
+5af2f656a04d17a1997a267b6402cfeb2347f03a451eb7710e21dccc4201f8b4  coremltools BSD-3-Clause License https://github.com/apple/co
+04602edf33953d9cbe8b3f258ce13d82e754c538528d039762ddf12be65140e8  react-native MIT License https://github.com/facebook/react-n
+50d433475ea9173e8244dc5d212174cf75bc081d2854ca5d2e97cf5ae51dc017  pytorch/cpuinfo BSD 2-Clause "Simplified" License https://gi
+ec8ee45d62bce0b58001d41835f3d0cbdf13828bf57399758d3e67c072335e92  SQLite Is Public Domain All of the code and documentation in
+a4da4a98c7cd0bf671a89e4b9625eb9bd2c03ce14a7908b41af4b0022cd9401f  google/XNNPACK BSD License For XNNPACK software Copyright (c
+be615542c0d71a93dcf0ade458e1fc3386b8c0839a4d277dc907f67bf51c7d9c  google/sentencepiece, https://github.com/google/sentencepiec
+bf810c433a5c6843456f943c433b5c366c6169ff77f4790dac835b78e2a88f1a  dlfcn-win32/dlfcn-win32 is licensed under the MIT License Pe
+414ef7ae80bc9a50f178bdc8a3ea763e2149d489c42419049e9cb02de7439591  The Python Imaging Library (PIL) is Copyright © 1997-2011 by
+8e29ab2ba7947d2025d9864b438cd1a782dbe6bdda2f6a626538894c894207f5  openssl/openssl, https://github.com/openssl/openssl Apache L
+f1c8191cb068f1d5a4f7c8e57b3e11ebd18a8ad84b1bba7b4cf76955425b776a  Tencent/rapidjson, https://github.com/Tencent/rapidjson Tenc
+becba68205455eba906a0d82085e6357dce5d1f5e9872fde7cb036f0d3684642  boostorg/boost, https://github.com/boostorg/boost Boost Soft
+bbe92cf98b662e7fee28908d0ca2e92941a82428b5ed8ad57e98c295543957f1  libb64/libb64, https://github.com/libb64/libb64 Copyright-On
+1d30e1228645f3cf9e6dca42e05c278b63471939a3c4ab9c43ea27af2da6e00a  posix pthread library, https://sourceforge.net/projects/pthr
+baced62c47638d1dd7f14561304e449c5bdceabeba632d1060dc85a9432d4170  Triton Inference Server & Client, https://github.com/triton-
+577f6aa8e00f6034cf59452d11c4df3ee76997e3b7814b6cc943055d6b74574e  microsoft/mimalloc, https://github.com/microsoft/mimalloc MI
+33f73db44180490951117df4f4e90276162f702b3913e788a2e7489db0d4046c  TensorFlow.js https://github.com/tensorflow/tfjs Apache Lice
+966048f1d02d1179593deca8edf3eec55b51683c5456776d96925c55ae90f1ea  Intel neural-compressor https://github.com/intel/neural-comp
+68c8cdd1f1e00b093f099bbac2fac43e0166ef1b9edc6354dfbe25a3e54ae48e  FlashAttention, https://github.com/Dao-AILab/flash-attention
+549d4b6ac3202b46ac2c5a81fb1dcec4474eef105772e92e60cc06870fbbd6fd  neural-speed https://github.com/intel/neural-speed Apache Li
+862b2f14e45f786ab1b4954b8923dd3577658d68e184aae580c363fa861ce817  dawn https://dawn.googlesource.com/dawn BSD 3-Clause License
+8eefe8435c1d555462d90af385d2fa4f1896b91968cf92a78865e5ecc92ff847  KleidiAI https://gitlab.arm.com/kleidi/kleidiai Apache Licen

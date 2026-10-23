@@ -18,6 +18,8 @@ that was frozen.
 - **Eigen** (inside Upshot's sherpa-onnx): ``sherpa-onnx-sources.zip`` from the release the
   wheel came from, which holds Eigen as the build downloaded it, pinned by SHA-256
   (``third_party_notices.SHERPA_SOURCES_SHA256``).
+- **Eigen inside onnxruntime:** the Eigen archive onnxruntime builds with and the two patches
+  it applies, each pinned by SHA-256 (``third_party_notices.ONNXRUNTIME_EIGEN_FILES``).
 
 An entry with no way to its source stops the build. ``README.txt`` lists each file with its
 version, licence, origin and SHA-256.
@@ -135,8 +137,18 @@ def sherpa_source(name: str, version: str, licence: str) -> Source:
     )
 
 
+def onnxruntime_eigen_sources(name: str, version: str, licence: str) -> list[Source]:
+    """Eigen as onnxruntime downloads it, and the patches it applies: modified MPL files, so
+    the changes are offered with them."""
+    return [
+        Source(name, version, licence, url, sha256, file)
+        for url, sha256, file in notices.ONNXRUNTIME_EIGEN_FILES
+    ]
+
+
 def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type: ignore[type-arg]
-    """One source per entry whose licence asks for it; SourceError for one without a way."""
+    """The sources of each entry whose licence asks for them; SourceError for one without a
+    way."""
     sources: list[Source] = []
     for entry in entries:
         if not needs_source(entry["licence"]):
@@ -145,6 +157,8 @@ def plan(entries: list[dict], lock: dict, vendor: Path) -> list[Source]:  # type
             sources.append(ffmpeg_source(entry["licence"], vendor))
         elif entry["name"] == notices.EIGEN:
             sources.append(sherpa_source(entry["name"], entry["version"], entry["licence"]))
+        elif entry["name"] == notices.EIGEN_IN_ONNXRUNTIME:
+            sources += onnxruntime_eigen_sources(entry["name"], entry["version"], entry["licence"])
         elif entry.get("kind") == "python":
             sources.append(python_source(entry["name"], entry["version"], entry["licence"], lock))
         else:
