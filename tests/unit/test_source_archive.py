@@ -217,3 +217,19 @@ def test_eigen_is_sourced_from_the_sherpa_onnx_release_it_was_built_from(vendor:
     assert eigen.url.endswith(f"/{tag}/sherpa-onnx-sources.zip")
     assert eigen.sha256 == archive.notices.SHERPA_SOURCES_SHA256
     assert eigen.file == f"sherpa-onnx/{tag}-sources.zip"
+
+
+def test_the_eigen_inside_onnxruntime_comes_with_onnxruntime_s_patches(vendor: Path) -> None:
+    """Modified MPL files: the archive onnxruntime builds Eigen from, and both its patches."""
+    entries = [
+        entry(archive.notices.FFMPEG, "", "LGPL-2.1-or-later", kind="other"),
+        entry(archive.notices.EIGEN_IN_ONNXRUNTIME, "3.4", "MPL-2.0 AND Apache-2.0", "other"),
+    ]
+    files = [s.file for s in archive.plan(entries, LOCK, vendor)[1:]]
+    commit = archive.notices.ONNXRUNTIME_EIGEN_COMMIT
+    assert files == [
+        f"onnxruntime-eigen/eigen-{commit}.zip",
+        "onnxruntime-eigen/s390x-build.patch",
+        "onnxruntime-eigen/s390x-build-werror.patch",
+    ]
+    assert all(len(s.sha256) == 64 for s in archive.plan(entries, LOCK, vendor))

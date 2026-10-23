@@ -342,6 +342,30 @@ SHERPA_RELEASE = "sherpa-onnx-1.13.6-upshot-1"
 SHERPA_SOURCES_SHA256 = "1c2fceee4a30388811c19b1c31661600ab6a0f0e8dd758777ad396121f0e2dab"
 EIGEN = "Eigen (compiled into sherpa-onnx's module)"
 
+#: The Eigen onnxruntime compiles into onnxruntime.dll, in the onnxruntime package and in the
+#: copy beside sherpa-onnx's module: the commit its cmake/deps.txt pins and the two patches its
+#: cmake/external/eigen.cmake always applies, the same at every onnxruntime version listed here
+#: (checked by hand; tests/unit/test_third_party_notices.py refuses an onnxruntime outside it).
+EIGEN_IN_ONNXRUNTIME = "Eigen (compiled into onnxruntime)"
+ONNXRUNTIME_EIGEN_VERSIONS = ("1.27.1", "1.29.0")
+ONNXRUNTIME_EIGEN_COMMIT = "1d8b82b0740839c0de7f1242a3585e3390ff5f33"
+#: (url, SHA-256, path in Upshot's sources zip): the archive onnxruntime downloads (its deps.txt
+#: pins the SHA-1 05b19b49...), and the patches at the newest version listed.
+ONNXRUNTIME_EIGEN_FILES = (
+    (f"https://github.com/eigen-mirror/eigen/archive/{ONNXRUNTIME_EIGEN_COMMIT}"
+     f"/eigen-{ONNXRUNTIME_EIGEN_COMMIT}.zip",
+     "6a60d76351f97132669daeeb721d6bf14b008101883ad2d687a3201c5c461eb0",
+     f"onnxruntime-eigen/eigen-{ONNXRUNTIME_EIGEN_COMMIT}.zip"),
+    ("https://raw.githubusercontent.com/microsoft/onnxruntime/v1.29.0/cmake/patches/eigen"
+     "/s390x-build.patch",
+     "6d41f4504f665bc591336c668a1aa16ffc5e0f02fe9c2f9c46c6f5660b54c849",
+     "onnxruntime-eigen/s390x-build.patch"),
+    ("https://raw.githubusercontent.com/microsoft/onnxruntime/v1.29.0/cmake/patches/eigen"
+     "/s390x-build-werror.patch",
+     "a1a7b0ca8382cb00542587b6bc725f59abd59ad5bb491825f7876ad6e344ef0b",
+     "onnxruntime-eigen/s390x-build-werror.patch"),
+)  # fmt: skip
+
 
 def ffmpeg_entry() -> Entry:
     """The licence follows from how this ffmpeg.exe was configured, never from a constant:
@@ -488,11 +512,19 @@ def extra_entries() -> list[Entry]:
         Entry("onnxruntime (beside sherpa-onnx's module)", "1.27.1", "MIT",
               "onnxruntime.dll in sherpa_onnx\\lib, the prebuilt library sherpa-onnx's build"
               " links against. Its third-party notices are all among those of the onnxruntime"
-              " package (Python packages, below).", licence_file("onnxruntime-sherpa.txt"),
-              source="Eigen (MPL-2.0), compiled into onnxruntime.dll:"
-              " https://github.com/eigen-mirror/eigen/archive/1d8b82b0740839c0de7f1242a3585e3390ff5f33.zip,"
-              " with onnxruntime's patches in cmake/patches/eigen at"
-              " https://github.com/microsoft/onnxruntime/tree/v1.27.1",
+              " package (Python packages, below). The Eigen inside it is listed on its own.",
+              licence_file("onnxruntime-sherpa.txt"), kind="other"),
+        Entry(EIGEN_IN_ONNXRUNTIME, f"3.4 branch, commit {ONNXRUNTIME_EIGEN_COMMIT[:7]}",
+              "MPL-2.0 AND Apache-2.0 AND BSD-3-Clause",
+              "Compiled into onnxruntime.dll, the onnxruntime package's and the one beside"
+              " sherpa-onnx's module, with two patches by onnxruntime (for IBM Z builds; they"
+              " change Eigen/src/Core/RandomImpl.h and the ZVector files). Some of its files are"
+              " under the other licences below.", licence_file("eigen-onnxruntime.txt"),
+              source=f"onnxruntime-eigen/ (Eigen at {ONNXRUNTIME_EIGEN_COMMIT} and both patches)"
+              f" in Upshot-{upshot_version()}-sources.zip at"
+              f" https://github.com/am-consultingai/upshot/releases/tag/v{upshot_version()};"
+              f" also {ONNXRUNTIME_EIGEN_FILES[0][0]} and onnxruntime's cmake/patches/eigen at"
+              " https://github.com/microsoft/onnxruntime/tree/v1.29.0",
               kind="other"),
         Entry("NVIDIA cuBLAS (nvidia-cublas-cu12)", "12.9.1.4", "LicenseRef-NVIDIA-CUDA-EULA",
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
