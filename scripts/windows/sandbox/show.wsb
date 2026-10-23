@@ -1,7 +1,7 @@
 <Configuration>
   <!-- On the test machine: watch an Upshot install run by itself, on screen, with nothing to click.
-       A template: Start-UpshotSandbox.ps1 -Wsb <show|watch> writes the kit's folder for __KIT__ and opens it.
-       The kit must hold: this file, sandbox-test.ps1, and an in\ folder
+       A template: Start-UpshotSandbox.ps1 -Wsb <show|watch> (or Run-Upshot-Sandbox.cmd watch) writes the
+       kit\ folder beside it for __KIT__ and opens the copy. kit\ holds sandbox-test.ps1 and an in\ folder
        with Upshot-<ver>-installer.zip, its .sha256 and upshot-test-signing.cer.
        Results land in the kit's out\ folder on the host. -->
   <Networking>Enable</Networking>

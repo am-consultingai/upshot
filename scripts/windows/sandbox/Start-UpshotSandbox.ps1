@@ -1,5 +1,5 @@
 # The test machine, the host side of a watched Sandbox run. Started by Run-Upshot-Sandbox.cmd, which
-# has just fetched this file, sandbox-test.ps1 and show.wsb from Drive.
+# has just fetched this file, the .wsb templates and kit\sandbox-test.ps1 from Drive.
 #
 #   1. Checks Windows Sandbox, and that no other sandbox is open.
 #   2. Pauses B's test runner for the length of the run (and turns it back on at the end).
@@ -10,17 +10,22 @@
 # Nothing is installed on this machine: the installer is unpacked and run only inside the
 # sandbox, and everything in the sandbox is discarded when its window closes.
 #
+# Two folders. This file's folder holds the launcher, .env and the .wsb templates; the
+# sandbox never sees it. Its kit\ subfolder (sandbox-test.ps1, in\, out\) is the only one
+# mapped into the sandbox, which runs the installer under test and may write there.
+#
 # This machine's own values come from .env beside this file (KEY=value lines, never committed):
 #   UPSHOT_SANDBOX_DRIVE_FOLDER  the Drive folder the kit and the installer zip are fetched from
-#   UPSHOT_AGENT_DIR             the folder in this machine's WSL that holds drive.py and STOP
-# The kit is the folder this file is in.
+#   UPSHOT_AGENT_DIR             the absolute folder in this machine's WSL holding drive.py and STOP
+# Each value reaches WSL as an argument, never as shell text, and must be a plain path.
 #
 # Keep this file ASCII: Windows PowerShell 5.1 reads a script without a BOM as ANSI.
 param(
-    [string]$Kit = $PSScriptRoot,
     [ValidateSet('show', 'watch')] [string]$Wsb = 'show',
     [int]$TimeoutMinutes = 40
 )
+$Here = $PSScriptRoot
+$Kit = Join-Path $Here 'kit'
 $ErrorActionPreference = 'Stop'
 function Read-DotEnv([string]$path) {
     $values = @{}
@@ -38,12 +43,15 @@ function Read-DotEnv([string]$path) {
     }
     return $values
 }
-$dotEnv = Read-DotEnv (Join-Path $Kit '.env')
-foreach ($key in 'UPSHOT_SANDBOX_DRIVE_FOLDER', 'UPSHOT_AGENT_DIR') {
-    if (-not $dotEnv[$key]) { throw "$key is not set: add it to $(Join-Path $Kit '.env')" }
-}
+$dotEnv = Read-DotEnv (Join-Path $Here '.env')
 $DriveFolder = $dotEnv['UPSHOT_SANDBOX_DRIVE_FOLDER']
-$Agent = $dotEnv['UPSHOT_AGENT_DIR'].TrimEnd('/')
+$Agent = "$($dotEnv['UPSHOT_AGENT_DIR'])".TrimEnd('/')
+if ($DriveFolder -notmatch '^[A-Za-z0-9_./-]+$') {
+    throw "UPSHOT_SANDBOX_DRIVE_FOLDER in $(Join-Path $Here '.env') must be a Drive folder such as tools/x"
+}
+if ($Agent -notmatch '^/[A-Za-z0-9_./-]+$') {
+    throw "UPSHOT_AGENT_DIR in $(Join-Path $Here '.env') must be an absolute WSL folder such as /home/<user>/agent"
+}
 $Host.UI.RawUI.WindowTitle = 'Upshot sandbox test'
 $started = Get-Date
 
@@ -56,14 +64,16 @@ function Ask([string]$question) {
     $answer = Read-Host "  $question [Y/n]"
     return ($answer -eq '' -or $answer -match '^[Yy]')
 }
-# B's WSL holds drive.py, the Drive token and the runner.
+# B's WSL holds drive.py, the Drive token and the runner. A fixed command line only: values
+# go through WslRun as arguments.
 function Wsl([string]$command) {
     # Out-Host: anything it prints goes to the screen, not into the return value.
     & wsl.exe -e bash -lc $command | Out-Host
     return $LASTEXITCODE
 }
-function To-Wsl([string]$windowsPath) {
-    return '/mnt/' + $windowsPath.Substring(0, 1).ToLower() + ($windowsPath.Substring(2) -replace '\\', '/')
+function WslRun([string[]]$argv) {
+    & wsl.exe -e @argv | Out-Host
+    return $LASTEXITCODE
 }
 function Sandbox-Windows {
     return @(Get-Process -Name WindowsSandbox, WindowsSandboxRemoteSession, WindowsSandboxClient -ErrorAction SilentlyContinue |
@@ -104,10 +114,10 @@ try {
 
     # 2 ---------------------------------------------------------------------------------
     Title "The test machine's test runner"
-    if ((Wsl "test -e $Agent/STOP") -eq 0) {
+    if ((WslRun @('test', '-e', "$Agent/STOP")) -eq 0) {
         Good 'already paused (a STOP file exists); left as it is'
     } else {
-        [void](Wsl "touch $Agent/STOP")
+        [void](WslRun @('touch', "$Agent/STOP"))
         $pausedRunner = $true
         Good 'paused for this run; it starts again when this window finishes'
     }
@@ -127,12 +137,12 @@ try {
     Title 'Test kit'
     $in = Join-Path $Kit 'in'
     New-Item -ItemType Directory -Force -Path $in | Out-Null
-    $inWsl = To-Wsl $in
-    $listing = & wsl.exe -e bash -lc "python3 $Agent/drive.py ls $DriveFolder/in"
+    $inWsl = "$(& wsl.exe -e wslpath -a $in)".Trim()
+    $listing = & wsl.exe -e python3 "$Agent/drive.py" ls "$DriveFolder/in"
     $zipName = ($listing | Select-String -Pattern 'Upshot-\S+-installer\.zip$' | Select-Object -First 1).Matches.Value
     if (-not $zipName) { throw "no Upshot-*-installer.zip in Drive $DriveFolder/in" }
     foreach ($small in @("$zipName.sha256", 'upshot-test-signing.cer')) {
-        if ((Wsl "python3 $Agent/drive.py get $DriveFolder/in/$small $inWsl/$small") -ne 0) { throw "could not fetch $small from Drive" }
+        if ((WslRun @('python3', "$Agent/drive.py", 'get', "$DriveFolder/in/$small", "$inWsl/$small")) -ne 0) { throw "could not fetch $small from Drive" }
     }
     $zip = Join-Path $in $zipName
     $want = ((Get-Content -Raw (Join-Path $in "$zipName.sha256")) -split '\s+')[0].ToLower()
@@ -141,7 +151,7 @@ try {
         Good "$zipName is already here and current"
     } else {
         Say "  ...  downloading $zipName from Drive (about 110 MB, a minute or two)" 'Cyan'
-        if ((Wsl "python3 $Agent/drive.py get $DriveFolder/in/$zipName $inWsl/$zipName") -ne 0) { throw "could not download $zipName" }
+        if ((WslRun @('python3', "$Agent/drive.py", 'get', "$DriveFolder/in/$zipName", "$inWsl/$zipName")) -ne 0) { throw "could not download $zipName" }
         $have = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
         if ($have -ne $want) { throw "$zipName does not match its .sha256 after download" }
         Good "$zipName downloaded and verified"
@@ -161,10 +171,11 @@ try {
 
     # 4 ---------------------------------------------------------------------------------
     Title 'Starting the sandbox'
-    # The .wsb is a template: Windows Sandbox reads no variables, so the kit's own folder is
-    # written into a copy made for this run.
-    $wsbFile = Join-Path $out "$Wsb.wsb"
-    (Get-Content -Raw -Encoding UTF8 (Join-Path $Kit "$Wsb.wsb")).Replace('__KIT__', $Kit) |
+    # The .wsb is a template: Windows Sandbox reads no variables, so the kit's folder is
+    # written into a copy made for this run, beside the template, outside the kit.
+    $wsbFile = Join-Path $Here "$Wsb.run.wsb"
+    $kitXml = [Security.SecurityElement]::Escape($Kit.TrimEnd('\'))
+    (Get-Content -Raw -Encoding UTF8 (Join-Path $Here "$Wsb.wsb")).Replace('__KIT__', $kitXml) |
         Set-Content -Encoding UTF8 $wsbFile
     Start-Process -FilePath $sandboxExe -ArgumentList "`"$wsbFile`"" | Out-Null
     Good 'the Sandbox window is opening; Windows inside it takes about a minute to boot'
@@ -190,7 +201,8 @@ try {
             $warned = $true
             Warn 'nothing from the sandbox after 4 minutes. If its desktop is up but no console opened,'
             Warn 'open PowerShell inside the sandbox and paste:'
-            Say '       powershell -NoProfile -ExecutionPolicy Bypass -File C:\watch\sandbox-test.ps1 -Mode show -StayOpen -In C:\watch\in -Out C:\watch\out' 'White'
+            $mode = if ($Wsb -eq 'show') { '-Mode show -StayOpen' } else { '-Mode watch' }
+            Say "       powershell -NoProfile -ExecutionPolicy Bypass -File C:\watch\sandbox-test.ps1 $mode -In C:\watch\in -Out C:\watch\out" 'White'
         }
         if (Test-Path $done) { break }
         if ((Sandbox-Windows).Count -gt 0) { $sawWindow = $true }
@@ -220,7 +232,7 @@ try {
     Bad "$($_.Exception.Message)"
 } finally {
     if ($pausedRunner) {
-        [void](Wsl "rm -f $Agent/STOP")
+        [void](WslRun @('rm', '-f', "$Agent/STOP"))
         Good "the test machine's test runner is running again"
     }
     Write-Host ''

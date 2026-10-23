@@ -58,7 +58,7 @@ $info = [ordered]@{ version = $version; commit = $commit; built = $built }
 function Read-DotEnv([string]$path) {
     $values = @{}
     if (-not (Test-Path -LiteralPath $path)) { return $values }
-    foreach ($raw in Get-Content -LiteralPath $path -Encoding UTF8) {
+    foreach ($raw in Get-Content -LiteralPath $path -Encoding UTF8) {  # UTF8 also takes a BOM
         $line = $raw.Trim()
         if (-not $line -or $line.StartsWith('#')) { continue }
         $key, $value = $line -split '=', 2
@@ -74,7 +74,7 @@ function Read-DotEnv([string]$path) {
 $dotEnv = Read-DotEnv (Join-Path $root ".env")
 if ($dotEnv['UPSHOT_RELEASE_SETTINGS']) {
     $releaseLocal = $dotEnv['UPSHOT_RELEASE_SETTINGS']
-    if (-not (Test-Path $releaseLocal)) { throw "UPSHOT_RELEASE_SETTINGS in .env names $releaseLocal, which cannot be read" }
+    if (-not (Test-Path -LiteralPath $releaseLocal)) { throw "UPSHOT_RELEASE_SETTINGS in .env names $releaseLocal, which cannot be read" }
 } else {
     $releaseLocal = Join-Path $PSScriptRoot "release.local.json"
 }
