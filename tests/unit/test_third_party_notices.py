@@ -409,6 +409,14 @@ def test_the_onnxruntime_in_the_lock_is_one_whose_eigen_was_checked() -> None:
     assert versions and versions <= set(notices.ONNXRUNTIME_EIGEN_VERSIONS)
 
 
+def test_the_onnxruntime_beside_sherpa_onnx_is_one_whose_eigen_was_checked() -> None:
+    """The copy Upshot's sherpa-onnx build pins (packaging/sherpa-onnx/build.sh) is the version
+    its notices entry names, and that version's Eigen was checked."""
+    assert notices.SHERPA_ONNXRUNTIME in notices.ONNXRUNTIME_EIGEN_VERSIONS
+    build = (ROOT / "packaging" / "sherpa-onnx" / "build.sh").read_text(encoding="utf-8")
+    assert f"(onnxruntime {notices.SHERPA_ONNXRUNTIME}, static CRT)" in build
+
+
 def test_onnxruntime_1_27_1_s_notices_are_all_in_the_onnxruntime_package_s() -> None:
     """The entry for the onnxruntime.dll beside sherpa-onnx's module does not repeat its
     third-party notices because each is in the onnxruntime package's, which the notices
