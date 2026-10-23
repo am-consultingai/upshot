@@ -6,6 +6,7 @@ rem Start-UpshotSandbox.ps1. Nothing is installed on this machine.
 rem Keep this file in a folder of its own, with .env beside it (KEY=value lines, never committed):
 rem UPSHOT_SANDBOX_DRIVE_FOLDER and UPSHOT_AGENT_DIR (an absolute WSL folder). Only the kit\
 rem subfolder is mapped into the sandbox; this folder and .env are not.
+rem The folder's name must not hold a "!" (this file reads it with delayed expansion).
 setlocal EnableDelayedExpansion
 title Upshot sandbox test
 set "HERE=%~dp0"
