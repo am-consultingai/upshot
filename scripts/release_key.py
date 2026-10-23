@@ -5,10 +5,10 @@
     uv run python scripts/release_key.py sign <name> <file>    # write <file>.sig
     uv run python scripts/release_key.py verify <file>         # check <file>.sig
 
-A private key is the base64 Ed25519 seed in ``~/.config/upshot-release/<name>.key`` (or
-``--dir``), readable by its owner only. It never enters the repository and is never
-printed: whoever holds it can make every installed copy run their program. The public
-key goes into ``app/updates/keys.py``.
+A private key is the base64 Ed25519 seed in ``<UPSHOT_RELEASE_KEY_DIR>/<name>.key``, the
+folder ``.env`` names (``scripts/local_env.py``) or ``--dir``, readable by its owner only.
+It never enters the repository and is never printed: whoever holds it can make every
+installed copy run their program. The public key goes into ``app/updates/keys.py``.
 
 Two keys are built into the app: the one that signs today, and a spare kept offline. If
 the first is lost or leaks, the spare signs a release that replaces both, and no install
@@ -25,11 +25,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import local_env  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
-DEFAULT_DIR = Path("~/.config/upshot-release")
+
+def key_dir() -> Path:
+    """The folder of the signing keys on this machine: ``UPSHOT_RELEASE_KEY_DIR`` in .env."""
+    return local_env.require_path(
+        "UPSHOT_RELEASE_KEY_DIR", "the folder that holds the update signing keys"
+    )
 
 
 def key_path(directory: Path, name: str) -> Path:
@@ -77,7 +84,7 @@ def sign(path: Path, target: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--dir", type=Path, default=DEFAULT_DIR)
+    parser.add_argument("--dir", type=Path, help="default: UPSHOT_RELEASE_KEY_DIR in .env")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("new").add_argument("name")
     sub.add_parser("public").add_argument("name")
@@ -86,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     signing.add_argument("file", type=Path)
     sub.add_parser("verify").add_argument("file", type=Path)
     args = parser.parse_args(argv)
+    if args.command != "verify" and args.dir is None:
+        args.dir = key_dir()
 
     if args.command == "new":
         path = key_path(args.dir, args.name)

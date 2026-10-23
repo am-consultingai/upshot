@@ -439,7 +439,7 @@ def test_upshot_holding_the_microphone_is_not_a_meeting(tmp_path: Path) -> None:
     from app.detect.detector import _exe_key
 
     h = build(tmp_path, detection__mode="shadow")
-    own = r"C:\upshot-work\win\python\cpython-3.14.7-windows-x86_64-none\python.exe"
+    own = r"C:\Users\someone\uv\python\cpython-3.14.7-windows-x86_64-none\python.exe"
     h.detector.own = h.detector.own | {_exe_key(own)}
     meter.acquire(h.detector.config, None, "me")
     try:

@@ -1,6 +1,6 @@
 # The test machine, host side: run one Sandbox job start to finish, unattended, in one process.
 #
-#   powershell -ExecutionPolicy Bypass -File run-sandbox-job.ps1 -Work C:\upshot-work\<job>
+#   powershell -ExecutionPolicy Bypass -File run-sandbox-job.ps1 -Work <work folder>\<job>
 #
 # <Work> holds install.wsb and in\ (the zips, their .sha256 files, the .cer and
 # sandbox-test.ps1). The guest writes to <Work>\out. When this script ends it writes
