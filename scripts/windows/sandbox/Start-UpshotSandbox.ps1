@@ -1,5 +1,5 @@
 # The test machine, the host side of a watched Sandbox run. Started by Run-Upshot-Sandbox.cmd, which
-# has just fetched this file, the .wsb templates and kit\sandbox-test.ps1 from Drive.
+# has just fetched this file and the .wsb templates from Drive; this file fetches the rest.
 #
 #   1. Checks Windows Sandbox, and that no other sandbox is open.
 #   2. Pauses B's test runner for the length of the run (and turns it back on at the end).
@@ -136,15 +136,32 @@ try {
 
     # 3 ---------------------------------------------------------------------------------
     Title 'Test kit'
-    $in = Join-Path $Kit 'in'
-    New-Item -ItemType Directory -Force -Path $in | Out-Null
-    # The sandbox can write in kit\: never follow a junction it may have left there.
-    foreach ($folder in $Kit, $in, (Join-Path $Kit 'out')) {
-        if ((Test-Path -LiteralPath $folder) -and ((Get-Item -LiteralPath $folder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw "$folder is a link, not a folder: delete it and run again"
+    # The sandbox can write anywhere in kit\: before anything is written there, refuse any
+    # link it may have left (a junction or a symbolic link, to a folder or a file), so no
+    # write below can land elsewhere on this machine. Checked folder by folder, before each
+    # is created or written into, and never by following one.
+    function Assert-NoLink([string]$folder) {
+        if (-not (Test-Path -LiteralPath $folder)) { return }
+        $items = @(Get-Item -LiteralPath $folder -Force) + @(Get-ChildItem -LiteralPath $folder -Force)
+        foreach ($item in $items) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "$($item.FullName) is a link: delete it and run again"
+            }
         }
     }
+    $in = Join-Path $Kit 'in'
+    Assert-NoLink $Kit
+    New-Item -ItemType Directory -Force -Path $Kit | Out-Null
+    Assert-NoLink $in
+    New-Item -ItemType Directory -Force -Path $in | Out-Null
+    Assert-NoLink (Join-Path $Kit 'out')
+    $kitWsl = "$(& wsl.exe -e wslpath -a $Kit)".Trim()
     $inWsl = "$(& wsl.exe -e wslpath -a $in)".Trim()
+    if (-not $kitWsl -or -not $inWsl) { throw 'wslpath gave no path for the kit' }
+    # The script the sandbox runs, fetched here (not by the .cmd) so it is checked first.
+    if ((WslRun @('python3', "$Agent/drive.py", 'get', "$DriveFolder/sandbox-test.ps1", "$kitWsl/sandbox-test.ps1")) -ne 0) {
+        throw 'could not fetch sandbox-test.ps1 from Drive'
+    }
     $listing = & wsl.exe -e python3 "$Agent/drive.py" ls "$DriveFolder/in"
     $zipName = ($listing | Select-String -Pattern 'Upshot-\S+-installer\.zip$' | Select-Object -First 1).Matches.Value
     if (-not $zipName) { throw "no Upshot-*-installer.zip in Drive $DriveFolder/in" }

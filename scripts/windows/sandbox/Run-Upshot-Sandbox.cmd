@@ -22,17 +22,17 @@ for /f "usebackq eol=# tokens=1,* delims==" %%A in ("!HERE!\.env") do (
 )
 if "!UPSHOT_SANDBOX_DRIVE_FOLDER!"=="" goto :noenv
 if "!UPSHOT_AGENT_DIR!"=="" goto :noenv
-if not exist "!HERE!\kit" mkdir "!HERE!\kit"
+set "HEREWSL="
 for /f "usebackq delims=" %%W in (`wsl.exe -e wslpath -a "!HERE!"`) do set "HEREWSL=%%W"
+if "!HEREWSL!"=="" goto :fetchfailed
 echo.
 echo   Fetching the latest test scripts from Google Drive...
-rem The launcher's own files here; the one the sandbox runs into kit\.
+rem The launcher's own files, here. Start-UpshotSandbox.ps1 fetches what goes into kit\, after
+rem checking that the sandbox has left no link there.
 for %%F in (Start-UpshotSandbox.ps1 show.wsb watch.wsb) do (
   wsl.exe -e python3 "!UPSHOT_AGENT_DIR!/drive.py" get "!UPSHOT_SANDBOX_DRIVE_FOLDER!/%%F" "!HEREWSL!/%%F" || goto :fetchfailed
   echo     %%F
 )
-wsl.exe -e python3 "!UPSHOT_AGENT_DIR!/drive.py" get "!UPSHOT_SANDBOX_DRIVE_FOLDER!/sandbox-test.ps1" "!HEREWSL!/kit/sandbox-test.ps1" || goto :fetchfailed
-echo     kit\sandbox-test.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "!HERE!\Start-UpshotSandbox.ps1" -Wsb !MODE!
 set "CODE=!errorlevel!"
 if not "!CODE!"=="0" pause
