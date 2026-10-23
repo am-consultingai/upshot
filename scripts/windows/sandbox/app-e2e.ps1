@@ -15,7 +15,8 @@
 # Everything lands in <Out>: steps.log, steps.json, transcripts, notes, summaries, app.log.
 # Keep this file ASCII.
 param(
-    [string]$Exe = '<build>\dist\upshot\upshot.exe',
+    # The build of this checkout (packaging\build.ps1 writes it to dist\upshot).
+    [string]$Exe = (Join-Path $PSScriptRoot '..\..\..\dist\upshot\upshot.exe'),
     [Parameter(Mandatory = $true)] [string]$ModelPath,
     [Parameter(Mandatory = $true)] [string]$Out,
     # name=audio|reference, several separated by ';'; the reference may be left out.
@@ -24,6 +25,8 @@ param(
     [double]$MinRecall = 0.6
 )
 $ErrorActionPreference = 'Stop'
+# Without ..\ in it: the leftover-process check compares it with each process's own path.
+$Exe = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Exe)
 # powershell -File hands a list over as one string: separate clips with ';' as well.
 $Clips = @($Clips | ForEach-Object { $_ -split ';' } | Where-Object { $_ })
 . (Join-Path $PSScriptRoot 'upshot-api.ps1')

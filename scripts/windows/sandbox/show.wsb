@@ -1,15 +1,16 @@
 <Configuration>
-  <!-- Double-click on the test machine to watch an Upshot install run by itself, on screen, with nothing to click.
-       <kit folder> must hold: this file, sandbox-test.ps1, and an in\ folder
+  <!-- On the test machine: watch an Upshot install run by itself, on screen, with nothing to click.
+       A template: Start-UpshotSandbox.ps1 -Wsb <show|watch> (or Run-Upshot-Sandbox.cmd watch) writes the
+       kit\ folder beside it for __KIT__ and opens the copy. kit\ holds sandbox-test.ps1 and an in\ folder
        with Upshot-<ver>-installer.zip, its .sha256 and upshot-test-signing.cer.
-       Results land in <kit folder>\out on the host. -->
+       Results land in the kit's out\ folder on the host. -->
   <Networking>Enable</Networking>
   <VGpu>Disable</VGpu>
   <AudioInput>Disable</AudioInput>
   <MemoryInMB>6144</MemoryInMB>
   <MappedFolders>
     <MappedFolder>
-      <HostFolder><kit folder></HostFolder>
+      <HostFolder>__KIT__</HostFolder>
       <SandboxFolder>C:\watch</SandboxFolder>
       <ReadOnly>false</ReadOnly>
     </MappedFolder>

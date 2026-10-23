@@ -86,6 +86,21 @@ def _no_wall_clock_home(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytes
 
 
 @pytest.fixture(autouse=True)
+def _no_real_dotenv(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
+    """Nor read this machine's .env (scripts/local_env.py): it names where real secrets are,
+    and a failing assertion would print them. A test that wants one writes its own."""
+    import sys
+
+    scripts = str(Path(__file__).resolve().parents[1] / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import local_env
+
+    monkeypatch.setattr(local_env, "ENV_FILE", tmp_path_factory.mktemp("dotenv") / ".env")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_model_catalog_between_tests():  # type: ignore[no-untyped-def]
     """The app keeps one model catalog for the process (app.llm.model_choice); a test
     that builds services sets it, and the next test must not inherit it."""
