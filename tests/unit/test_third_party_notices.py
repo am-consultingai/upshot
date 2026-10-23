@@ -6,10 +6,13 @@ The generator is ``scripts/third_party_notices.py``; ``packaging/build.ps1`` run
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -395,3 +398,33 @@ def test_a_freeze_without_the_notices_fails(tmp_path: Path) -> None:
 def test_microsofts_openmp_runtime_in_the_freeze_is_the_microsoft_runtime_entry() -> None:
     """Upshot's ctranslate2 needs vcomp140.dll; PyInstaller puts it at the top of _internal."""
     assert notices.unowned("vcomp140.dll") == "Microsoft Visual C++ and Universal C runtime"
+
+
+def test_the_onnxruntime_in_the_lock_is_one_whose_eigen_was_checked() -> None:
+    """The Eigen entry names the commit and patches onnxruntime builds with, checked at these
+    versions only: a new onnxruntime must be checked again (its cmake/deps.txt and
+    cmake/patches/eigen) before it is added there."""
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    versions = {p["version"] for p in lock["package"] if p["name"] == "onnxruntime"}
+    assert versions and versions <= set(notices.ONNXRUNTIME_EIGEN_VERSIONS)
+
+
+def test_onnxruntime_1_27_1_s_notices_are_all_in_the_onnxruntime_package_s() -> None:
+    """The entry for the onnxruntime.dll beside sherpa-onnx's module does not repeat its
+    third-party notices because each is in the onnxruntime package's, which the notices
+    reproduce. Each section, whitespace made one space, by SHA-256."""
+    from importlib import metadata
+
+    dist = metadata.distribution("onnxruntime")
+    (file,) = [f for f in dist.files or () if str(f).endswith("ThirdPartyNotices.txt")]
+    text = Path(str(dist.locate_file(file))).read_text(encoding="utf-8")
+    text = text.split("THIRD PARTY SOFTWARE NOTICES AND INFORMATION", 1)[-1]  # the title
+    have = {
+        hashlib.sha256(" ".join(part.split()).encode()).hexdigest()
+        for part in re.split(r"\n_{5,}\n", text)
+    }
+    fixture = ROOT / "tests" / "fixtures" / "onnxruntime-1.27.1-notices.sha256"
+    want = [line.split()[0] for line in fixture.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")]  # fmt: skip
+    assert len(want) == 68
+    assert [w for w in want if w not in have] == []
