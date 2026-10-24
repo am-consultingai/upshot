@@ -623,8 +623,8 @@ UNOWNED: tuple[tuple[str, tuple[str, ...]], ...] = (
                 "libffi-*.dll", "sqlite3.dll", "*.pyd")),
     # No ucrtbase.dll or api-ms-win-*: Windows 10 carries the Universal C runtime, and a
     # freeze with a copy fails here as well as in check_dist.py (packaging/msvc_runtime.py).
-    (MSVC, ("vcruntime140*.dll", "msvcp140*.dll", "concrt140.dll", "vcomp140.dll",
-     "winrt/msvcp140.dll")),
+    (MSVC, ("vcruntime140*.dll", "msvcp140*.dll", "concrt140.dll", "vccorlib140.dll",
+     "vcomp140.dll", "winrt/msvcp140.dll")),
     (FFMPEG, ("ffmpeg.exe",)),
     ("Upshot", ("app/*", "frontend/*", "THIRD-PARTY-NOTICES.*")),
 )  # fmt: skip

@@ -163,12 +163,24 @@ Write-Host "== Microsoft Visual C++ runtime =="
 # from the Visual Studio package that carries them on Microsoft's download server, pinned in
 # packaging\msvc_runtime.py with the hash of every file. The specs take the runtime from
 # here only, and refuse a file whose hash is not the pinned one (licence review H1).
-$msvc = (uv run python -c "import sys; sys.path.insert(0, 'packaging'); import msvc_runtime as m; print(m.PACKAGE); print(m.URL); print(m.SHA256)") -split "`r?`n"
+# Line 1-3: the package, its URL and its SHA-256; then "name sha256" for every DLL taken.
+$msvc = @(uv run python -c "import sys; sys.path.insert(0, 'packaging'); import msvc_runtime as m; print(m.PACKAGE); print(m.URL); print(m.SHA256); [print(n, h) for n, h in m.FILES.items()]")
 Assert-Exit "reading packaging\msvc_runtime.py"
 $msvcPackage, $msvcUrl, $msvcSha = $msvc[0].Trim(), $msvc[1].Trim(), $msvc[2].Trim()
+$msvcFiles = @{}
+foreach ($line in $msvc[3..($msvc.Count - 1)]) { $name, $hash = $line.Trim() -split "\s+", 2; $msvcFiles[$name] = $hash }
 $msvcDir = Join-Path $vendor "msvc-redist"
 $msvcMarker = Join-Path $msvcDir "SOURCE.txt"
-$msvcCached = (Test-Path $msvcMarker) -and ("$(Get-Content $msvcMarker -Raw)".Trim() -eq "$msvcPackage $msvcSha")
+# Every pinned file present and unchanged, as for ffmpeg: a cache with a file deleted or
+# altered is downloaded again, not trusted for its marker.
+function Test-MsvcRedist {
+    foreach ($name in $msvcFiles.Keys) {
+        $file = Join-Path $msvcDir $name
+        if (-not (Test-Path $file) -or (Get-FileHash $file -Algorithm SHA256).Hash.ToLower() -ne $msvcFiles[$name]) { return $false }
+    }
+    return $true
+}
+$msvcCached = (Test-Path $msvcMarker) -and ("$(Get-Content $msvcMarker -Raw)".Trim() -eq "$msvcPackage $msvcSha") -and (Test-MsvcRedist)
 if (-not $msvcCached) {
     if (Test-Path $msvcDir) { Remove-Item -Recurse -Force $msvcDir }
     New-Item -ItemType Directory -Force -Path $msvcDir | Out-Null
@@ -183,12 +195,14 @@ if (-not $msvcCached) {
     try {
         foreach ($entry in $zip.Entries) {
             $name = [Uri]::UnescapeDataString($entry.FullName)
-            if ($name -match '^Contents/VC/Redist/MSVC/[^/]+/x64/Microsoft\.VC\d+\.(CRT|OpenMP)/([^/]+\.dll)$') {
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $msvcDir $Matches[2]), $true)
+            # A pinned name only, so nothing is written outside the folder.
+            if ($name -match '^Contents/VC/Redist/MSVC/[^/]+/x64/Microsoft\.VC\d+\.(CRT|OpenMP)/([^/\\]+\.dll)$' -and $msvcFiles.ContainsKey($Matches[2].ToLower())) {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $msvcDir $Matches[2].ToLower()), $true)
             }
         }
     } finally { $zip.Dispose() }
     Remove-Item -Force $vsix
+    if (-not (Test-MsvcRedist)) { throw "$msvcPackage does not hold the files pinned in packaging\msvc_runtime.py" }
     [System.IO.File]::WriteAllText($msvcMarker, "$msvcPackage $msvcSha")
 }
 Write-Host "Visual C++ runtime: $msvcPackage"
