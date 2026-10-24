@@ -21,6 +21,14 @@ built with Microsoft's OpenMP and oneDNN, because PyPI's carries Intel's OpenMP 
 (``libiomp5md.dll``, under Intel's developer-tools EULA) and oneMKL. A build that picked up
 PyPI's wheel again (another Python, a lost source pin) has ``libiomp5md.dll`` and is refused;
 ours needs Microsoft's ``vcomp140.dll`` beside it, which must then be in the freeze.
+
+And Microsoft's runtime (licence review H1): every Visual C++ runtime DLL at the top of a
+freeze's ``_internal`` must be Visual Studio's redistributable copy pinned in
+``packaging/msvc_runtime.py``, not whatever the build machine had on its PATH, and the
+Universal C runtime (``ucrtbase.dll``, ``api-ms-win-*``) must not be there at all: Windows 10,
+which the installer requires, carries it, so it is refused anywhere. Copies of the Visual C++
+runtime a package keeps in its own folder (numpy's, winrt's) are its own redistribution and
+are not checked.
 """
 
 from __future__ import annotations
@@ -29,6 +37,9 @@ import fnmatch
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
+import msvc_runtime
 
 #: Intel's runtime libraries, by lower-case file name: OpenMP, and oneMKL's DLLs.
 INTEL_NAMES: tuple[str, ...] = ("libiomp5*", "libiompstubs5*", "mkl_*.dll")
@@ -76,13 +87,29 @@ GPL_CODE = re.compile(
 BINARY_SUFFIXES = {".dll", ".pyd", ".exe"}
 
 
-def problems(root: Path) -> list[str]:
+def problems(root: Path, runtime: dict[str, str] | None = None) -> list[str]:
+    """What the freeze in ``root`` must not ship. ``runtime``: the Visual C++ runtime's
+    files by name and SHA-256 (``msvc_runtime.FILES``, which tests replace)."""
+    runtime = msvc_runtime.FILES if runtime is None else runtime
     found = []
     names = set()
     for path in sorted(root.rglob("*")):
         name = path.name.lower()
         names.add(name)
-        if any(fnmatch.fnmatch(name, pattern) for pattern in FORBIDDEN_NAMES):
+        # The top of a freeze's _internal, or beside an executable: not a package's own folder.
+        ours = path.parent.name.lower() == "_internal" or path.parent in (root, root / "mcp")
+        if path.is_file() and msvc_runtime.UCRT_NAME.match(name):
+            found.append(
+                f"{path.relative_to(root).as_posix()}: the Universal C runtime, which"
+                " Windows 10 carries; the freeze must not"
+            )
+        elif path.is_file() and ours and msvc_runtime.RUNTIME_NAME.match(name):
+            if runtime.get(name) != msvc_runtime.sha256(path):
+                found.append(
+                    f"{path.relative_to(root).as_posix()}: not Visual Studio's"
+                    f" redistributable copy ({msvc_runtime.PACKAGE})"
+                )
+        elif any(fnmatch.fnmatch(name, pattern) for pattern in FORBIDDEN_NAMES):
             found.append(f"{path.relative_to(root).as_posix()}: a GPL component")
         elif any(fnmatch.fnmatch(name, pattern) for pattern in INTEL_NAMES):
             found.append(f"{path.relative_to(root).as_posix()}: an Intel runtime library")
@@ -138,7 +165,10 @@ def main(argv: list[str] | None = None) -> int:
     for line in found:
         print(f"[FAIL] {line}")
     if not found:
-        print(f"[ok  ] {args[0]}: no GPL or Intel component")
+        print(
+            f"[ok  ] {args[0]}: no GPL or Intel component; Microsoft's runtime is"
+            f" {msvc_runtime.PACKAGE}'s"
+        )
     return 1 if found else 0
 
 

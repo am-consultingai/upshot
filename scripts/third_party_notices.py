@@ -49,6 +49,9 @@ from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "packaging"))
+import msvc_runtime  # noqa: E402
+
 LICENCES = ROOT / "packaging" / "licenses"
 LICENCE_FILE = re.compile(
     r"(^|/)(LICEN[CS]E|COPYING|NOTICE|AUTHORS|ThirdPartyNotices)[^/]*$|(^|/)licenses?/[^/]+$",
@@ -331,6 +334,7 @@ def ffmpeg_licence(version_text: str) -> str:
 
 #: The notices entry for ffmpeg.exe (packaging/ffmpeg/build.sh, the ffmpeg-* releases).
 FFMPEG = "FFmpeg (Upshot's audio-only build)"
+MSVC = "Microsoft Visual C++ runtime"
 #: Its licence texts, from the release, in vendor/ beside it (build.ps1).
 FFMPEG_TEXTS = ("LICENSE-FFmpeg.txt", "LICENSE-zlib.txt", "LICENSE-mingw-w64-runtime.txt")
 
@@ -538,11 +542,17 @@ def extra_entries() -> list[Entry]:
               "Downloaded by the installer from PyPI on machines with a suitable NVIDIA GPU,"
               " for GPU transcription; kept beside the libraries with this licence.",
               [nvidia.read_text(encoding="utf-8")] if nvidia.is_file() else [], kind="other"),
-        Entry("Microsoft Visual C++ and Universal C runtime", "", "LicenseRef-Microsoft-Redist",
-              "vcruntime140, msvcp140, vcomp140 (OpenMP, for ctranslate2), ucrtbase and"
-              " api-ms-win-* libraries, redistributed under"
-              " the Visual Studio redistribution terms.", ["(Microsoft redistributable files;"
-              " no notice is required.)"], kind="other"),
+        Entry(MSVC, msvc_runtime.VERSION, "LicenseRef-Microsoft-Redist",
+              "vcruntime140, msvcp140 and vcomp140 (OpenMP, for ctranslate2): Visual Studio's"
+              " redistributable files (Microsoft.VC145.CRT and Microsoft.VC145.OpenMP),"
+              " redistributed by AM Consulting under the Distributable Code terms of its"
+              " Visual Studio licence. numpy and winrt carry copies of their own.",
+              ["Microsoft's redistributable files are licensed, not sold. They come to you under"
+               " Upshot's Terms, section 16. You may use them only as part of Upshot. You may"
+               " not reverse engineer, decompile or disassemble them, except where applicable"
+               " law permits it despite this limitation, or distribute them separately from"
+               " Upshot. Microsoft gives no warranty for them."],
+              kind="other"),
     ]  # fmt: skip
 
 
@@ -611,8 +621,10 @@ def missing_texts(items: list[Entry]) -> list[str]:
 UNOWNED: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Python", ("python3*.dll", "base_library.zip", "libcrypto-*.dll", "libssl-*.dll",
                 "libffi-*.dll", "sqlite3.dll", "*.pyd")),
-    ("Microsoft Visual C++ and Universal C runtime", ("vcruntime140*.dll", "msvcp140*.dll",
-     "vcomp140.dll", "ucrtbase.dll", "api-ms-win-*.dll", "winrt/msvcp140.dll")),
+    # No ucrtbase.dll or api-ms-win-*: Windows 10 carries the Universal C runtime, and a
+    # freeze with a copy fails here as well as in check_dist.py (packaging/msvc_runtime.py).
+    (MSVC, ("vcruntime140*.dll", "msvcp140*.dll", "concrt140.dll", "vccorlib140.dll",
+     "vcomp140.dll", "winrt/msvcp140.dll")),
     (FFMPEG, ("ffmpeg.exe",)),
     ("Upshot", ("app/*", "frontend/*", "THIRD-PARTY-NOTICES.*")),
 )  # fmt: skip

@@ -7,6 +7,7 @@ as ``faster_whisper.decode_audio``, and the transcripts were identical, hash for
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -175,7 +176,8 @@ def test_ctranslate2_needs_microsofts_openmp_runtime_in_the_freeze(tmp_path: Pat
         "ctranslate2.dll needs Microsoft's vcomp140.dll, which the freeze lacks"
     ]
     (tmp_path / "_internal" / "vcomp140.dll").write_bytes(b"MZ")
-    assert check_dist.problems(tmp_path) == []
+    runtime = {"vcomp140.dll": hashlib.sha256(b"MZ").hexdigest()}  # stands in for Microsoft's
+    assert check_dist.problems(tmp_path, runtime) == []
 
 
 def test_an_ffmpeg_built_with_enable_gpl_fails_whatever_its_name(tmp_path: Path) -> None:

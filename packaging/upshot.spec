@@ -107,23 +107,21 @@ a = Analysis(
 # Nothing calls it, and NVIDIA licenses it only for machines with an NVIDIA GPU; GPU
 # transcription was identical and as fast without it on a GTX 1080 and an MX450.
 a.binaries = [entry for entry in a.binaries if not Path(entry[0]).name.lower().startswith("cudnn")]
-# Upshot's own ctranslate2 (licence epic S12) uses Microsoft's OpenMP runtime, vcomp140.dll,
-# from the Visual C++ redistributable. PyInstaller takes a DLL in System32 for part of Windows
-# and may leave it out, but a clean machine need not have it: it is added from the build
-# machine's System32 if missing, and scripts/check_dist.py refuses a freeze without it.
-if not any(Path(entry[0]).name.lower() == "vcomp140.dll" for entry in a.binaries):
-    import os
-
-    vcomp = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "vcomp140.dll"
-    if vcomp.is_file():
-        a.binaries.append(("vcomp140.dll", str(vcomp), "BINARY"))
-pyz = PYZ(a.pure)
-
 
 import sys
 
 sys.path.insert(0, SPECPATH)
+from msvc_runtime import use_redist  # noqa: E402
 from version_info import version_resource  # noqa: E402
+
+# Microsoft's Visual C++ runtime from Visual Studio's redistributable files, which build.ps1
+# puts in vendor\msvc-redist, never from the build machine's PATH; no Universal C runtime,
+# which Windows 10 carries (packaging/msvc_runtime.py, licence review H1). Upshot's own
+# ctranslate2 (licence epic S12) needs Microsoft's OpenMP runtime, vcomp140.dll, which
+# PyInstaller may leave out as part of Windows: openmp adds it, and scripts/check_dist.py
+# refuses a freeze without it or with any other copy.
+a.binaries = use_redist(a.binaries, ROOT / "vendor" / "msvc-redist", openmp=True)
+pyz = PYZ(a.pure)
 
 
 exe = EXE(

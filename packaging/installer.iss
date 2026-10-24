@@ -41,6 +41,10 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Windows 10 or later: Windows carries the Universal C Runtime itself there, so the app ships
+; no ucrtbase.dll or api-ms-win-* files (Microsoft's, licence review H1). Python 3.13 stops at
+; 8.1, out of Microsoft's support since 2023 and never tested.
+MinVersion=10.0
 OutputDir=..\dist
 OutputBaseFilename=Upshot-{#AppVersion}-Setup
 Compression=lzma2

@@ -335,7 +335,7 @@ def fake_dist(tmp_path: Path, listed: list[str], files: list[str]) -> Path:
     return dist
 
 
-EXTRAS = ["Python", "Microsoft Visual C++ and Universal C runtime",
+EXTRAS = ["Python", "Microsoft Visual C++ runtime",
           notices.FFMPEG]  # fmt: skip
 
 
@@ -397,7 +397,7 @@ def test_a_freeze_without_the_notices_fails(tmp_path: Path) -> None:
 
 def test_microsofts_openmp_runtime_in_the_freeze_is_the_microsoft_runtime_entry() -> None:
     """Upshot's ctranslate2 needs vcomp140.dll; PyInstaller puts it at the top of _internal."""
-    assert notices.unowned("vcomp140.dll") == "Microsoft Visual C++ and Universal C runtime"
+    assert notices.unowned("vcomp140.dll") == "Microsoft Visual C++ runtime"
 
 
 def test_the_onnxruntime_in_the_lock_is_one_whose_eigen_was_checked() -> None:
