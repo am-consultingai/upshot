@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH).parent
 sys.path.insert(0, SPECPATH)
+from msvc_runtime import use_redist  # noqa: E402
 from version_info import version_resource  # noqa: E402
 
 CLIENT = ROOT / "clients" / "python"
@@ -33,6 +34,9 @@ a = Analysis(
     excludes=["app", "tkinter", "unittest", "pydoc", "doctest", "lib2to3", "sqlite3", "xmlrpc"],
     noarchive=False,
 )
+# The Visual C++ runtime from Visual Studio's redistributable files, as for the app
+# (packaging/msvc_runtime.py); no Universal C runtime.
+a.binaries = use_redist(a.binaries, ROOT / "vendor" / "msvc-redist")
 pyz = PYZ(a.pure)
 
 exe = EXE(

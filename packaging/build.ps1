@@ -158,6 +158,41 @@ if (-not $ffmpegConfig) { throw "vendor\ffmpeg.exe does not run" }
 if ($ffmpegConfig -match "--enable-(gpl|nonfree)") { throw "vendor\ffmpeg.exe is a GPL or non-free build; delete it and build again" }
 Write-Host "ffmpeg: $ffmpegRelease ($((& $ffmpeg -hide_banner -version | Select-Object -First 1)))"
 
+Write-Host "== Microsoft Visual C++ runtime =="
+# Visual Studio's redistributable runtime (the x64 CRT and OpenMP folders of VC\Redist),
+# from the Visual Studio package that carries them on Microsoft's download server, pinned in
+# packaging\msvc_runtime.py with the hash of every file. The specs take the runtime from
+# here only, and refuse a file whose hash is not the pinned one (licence review H1).
+$msvc = (uv run python -c "import sys; sys.path.insert(0, 'packaging'); import msvc_runtime as m; print(m.PACKAGE); print(m.URL); print(m.SHA256)") -split "`r?`n"
+Assert-Exit "reading packaging\msvc_runtime.py"
+$msvcPackage, $msvcUrl, $msvcSha = $msvc[0].Trim(), $msvc[1].Trim(), $msvc[2].Trim()
+$msvcDir = Join-Path $vendor "msvc-redist"
+$msvcMarker = Join-Path $msvcDir "SOURCE.txt"
+$msvcCached = (Test-Path $msvcMarker) -and ("$(Get-Content $msvcMarker -Raw)".Trim() -eq "$msvcPackage $msvcSha")
+if (-not $msvcCached) {
+    if (Test-Path $msvcDir) { Remove-Item -Recurse -Force $msvcDir }
+    New-Item -ItemType Directory -Force -Path $msvcDir | Out-Null
+    $vsix = Join-Path $vendor "$msvcPackage.vsix"
+    Invoke-WebRequest -UseBasicParsing -Uri $msvcUrl -OutFile $vsix
+    if ((Get-FileHash $vsix -Algorithm SHA256).Hash.ToLower() -ne $msvcSha) {
+        Remove-Item -Force $vsix
+        throw "$msvcPackage does not match the SHA-256 pinned in packaging\msvc_runtime.py"
+    }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($vsix)
+    try {
+        foreach ($entry in $zip.Entries) {
+            $name = [Uri]::UnescapeDataString($entry.FullName)
+            if ($name -match '^Contents/VC/Redist/MSVC/[^/]+/x64/Microsoft\.VC\d+\.(CRT|OpenMP)/([^/]+\.dll)$') {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $msvcDir $Matches[2]), $true)
+            }
+        }
+    } finally { $zip.Dispose() }
+    Remove-Item -Force $vsix
+    [System.IO.File]::WriteAllText($msvcMarker, "$msvcPackage $msvcSha")
+}
+Write-Host "Visual C++ runtime: $msvcPackage"
+
 Write-Host "== frontend =="
 Push-Location (Join-Path $root "frontend")
 npm ci

@@ -34,10 +34,10 @@ why = "The exception allows the bootloader to start a program under any licence.
 approved = "D84 (licence epic S4)"
 
 [[exception]]
-name = "Microsoft Visual C++ and Universal C runtime"
+name = "Microsoft Visual C++ runtime"
 licence = "LicenseRef-Microsoft-Redist"
-why = "Microsoft's redistributable runtime, under the Visual Studio redistribution terms."
-approved = "licence epic S4"
+why = "Visual Studio's redistributable files, under the Distributable Code terms of AM Consulting's Visual Studio Community licence (packaging/msvc_runtime.py)."
+approved = "licence epic S4; licence review H1 (2026-10-24, product owner)"
 
 [[exception]]
 name = "NVIDIA cuBLAS (nvidia-cublas-cu12)"
