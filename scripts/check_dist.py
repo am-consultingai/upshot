@@ -26,8 +26,9 @@ And Microsoft's runtime (licence review H1): every Visual C++ runtime DLL at the
 freeze's ``_internal`` must be Visual Studio's redistributable copy pinned in
 ``packaging/msvc_runtime.py``, not whatever the build machine had on its PATH, and the
 Universal C runtime (``ucrtbase.dll``, ``api-ms-win-*``) must not be there at all: Windows 10,
-which the installer requires, carries it. Copies a package keeps in its own folder (numpy's,
-winrt's) are its own redistribution and are not checked.
+which the installer requires, carries it, so it is refused anywhere. Copies of the Visual C++
+runtime a package keeps in its own folder (numpy's, winrt's) are its own redistribution and
+are not checked.
 """
 
 from __future__ import annotations
@@ -95,7 +96,8 @@ def problems(root: Path, runtime: dict[str, str] | None = None) -> list[str]:
     for path in sorted(root.rglob("*")):
         name = path.name.lower()
         names.add(name)
-        ours = path.parent.name.lower() == "_internal"  # not a package's own folder
+        # The top of a freeze's _internal, or beside an executable: not a package's own folder.
+        ours = path.parent.name.lower() == "_internal" or path.parent in (root, root / "mcp")
         if path.is_file() and msvc_runtime.UCRT_NAME.match(name):
             found.append(
                 f"{path.relative_to(root).as_posix()}: the Universal C runtime, which"

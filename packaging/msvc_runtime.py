@@ -17,8 +17,9 @@ the same JDK, which Upshot had no right to redistribute (licence review 2026-10-
 The Universal C runtime is not shipped at all: Windows 10 and later carry it themselves,
 and the installer requires Windows 10 (``MinVersion`` in ``installer.iss``).
 
-Copies a package brings inside its own folder (numpy's ``numpy.libs``, winrt's) are that
-package's redistribution and are left as they are: only the top of ``_internal`` is ours.
+Copies of the Visual C++ runtime a package brings inside its own folder (numpy's
+``numpy.libs``, winrt's) are that package's redistribution and are left as they are: only the
+top of ``_internal`` is ours. A Universal C runtime file is refused anywhere.
 """
 
 from __future__ import annotations
@@ -90,7 +91,7 @@ def _redist_file(redist: Path, name: str) -> Path:
         raise SystemExit(f"{name}: not in {PACKAGE} (packaging/msvc_runtime.py)")
     path = redist / name
     if not path.is_file():
-        raise SystemExit(f"{path} is missing; run packaging/build.ps1")
+        raise SystemExit(f"{path} is missing; delete vendor/msvc-redist and build again")
     if sha256(path) != FILES[name]:
         raise SystemExit(
             f"{path} is not {PACKAGE}'s copy; delete vendor/msvc-redist and build again"

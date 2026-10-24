@@ -58,8 +58,9 @@ def test_the_universal_c_runtime_is_left_out(redist: Path) -> None:
 def test_a_packages_own_copy_is_left_as_it_is(redist: Path) -> None:
     """numpy and winrt carry their own msvcp140 in their folders: their redistribution."""
     binaries = [
-        (r"numpy.libs\msvcp140-a4c2.dll", "n", "BINARY"),
-        (r"winrt\MSVCP140.dll", "w", "BINARY"),
+        # Forward slashes, which every platform reads as a folder (CI runs on Linux).
+        ("numpy.libs/msvcp140-a4c2.dll", "n", "BINARY"),
+        ("winrt/MSVCP140.dll", "w", "BINARY"),
     ]
     assert msvc_runtime.use_redist(binaries, redist) == binaries
 
@@ -130,6 +131,15 @@ def test_the_universal_c_runtime_fails(tmp_path: Path, name: str) -> None:
     ]
 
 
+def test_a_copy_beside_an_executable_is_checked(tmp_path: Path) -> None:
+    """PyInstaller puts the runtime in _internal today; one beside upshot.exe is still ours."""
+    dist = _freeze(tmp_path, {"vcruntime140.dll": b"jdk", "mcp/msvcp140.dll": b"jdk"})
+    assert check_dist.problems(dist, {}) == [
+        f"mcp/msvcp140.dll: not Visual Studio's redistributable copy ({msvc_runtime.PACKAGE})",
+        f"vcruntime140.dll: not Visual Studio's redistributable copy ({msvc_runtime.PACKAGE})",
+    ]
+
+
 def test_a_packages_own_copy_is_not_checked(tmp_path: Path) -> None:
     dist = _freeze(tmp_path, {"_internal/numpy.libs/msvcp140-a4c2.dll": b"n",
                               "_internal/winrt/MSVCP140.dll": b"w"})  # fmt: skip
@@ -137,7 +147,8 @@ def test_a_packages_own_copy_is_not_checked(tmp_path: Path) -> None:
 
 
 def test_the_notices_have_no_entry_for_the_universal_c_runtime() -> None:
-    assert notices.unowned("vcomp140.dll") == notices.MSVC
+    for name in msvc_runtime.FILES:
+        assert notices.unowned(name) == notices.MSVC, name
     assert notices.unowned("ucrtbase.dll") is None
     assert notices.unowned("api-ms-win-crt-heap-l1-1-0.dll") is None
 
