@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LANGUAGES, useI18n, type Locale, type MessageKey } from "../i18n";
+import { OFFERED_LANGUAGES, useI18n, type Locale, type MessageKey } from "../i18n";
 import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
 import FinishStep, { hasSummaryName, summaryName } from "./FinishStep";
@@ -244,7 +244,7 @@ export default function SetupFlow({
           }}
           className="h-8 rounded-full bg-surface-2 px-3 text-xs text-primary"
         >
-          {LANGUAGES.map(({ code, name }) => (
+          {OFFERED_LANGUAGES.map(({ code, name }) => (
             <option key={code} value={code} lang={code}>
               {name}
             </option>

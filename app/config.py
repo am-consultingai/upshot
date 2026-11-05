@@ -395,6 +395,11 @@ LLM_PROVIDERS: tuple[str, ...] = (
     "fake",
 )
 
+#: The interface languages users are offered for now. The others in _ENUMS keep their
+#: catalogues and stay valid values, but no picker or installer lists them and a first
+#: install never picks one. Mirrors OFFERED_LANGUAGES in frontend/src/i18n.ts.
+OFFERED_UI_LANGUAGES: tuple[str, ...] = ("en", "he")
+
 _ENUMS: dict[str, tuple[str, ...]] = {
     "profile": ("auto", "gpu-live", "cpu-deferred"),
     "job_policy": ("auto", "asap", "after_meeting", "when_idle", "scheduled"),

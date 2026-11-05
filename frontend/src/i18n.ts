@@ -27,6 +27,15 @@ export function isLocale(value: unknown): value is Locale {
   return LANGUAGES.some((language) => language.code === value);
 }
 
+/**
+ * The languages users are offered for now: English and Hebrew. The others keep their
+ * catalogues and work as before when set, but no picker lists them. Mirrors
+ * OFFERED_UI_LANGUAGES in app/config.py.
+ */
+export const OFFERED_LANGUAGES: readonly { code: Locale; name: string }[] = LANGUAGES.filter(
+  ({ code }) => code === "en" || code === "he",
+);
+
 export function languageName(locale: Locale): string {
   return LANGUAGES.find((language) => language.code === locale)?.name ?? locale;
 }

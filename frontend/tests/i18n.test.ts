@@ -148,3 +148,11 @@ describe("logical CSS properties only", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe("offered languages", () => {
+  it("offers English and Hebrew only, while every catalogue stays", async () => {
+    const { OFFERED_LANGUAGES } = await import("../src/i18n");
+    expect(OFFERED_LANGUAGES.map(({ code }) => code)).toEqual(["en", "he"]);
+    expect(Object.keys(catalogues).sort()).toEqual(["de", "en", "es", "fr", "he"]);
+  });
+});
