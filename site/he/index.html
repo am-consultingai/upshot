@@ -97,7 +97,7 @@
       <div class="hero-text">
         <p class="eyebrow">סיכומי פגישות ל-Windows</p>
         <h1>אודיו השיחה נשאר על המחשב שלכם.</h1>
-        <p class="lede">Upshot מקליט את הפגישות שלכם והופך אותן לטקסט בעזרת AI שרץ על המחשב שלכם, בשפות רבות, כולל עברית. אף בוט לא מצטרף לשיחה, והאודיו לא יוצא מהמחשב. לסיכום, חברו את ה-AI שאתם כבר משלמים עליו, או השאירו הכול על המחשב שלכם.</p>
+        <p class="lede">Upshot מקליט את הפגישות שלכם והופך אותן לטקסט בעזרת AI שרץ על המחשב שלכם, בשפות רבות, כולל עברית. אף בוט לא מצטרף לשיחה, והאודיו לא יוצא מהמחשב. לסיכומים, חברו את ה-AI שאתם כבר משלמים עליו, או השאירו הכול על המחשב שלכם.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">להתחיל</a>
           <a class="btn btn-sec" href="#dial">לאן המידע שלכם מגיע</a>
@@ -132,12 +132,12 @@
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
       <h2>סיכומים מה-AI שאתם כבר משלמים עליו</h2>
-      <p>השתמשו במנוי Claude,‏ ChatGPT או Google AI שכבר יש לכם, במפתח API, או במודל על המחשב שלכם. רק טקסט נשלח אליו, כמו התמליל וההנחיות שלכם, ואף פעם לא האודיו.</p>
+      <p>השתמשו במנוי Claude,‏ ChatGPT או Google AI שכבר יש לכם, במפתח API, או במודל על המחשב שלכם. רק טקסט נשלח ל-AI, כמו התמליל וההנחיות שלכם, ואף פעם לא האודיו.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-disk"/></svg></span>
       <h2>אפליקציית ה-AI מתמללת, האודיו נשאר</h2>
-      <p>בקשו מ-Claude, מ-Codex או מאפליקציית AI אחרת במחשב לתמלל קובץ אודיו או וידאו. Upshot מתמלל אותו על המחשב שלכם דרך שרת ה-MCP שלו, ורק הטקסט חוזר לאפליקציית ה-AI. הקובץ לא מועלה לשום מקום.</p>
+      <p>בקשו מ-Claude, מ-Codex או מאפליקציית AI אחרת במחשב לתמלל קובץ אודיו או וידאו. Upshot מתמלל אותו על המחשב שלכם דרך שרת ה-MCP שלו, ומחזיר לאפליקציית ה-AI רק את הטקסט. Upshot לא מעלה את הקובץ לשום מקום.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-wave"/></svg></span>
@@ -225,13 +225,13 @@
   <section class="sec format" id="ai-app">
     <p class="eyebrow">לאפליקציית ה-AI שלכם</p>
     <h2>ה-AI קורא את הטקסט. האודיו נשאר כאן.</h2>
-    <p class="he-sub">חברו את Claude Desktop,‏ Claude Code,‏ Codex,‏ Cursor או אפליקציה אחרת שמדברת MCP. בקשו ממנה לתמלל הקלטה, ו-Upshot יעשה את העבודה על המחשב שלכם. אפליקציית ה-AI מקבלת את הטקסט, ואף פעם לא את האודיו.</p>
+    <p class="he-sub">חברו את Claude Desktop,‏ Claude Code,‏ Codex,‏ Cursor או אפליקציה אחרת שמדברת MCP. בקשו ממנה לתמלל הקלטה, ו-Upshot יעשה את העבודה על המחשב שלכם. Upshot מעביר לאפליקציית ה-AI את הטקסט, ואף פעם לא את האודיו. משם הטקסט עובר לספק ה-AI שלה, כמו כל מה שכותבים בצ׳אט.</p>
     <div class="fmt">
       <div class="fmt-prompt">
         <p class="fmt-label">מה מבקשים מאפליקציית ה-AI</p>
-<pre>תמלל את <b>interview.mp4</b> מתיקיית
-ההורדות, ואז כתוב את שלוש
-הנקודות העיקריות.</pre>
+<pre>תמלל את <b>interview.mp4</b>
+מתיקיית ההורדות, ואז כתוב
+את שלוש הנקודות העיקריות.</pre>
       </div>
       <div class="fmt-arrow" aria-hidden="true">→</div>
       <article class="mail" aria-label="דוגמה לתמליל שחוזר לאפליקציית AI. נתוני הדגמה.">
@@ -446,7 +446,7 @@
         <thead><tr><th scope="col"><span class="sr">שאלה</span></th><th scope="col">בוטים לסיכום פגישות</th><th scope="col" class="us">Upshot</th></tr></thead>
         <tbody>
           <tr><th scope="row">מה יוצא מהמחשב</th><td class="them">כל ההקלטה</td><td class="us">הטקסט, או כלום</td></tr>
-          <tr><th scope="row">סיכומים ממנוי AI שאתם כבר משלמים עליו</th><td class="them">לעיתים רחוקות</td><td class="us">כן</td></tr>
+          <tr><th scope="row">הסיכום יכול להישאר על המחשב</th><td class="them">לא</td><td class="us">כן, עם מודל מקומי</td></tr>
           <tr><th scope="row">מופיע ברשימת המשתתפים</th><td class="them">כן</td><td class="us">אף פעם</td></tr>
           <tr><th scope="row">ההקלטה נשמרת בשרתים של ספק</th><td class="them">בדרך כלל</td><td class="us">אף פעם</td></tr>
           <tr><th scope="row">תמלול שאומן על עברית</th><td class="them">לעיתים רחוקות</td><td class="us">כן</td></tr>
@@ -500,7 +500,7 @@
   <!-- START --------------------------------------------------------------->
   <section class="sec start" id="start">
     <img class="start-mark" src="../img/upshot-mark.svg" alt="" width="64" height="64">
-    <h2>כל פגישה, מסוכמת. בלי בוט בשיחה.</h2>
+    <h2>כל פגישה, בכתב. בלי בוט בשיחה.</h2>
     <p class="start-sub">קובץ אחד להרצה. הוא מבין לבד מה צריך להוריד, ושואל פעם אחת.</p>
     <div class="term">
       <div class="term-bar"><i></i><i></i><i></i>
@@ -518,6 +518,7 @@ scripts\windows\run-app.cmd</code></pre>
 
 <footer>
   <p class="legal-links"><a href="../privacy.html" hreflang="en">מדיניות פרטיות</a> · <a href="../terms.html" hreflang="en">תנאי שימוש</a> (באנגלית)</p>
+  <p class="legal-links">Claude,‏ ChatGPT,‏ Codex,‏ Cursor ו-Google הם סימני מסחר של בעליהם. Upshot אינו קשור אליהם ואינו מאושר על ידם.</p>
   upshot <span data-version>0.1.0</span> · <a href="https://github.com/am-consultingai/upshot">GitHub</a>
   <a class="powered" href="https://www.amconsultingai.com" aria-label="Powered by AM Consulting" dir="ltr">
     <span>Powered by</span>
