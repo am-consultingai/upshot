@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LANGUAGES, useI18n, type Locale, type MessageKey } from "../i18n";
+import { pickerLanguages, useI18n, type Locale, type MessageKey } from "../i18n";
 import AiStep from "./AiStep";
 import CalendarStep from "./CalendarStep";
 import FinishStep, { hasSummaryName, summaryName } from "./FinishStep";
@@ -230,8 +230,8 @@ export default function SetupFlow({
         </ol>
       </nav>
         {/*
-         * Setup reads in any of the five interface languages; the choice stays the app's
-         * language. A select, not a row of buttons: five names do not fit beside the steps.
+         * Setup offers English and Hebrew (OFFERED_LANGUAGES); the choice stays the app's
+         * language. A select, so the hidden languages can come back without a new layout.
          */}
         <select
           aria-label={t("settings.language")}
@@ -244,7 +244,7 @@ export default function SetupFlow({
           }}
           className="h-8 rounded-full bg-surface-2 px-3 text-xs text-primary"
         >
-          {LANGUAGES.map(({ code, name }) => (
+          {pickerLanguages(locale).map(({ code, name }) => (
             <option key={code} value={code} lang={code}>
               {name}
             </option>

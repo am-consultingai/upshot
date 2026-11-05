@@ -254,12 +254,12 @@ def test_the_installers_language_sets_a_first_install_only(tmp_path: Path, app_h
 
     config = default_config()
     config.set("data_root", str(tmp_path / "meetings"))
-    bootstrap.run(config, register_task=False, language="de")
-    assert Config.load(file=paths.config_path()).ui_language == "de"
+    bootstrap.run(config, register_task=False, language="he")
+    assert Config.load(file=paths.config_path()).ui_language == "he"
 
     # A reinstall in another language keeps the choice already saved.
-    bootstrap.run(default_config(), register_task=False, language="fr", setup_again=True)
-    assert Config.load(file=paths.config_path()).ui_language == "de"
+    bootstrap.run(default_config(), register_task=False, language="en", setup_again=True)
+    assert Config.load(file=paths.config_path()).ui_language == "he"
 
 
 def test_the_first_language_falls_back_to_windows_then_english(
@@ -267,11 +267,24 @@ def test_the_first_language_falls_back_to_windows_then_english(
 ) -> None:
     from app import locale_formats
 
-    monkeypatch.setattr(locale_formats, "windows_ui_language", lambda: "es")
-    assert bootstrap.first_language("he") == "he"
-    assert bootstrap.first_language("it") == "es"
-    assert bootstrap.first_language(None) == "es"
+    monkeypatch.setattr(locale_formats, "windows_ui_language", lambda: "he")
+    assert bootstrap.first_language("en") == "en"
+    assert bootstrap.first_language("it") == "he"
+    assert bootstrap.first_language(None) == "he"
     monkeypatch.setattr(locale_formats, "windows_ui_language", lambda: None)
+    assert bootstrap.first_language(None) == "en"
+
+
+@pytest.mark.parametrize("hidden", ["de", "es", "fr"])
+def test_a_first_install_never_picks_a_language_users_are_not_offered(
+    monkeypatch: pytest.MonkeyPatch, hidden: str
+) -> None:
+    """German, Spanish and French keep their catalogues but are not offered for now: a
+    German Windows, or an installer told "de", starts in English."""
+    from app import locale_formats
+
+    monkeypatch.setattr(locale_formats, "windows_ui_language", lambda: hidden)
+    assert bootstrap.first_language(hidden) == "en"
     assert bootstrap.first_language(None) == "en"
 
 
@@ -280,14 +293,18 @@ def test_the_installer_speaks_every_interface_language() -> None:
     the bootstrap is told which language Setup ran in."""
     import re
 
-    from app.config import _ENUMS
+    from app.config import _ENUMS, OFFERED_UI_LANGUAGES
 
     installer = Path("packaging/installer.iss").read_text(encoding="utf-8")
+    listed = set(re.findall(r'^Name: "(\w+)"; MessagesFile: ', installer, re.MULTILINE))
+    assert listed == set(OFFERED_UI_LANGUAGES), "Setup lists exactly the offered languages"
     used = set(re.findall(r"CustomMessage\('(\w+)'\)", installer))
     used |= set(re.findall(r"\{cm:(\w+)\}", installer))
     used.discard("LaunchProgram")  # Inno's own, in every translation it ships
     english = None
     for language in _ENUMS["ui.language"]:
+        # Every catalogue stays complete, offered or not: a hidden one comes back by
+        # uncommenting its line.
         assert f'Name: "{language}"; MessagesFile: ' in installer, language
         raw = Path("packaging/lang", f"{language}.isl").read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf"), f"{language}.isl needs a BOM (else read as ANSI)"

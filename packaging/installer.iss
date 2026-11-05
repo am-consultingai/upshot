@@ -77,16 +77,18 @@ LicenseFile=terms.txt
 ShowLanguageDialog=yes
 LanguageDetectionMethod=uilanguage
 
-; Five languages, each Inno's own translation of the wizard plus Upshot's messages
+; Each language is Inno's own translation of the wizard plus Upshot's messages
 ; (packaging\lang\<code>.isl, UTF-8, so this file stays ASCII). Setup asks which, with
 ; Windows' language preselected; the choice becomes the app's interface language on a
 ; first install (--language below, app/bootstrap.py first_language).
+; Offered for now: English and Hebrew (OFFERED_UI_LANGUAGES in app/config.py). German,
+; Spanish and French keep their .isl files and come back by uncommenting their lines.
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl,lang\en.isl"
 Name: "he"; MessagesFile: "compiler:Languages\Hebrew.isl,lang\he.isl"
-Name: "de"; MessagesFile: "compiler:Languages\German.isl,lang\de.isl"
-Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl,lang\es.isl"
-Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
+;Name: "de"; MessagesFile: "compiler:Languages\German.isl,lang\de.isl"
+;Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl,lang\es.isl"
+;Name: "fr"; MessagesFile: "compiler:Languages\French.isl,lang\fr.isl"
 
 [Messages]
 BeveledLabel=Powered by AM Consulting

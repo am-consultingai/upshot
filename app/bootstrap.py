@@ -245,13 +245,12 @@ def run(
 
 def first_language(installer: str | None) -> str:
     """The first run's interface language: the installer's, else Windows' own, else
-    English. Only a language with a catalogue counts."""
-    from app.config import _ENUMS
+    English. Only a language users are offered counts (OFFERED_UI_LANGUAGES)."""
+    from app.config import OFFERED_UI_LANGUAGES
     from app.locale_formats import windows_ui_language
 
-    supported = _ENUMS["ui.language"]
     for candidate in (installer, windows_ui_language()):
-        if candidate in supported:
+        if candidate in OFFERED_UI_LANGUAGES:
             return str(candidate)
     return "en"
 

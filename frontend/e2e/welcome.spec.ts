@@ -388,22 +388,10 @@ test("setup_is_centred_and_reads_in_english_or_hebrew", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
 });
 
-for (const [language, welcome] of [
-  ["de", "Willkommen bei Upshot"],
-  ["es", "Le damos la bienvenida a Upshot"],
-  ["fr", "Bienvenue dans Upshot"],
-] as const) {
-  test(`setup_reads_in_${language}_and_keeps_it_as_the_apps_language`, async ({ page }) => {
-    await gotoApp(page, "/welcome");
-    await page.getByTestId("setup-language").selectOption(language);
-    await expect(page.locator("html")).toHaveAttribute("lang", language);
-    await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
-    await expect(page.getByTestId("setup-step-welcome").locator("h1")).toHaveText(welcome);
-    await expect
-      .poll(async () => (await (await page.request.get("/api/settings")).json()).config.ui.language)
-      .toBe(language);
-  });
-}
+test("setup_offers_english_and_hebrew_only", async ({ page }) => {
+  await gotoApp(page, "/welcome");
+  await expect(page.getByTestId("setup-language").locator("option")).toHaveText(["English", "עברית"]);
+});
 
 test("closing_googles_tab_puts_the_connect_button_back", async ({ page }) => {
   await gotoApp(page, "/welcome");
