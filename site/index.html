@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="google-site-verification" content="XKUea9-9pHLYyypgjQduZm0UfKmBIhbquxddD-uEbzE" />
 <title>Upshot: meeting notes without a bot in the meeting</title>
-<meta name="description" content="Upshot records your meetings on your own Windows PC and turns them into text with local AI, in many languages, Hebrew included. The call audio never leaves your computer, and no bot joins the call.">
+<meta name="description" content="Upshot records your meetings on your own Windows PC and turns them into text with local AI, in many languages, Hebrew included. No bot joins the call, the audio never leaves your computer, and summaries come from the AI you already pay for.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0f19">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Meeting notes, without a bot in the meeting.">
-<meta property="og:description" content="Your call audio stays on your computer. Upshot records and transcribes your meetings with local AI, then summarizes them with the AI you choose, or a model on your PC.">
+<meta property="og:description" content="No bot in the call, and the audio never leaves your computer. Upshot records and transcribes your meetings with local AI, then summarizes them with the AI you already pay for, or a model on your PC.">
 <meta property="og:url" content="https://upshot.amconsultingai.com/">
 <meta property="og:image" content="https://upshot.amconsultingai.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -89,6 +89,7 @@
     <a class="nav-mark" href="#top" aria-label="Upshot, back to top"><img src="img/upshot-mark.svg" alt="" width="30" height="30"><span>upshot</span></a>
     <nav class="nav-links" aria-label="Sections">
       <a href="#bots">No bots</a>
+      <a href="#ai-app">Your AI</a>
       <a href="#record">Auto-record</a>
       <a href="#how">How it works</a>
       <a href="#format">Your format</a>
@@ -111,12 +112,12 @@
       <div class="hero-text">
         <p class="eyebrow">Meeting notes for Windows</p>
         <h1>Your call audio stays on your&nbsp;computer.</h1>
-        <p class="lede">Upshot records your meetings and turns them into text with AI that runs on your own PC, in many languages, Hebrew included. The code is on GitHub, free to install for personal use and for organizations of fewer than 20 people. Connect the AI you already pay for to get summaries, and have Upshot transcribe audio and video files for it, on your PC.</p>
+        <p class="lede">Upshot records your meetings and turns them into text with AI that runs on your own PC, in many languages, Hebrew included. No bot joins the call, and the audio never leaves your computer. For the summary, connect the AI you already pay for, or keep everything on your PC.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">Get started</a>
           <a class="btn btn-sec" href="#dial">See where your data goes</a>
         </div>
-        <p class="hero-meta">Windows · audio stays on your PC · local AI transcription · many languages, Hebrew included · code on GitHub</p>
+        <p class="hero-meta">Windows · no bot in the call · audio stays on your PC · summaries from the AI you pay for · code on GitHub</p>
       </div>
       <figure class="flow" aria-label="Where a meeting goes: recorded and transcribed on your PC, and only the text leaves.">
         <ol>
@@ -144,6 +145,16 @@
       <p>Speech becomes text on your PC, with Whisper models on your processor or NVIDIA graphics card. No audio goes to a transcription service.</p>
     </article>
     <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
+      <h2>Summaries from the AI you already pay for</h2>
+      <p>Use the Claude, ChatGPT or Google AI plan you already have, an API key, or a model on your PC. Only text goes to it, such as the transcript and your instructions, never the audio.</p>
+    </article>
+    <article>
+      <span class="p-ic"><svg class="ic"><use href="#i-disk"/></svg></span>
+      <h2>Your AI app transcribes, the audio stays</h2>
+      <p>Ask Claude, Codex or another AI app on your PC to transcribe an audio or video file. Upshot does it on your computer through its MCP server, and only the text goes back to your AI app. The file is never uploaded.</p>
+    </article>
+    <article>
       <span class="p-ic"><svg class="ic"><use href="#i-wave"/></svg></span>
       <h2>Many languages, Hebrew included</h2>
       <p>Upshot recognizes the meeting's language by itself. Whisper covers about a hundred languages and is most accurate in the widely spoken ones, and a meeting in Hebrew gets a model trained for Hebrew.</p>
@@ -152,16 +163,6 @@
       <span class="p-ic"><svg class="ic"><use href="#i-doc"/></svg></span>
       <h2>Code on GitHub, free to install</h2>
       <p>The code is on <a href="https://github.com/am-consultingai/upshot">GitHub</a>. Install it for free for personal use, or in an organization of fewer than 20 people, under the <a href="https://github.com/am-consultingai/upshot/blob/main/LICENSE">Upshot license</a>. Larger organizations, and anyone offering it in a competing product or service, need a commercial license.</p>
-    </article>
-    <article>
-      <span class="p-ic"><svg class="ic"><use href="#i-mail"/></svg></span>
-      <h2>Summaries from the AI you pay for</h2>
-      <p>Connect Claude, OpenAI or Gemini on your own account, or use a model on your PC. Only text goes to the AI you choose, such as the transcript and your instructions, never the audio.</p>
-    </article>
-    <article>
-      <span class="p-ic"><svg class="ic"><use href="#i-disk"/></svg></span>
-      <h2>Transcribe files from your AI app</h2>
-      <p>Upshot's MCP server lets Claude and other AI apps on your PC transcribe audio and video files. The file is transcribed on your computer and never uploaded; the text goes to your AI app, as anything in a chat does.</p>
     </article>
   </section>
 
@@ -202,6 +203,34 @@
     <p class="chips-note">Either way, no audio is ever sent anywhere.</p>
   </section>
 
+  <!-- AI APP ------------------------------------------------------------>
+  <section class="sec format" id="ai-app">
+    <p class="eyebrow">For your AI app</p>
+    <h2>Your AI reads the text. The audio stays here.</h2>
+    <p class="he-sub">Connect Claude Desktop, Claude Code, Codex, Cursor or another app that speaks MCP. Ask it to transcribe a recording, and Upshot does the work on your PC. Your AI app gets the text, never the audio.</p>
+    <div class="fmt">
+      <div class="fmt-prompt">
+        <p class="fmt-label">What you ask your AI app</p>
+<pre>Transcribe <b>interview.mp4</b> from my
+Downloads folder, then list the
+three main points.</pre>
+      </div>
+      <div class="fmt-arrow" aria-hidden="true">→</div>
+      <article class="mail" aria-label="An example transcript returned to an AI app. Demo data.">
+        <div class="mail-head"><span>Upshot</span>interview.mp4, transcribed on this PC<em class="demo">Demo data</em></div>
+        <div class="mail-body">
+          <p>[00:00] S1: Thanks for coming in. Let’s start with the pilot.</p>
+          <p>[00:04] S2: We can start on the 1st, with two teams.</p>
+          <p>[00:09] S1: And reporting moves to phase two.</p>
+        </div>
+      </article>
+    </div>
+    <ul class="callouts three">
+      <li><b>On your PC</b> the file is transcribed here</li>
+      <li><b>Text only</b> goes back to your AI app</li>
+      <li><b>Any MCP app</b> Claude, Codex, Cursor and more</li>
+    </ul>
+  </section>
   <!-- BOTS ---------------------------------------------------------------->
   <section class="risk-band" id="bots">
     <img class="risk-bg" src="img/room.webp" width="2000" height="1333" alt="" loading="lazy" aria-hidden="true">
@@ -399,6 +428,7 @@ Headings in #0f766e. Under 200 words.</pre>
         <thead><tr><th scope="col"><span class="sr">Question</span></th><th scope="col">Notetaker bots</th><th scope="col" class="us">Upshot</th></tr></thead>
         <tbody>
           <tr><th scope="row">What leaves your computer</th><td class="them">the whole recording</td><td class="us">the text, or nothing at all</td></tr>
+          <tr><th scope="row">Summaries from an AI plan you already pay for</th><td class="them">rarely</td><td class="us">yes</td></tr>
           <tr><th scope="row">Shows up in the participant list</th><td class="them">yes</td><td class="us">never</td></tr>
           <tr><th scope="row">Recording stored on a vendor’s servers</th><td class="them">usually</td><td class="us">never</td></tr>
           <tr><th scope="row">Starts without you pressing Record</th><td>from your calendar</td><td class="us">when the call starts, if you turn it on</td></tr>
@@ -443,14 +473,14 @@ Headings in #0f766e. Under 200 words.</pre>
       <details class="acc"><summary>Do I need a powerful PC?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">No. An NVIDIA graphics card makes it faster. Without one, Upshot waits until the call ends so your meeting isn’t slowed down, and the notes take longer to arrive.</div></details>
       <details class="acc"><summary>Which languages, and which platforms?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">Meetings in about a hundred languages, with a model trained for Hebrew. Upshot runs on Windows only.</div></details>
+        <div class="acc-b">Meetings in about a hundred languages, with a model trained for Hebrew. The app itself is in English and Hebrew. Upshot runs on Windows only.</div></details>
     </div>
   </section>
 
   <!-- START --------------------------------------------------------------->
   <section class="sec start" id="start">
     <img class="start-mark" src="img/upshot-mark.svg" alt="" width="64" height="64">
-    <h2>Your next meeting, written up.</h2>
+    <h2>Every meeting, written up. No bot in the call.</h2>
     <p class="start-sub">One file to run. It works out what to download and asks once.</p>
     <div class="term">
       <div class="term-bar"><i></i><i></i><i></i>
