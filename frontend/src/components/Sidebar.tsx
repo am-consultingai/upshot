@@ -3,7 +3,7 @@ import { NavLink, useMatch, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRecordingControls } from "../lib/recording";
 import { api, reason, type Meeting } from "../api";
-import { OFFERED_LANGUAGES, useI18n, type Locale } from "../i18n";
+import { pickerLanguages, useI18n, type Locale } from "../i18n";
 import { groupByDay } from "../lib/timeline";
 import { formatBytes, formatClock, formatDayLabel } from "../lib/format";
 import { applyTheme } from "../theme";
@@ -238,7 +238,8 @@ export default function Sidebar() {
                 label: theme === "dark" ? t("workspace.lightTheme") : t("workspace.darkTheme"),
                 run: switchTheme,
               },
-              // Five languages do not fit a toggle: the item opens a menu of them, in place.
+              // The item opens a menu of the languages (pickerLanguages), in place: a menu,
+              // so the hidden languages can come back without a new layout.
               // "Language" in English too, so someone stuck in a language they cannot read
               // can still find the way back.
               {
@@ -259,7 +260,7 @@ export default function Sidebar() {
               setLanguages(null);
               if (refocus) brand.current?.focus();
             }}
-            items={OFFERED_LANGUAGES.map(({ code, name }) => ({
+            items={pickerLanguages(locale).map(({ code, name }) => ({
               id: code,
               label: name,
               keys: code === locale ? "\u2713" : undefined,

@@ -325,3 +325,22 @@ test("settings_switches_a_hidden_saved_language_back_to_english", async ({ page 
   await select.selectOption("en");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });
+
+test("the_language_menu_lists_english_and_hebrew_and_a_hidden_saved_one", async ({ page }) => {
+  const openMenu = async () => {
+    await page.getByTestId("app-title").click();
+    await page.getByTestId("workspace-menu").locator("[data-item=language]").click();
+    return page.getByTestId("language-menu").getByRole("menuitem");
+  };
+  await gotoApp(page);
+  await expect(await openMenu()).toHaveText([/^English/, /^עברית/]);
+  await page.keyboard.press("Escape");
+
+  await page.request.put("/api/settings", {
+    headers: { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` },
+    data: { values: { "ui.language": "de" } },
+  });
+  await gotoApp(page);
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(await openMenu()).toHaveText([/^English/, /^עברית/, /^Deutsch/]);
+});
