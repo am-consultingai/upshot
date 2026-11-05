@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import { OFFERED_LANGUAGES, useI18n, type Locale } from "../i18n";
+import { pickerLanguages, useI18n, type Locale } from "../i18n";
 import { THEMES, type Theme } from "../theme";
 import ProviderSettings from "../components/ProviderSettings";
 import PromptSettings from "../components/PromptSettings";
@@ -253,7 +253,7 @@ export default function Settings() {
             }}
             className={SELECT_CLASS}
           >
-            {OFFERED_LANGUAGES.map(({ code, name }) => (
+            {pickerLanguages(locale).map(({ code, name }) => (
               <option key={code} value={code} lang={code}>
                 {name}
               </option>

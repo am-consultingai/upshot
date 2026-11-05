@@ -1,3 +1,4 @@
+import { CSRF, SESSION } from "../playwright.config";
 import { expect, gotoApp, isoAt, test, gotoSettings } from "./fixtures";
 
 /**
@@ -308,4 +309,19 @@ test("the_transcript_mirrors_in_hebrew_but_the_transport_does_not", async ({ pag
   expect(
     await page.getByTestId("audio-player").evaluate((el) => getComputedStyle(el).direction),
   ).toBe("ltr");
+});
+
+test("settings_switches_a_hidden_saved_language_back_to_english", async ({ page }) => {
+  await gotoApp(page);
+  await page.request.put("/api/settings", {
+    headers: { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` },
+    data: { values: { "ui.language": "de" } },
+  });
+  await gotoSettings(page, "appearance");
+  const select = page.getByTestId("ui-language");
+  await expect(page.locator("html")).toHaveAttribute("lang", "de");
+  await expect(select).toHaveValue("de");
+  await expect(select.locator("option")).toHaveText(["English", "עברית", "Deutsch"]);
+  await select.selectOption("en");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });

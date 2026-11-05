@@ -155,4 +155,10 @@ describe("offered languages", () => {
     expect(OFFERED_LANGUAGES.map(({ code }) => code)).toEqual(["en", "he"]);
     expect(Object.keys(catalogues).sort()).toEqual(["de", "en", "es", "fr", "he"]);
   });
+
+  it("lists a hidden current language too, so English can still be picked", async () => {
+    const { pickerLanguages } = await import("../src/i18n");
+    expect(pickerLanguages("he").map(({ code }) => code)).toEqual(["en", "he"]);
+    expect(pickerLanguages("de").map(({ code }) => code)).toEqual(["en", "he", "de"]);
+  });
 });

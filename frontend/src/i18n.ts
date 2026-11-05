@@ -36,6 +36,16 @@ export const OFFERED_LANGUAGES: readonly { code: Locale; name: string }[] = LANG
   ({ code }) => code === "en" || code === "he",
 );
 
+/**
+ * What a language select lists: the offered languages, plus the current one when it is
+ * hidden (saved before it was hidden), so the select shows the truth and English can
+ * still be picked from it.
+ */
+export function pickerLanguages(current: Locale): readonly { code: Locale; name: string }[] {
+  if (OFFERED_LANGUAGES.some(({ code }) => code === current)) return OFFERED_LANGUAGES;
+  return LANGUAGES.filter(({ code }) => code === current || OFFERED_LANGUAGES.some((o) => o.code === code));
+}
+
 export function languageName(locale: Locale): string {
   return LANGUAGES.find((language) => language.code === locale)?.name ?? locale;
 }
