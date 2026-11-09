@@ -225,19 +225,62 @@ def test_no_memory_is_the_systems_even_after_the_banner(
         ingest.probe(tmp_path / "call.m4a")
 
 
-def test_a_configured_ffmpeg_that_is_not_a_program_is_not_waited_for(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+class _WinError(OSError):
+    """An OSError as Windows raises it, with ``winerror``, on any platform."""
+
+    def __init__(self, winerror: int, text: str) -> None:
+        super().__init__(winerror, text)
+        self.winerror = winerror
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (_WinError(8, "Not enough memory resources"), "FfmpegFailed"),  # wait, as in the report
+        (_WinError(193, "%1 is not a valid Win32 application"), "FfmpegBroken"),
+        (_WinError(216, "machine type mismatch"), "FfmpegBroken"),
+        (OSError(8, "Exec format error"), "FfmpegBroken"),  # ENOEXEC on Linux is 8 too
+        (OSError(21, "Is a directory"), "FfmpegBroken"),
+        (OSError(13, "Permission denied"), "FfmpegBroken"),
+        (OSError(16, "Device or resource busy"), "FfmpegFailed"),
+    ],
+    ids=["win-no-memory", "win-bad-exe", "win-arch", "enoexec", "eisdir", "eacces", "ebusy"],
+)
+def test_a_start_that_failed_is_waited_for_only_when_waiting_can_help(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError, expected: str
 ) -> None:
     import errno
 
-    def not_a_program(argv: list[str], **kwargs: Any) -> None:
-        raise OSError(errno.ENOEXEC, "Exec format error")
+    if not isinstance(error, _WinError) and expected == "FfmpegBroken":
+        assert error.errno in (errno.ENOEXEC, errno.EISDIR, errno.EACCES)
+
+    def fails(argv: list[str], **kwargs: Any) -> None:
+        raise error
 
     monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
-    monkeypatch.setattr(ingest.subprocess, "run", not_a_program)
-    with pytest.raises(OSError) as caught:
+    monkeypatch.setattr(ingest.subprocess, "run", fails)
+    with pytest.raises(getattr(ingest, expected)):
         ingest.probe(tmp_path / "call.m4a")
-    assert not isinstance(caught.value, ingest.FfmpegFailed)
+
+
+@pytest.mark.parametrize("code", [0xC0000135, 0xC000007B, 0xC0000139])
+def test_an_ffmpeg_that_can_never_run_is_broken_not_waited_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda argv, **kw: _Ran(code, b""))
+    with pytest.raises(ingest.FfmpegBroken, match="reinstall Upshot"):
+        ingest.probe(tmp_path / "call.m4a")
+    with pytest.raises(ingest.FfmpegBroken):
+        ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
+
+
+def test_a_folder_set_as_ffmpeg_path_is_not_used(tmp_path: Path) -> None:
+    from app.config import Config
+
+    config = Config.load()
+    config.set("ffmpeg_path", str(tmp_path))
+    assert ingest.ffmpeg_path(config) != str(tmp_path)
 
 
 def test_the_home_folder_is_cut_out_only_at_a_folder_boundary(
@@ -256,7 +299,7 @@ def test_an_os_error_names_no_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
     monkeypatch.setattr(ingest.subprocess, "run", refused)
-    with pytest.raises(ingest.FfmpegFailed) as caught:
+    with pytest.raises(ingest.FfmpegBroken) as caught:
         ingest.probe(tmp_path / "call.m4a")
     assert "Permission denied" in str(caught.value) and str(tmp_path) not in str(caught.value)
 

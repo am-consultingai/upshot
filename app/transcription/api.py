@@ -31,7 +31,13 @@ from starlette.requests import ClientDisconnect
 
 from app.api.security import CSRF_COOKIE, CSRF_HEADER
 from app.asr import languages
-from app.audio.ingest import FFMPEG_RETRY_AFTER_S, FfmpegFailed, UnsupportedAudio, probe
+from app.audio.ingest import (
+    FFMPEG_RETRY_AFTER_S,
+    FfmpegBroken,
+    FfmpegFailed,
+    UnsupportedAudio,
+    probe,
+)
 from app.log import get
 from app.services import Services
 from app.transcription.render import FORMATS, filename, render
@@ -435,7 +441,10 @@ async def _media_limits(svc: Services, source: Path, *, label: str) -> float | N
         described = await anyio.to_thread.run_sync(lambda: probe(source, config=svc.config))
     except UnsupportedAudio as exc:
         raise HTTPException(415, str(exc).replace(source.name, label)) from None
+    except FfmpegBroken as exc:
+        raise HTTPException(500, str(exc)) from None
     except FfmpegFailed as exc:
+        log.warning("upload %s refused for now: %s", label, exc)
         # Upshot's problem, not the file's: 503 tells a program to send it again later.
         raise HTTPException(
             503,

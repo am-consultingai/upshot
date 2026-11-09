@@ -1523,7 +1523,13 @@ def keep_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
 @router.post("/import")
 async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     """An uploaded recording becomes chunk files and runs the ordinary pipeline."""
-    from app.audio.ingest import FFMPEG_RETRY_AFTER_S, FfmpegFailed, UnsupportedAudio, ingest
+    from app.audio.ingest import (
+        FFMPEG_RETRY_AFTER_S,
+        FfmpegBroken,
+        FfmpegFailed,
+        UnsupportedAudio,
+        ingest,
+    )
 
     svc = services_of(request)
     meeting = svc.meetings.create(source="imported", title=Path(file.filename or "import").stem)
@@ -1536,6 +1542,9 @@ async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     except UnsupportedAudio as exc:
         svc.meetings.discard(meeting.id)
         raise HTTPException(415, str(exc)) from exc
+    except FfmpegBroken as exc:
+        svc.meetings.discard(meeting.id)
+        raise HTTPException(500, str(exc)) from exc
     except FfmpegFailed as exc:
         svc.meetings.discard(meeting.id)
         raise HTTPException(

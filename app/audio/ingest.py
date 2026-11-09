@@ -34,6 +34,12 @@ class UnsupportedAudio(ValueError):
     """The file is not a WAV and no ffmpeg is available to convert it."""
 
 
+class FfmpegBroken(RuntimeError):
+    """The ffmpeg Upshot would run can never run here (not a program, a missing DLL, the
+    wrong architecture). Waiting will not fix it: Upshot needs reinstalling, or
+    ``ffmpeg_path`` correcting."""
+
+
 class FfmpegFailed(RuntimeError):
     """ffmpeg itself did not run: it could not start, or the system ended it. This says
     nothing about the file, so a caller tries again later instead of refusing it (a
@@ -84,18 +90,44 @@ def _os_error(exc: OSError) -> str:
     return f"{exc.strerror or type(exc).__name__} ({code})" if code else type(exc).__name__
 
 
-#: Not a program at all (a bad ``ffmpeg_path``): waiting will not fix it, so it is not
-#: FfmpegFailed. ERROR_BAD_EXE_FORMAT on Windows, ENOEXEC and EISDIR on POSIX.
-_NOT_A_PROGRAM = {193, errno.ENOEXEC, errno.EISDIR}
+#: Not a program at all, so waiting will not fix it: ERROR_BAD_EXE_FORMAT and
+#: ERROR_EXE_MACHINE_TYPE_MISMATCH (Windows error codes, ``winerror``) ...
+_NOT_A_PROGRAM_WINDOWS = {193, 216}
+#: ... and ENOEXEC, EISDIR and EACCES (POSIX, ``errno``). The two are never mixed: Windows
+#: error 8 is "not enough memory", which is exactly the case that must wait.
+_NOT_A_PROGRAM_POSIX = {errno.ENOEXEC, errno.EISDIR, errno.EACCES}
+#: How Windows ends a program it could never run: STATUS_DLL_NOT_FOUND,
+#: STATUS_INVALID_IMAGE_FORMAT, STATUS_ENTRYPOINT_NOT_FOUND.
+_BROKEN_EXITS = {0xC0000135, 0xC000007B, 0xC0000139}
+
+
+def _ffmpeg_broken(why: str) -> FfmpegBroken:
+    log.warning("ffmpeg cannot run on this computer (%s); check ffmpeg_path", why)
+    return FfmpegBroken(
+        f"ffmpeg cannot run on this computer ({why}): reinstall Upshot or check ffmpeg_path"
+    )
 
 
 def _start_failed(source: Path, exc: OSError) -> Exception:
-    """What to raise when ffmpeg could not be started: FfmpegFailed for what passes, the
-    OSError itself when the configured program can never run."""
-    if (getattr(exc, "winerror", None) or exc.errno) in _NOT_A_PROGRAM:
-        log.warning("ffmpeg cannot be started (%s); check ffmpeg_path", _os_error(exc))
-        return exc
+    """What to raise when ffmpeg could not be started: FfmpegBroken when the program can
+    never run, FfmpegFailed for what passes (no memory to start it, a file held)."""
+    winerror = getattr(exc, "winerror", None)
+    if winerror is not None:
+        never = winerror in _NOT_A_PROGRAM_WINDOWS
+    else:
+        never = exc.errno in _NOT_A_PROGRAM_POSIX
+    if never:
+        return _ffmpeg_broken(_os_error(exc))
     return _ffmpeg_failed(source, _os_error(exc))
+
+
+def _not_run(source: Path, returncode: int, stderr: bytes) -> Exception | None:
+    """FfmpegBroken or FfmpegFailed when ffmpeg did not do its own work, else None."""
+    if returncode in _BROKEN_EXITS:
+        return _ffmpeg_broken(_exit_text(returncode))
+    if _did_not_run(returncode, stderr):
+        return _ffmpeg_failed(source, _exit_text(returncode))
+    return None
 
 
 def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
@@ -116,7 +148,7 @@ FFMPEG_TIMEOUT_S = 1800
 
 def ffmpeg_path(config: Config | None = None) -> str | None:
     configured = config.get("ffmpeg_path") if config else None
-    if configured and Path(str(configured)).exists():
+    if configured and Path(str(configured)).is_file():  # a folder is not ffmpeg
         return str(configured)
     from app import paths
 
@@ -198,9 +230,10 @@ def to_wav(
 
 def _conversion_failed(
     source: Path, returncode: int, stderr: bytes, target: Path | None = None
-) -> UnsupportedAudio | FfmpegFailed:
-    if _did_not_run(returncode, stderr):
-        return _ffmpeg_failed(source, _exit_text(returncode))
+) -> Exception:
+    failed = _not_run(source, returncode, stderr)
+    if failed is not None:
+        return failed
     text = stderr.decode(errors="replace")
     log.warning(
         "ffmpeg could not convert %s (%s): %s",
@@ -368,8 +401,9 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
         raise UnsupportedAudio(f"ffmpeg took too long to read {source.name}") from exc
     except OSError as exc:
         raise _start_failed(source, exc) from exc
-    if _did_not_run(result.returncode, result.stderr):
-        raise _ffmpeg_failed(source, _exit_text(result.returncode))
+    failed = _not_run(source, result.returncode, result.stderr)
+    if failed is not None:
+        raise failed
     text = result.stderr.decode(errors="replace")
     if "Input #0" not in text:
         log.info("ffmpeg cannot read %s: %s", source.name, _said(source, result.stderr, 200))

@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import wave
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -156,6 +157,36 @@ def test_ffmpeg_that_did_not_run_is_503_not_415(
         assert "ראיון.m4a" in response.json()["detail"]
     assert leftovers(h) == [] and h.services.transcriptions.recent() == []
     assert activity(h).count(("transcribe", "ראיון.m4a", "error")) == 2, "none collapsed"
+
+
+def test_an_ffmpeg_that_can_never_run_is_500_with_what_to_do(
+    h: ApiHarness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.audio.ingest import FfmpegBroken
+
+    def broken(source: Path, *, config: object = None) -> None:
+        raise FfmpegBroken("ffmpeg cannot run on this computer (exit code 0xc0000135)")
+
+    monkeypatch.setattr(api, "probe", broken)
+    response = upload(Program(h), wav(tmp_path / "clip.wav", 3), name="call.m4a")
+    assert response.status_code == 500 and "ffmpeg cannot run" in response.json()["detail"]
+    assert "retry-after" not in response.headers
+    assert ("transcribe", "call.m4a", "error") in activity(h)
+
+
+def test_a_deferred_job_is_described_as_waiting_to_retry_with_its_reason(
+    h: ApiHarness,
+) -> None:
+    store = h.services.transcriptions
+    job = store.create(source_name="call.m4a", source_kind="path", source_path="/nowhere",
+                       options=api.options_from({}), client="api")  # fmt: skip
+    running = store.claim(job.id)
+    assert running is not None
+    until = h.services.clock.now() + timedelta(seconds=300)
+    store.defer(running, "FfmpegFailed: ffmpeg could not run", until=until)
+    described = Program(h).get(f"/api/v1/transcriptions/{job.id}").json()
+    assert described["state"] == "pending" and described["waiting_reason"] == "retry"
+    assert described["error"] == "FfmpegFailed: ffmpeg could not run"
 
 
 def test_a_refused_file_is_in_the_activity_log_and_the_page_is_not(
