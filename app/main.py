@@ -93,6 +93,16 @@ def _activity(svc: Services) -> Any:
 
 def create_app(services: Services | None = None, *, config: Config | None = None) -> FastAPI:
     svc = services or build(config)
+    from app.audio.ingest import HEALTH
+
+    # ffmpeg that keeps failing to start is said once, not met file by file (z8tj1hwjvv).
+    # One app per process; set either way, so no earlier app's notifier is left in it.
+    notifier = svc.notifier
+    HEALTH.on_hold = (
+        (lambda hold: notifier.ffmpeg_failing(hold.failures, hold.memory))
+        if notifier is not None
+        else None
+    )
     from app.ai_apps import router as ai_apps_router
     from app.assistant import mcp as assistant_mcp
     from app.assistant.api import router as assistant_router

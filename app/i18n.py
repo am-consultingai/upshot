@@ -386,6 +386,27 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "{title} aún no está vinculada a una reunión del calendario.",
         "fr": "{title} n'est pas encore associé à une réunion du calendrier.",
     },
+    "toast.ffmpegFailing.title": {
+        "en": "Upshot can't read audio files right now",
+        "he": "Upshot לא יכול לקרוא קובצי שמע כרגע",
+        "de": "Upshot kann gerade keine Audiodateien lesen",
+        "es": "Upshot no puede leer archivos de audio ahora",
+        "fr": "Upshot ne peut pas lire de fichiers audio pour le moment",
+    },
+    "toast.ffmpegFailing.body": {
+        "en": "ffmpeg could not start {count} times in a row. Waiting files are tried again later, and programs sending files are asked to send them again.",
+        "he": "ffmpeg לא הצליח לפעול {count} פעמים ברציפות. קבצים ממתינים ינוסו שוב מאוחר יותר, ותוכנות ששולחות קבצים יתבקשו לשלוח אותם שוב.",
+        "de": "ffmpeg konnte {count}-mal hintereinander nicht starten. Wartende Dateien werden später erneut versucht, und Programme, die Dateien senden, werden gebeten, sie erneut zu senden.",
+        "es": "ffmpeg no pudo iniciarse {count} veces seguidas. Los archivos en espera se reintentarán más tarde y a los programas que envían archivos se les pedirá que los vuelvan a enviar.",
+        "fr": "ffmpeg n'a pas pu démarrer {count} fois de suite. Les fichiers en attente seront réessayés plus tard, et les programmes qui envoient des fichiers devront les renvoyer.",
+    },
+    "toast.ffmpegFailing.memory": {
+        "en": "Windows is low on memory: {free} GB of {limit} GB left. Closing programs helps.",
+        "he": "ל-Windows חסר זיכרון: נותרו {free} GB מתוך {limit} GB. סגירת תוכנות תעזור.",
+        "de": "Windows hat wenig Speicher: {free} GB von {limit} GB frei. Programme zu schließen hilft.",
+        "es": "Windows tiene poca memoria: quedan {free} GB de {limit} GB. Cerrar programas ayuda.",
+        "fr": "Windows manque de mémoire : {free} Go libres sur {limit} Go. Fermer des programmes aide.",
+    },
     "toast.couldNotStart.title": {
         "en": "Upshot couldn't start recording",
         "he": "Upshot לא הצליח להתחיל להקליט",

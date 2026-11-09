@@ -517,6 +517,16 @@ def test_info(h: ApiHarness) -> None:
     assert info["formats"] == ["json", "txt", "md", "srt", "vtt"]
     assert "he" in info["languages"] and info["languages"][0] == "auto"
     assert info["max_hours"] == 6 and info["max_upload_mb"] == 4096
+    assert info["ffmpeg"] == {"ok": True, "held": False, "failures_in_a_row": 0, "error": None}
+
+
+def test_info_says_ffmpeg_is_held(h: ApiHarness) -> None:
+    from app.audio.ingest import HEALTH
+
+    for _ in range(3):
+        HEALTH.failed("exit code 0xc0000017")
+    ffmpeg = Program(h).get("/api/v1/info").json()["ffmpeg"]
+    assert ffmpeg["held"] is True and ffmpeg["failures_in_a_row"] == 3
 
 
 # ----------------------------------------------------------------------- waiting

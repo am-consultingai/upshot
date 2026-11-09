@@ -364,11 +364,12 @@ class Worker:
             )
         except Cancelled as exc:
             log.info("%s", exc)
-            if store.stopping(job.id) != "delete":
-                store.mark_cancelled(job.id)
+            store.end_cancelled(job.id)
             return
         except Preempted:
-            store.release(job)
+            if store.release(job).state == "cancelled":
+                log.info("transcription %s cancelled as a recording preempted it", job.id)
+                return
             self.stats.preempted += 1
             log.info("transcription %s preempted by the recorder", job.id)
             return
@@ -388,19 +389,18 @@ class Worker:
             # ffmpeg can never run here (missing, blocked, the wrong program): trying again
             # changes nothing until Upshot is reinstalled or ffmpeg_path corrected. Not a
             # crash report either: it is this computer's setup, and the message says what to do.
-            store.fail(job, exc, permanent=True)
-            self.stats.failed += 1
-            log.warning("transcription %s failed: %s", job.id, exc)
+            self._failed_for_good(store, job, exc)
             return
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
             # Trying again changes nothing: an undecodable file, a missing model, a path
             # that is not there. UnsupportedAudio is a ValueError, so it is named here.
-            store.fail(job, exc, permanent=True)
-            self.stats.failed += 1
-            log.warning("transcription %s failed: %s", job.id, exc)
+            self._failed_for_good(store, job, exc)
             return
         except Exception as exc:
             updated = store.fail(job, exc)
+            if updated.state == "cancelled":
+                log.info("transcription %s cancelled as it failed: %s", job.id, exc)
+                return
             self.stats.failed += 1
             log.warning("transcription %s failed (attempt %s): %s", job.id, updated.attempts, exc)
             if updated.state == "failed":
@@ -422,13 +422,26 @@ class Worker:
             language_conf=result.language_conf,
             model=result.model,
         )
+        # A delete asked for after the finally above, as the job was being marked done:
+        # it was handed to the worker, so the worker does it now.
+        if store.finish_delete(job.id):
+            return
+        self.stats.completed += 1
         if job.source_kind == "upload" and not bool(
             self.config.get("transcription.keep_input", False)
         ):
             import shutil
 
             shutil.rmtree(folder / INPUT_DIR, ignore_errors=True)
-        self.stats.completed += 1
+
+    def _failed_for_good(self, store: Any, job: Any, exc: BaseException) -> None:
+        """A file job that trying again would not fix; cancelled instead when a cancel
+        was asked for while it ran."""
+        if store.fail(job, exc, permanent=True).state == "cancelled":
+            log.info("transcription %s cancelled as it failed: %s", job.id, exc)
+            return
+        self.stats.failed += 1
+        log.warning("transcription %s failed: %s", job.id, exc)
 
     def finish_delete(self, meeting_id: str) -> None:
         """The deletion asked for while a stage ran (``queue.request_delete``), now that

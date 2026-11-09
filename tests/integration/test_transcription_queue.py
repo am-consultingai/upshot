@@ -703,3 +703,104 @@ def test_a_job_whose_folder_cannot_be_made_is_failed_not_left_running(tmp_path: 
     after = store.require(job.id)
     assert after.state != RUNNING
     assert after.attempts == 1 and "FileExistsError" in (after.last_error or "")
+
+
+# -- a cancel asked for in one run is not the next run's (z8tj1hwm0d) ---------
+
+
+def test_a_retry_after_a_cancelled_run_that_failed_runs(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)  # asked for while it ran ...
+    assert store.fail(running, "UnsupportedAudio: no", permanent=True).state == CANCELLED
+    store.retry(job.id)  # ... and pressed Retry later
+    again = store.claim(job.id)
+    assert again is not None
+    assert store.stopping(job.id) is None, "the old cancel does not stop the new run"
+
+
+def test_a_cancel_that_came_too_late_is_forgotten_when_the_job_is_done(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    assert store.claim(job.id) is not None
+    store.cancel(job.id)  # after the run's last check
+    done = store.complete(job.id, duration_s=1.0, language="he", language_conf=0.9, model={})
+    assert done.state == DONE and store.stopping(job.id) is None
+
+
+def test_ending_a_cancelled_run_keeps_a_delete_asked_for_meanwhile(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    assert store.claim(job.id) is not None
+    store.cancel(job.id)
+    assert store.delete(job.id) is False  # handed to the worker
+    store.end_cancelled(job.id)
+    assert store.stopping(job.id) == "delete", "finish_delete still removes it"
+    assert store.require(job.id).state == RUNNING
+
+
+def test_a_run_that_fails_after_a_cancel_is_cancelled_not_requeued(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)
+    assert store.fail(running, "RuntimeError: boom").state == CANCELLED
+    assert store.stopping(job.id) is None
+
+
+def test_a_preempted_run_after_a_cancel_is_cancelled(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)
+    assert store.release(running).state == CANCELLED
+
+
+def test_a_delete_asked_for_survives_a_failure(tmp_path: Path) -> None:
+    """Only a cancel is forgotten: the worker still owes a delete its removal."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    assert store.delete(job.id) is False
+    store.fail(running, "boom", permanent=True)
+    assert store.stopping(job.id) == "delete"
+
+
+def test_a_delete_asked_for_as_the_job_is_marked_done_is_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After the run's last chance to stop: the worker was handed it, so it does it."""
+    from app.transcription import engine
+
+    def copy(source: Path, target: Path, **kwargs: object) -> Path:  # no ffmpeg needed
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return target
+
+    monkeypatch.setattr(engine, "to_wav", copy)
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    complete = store.complete
+
+    def deleted_just_before(transcription_id: str, **kwargs: object):  # type: ignore[no-untyped-def]
+        assert store.delete(transcription_id) is False, "running: handed to the worker"
+        return complete(transcription_id, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(store, "complete", deleted_just_before)
+    worker = worker_for(h, store)
+    worker.run_once()
+    assert store.get(job.id) is None
+    assert store.stopping(job.id) is None
+    assert worker.stats.completed == 0, "deleted as it finished: not counted as done"

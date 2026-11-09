@@ -272,37 +272,47 @@ class TranscriptionStore:
         model: dict[str, Any],
     ) -> Transcription:
         now = iso(self.clock.now())
-        self.conn.execute(
-            "UPDATE transcriptions SET state='done', phase=NULL, progress=1, last_error=NULL, "
-            "duration_s=?, language=?, language_conf=?, model=?, finished_at=?, updated_at=? "
-            "WHERE id=?",
-            (duration_s, language, language_conf, json.dumps(model, ensure_ascii=False),
-             now, now, transcription_id),
-        )  # fmt: skip
-        return self._finished(transcription_id)
+        with self._lock:
+            self.conn.execute(
+                "UPDATE transcriptions SET state='done', phase=NULL, progress=1, "
+                "last_error=NULL, duration_s=?, language=?, language_conf=?, model=?, "
+                "finished_at=?, updated_at=? WHERE id=?",
+                (duration_s, language, language_conf, json.dumps(model, ensure_ascii=False),
+                 now, now, transcription_id),
+            )  # fmt: skip
+            # A cancel that came after the last check is too late, and not the next run's.
+            # A delete stays: the worker does it next (finish_delete).
+            self._forget_cancel(transcription_id)
+            return self._finished(transcription_id)
 
     def fail(
         self, job: Transcription, error: BaseException | str, *, permanent: bool = False
     ) -> Transcription:
-        """Back off and try again, as ``JobQueue.fail`` does, or fail for good."""
+        """Back off and try again, as ``JobQueue.fail`` does, or fail for good.
+
+        A cancel asked for while the job ran wins (z8tj1hwm0d): the job ends cancelled,
+        and no cancel is left behind for a Retry pressed later to trip over."""
         now = self.clock.now()
         attempts = job.attempts + 1
         message = f"{type(error).__name__}: {error}" if isinstance(error, BaseException) else error
-        if permanent or attempts >= self.max_attempts:
+        with self._lock:
+            if self._stopping.get(job.id) == "cancel":
+                return self.mark_cancelled(job.id)
+            if permanent or attempts >= self.max_attempts:
+                self.conn.execute(
+                    "UPDATE transcriptions SET state='failed', attempts=?, last_error=?, "
+                    "phase=NULL, not_before=NULL, finished_at=?, updated_at=? WHERE id=?",
+                    (attempts, message[:2000], iso(now), iso(now), job.id),
+                )
+                return self._finished(job.id)
+            delay = backoff_seconds(attempts, self.rng)
+            self._forget_run(job.id)
             self.conn.execute(
-                "UPDATE transcriptions SET state='failed', attempts=?, last_error=?, "
-                "phase=NULL, not_before=NULL, finished_at=?, updated_at=? WHERE id=?",
-                (attempts, message[:2000], iso(now), iso(now), job.id),
+                "UPDATE transcriptions SET state='pending', attempts=?, last_error=?, "
+                "phase=NULL, progress=0, not_before=?, started_at=NULL, updated_at=? WHERE id=?",
+                (attempts, message[:2000], iso(now + timedelta(seconds=delay)), iso(now), job.id),
             )
-            return self._finished(job.id)
-        delay = backoff_seconds(attempts, self.rng)
-        self._forget_run(job.id)
-        self.conn.execute(
-            "UPDATE transcriptions SET state='pending', attempts=?, last_error=?, phase=NULL, "
-            "progress=0, not_before=?, started_at=NULL, updated_at=? WHERE id=?",
-            (attempts, message[:2000], iso(now + timedelta(seconds=delay)), iso(now), job.id),
-        )
-        updated = self.require(job.id)
+            updated = self.require(job.id)
         self._publish(updated)
         return updated
 
@@ -331,14 +341,18 @@ class TranscriptionStore:
 
     def release(self, job: Transcription) -> Transcription:
         """Preempted by a recording: back to pending, **no** attempt counted, same place
-        in the queue. It starts again from the beginning."""
-        self._forget_run(job.id)
-        self.conn.execute(
-            "UPDATE transcriptions SET state='pending', phase=NULL, progress=0, "
-            "started_at=NULL, updated_at=? WHERE id=?",
-            (iso(self.clock.now()), job.id),
-        )
-        updated = self.require(job.id)
+        in the queue. It starts again from the beginning. A cancel asked for while it ran
+        is honoured here, as in ``defer``."""
+        with self._lock:
+            if self._stopping.get(job.id) == "cancel":
+                return self.mark_cancelled(job.id)
+            self._forget_run(job.id)
+            self.conn.execute(
+                "UPDATE transcriptions SET state='pending', phase=NULL, progress=0, "
+                "started_at=NULL, updated_at=? WHERE id=?",
+                (iso(self.clock.now()), job.id),
+            )
+            updated = self.require(job.id)
         self._publish(updated)
         return updated
 
@@ -352,6 +366,14 @@ class TranscriptionStore:
             if job.state == RUNNING:
                 self._stopping.setdefault(transcription_id, "cancel")
             return job
+
+    def end_cancelled(self, transcription_id: str) -> None:
+        """The worker stopped a run for a cancel or a delete: cancelled, unless a delete
+        is owed, which ``finish_delete`` does. Under the lock ``delete`` takes, so a
+        delete asked for just now is not lost to the cancel."""
+        with self._lock:
+            if self._stopping.get(transcription_id) != "delete":
+                self.mark_cancelled(transcription_id)
 
     def mark_cancelled(self, transcription_id: str) -> Transcription:
         now = iso(self.clock.now())
@@ -380,9 +402,16 @@ class TranscriptionStore:
                 "queued_at=?, updated_at=? WHERE id=?",
                 (now, now, transcription_id),
             )
+            # A cancel asked for in an earlier run is not this run's (z8tj1hwm0d).
+            self._forget_cancel(transcription_id)
             updated = self.require(transcription_id)
         self._publish(updated)
         return updated
+
+    def _forget_cancel(self, transcription_id: str) -> None:
+        """Drop a cancel request; a delete request stays, the worker still owes it."""
+        if self._stopping.get(transcription_id) == "cancel":
+            del self._stopping[transcription_id]
 
     def delete(self, transcription_id: str) -> bool:
         """Remove the row and the folder. A running job is a hand-off: it stops at its next
@@ -431,15 +460,20 @@ class TranscriptionStore:
         return int(row["n"]) > 0
 
     def finish_delete(self, transcription_id: str) -> bool:
-        """The delete asked for while it ran, now that the engine has let go of its files."""
-        if self._stopping.get(transcription_id) != "delete":
-            return False
-        try:
-            self.purge(transcription_id)
-        except OSError as exc:  # a file still held (Windows): the sweep retries later
-            log.warning("transcription %s: could not finish deleting it: %s", transcription_id, exc)
-            return False
-        return True
+        """The delete asked for while it ran, now that the engine has let go of its files.
+        Under the lock ``delete`` takes, so a second Delete pressed now does not remove the
+        same folder at the same time."""
+        with self._lock:
+            if self._stopping.get(transcription_id) != "delete":
+                return False
+            try:
+                self.purge(transcription_id)
+            except OSError as exc:  # a file still held (Windows)
+                log.warning(
+                    "transcription %s: could not finish deleting it: %s", transcription_id, exc
+                )
+                return False
+            return True
 
     def stopping(self, transcription_id: str) -> str | None:
         return self._stopping.get(transcription_id)

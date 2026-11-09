@@ -33,6 +33,7 @@ from app.api.security import CSRF_COOKIE, CSRF_HEADER
 from app.asr import languages
 from app.audio.ingest import (
     FFMPEG_RETRY_AFTER_S,
+    HEALTH,
     FfmpegBroken,
     FfmpegFailed,
     UnsupportedAudio,
@@ -719,6 +720,8 @@ def info(request: Request) -> dict[str, Any]:
         "device": svc.extras.get("transcription_device"),
         "queue_depth": svc.scheduler.depth() if svc.scheduler else svc.queue.depth(),
         "waiting_reason": worker.waiting_reason() if worker is not None else None,
+        # Whether ffmpeg has been starting: held, files wait and uploads get 503 (z8tj1hwjvv).
+        "ffmpeg": HEALTH.state(),
         "languages": ["auto", *sorted(languages.LANGUAGES)],
         "formats": list(FORMATS),
         "max_upload_mb": int(float(svc.config.get("transcription.max_upload_mb", 4096))),
