@@ -92,6 +92,10 @@ def stop_transcription(svc: Any, meeting_id: str) -> str | None:
     return str(stopped)
 
 
+#: How often the worker tries again to remove deleted transcriptions whose files were in use.
+FINISH_DELETES_S = 60.0
+
+
 class Worker:
     def __init__(
         self,
@@ -127,6 +131,7 @@ class Worker:
         self.stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_sweep: float | None = None
+        self._last_deletes: float | None = None
         self._auto_profile: tuple[tuple[Any, Any], str] | None = None
         self.queue.reset_running()
         if self.transcriptions is not None:
@@ -327,7 +332,7 @@ class Worker:
         from app.asr.models import ModelNotInstalled
         from app.audio.ingest import FfmpegBroken, FfmpegFailed, UnsupportedAudio
         from app.transcription.engine import transcribe_file
-        from app.transcription.store import INPUT_DIR, RESULT_NAME
+        from app.transcription.store import RESULT_NAME
         from app.transcription.types import overall_progress
 
         store = self.transcriptions
@@ -413,8 +418,11 @@ class Worker:
         finally:
             # However it ended: a job deleted meanwhile goes now its files are let go.
             store.finish_delete(job.id)
-        if store.get(job.id) is None:
-            return  # deleted as it finished
+        if store.visible(job.id) is None:
+            # Deleted as it finished: a delete pressed after the finally above is owed
+            # here, or the row would stay running (its files may still be going).
+            store.finish_delete(job.id)
+            return
         store.complete(
             job.id,
             duration_s=result.duration_s,
@@ -430,9 +438,9 @@ class Worker:
         if job.source_kind == "upload" and not bool(
             self.config.get("transcription.keep_input", False)
         ):
-            import shutil
-
-            shutil.rmtree(folder / INPUT_DIR, ignore_errors=True)
+            # Through the store, under its lock: a Delete pressed now removes the whole
+            # folder, and the two removals must not meet half-way.
+            store.remove_input(job.id)
 
     def _failed_for_good(self, store: Any, job: Any, exc: BaseException) -> None:
         """A file job that trying again would not fix; cancelled instead when a cancel
@@ -606,6 +614,22 @@ class Worker:
             log.warning("database backup failed: %s", exc)
             return None
 
+    def maybe_finish_deletes(self) -> int:
+        """Remove deleted transcriptions whose files were still in use, at most once in
+        ``FINISH_DELETES_S`` (z8tj1hwqq1). The first call always runs: after a restart,
+        nothing holds them any more."""
+        if self.transcriptions is None:
+            return 0
+        now = self.clock.monotonic()
+        if self._last_deletes is not None and now - self._last_deletes < FINISH_DELETES_S:
+            return 0
+        self._last_deletes = now
+        try:
+            return int(self.transcriptions.finish_pending_deletes())
+        except Exception as exc:  # housekeeping must never take the worker down
+            log.warning("finishing deletes failed: %s", exc)
+            return 0
+
     def run_forever(self, *, idle_sleep: float = 2.0, busy_sleep: float = 5.0) -> None:
         while not self.stop_event.is_set():
             if not self.may_run():
@@ -624,6 +648,7 @@ class Worker:
                 continue
             if not ran:
                 # Only with nothing else to do: housekeeping never competes with a job.
+                self.maybe_finish_deletes()
                 self.maybe_sweep()
                 self.clock.sleep(idle_sleep)
 

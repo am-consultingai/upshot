@@ -316,7 +316,8 @@ def describe(svc: Services, job: Transcription) -> dict[str, Any]:
 
 
 def find(svc: Services, job_id: str) -> Transcription:
-    job = svc.transcriptions.get(job_id) if svc.transcriptions else None
+    # A job deleted whose files are still in use is gone, for every caller (z8tj1hwqq1).
+    job = svc.transcriptions.visible(job_id) if svc.transcriptions else None
     if job is None:
         raise HTTPException(404, f"no such transcription: {job_id}")
     return job  # type: ignore[no-any-return]
