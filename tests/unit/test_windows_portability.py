@@ -4,6 +4,7 @@ Windows machine, or the windowed frozen build, would trip over."""
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import subprocess
 import sys
@@ -212,6 +213,41 @@ def test_probe_keeps_the_banner_so_a_crash_on_the_file_is_never_silent(
     with pytest.raises(ingest.UnsupportedAudio):
         ingest.probe(tmp_path / "crafted.m4a")
     assert "-hide_banner" not in seen[0]
+
+
+def test_no_memory_is_the_systems_even_after_the_banner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    banner = b"ffmpeg version 8.1 Copyright (c) 2000-2026 the FFmpeg developers\n"
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda argv, **kw: _Ran(NO_MEMORY, banner))
+    with pytest.raises(ingest.FfmpegFailed, match="0xc0000017"):
+        ingest.probe(tmp_path / "call.m4a")
+
+
+def test_a_configured_ffmpeg_that_is_not_a_program_is_not_waited_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import errno
+
+    def not_a_program(argv: list[str], **kwargs: Any) -> None:
+        raise OSError(errno.ENOEXEC, "Exec format error")
+
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", not_a_program)
+    with pytest.raises(OSError) as caught:
+        ingest.probe(tmp_path / "call.m4a")
+    assert not isinstance(caught.value, ingest.FfmpegFailed)
+
+
+def test_the_home_folder_is_cut_out_only_at_a_folder_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "someone"
+    monkeypatch.setattr(ingest.Path, "home", classmethod(lambda cls: home))
+    said = f"{home}{os.sep}x.wav: No space left\n{home}else{os.sep}y.wav\n".encode()
+    text = ingest._said(tmp_path / "a.m4a", said, 500)
+    assert f"~{os.sep}x.wav" in text and f"{home}else" in text
 
 
 def test_an_os_error_names_no_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

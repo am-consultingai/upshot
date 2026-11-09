@@ -375,14 +375,14 @@ class Worker:
         except FfmpegFailed as exc:
             # ffmpeg could not start (no memory, on the machine that reported it, for
             # days): nothing to do with this file, and five quick retries would not
-            # outlast it. Wait, counting no attempt; the job says why while it waits, and
-            # the user can cancel it. A cancel asked for meanwhile is honoured here: a
-            # child that fails at once never reaches the conversion's stop check.
-            if store.stopping(job.id) == "cancel":
-                store.mark_cancelled(job.id)
-                return
-            store.defer(job, exc, until=self.clock.now() + timedelta(seconds=FFMPEG_DEFER_S))
-            log.warning("transcription %s waits: %s", job.id, exc)
+            # outlast it. Wait, counting no attempt; the job shows why while it waits, and
+            # a cancel asked for meanwhile is honoured by defer.
+            why = f"{type(exc).__name__}: {exc}".replace(
+                Path(job.source_path).name, job.source_name
+            )
+            until = self.clock.now() + timedelta(seconds=FFMPEG_DEFER_S)
+            if store.defer(job, why, until=until).state == "pending":
+                log.warning("transcription %s waits: %s", job.id, exc)
             return
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
             # Trying again changes nothing: an undecodable file, a missing model, a path

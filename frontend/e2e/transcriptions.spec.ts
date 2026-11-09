@@ -89,6 +89,12 @@ test("each_state_reads_as_itself", async ({ page, seedBody }) => {
   await seedBody({
     transcriptions: [
       { state: "pending", source_name: "waiting.mp3" },
+      {
+        state: "pending",
+        source_name: "deferred.mp3",
+        retry_in_s: 300,
+        last_error: "FfmpegFailed: ffmpeg could not run to read deferred.mp3 (exit code 0xc0000017)",
+      },
       { state: "running", source_name: "busy.mp3", phase: "transcribe", progress: 0.42 },
       { state: "failed", source_name: "broken.mp3", last_error: "UnsupportedAudio: broken.mp3 has no audio" },
       { state: "cancelled", source_name: "stopped.mp3" },
@@ -98,6 +104,9 @@ test("each_state_reads_as_itself", async ({ page, seedBody }) => {
   await gotoApp(page, "/transcriptions");
   const row = (name: string) => page.getByTestId("transcription-row").filter({ hasText: name });
   await expect(row("waiting.mp3").getByTestId("transcription-state")).toContainText("Waiting");
+  await expect(row("waiting.mp3").getByTestId("transcription-error")).toHaveCount(0);
+  // A job waiting to try again says why (an ffmpeg that could not start, for days).
+  await expect(row("deferred.mp3").getByTestId("transcription-error")).toContainText("ffmpeg could not run");
   await expect(row("busy.mp3").getByTestId("transcription-state")).toHaveText(/Transcribing · transcribing \d+%/);
   await expect(row("broken.mp3").getByTestId("transcription-error")).toContainText("has no audio");
   await expect(row("broken.mp3").getByTestId("transcription-retry")).toBeVisible();

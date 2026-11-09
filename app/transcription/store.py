@@ -311,15 +311,21 @@ class TranscriptionStore:
     ) -> Transcription:
         """Back to pending until ``until``, **without** counting an attempt, as
         ``JobQueue.defer`` does: for a cause outside the job (ffmpeg that could not start)
-        that five quick retries would not outlast. The reason stays in ``last_error``."""
+        that five quick retries would not outlast. The reason stays in ``last_error``.
+
+        Under the lock ``cancel`` takes, so a cancel asked for while the job ran is
+        honoured here instead of being lost to the wait."""
         message = f"{type(error).__name__}: {error}" if isinstance(error, BaseException) else error
-        self._forget_run(job.id)
-        self.conn.execute(
-            "UPDATE transcriptions SET state='pending', last_error=?, phase=NULL, progress=0, "
-            "not_before=?, started_at=NULL, updated_at=? WHERE id=?",
-            (message[:2000], iso(until), iso(self.clock.now()), job.id),
-        )
-        updated = self.require(job.id)
+        with self._lock:
+            if self._stopping.get(job.id) == "cancel":
+                return self.mark_cancelled(job.id)
+            self._forget_run(job.id)
+            self.conn.execute(
+                "UPDATE transcriptions SET state='pending', last_error=?, phase=NULL, "
+                "progress=0, not_before=?, started_at=NULL, updated_at=? WHERE id=?",
+                (message[:2000], iso(until), iso(self.clock.now()), job.id),
+            )
+            updated = self.require(job.id)
         self._publish(updated)
         return updated
 

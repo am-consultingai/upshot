@@ -86,6 +86,8 @@ export interface SeedTranscription {
   phase?: string;
   progress?: number;
   last_error?: string;
+  /** Waiting to try again this many seconds from now. */
+  retry_in_s?: number;
   segments?: { speaker?: string; start?: number; end?: number; text: string }[];
 }
 

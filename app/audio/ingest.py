@@ -7,9 +7,11 @@ rather than from the track split.
 
 from __future__ import annotations
 
+import errno
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import wave
@@ -42,13 +44,18 @@ class FfmpegFailed(RuntimeError):
 FFMPEG_RETRY_AFTER_S = 60
 
 
+#: STATUS_NO_MEMORY: Windows had no memory for the process, whatever it had printed.
+NO_MEMORY = 0xC0000017
+
+
 def _did_not_run(returncode: int, stderr: bytes) -> bool:
     """Whether ffmpeg failed before doing any work of its own. A program the loader could
     not start (0xC0000017: no memory to start it) never prints a word, while ffmpeg always
     says why it gives up. A crash after it has printed something (0xC0000005 on a crafted
     file) is the file's doing, so it stays :class:`UnsupportedAudio`, or a client told to
-    try again would send the same file for ever."""
-    return returncode != 0 and not stderr.strip()
+    try again would send the same file for ever. STATUS_NO_MEMORY is the system's either
+    way: a file that asks for too much gets ffmpeg's own "Cannot allocate memory"."""
+    return returncode == NO_MEMORY or (returncode != 0 and not stderr.strip())
 
 
 def _exit_text(returncode: int) -> str:
@@ -64,7 +71,10 @@ def _said(source: Path, stderr: bytes, keep: int, target: Path | None = None) ->
     for path in (source, target):
         if path is not None:
             text = text.replace(str(path), path.name)
-    text = text.replace(str(Path.home()), "~")
+    home = str(Path.home()).rstrip("/\\")
+    if home:  # not a root folder, where every separator would match
+        flags = re.IGNORECASE if sys.platform == "win32" else 0
+        text = re.sub(re.escape(home) + r"(?=[\\/]|$)", "~", text, flags=flags, count=0)
     return text.strip()[-keep:]
 
 
@@ -72,6 +82,20 @@ def _os_error(exc: OSError) -> str:
     """An OSError without its file name, which is a path on this machine."""
     code = getattr(exc, "winerror", None) or exc.errno
     return f"{exc.strerror or type(exc).__name__} ({code})" if code else type(exc).__name__
+
+
+#: Not a program at all (a bad ``ffmpeg_path``): waiting will not fix it, so it is not
+#: FfmpegFailed. ERROR_BAD_EXE_FORMAT on Windows, ENOEXEC and EISDIR on POSIX.
+_NOT_A_PROGRAM = {193, errno.ENOEXEC, errno.EISDIR}
+
+
+def _start_failed(source: Path, exc: OSError) -> Exception:
+    """What to raise when ffmpeg could not be started: FfmpegFailed for what passes, the
+    OSError itself when the configured program can never run."""
+    if (getattr(exc, "winerror", None) or exc.errno) in _NOT_A_PROGRAM:
+        log.warning("ffmpeg cannot be started (%s); check ffmpeg_path", _os_error(exc))
+        return exc
+    return _ffmpeg_failed(source, _os_error(exc))
 
 
 def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
@@ -166,7 +190,7 @@ def to_wav(
             f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
         ) from exc
     except OSError as exc:
-        raise _ffmpeg_failed(source, _os_error(exc)) from exc
+        raise _start_failed(source, exc) from exc
     if result.returncode != 0 or not target.exists():
         raise _conversion_failed(source, result.returncode, result.stderr, target)
     return target
@@ -207,7 +231,7 @@ def _to_wav_cancellable(
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError as exc:
-            raise _ffmpeg_failed(source, _os_error(exc)) from exc
+            raise _start_failed(source, exc) from exc
         deadline = time.monotonic() + FFMPEG_TIMEOUT_S
         try:
             while True:
@@ -343,7 +367,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
         log.warning("ffmpeg took more than %s s to read %s", PROBE_TIMEOUT_S, source.name)
         raise UnsupportedAudio(f"ffmpeg took too long to read {source.name}") from exc
     except OSError as exc:
-        raise _ffmpeg_failed(source, _os_error(exc)) from exc
+        raise _start_failed(source, exc) from exc
     if _did_not_run(result.returncode, result.stderr):
         raise _ffmpeg_failed(source, _exit_text(result.returncode))
     text = result.stderr.decode(errors="replace")

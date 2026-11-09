@@ -9,8 +9,10 @@ new dialog about every minute, for days, and each ffmpeg hung until Upshot's tim
 ``SEM_FAILCRITICALERRORS`` makes the system return the error to the program instead, so
 the child ends at once with its NTSTATUS code. A process's error mode is inherited by
 the processes it creates, so setting it once at startup covers ffmpeg, nvidia-smi and
-every AI CLI. ``SEM_NOGPFAULTERRORBOX`` is deliberately not set: it would also switch
-off Windows Error Reporting for Upshot's own crashes.
+every AI CLI. It also reaches what the user sees (the browser window when Upshot starts
+the browser, the update installer): only their critical-error dialogs are affected, and
+those programs report such errors themselves. ``SEM_NOGPFAULTERRORBOX`` is deliberately
+not set: it would also switch off Windows Error Reporting for Upshot's own crashes.
 """
 
 from __future__ import annotations

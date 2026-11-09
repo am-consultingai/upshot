@@ -354,7 +354,7 @@ async def _from_path(request: Request, svc: Services) -> Transcription:
     options = options_from(fields)
     source = check_path(str(body.get("path") or ""))
     size = source.stat().st_size
-    duration = await _check_media(svc, source, label=source.name)
+    duration = await _check_media(svc, source, label=display_name(source.name))
     store = svc.transcriptions
     return store.create(  # type: ignore[no-any-return]
         source_name=display_name(source.name),

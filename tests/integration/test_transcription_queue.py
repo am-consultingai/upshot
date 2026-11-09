@@ -590,6 +590,32 @@ def test_a_cancel_during_a_failed_ffmpeg_start_is_honoured(
     assert store.require(job.id).state == CANCELLED
 
 
+def test_defer_honours_a_cancel_asked_for_while_the_job_ran(tmp_path: Path) -> None:
+    """Under the lock cancel takes: a cancel landing just before the deferral wins."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None and running.id == job.id
+    store.cancel(job.id)
+    until = datetime.fromisoformat("2030-01-01T00:00:00+00:00")
+    assert store.defer(running, "FfmpegFailed: no", until=until).state == CANCELLED
+
+
+def test_a_deferred_job_is_described_as_waiting_to_retry_with_its_reason(
+    tmp_path: Path,
+) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    later = datetime.fromisoformat(h.clock.now().isoformat()) + timedelta(seconds=300)
+    held = store.defer(running, "FfmpegFailed: ffmpeg could not run", until=later)
+    assert held.state == PENDING and held.attempts == 0
+    assert held.as_dict()["error"] == "FfmpegFailed: ffmpeg could not run"
+
+
 def test_a_missing_path_fails_at_once(tmp_path: Path) -> None:
     h = harness(tmp_path)
     store = store_for(h)

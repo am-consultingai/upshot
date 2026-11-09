@@ -554,3 +554,14 @@ def test_listing_tools_before_upshot_starts_is_quick(
     listed = tools.Bridge().meeting_tools()
     assert asked == [("http://127.0.0.1:43217/api/v1/info", upshot.QUICK_TIMEOUT_S)]
     assert {tool["name"] for tool in listed} >= {"search", "get_transcript", "get_summary"}
+
+
+def test_a_job_waiting_to_try_again_says_why() -> None:
+    """ffmpeg that could not start can last days: the AI app is told the cause."""
+    job = {
+        "state": "pending",
+        "waiting_reason": "retry",
+        "error": "FfmpegFailed: ffmpeg could not run to read call.m4a (exit code 0xc0000017)",
+    }
+    assert "0xc0000017" in tools._status(job)
+    assert tools._status({"state": "pending", "waiting_reason": "queue", "error": "x"}) == "waiting"

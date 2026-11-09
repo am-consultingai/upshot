@@ -3182,6 +3182,12 @@ def _seed_transcription(svc: Services, item: dict[str, Any]) -> str:
         "phase": item.get("phase"),
         "progress": float(item.get("progress", 1.0 if state == "done" else 0.0)),
         "last_error": item.get("last_error"),
+        # Waiting to try again this many seconds from now (a backoff or a deferral).
+        "not_before": (
+            iso(svc.clock.now() + timedelta(seconds=float(item["retry_in_s"])))
+            if item.get("retry_in_s") is not None
+            else None
+        ),
         "language": item.get("language"),
         "language_conf": 0.95 if item.get("language") else None,
         "finished_at": iso(svc.clock.now()) if state in ("done", "failed", "cancelled") else None,
