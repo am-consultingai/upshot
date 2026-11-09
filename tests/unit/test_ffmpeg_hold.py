@@ -275,3 +275,17 @@ def test_the_app_wires_the_notice(tmp_path: Path) -> None:
 def test_commit_memory_is_none_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ingest.sys, "platform", "linux")
     assert ingest.commit_memory() is None
+
+
+def test_a_stale_failure_during_a_trial_holds_again(health: Any) -> None:
+    """A run started before the hold that fails while the trial runs: ffmpeg did not
+    run for it, so the hold starts again, and the trial's success no longer ends it."""
+    record, clock, _holds = health
+    stale = record.check(Path("old.m4a"))
+    for _ in range(3):
+        record.failed("exit code 0xc0000017")
+    clock.now += FFMPEG_HOLD_S
+    trial = record.check(Path("trial.m4a"))
+    record.failed("exit code 0xc0000017")  # the old run's answer, late
+    record.worked(trial)
+    assert record.held() and stale != trial

@@ -775,3 +775,22 @@ def test_a_delete_asked_for_survives_a_failure(tmp_path: Path) -> None:
     assert store.delete(job.id) is False
     store.fail(running, "boom", permanent=True)
     assert store.stopping(job.id) == "delete"
+
+
+def test_a_delete_asked_for_as_the_job_is_marked_done_is_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After the run's last chance to stop: the worker was handed it, so it does it."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    complete = store.complete
+
+    def deleted_just_before(transcription_id: str, **kwargs: object):  # type: ignore[no-untyped-def]
+        assert store.delete(transcription_id) is False, "running: handed to the worker"
+        return complete(transcription_id, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(store, "complete", deleted_just_before)
+    worker_for(h, store).run_once()
+    assert store.get(job.id) is None
+    assert store.stopping(job.id) is None

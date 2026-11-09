@@ -281,6 +281,7 @@ class TranscriptionStore:
                  now, now, transcription_id),
             )  # fmt: skip
             # A cancel that came after the last check is too late, and not the next run's.
+            # A delete stays: the worker does it next (finish_delete).
             self._forget_cancel(transcription_id)
             return self._finished(transcription_id)
 

@@ -419,7 +419,7 @@ def to_wav(
 
 
 def _conversion_failed(
-    source: Path, returncode: int, stderr: bytes, target: Path | None = None, token: int = -1
+    source: Path, returncode: int, stderr: bytes, target: Path | None, token: int
 ) -> Exception:
     failed = _not_run(source, returncode, stderr)
     if failed is not None:
@@ -444,7 +444,7 @@ def _to_wav_cancellable(
     source: Path,
     target: Path,
     stop_check: Callable[[], None],
-    token: int = -1,
+    token: int,
 ) -> Path:
     """``to_wav`` with ffmpeg in the background, polled so that it can be stopped."""
     # stderr to a file, not a pipe: ffmpeg writes progress there for as long as it runs,

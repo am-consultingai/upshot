@@ -422,13 +422,17 @@ class Worker:
             language_conf=result.language_conf,
             model=result.model,
         )
+        self.stats.completed += 1
+        # A delete asked for after the finally above, as the job was being marked done:
+        # it was handed to the worker, so the worker does it now.
+        if store.finish_delete(job.id):
+            return
         if job.source_kind == "upload" and not bool(
             self.config.get("transcription.keep_input", False)
         ):
             import shutil
 
             shutil.rmtree(folder / INPUT_DIR, ignore_errors=True)
-        self.stats.completed += 1
 
     def _failed_for_good(self, store: Any, job: Any, exc: BaseException) -> None:
         """A file job that trying again would not fix; cancelled instead when a cancel
