@@ -534,3 +534,13 @@ footer{font-size:var(--t-label)}
   .track[aria-hidden]{display:none}
 }
 .demo{white-space:nowrap}
+
+/* Video: a local poster until play is pressed, so YouTube loads only on request. */
+.yt{position:relative;margin-top:36px;max-width:960px;aspect-ratio:16/9;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--deep)}
+.yt-play,.yt iframe{position:absolute;inset:0;display:block;width:100%;height:100%;border:0}
+.yt-play img{width:100%;height:100%;object-fit:cover;display:block}
+.yt-btn{position:absolute;top:50%;left:50%;width:76px;height:76px;margin:-38px 0 0 -38px;border-radius:50%;
+  background:rgba(11,15,25,.72);border:1px solid var(--cyan);display:grid;place-items:center;transition:transform .15s}
+.yt-btn svg{width:32px;height:32px;fill:var(--cyan);margin-left:4px}
+.yt-play:hover .yt-btn,.yt-play:focus-visible .yt-btn{transform:scale(1.08)}
+.yt-play:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
