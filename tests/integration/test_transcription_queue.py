@@ -804,3 +804,124 @@ def test_a_delete_asked_for_as_the_job_is_marked_done_is_done(
     assert store.get(job.id) is None
     assert store.stopping(job.id) is None
     assert worker.stats.completed == 0, "deleted as it finished: not counted as done"
+
+
+# -- a delete whose files are still in use (z8tj1hwqq1) -----------------------
+
+
+def held_once(store: TranscriptionStore, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The folder's removal fails once, as with a file an antivirus still holds."""
+    tried: list[str] = []
+    remove = store.remove_folder
+
+    def held(transcription_id: str) -> None:
+        tried.append(transcription_id)
+        if len(tried) == 1:
+            raise PermissionError(13, "The process cannot access the file")
+        remove(transcription_id)
+
+    monkeypatch.setattr(store, "remove_folder", held)
+    return tried
+
+
+def test_a_running_job_deleted_with_a_held_file_is_gone_and_removed_later(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    assert store.delete(job.id) is False  # handed to the worker
+    tried = held_once(store, monkeypatch)
+    assert store.finish_delete(job.id) is True, "gone for the user"
+    assert tried == [job.id]
+    row = store.get(job.id)
+    assert row is not None and row.state == CANCELLED, "no longer running"
+    assert store.visible(job.id) is None and store.recent() == []
+    assert not store.busy(), "an update is not held back by it"
+    assert store.stopping(job.id) is None
+    assert store.finish_pending_deletes() == 1
+    assert store.get(job.id) is None
+
+
+def test_a_waiting_job_deleted_with_a_held_file_never_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    held_once(store, monkeypatch)
+    assert store.delete(job.id) is False
+    assert store.claim(job.id) is None and store.runnable() == []
+    with pytest.raises(KeyError):
+        store.retry(job.id)
+    assert store.finish_pending_deletes() == 1
+
+
+def test_a_crash_while_a_delete_was_stopping_the_job_does_not_bring_it_back(
+    tmp_path: Path,
+) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    assert store.claim(job.id) is not None
+    store.delete(job.id)  # the worker never got to stop it: the app died
+    restarted = store_for(h)
+    restarted.reset_running()
+    row = restarted.get(job.id)
+    assert row is not None and row.state == CANCELLED, "not waiting to run again"
+    assert restarted.visible(job.id) is None
+    assert restarted.finish_pending_deletes() == 1 and restarted.get(job.id) is None
+
+
+def test_a_file_still_held_waits_for_the_next_try(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+
+    def always_held(transcription_id: str) -> None:
+        raise PermissionError(13, "The process cannot access the file")
+
+    monkeypatch.setattr(store, "remove_folder", always_held)
+    store.delete(job.id)
+    assert store.finish_pending_deletes() == 0
+    assert store.get(job.id) is not None and store.visible(job.id) is None
+
+
+def test_the_worker_tries_again_once_a_minute(tmp_path: Path) -> None:
+    from app.pipeline.worker import FINISH_DELETES_S
+
+    h = harness(tmp_path)
+    store = store_for(h)
+    worker = worker_for(h, store)
+    calls: list[int] = []
+    store.finish_pending_deletes = lambda: calls.append(1) or 0  # type: ignore[method-assign]
+    worker.maybe_finish_deletes()
+    worker.maybe_finish_deletes()
+    assert calls == [1], "the first call runs, the next waits"
+    h.clock.advance(FINISH_DELETES_S)
+    worker.maybe_finish_deletes()
+    assert calls == [1, 1]
+
+
+def test_a_file_removed_by_someone_else_mid_removal_is_fine(tmp_path: Path) -> None:
+    from app.transcription.store import _gone_is_fine
+
+    _gone_is_fine(None, str(tmp_path / "x"), FileNotFoundError(2, "gone"))
+    with pytest.raises(PermissionError):
+        _gone_is_fine(None, str(tmp_path / "x"), PermissionError(13, "held"))
+
+
+def test_the_input_of_a_job_deleted_meanwhile_is_left_to_the_delete(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    folder = store.folder(job.id) / "input"
+    folder.mkdir(parents=True)
+    (folder / "clip.wav").write_bytes(b"x")
+    store.remove_input(job.id)
+    assert not folder.exists(), "a finished upload's copy goes"
+    store.remove_input("tr_nosuchjob00")  # deleted meanwhile: nothing to do

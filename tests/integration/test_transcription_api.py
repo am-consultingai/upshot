@@ -597,3 +597,23 @@ def test_a_failed_key_write_leaves_no_copy_behind(
     with pytest.raises(PermissionError):
         security._write_private(tmp_path / "access.key", "k" * 40)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_job_deleted_while_a_file_is_held_is_gone_from_the_api(
+    h: ApiHarness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """z8tj1hwqq1: its files go later; for every caller it is deleted now."""
+    program = Program(h)
+    job = upload(program, wav(tmp_path / "a.wav", 3)).json()
+    store = h.services.transcriptions
+
+    def held(transcription_id: str) -> None:
+        raise PermissionError(13, "The process cannot access the file")
+
+    monkeypatch.setattr(store, "remove_folder", held)
+    base = f"/api/v1/transcriptions/{job['id']}"
+    answer = program.delete(base).json()
+    assert answer == {"id": job["id"], "deleted": False, "pending_delete": True}
+    assert program.get(base).status_code == 404
+    listed = program.get("/api/v1/transcriptions").json()
+    assert job["id"] not in str(listed)

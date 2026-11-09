@@ -119,6 +119,13 @@ class Transcription:
         }
 
 
+def _gone_is_fine(function: object, path: str, exc: BaseException) -> None:
+    """``rmtree``'s error handler: a file already removed (by a delete pressed at the same
+    moment) is what was wanted; anything else is raised."""
+    if not isinstance(exc, FileNotFoundError):
+        raise exc
+
+
 def _row(row: sqlite3.Row) -> Transcription:
     return Transcription(**{key: row[key] for key in COLUMNS})
 
@@ -184,7 +191,16 @@ class TranscriptionStore:
             return
         if not self.inside_root(folder):
             raise ValueError(f"{folder} is outside the transcriptions folder")
-        shutil.rmtree(folder)
+        shutil.rmtree(folder, onexc=_gone_is_fine)
+
+    def remove_input(self, transcription_id: str) -> None:
+        """A finished upload's own copy of the file, once it is no longer needed. Under the
+        lock ``delete`` takes, and not for a job deleted meanwhile, whose whole folder goes."""
+        with self._lock:
+            job = self.get(transcription_id)
+            if job is None or self._delete_pending(transcription_id):
+                return
+            shutil.rmtree(self.folder(transcription_id) / INPUT_DIR, ignore_errors=True)
 
     def clean_incoming(self) -> int:
         """Partial uploads from a run that ended mid-upload: none of them has a row."""
@@ -237,7 +253,8 @@ class TranscriptionStore:
         with self._lock:
             row = self.conn.execute(
                 "UPDATE transcriptions SET state='running', started_at=?, updated_at=?, "
-                "phase=NULL, progress=0 WHERE id=? AND state='pending' RETURNING *",
+                "phase=NULL, progress=0 WHERE id=? AND state='pending' AND delete_pending=0 "
+                "RETURNING *",
                 (now, now, transcription_id),
             ).fetchone()
         if row is None:
@@ -391,6 +408,8 @@ class TranscriptionStore:
         that is then deleted (the PR #20 review)."""
         with self._lock:
             job = self.require(transcription_id)
+            if self._delete_pending(transcription_id):
+                raise KeyError(f"no such transcription: {transcription_id}")
             if job.state not in (FAILED, CANCELLED):
                 raise ValueError(
                     f"{transcription_id} is {job.state}; only a failed or cancelled job is retried"
@@ -420,9 +439,70 @@ class TranscriptionStore:
             job = self.require(transcription_id)
             if job.state == RUNNING:
                 self._stopping[transcription_id] = "delete"
+                # Kept in the row too: a crash before the worker stops must not bring the
+                # job back as waiting (reset_running).
+                self.conn.execute(
+                    "UPDATE transcriptions SET delete_pending=1 WHERE id=?", (transcription_id,)
+                )
                 return False
+            return self._purge_or_later(transcription_id)
+
+    def _purge_or_later(self, transcription_id: str) -> bool:
+        """Remove it now; when a file is still held (Windows), hide it and leave the
+        removal to ``finish_pending_deletes``. True when it is gone now."""
+        try:
             self.purge(transcription_id)
-            return True
+        except OSError as exc:
+            self._delete_later(transcription_id, exc)
+            return False
+        return True
+
+    def _delete_later(self, transcription_id: str, exc: OSError) -> None:
+        """Deleted for the user, though its files are not all gone yet: hidden, never run
+        again, and removed by the worker once Windows lets go of them."""
+        code = getattr(exc, "winerror", None) or exc.errno
+        why = f"{exc.strerror or type(exc).__name__} ({code})"  # no path: it names the user
+        now = iso(self.clock.now())
+        self.conn.execute(
+            "UPDATE transcriptions SET state='cancelled', delete_pending=1, phase=NULL, "
+            "not_before=NULL, last_error=?, finished_at=COALESCE(finished_at, ?), "
+            "updated_at=? WHERE id=?",
+            (f"Deleted; its files go once they are no longer in use: {why}", now, now,
+             transcription_id),
+        )  # fmt: skip
+        self._stopping.pop(transcription_id, None)
+        self._forget_run(transcription_id)
+        log.warning(
+            "transcription %s: deleted, but a file is still in use (%s); removing it later",
+            transcription_id,
+            why,
+        )
+        if self.events is not None:
+            self.events.publish("transcription", id=transcription_id, state="deleted")
+
+    def _delete_pending(self, transcription_id: str) -> bool:
+        row = self.conn.execute(
+            "SELECT delete_pending FROM transcriptions WHERE id=?", (transcription_id,)
+        ).fetchone()
+        return bool(row and row["delete_pending"])
+
+    def finish_pending_deletes(self) -> int:
+        """Remove the deleted jobs whose files were still in use. How many went."""
+        removed = 0
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id FROM transcriptions WHERE delete_pending=1 AND state != 'running'"
+            ).fetchall()
+            for row in rows:
+                try:
+                    self.purge(str(row["id"]))
+                except OSError as exc:
+                    log.info("transcription %s: still in use (%s)", row["id"], exc.strerror)
+                    continue
+                removed += 1
+        if removed:
+            log.info("removed %d deleted transcription(s) whose files were in use", removed)
+        return removed
 
     def purge_finished(self, transcription_id: str, *, before: datetime | None = None) -> bool:
         """Retention's delete: only a job still done, failed or cancelled, and finished
@@ -462,17 +542,13 @@ class TranscriptionStore:
     def finish_delete(self, transcription_id: str) -> bool:
         """The delete asked for while it ran, now that the engine has let go of its files.
         Under the lock ``delete`` takes, so a second Delete pressed now does not remove the
-        same folder at the same time."""
+        same folder at the same time. A file still held (Windows) leaves the job hidden
+        and the removal to ``finish_pending_deletes``. True when a delete was owed: the job
+        is gone for the user either way."""
         with self._lock:
             if self._stopping.get(transcription_id) != "delete":
                 return False
-            try:
-                self.purge(transcription_id)
-            except OSError as exc:  # a file still held (Windows)
-                log.warning(
-                    "transcription %s: could not finish deleting it: %s", transcription_id, exc
-                )
-                return False
+            self._purge_or_later(transcription_id)
             return True
 
     def stopping(self, transcription_id: str) -> str | None:
@@ -486,11 +562,18 @@ class TranscriptionStore:
             raise Cancelled(f"transcription {transcription_id}: {how} requested")
 
     def reset_running(self) -> int:
-        """Crash recovery: a job left running by a dead process is runnable again."""
+        """Crash recovery: a job left running by a dead process is runnable again, unless
+        it was being deleted: that one stays deleted, for ``finish_pending_deletes``."""
+        now = iso(self.clock.now())
+        self.conn.execute(
+            "UPDATE transcriptions SET state='cancelled', phase=NULL, finished_at=?, "
+            "updated_at=? WHERE state='running' AND delete_pending=1",
+            (now, now),
+        )
         cur = self.conn.execute(
             "UPDATE transcriptions SET state='pending', phase=NULL, progress=0, "
             "started_at=NULL, updated_at=? WHERE state='running'",
-            (iso(self.clock.now()),),
+            (now,),
         )
         count = int(cur.rowcount or 0)
         if count:
@@ -499,6 +582,13 @@ class TranscriptionStore:
         return count
 
     # -- reading -----------------------------------------------------------
+
+    def visible(self, transcription_id: str) -> Transcription | None:
+        """``get``, but None for a job the user deleted whose files are still going."""
+        job = self.get(transcription_id)
+        if job is None or self._delete_pending(transcription_id):
+            return None
+        return job
 
     def get(self, transcription_id: str) -> Transcription | None:
         row = self.conn.execute(
@@ -516,7 +606,7 @@ class TranscriptionStore:
         self, *, state: str | None = None, limit: int = 50, before: str | None = None
     ) -> list[Transcription]:
         """Newest first. ``before`` is a ``created_at`` to page from."""
-        clauses, params = [], []
+        clauses, params = ["delete_pending = 0"], []
         if state is not None:
             clauses.append("state = ?")
             params.append(state)
@@ -534,7 +624,9 @@ class TranscriptionStore:
         """Pending and due, oldest key first. Compared as parsed datetimes, never strings:
         the UTC offset in every timestamp changes at DST."""
         now = self.clock.now()
-        rows = self.conn.execute("SELECT * FROM transcriptions WHERE state='pending'").fetchall()
+        rows = self.conn.execute(
+            "SELECT * FROM transcriptions WHERE state='pending' AND delete_pending=0"
+        ).fetchall()
         due = [
             job
             for job in map(_row, rows)
