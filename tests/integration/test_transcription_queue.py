@@ -703,3 +703,66 @@ def test_a_job_whose_folder_cannot_be_made_is_failed_not_left_running(tmp_path: 
     after = store.require(job.id)
     assert after.state != RUNNING
     assert after.attempts == 1 and "FileExistsError" in (after.last_error or "")
+
+
+# -- a cancel asked for in one run is not the next run's (z8tj1hwm0d) ---------
+
+
+def test_a_retry_after_a_cancelled_run_that_failed_for_good_runs(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)  # asked for while it ran ...
+    assert store.fail(running, "UnsupportedAudio: no", permanent=True).state == FAILED
+    store.retry(job.id)  # ... and pressed Retry later
+    again = store.claim(job.id)
+    assert again is not None
+    assert store.stopping(job.id) is None, "the old cancel does not stop the new run"
+
+
+def test_a_retry_forgets_a_cancel_left_from_before(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)
+    store.fail(running, "boom", permanent=True)
+    store.cancel(job.id)  # a cancel pressed on the failed row does nothing
+    store.retry(job.id)
+    assert store.stopping(job.id) is None
+
+
+def test_a_run_that_fails_after_a_cancel_is_cancelled_not_requeued(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)
+    assert store.fail(running, "RuntimeError: boom").state == CANCELLED
+    assert store.stopping(job.id) is None
+
+
+def test_a_preempted_run_after_a_cancel_is_cancelled(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.cancel(job.id)
+    assert store.release(running).state == CANCELLED
+
+
+def test_a_delete_asked_for_survives_a_failure(tmp_path: Path) -> None:
+    """Only a cancel is forgotten: the worker still owes a delete its removal."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    assert store.delete(job.id) is False
+    store.fail(running, "boom", permanent=True)
+    assert store.stopping(job.id) == "delete"

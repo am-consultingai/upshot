@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 from collections.abc import Callable, Sequence
@@ -31,7 +32,8 @@ WAV_SUFFIXES = {".wav", ".wave"}
 
 
 class UnsupportedAudio(ValueError):
-    """The file is not a WAV and no ffmpeg is available to convert it."""
+    """The file cannot be read: ffmpeg ran and refused it (not audio or video, no audio
+    stream, too slow to convert), or it is not a WAV and a source checkout has no ffmpeg."""
 
 
 class FfmpegBroken(RuntimeError):
@@ -52,6 +54,144 @@ FFMPEG_RETRY_AFTER_S = 60
 
 #: STATUS_NO_MEMORY: Windows had no memory for the process, whatever it had printed.
 NO_MEMORY = 0xC0000017
+
+#: Failures to run ffmpeg in a row before Upshot stops starting it for a while
+#: (z8tj1hwjvv): a Windows that cannot start ffmpeg could not start the next one either.
+FFMPEG_HOLD_AFTER = 3
+#: How long it waits then, the same as it tells a program to wait before sending again.
+FFMPEG_HOLD_S = float(FFMPEG_RETRY_AFTER_S)
+
+
+def commit_memory() -> tuple[int, int] | None:
+    """Windows' commit charge left and its limit, in bytes (RAM plus the page file): what
+    a program needs to start, and what was used up when ffmpeg could not. None elsewhere,
+    or when Windows does not say."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", wintypes.DWORD),
+            ("dwMemoryLoad", wintypes.DWORD),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    status = MemoryStatus()
+    status.dwLength = ctypes.sizeof(status)
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
+    if not kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        return None
+    return int(status.ullAvailPageFile), int(status.ullTotalPageFile)
+
+
+@dataclass(frozen=True)
+class FfmpegHold:
+    """Upshot stopped starting ffmpeg: what a notice says about it."""
+
+    failures: int
+    error: str
+    #: Windows' commit charge left and its limit, in bytes, when it says.
+    memory: tuple[int, int] | None
+
+
+class FfmpegHealth:
+    """Whether ffmpeg has been running, across every file and caller (z8tj1hwjvv).
+
+    After :data:`FFMPEG_HOLD_AFTER` failures to run it in a row, Upshot starts no ffmpeg
+    for :data:`FFMPEG_HOLD_S`: each caller gets :class:`FfmpegFailed` at once, as it would
+    have after launching one, and ``on_hold`` is told once, so someone hears of it. Then
+    one ffmpeg is tried again; a failure holds again, a run that did its work ends it.
+    A file ffmpeg refuses still counts as a run: ffmpeg works.
+    """
+
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
+        self._lock = threading.Lock()
+        self._clock = clock
+        self.failures = 0
+        self.error = ""
+        self._held_until: float | None = None
+        #: Told once each time ffmpeg starts failing, not at each hold that follows.
+        self.on_hold: Callable[[FfmpegHold], None] | None = None
+
+    def held(self) -> bool:
+        with self._lock:
+            return self._held_until is not None and self._clock() < self._held_until
+
+    def check(self, source: Path) -> None:
+        """Raise :class:`FfmpegFailed` without starting ffmpeg while the hold lasts."""
+        with self._lock:
+            until = self._held_until
+            if until is None or self._clock() >= until:
+                return
+            left = until - self._clock()
+            failures, error = self.failures, self.error
+        raise FfmpegFailed(
+            f"ffmpeg could not run to read {source.name}: it failed {failures} times in a "
+            f"row ({error}), so Upshot waits {left:.0f} s before starting it again"
+        )
+
+    def failed(self, error: str) -> None:
+        with self._lock:
+            self.failures += 1
+            self.error = error
+            if self.failures < FFMPEG_HOLD_AFTER:
+                return
+            first = self._held_until is None
+            self._held_until = self._clock() + FFMPEG_HOLD_S
+            failures = self.failures
+            notify = self.on_hold if first else None
+        log.warning(
+            "ffmpeg failed to run %d times in a row (%s); no ffmpeg is started for %.0f s",
+            failures,
+            error,
+            FFMPEG_HOLD_S,
+        )
+        if notify is not None:
+            try:
+                notify(FfmpegHold(failures, error, commit_memory()))
+            except Exception:  # a notice must never turn into the caller's error
+                log.exception("ffmpeg hold: the notice failed")
+
+    def worked(self) -> None:
+        with self._lock:
+            if self.failures == 0:
+                return
+            failures, held = self.failures, self._held_until is not None
+            self.failures = 0
+            self.error = ""
+            self._held_until = None
+        if held:
+            log.info("ffmpeg runs again, after %d failures in a row", failures)
+
+    def state(self) -> dict[str, object]:
+        """For ``/info``: whether ffmpeg is held, and why."""
+        with self._lock:
+            held = self._held_until is not None and self._clock() < self._held_until
+            return {
+                "ok": self.failures == 0,
+                "held": held,
+                "failures_in_a_row": self.failures,
+                "error": self.error or None,
+            }
+
+    def reset(self) -> None:
+        """Forget every failure: a clean start, for tests."""
+        with self._lock:
+            self.failures = 0
+            self.error = ""
+            self._held_until = None
+
+
+#: The process's one record: every caller runs the same ffmpeg on the same Windows.
+HEALTH = FfmpegHealth()
 
 
 def _did_not_run(returncode: int, stderr: bytes) -> bool:
@@ -93,11 +233,12 @@ def _os_error(exc: OSError) -> str:
 #: Can never run, so waiting will not fix it (Windows error codes, ``winerror``):
 #: not found (2, 3), access denied (5), not a program (193), the wrong architecture
 #: (216), flagged by the antivirus (225, 226), needs elevation (740), blocked by policy
-#: (1260). A sharing violation (32) and lack of memory (8, 14, 1450) pass, so they wait.
+#: (1260). A sharing violation (32) and lack of memory (8, 14, 1450, and 1455: the commit
+#: limit reached, the case that started this) pass, so they wait.
 _NOT_A_PROGRAM_WINDOWS = {2, 3, 5, 193, 216, 225, 226, 740, 1260}
 #: ... and the same on POSIX (``errno``). The two are never mixed: Windows error 8 is
 #: "not enough memory", which is exactly the case that must wait, and errno 8 ENOEXEC.
-_NOT_A_PROGRAM_POSIX = {errno.ENOENT, errno.ENOEXEC, errno.EISDIR, errno.EACCES}
+_NOT_A_PROGRAM_POSIX = {errno.ENOENT, errno.ENOEXEC, errno.EISDIR, errno.EACCES, errno.EPERM}
 #: How Windows ends a program it could never run: STATUS_DLL_NOT_FOUND,
 #: STATUS_INVALID_IMAGE_FORMAT, STATUS_ENTRYPOINT_NOT_FOUND.
 _BROKEN_EXITS = {0xC0000135, 0xC000007B, 0xC0000139}
@@ -134,6 +275,7 @@ def _not_run(source: Path, returncode: int, stderr: bytes) -> Exception | None:
 
 def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
     log.warning("ffmpeg did not run on %s: %s", source.name, why)
+    HEALTH.failed(why)
     return FfmpegFailed(f"ffmpeg could not run to read {source.name} ({why})")
 
 
@@ -211,6 +353,7 @@ def to_wav(
             f"{source.name} is not a WAV and ffmpeg was not found — convert it first, "
             "or set ffmpeg_path"
         )
+    HEALTH.check(source)
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [
         binary, "-y", *SAFE_INPUT_ARGS, *input_args, "-i", str(source), *extra_args,
@@ -236,6 +379,7 @@ def to_wav(
         raise _start_failed(source, exc) from exc
     if result.returncode != 0 or not target.exists():
         raise _conversion_failed(source, result.returncode, result.stderr, target)
+    HEALTH.worked()
     return target
 
 
@@ -245,6 +389,7 @@ def _conversion_failed(
     failed = _not_run(source, returncode, stderr)
     if failed is not None:
         return failed
+    HEALTH.worked()  # ffmpeg ran: it is the file it refused
     text = stderr.decode(errors="replace")
     log.warning(
         "ffmpeg could not convert %s (%s): %s",
@@ -303,6 +448,7 @@ def _to_wav_cancellable(
     if returncode != 0 or not target.exists():
         target.unlink(missing_ok=True)
         raise _conversion_failed(source, returncode, stderr, target)
+    HEALTH.worked()
     return target
 
 
@@ -396,6 +542,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
     binary = ffmpeg_path(config)
     if binary is None:
         raise _missing("ffmpeg was not found, so this file cannot be read")
+    HEALTH.check(source)
     try:
         result = subprocess.run(
             # No -hide_banner: ffmpeg that started has always printed its banner, so an
@@ -415,6 +562,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
     failed = _not_run(source, result.returncode, result.stderr)
     if failed is not None:
         raise failed
+    HEALTH.worked()  # ffmpeg ran, whatever it makes of the file
     text = result.stderr.decode(errors="replace")
     if "Input #0" not in text:
         log.info("ffmpeg cannot read %s: %s", source.name, _said(source, result.stderr, 200))

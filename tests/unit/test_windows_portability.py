@@ -245,10 +245,12 @@ class _WinError(OSError):
         (_WinError(2, "cannot find the file"), "FfmpegBroken"),
         (_WinError(32, "used by another process"), "FfmpegFailed"),
         (_WinError(1450, "insufficient system resources"), "FfmpegFailed"),
+        (_WinError(1455, "the paging file is too small"), "FfmpegFailed"),  # commit limit
         (OSError(8, "Exec format error"), "FfmpegBroken"),  # ENOEXEC on Linux is 8 too
         (OSError(21, "Is a directory"), "FfmpegBroken"),
         (OSError(13, "Permission denied"), "FfmpegBroken"),
         (OSError(16, "Device or resource busy"), "FfmpegFailed"),
+        (OSError(1, "Operation not permitted"), "FfmpegBroken"),  # a noexec mount
     ],
     ids=[
         "win-no-memory",
@@ -260,10 +262,12 @@ class _WinError(OSError):
         "win-gone",
         "win-sharing",
         "win-resources",
+        "win-commit-limit",
         "enoexec",
         "eisdir",
         "eacces",
         "ebusy",
+        "eperm",
     ],
 )
 def test_a_start_that_failed_is_waited_for_only_when_waiting_can_help(
@@ -272,7 +276,7 @@ def test_a_start_that_failed_is_waited_for_only_when_waiting_can_help(
     import errno
 
     if not isinstance(error, _WinError) and expected == "FfmpegBroken":
-        assert error.errno in (errno.ENOEXEC, errno.EISDIR, errno.EACCES)
+        assert error.errno in (errno.ENOEXEC, errno.EISDIR, errno.EACCES, errno.EPERM)
 
     def fails(argv: list[str], **kwargs: Any) -> None:
         raise error
@@ -310,12 +314,18 @@ def test_a_missing_ffmpeg_is_broken_in_the_installed_app(
         ingest.probe(tmp_path / "call.m4a")
 
 
-def test_a_folder_set_as_ffmpeg_path_is_not_used(tmp_path: Path) -> None:
+def test_a_folder_set_as_ffmpeg_path_is_not_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It falls through to the next place ffmpeg is looked for, as if it were unset."""
+    from app import paths
     from app.config import Config
 
+    monkeypatch.setattr(paths, "resource", lambda name: tmp_path / "no-bundle" / name)
+    monkeypatch.setattr(ingest.shutil, "which", lambda name: "/opt/found/ffmpeg")
     config = Config.load()
     config.set("ffmpeg_path", str(tmp_path))
-    assert ingest.ffmpeg_path(config) != str(tmp_path)
+    assert ingest.ffmpeg_path(config) == "/opt/found/ffmpeg"
 
 
 def test_the_home_folder_is_cut_out_only_at_a_folder_boundary(

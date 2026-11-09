@@ -55,7 +55,7 @@ REASONS = {
     "recording": "Upshot is recording a meeting; it continues when the recording ends",
     "policy:when_idle": "Upshot waits until the computer is idle",
     "policy:scheduled": "Upshot transcribes in its nightly window",
-    "retry": "Upshot will try again shortly",
+    "retry": "Upshot will try again later",
 }
 
 

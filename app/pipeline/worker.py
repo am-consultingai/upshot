@@ -401,6 +401,9 @@ class Worker:
             return
         except Exception as exc:
             updated = store.fail(job, exc)
+            if updated.state == "cancelled":
+                log.info("transcription %s cancelled as it failed: %s", job.id, exc)
+                return
             self.stats.failed += 1
             log.warning("transcription %s failed (attempt %s): %s", job.id, updated.attempts, exc)
             if updated.state == "failed":

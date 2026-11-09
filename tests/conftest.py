@@ -119,3 +119,16 @@ def _no_whisper_kept_between_tests():  # type: ignore[no-untyped-def]
     RESIDENT.reset()
     yield
     RESIDENT.reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_ffmpeg_failures_between_tests():  # type: ignore[no-untyped-def]
+    """ffmpeg's failures in a row are counted for the process (app.audio.ingest.HEALTH);
+    a test whose ffmpeg failed must not leave the next one held."""
+    from app.audio.ingest import HEALTH
+
+    HEALTH.reset()
+    HEALTH.on_hold = None
+    yield
+    HEALTH.reset()
+    HEALTH.on_hold = None

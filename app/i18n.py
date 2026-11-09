@@ -386,6 +386,27 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "{title} aún no está vinculada a una reunión del calendario.",
         "fr": "{title} n'est pas encore associé à une réunion du calendrier.",
     },
+    "toast.ffmpegFailing.title": {
+        "en": "Upshot can't read audio files right now",
+        "he": "Upshot לא יכול לקרוא קובצי שמע כרגע",
+        "de": "Upshot kann gerade keine Audiodateien lesen",
+        "es": "Upshot no puede leer archivos de audio ahora",
+        "fr": "Upshot ne peut pas lire de fichiers audio pour le moment",
+    },
+    "toast.ffmpegFailing.body": {
+        "en": "Windows could not start ffmpeg {count} times in a row. Transcriptions wait and try again.",
+        "he": "Windows לא הצליח להפעיל את ffmpeg {count} פעמים ברציפות. התמלולים ממתינים וינסו שוב.",
+        "de": "Windows konnte ffmpeg {count}-mal hintereinander nicht starten. Transkriptionen warten und versuchen es erneut.",
+        "es": "Windows no pudo iniciar ffmpeg {count} veces seguidas. Las transcripciones esperan y lo vuelven a intentar.",
+        "fr": "Windows n'a pas pu démarrer ffmpeg {count} fois de suite. Les transcriptions attendent et réessaient.",
+    },
+    "toast.ffmpegFailing.memory": {
+        "en": "Windows is low on memory: {free} GB of {limit} GB left. Closing programs helps.",
+        "he": "ל-Windows חסר זיכרון: נותרו {free} GB מתוך {limit} GB. סגירת תוכנות תעזור.",
+        "de": "Windows hat wenig Speicher: {free} GB von {limit} GB frei. Programme zu schließen hilft.",
+        "es": "Windows tiene poca memoria: quedan {free} GB de {limit} GB. Cerrar programas ayuda.",
+        "fr": "Windows manque de mémoire : {free} Go libres sur {limit} Go. Fermer des programmes aide.",
+    },
     "toast.couldNotStart.title": {
         "en": "Upshot couldn't start recording",
         "he": "Upshot לא הצליח להתחיל להקליט",

@@ -382,6 +382,24 @@ class BaseNotifier:
             )
         )
 
+    def ffmpeg_failing(self, failures: int, memory: tuple[int, int] | None) -> None:
+        """ffmpeg would not start, again and again (z8tj1hwjvv): files are not being read,
+        and nothing else would tell anyone. ``memory`` is Windows' commit charge left and
+        its limit, in bytes, when it says; low, it is the likely reason."""
+        body = self._t("toast.ffmpegFailing.body", count=failures)
+        if memory is not None:
+            free, limit = memory
+            # Under a tenth left is low enough to name: the Windows that could not start
+            # ffmpeg had none at all.
+            if free < limit / 10:
+                body += " " + self._t(
+                    "toast.ffmpegFailing.memory",
+                    free=f"{free / 2**30:.1f}",
+                    limit=f"{limit / 2**30:.0f}",
+                )
+        title = self._t("toast.ffmpegFailing.title")
+        self.show(Toast(title=title, body=body, key="ffmpeg_failing"))
+
     def _start_buttons(
         self, calendar_id: str | None, event_id: str | None, account_id: str | None = None
     ) -> tuple[Button, ...]:
