@@ -35,6 +35,7 @@ from app.asr.models import (
     require,
     resolve,
 )
+from app.asr.resident import RESIDENT, Key, keep_loaded_s
 from app.asr.wav import read_audio
 from app.config import Config
 from app.log import get
@@ -456,6 +457,8 @@ class LocalAsr:
         self.registered_dll_dirs: list[str] = []
         self.fell_back = False
         self.warmups = 0
+        #: Loads answered by a model the last job left on the GPU (D108).
+        self.reused = 0
         #: Called between segments while transcribing; raises to stop (a deletion). One
         #: track can take many minutes on the CPU, far too long to wait out.
         self.stop_check: Callable[[], None] | None = None
@@ -485,6 +488,16 @@ class LocalAsr:
         # The installed model or ModelNotInstalled: never a download (R12). A repo id
         # handed to faster-whisper would fetch it unseen into the Hugging Face cache.
         self.choice = self._given_choice or require(self.config, self.role)
+        if device == "cuda":
+            # A model the last job left loaded: already warm, and loading another one is
+            # what leaked memory (D108).
+            held = RESIDENT.take(self._key(compute))
+            if held is not None:
+                self.model = held
+                self.device, self.compute_type = device, compute
+                self.reused += 1
+                return self.model
+            RESIDENT.make_room(self.role, cached_gpu_memory_mb, MIN_VRAM_MB)
         try:
             self.model = self._build(device, compute)
             self.device, self.compute_type = device, compute
@@ -634,7 +647,22 @@ class LocalAsr:
             )
         return out
 
+    def _key(self, compute_type: str) -> Key:
+        choice = self.choice or require(self.config, self.role)
+        return Key(self.role, str(choice.reference), compute_type)
+
+    def park(self) -> None:
+        """The job is done with the model: on the GPU it stays loaded for the next job
+        (D108); anywhere else it is unloaded."""
+        if self.model is None or self.device != "cuda":
+            self.unload()
+            return
+        model, self.model = self.model, None
+        RESIDENT.park(self._key(self.compute_type), model, idle_s=keep_loaded_s(self.config))
+
     def unload(self) -> None:
-        """ASR and the LLM are never resident together (DESIGN.md §20.4)."""
+        """ASR and the LLM are never resident together (DESIGN.md §20.4): this frees the
+        models kept for the next job too."""
         self.model = None
+        RESIDENT.drop_all()
         gc.collect()

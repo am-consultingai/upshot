@@ -181,7 +181,13 @@ def _transcribe(
         for name in hooked:
             setattr(backend, name, None)
         # Before diarization, which needs the memory (the meeting stage frees it later).
-        backend.unload()
+        # On the GPU the model stays loaded for the next file instead: its weights are in
+        # video memory, and loading a new one for every file leaked host memory (D108).
+        park = getattr(backend, "park", None)
+        if callable(park):
+            park()
+        else:
+            backend.unload()
     ordered = sorted(segments, key=lambda segment: segment.start)
     return [segment.shifted(0.0, new_id=index) for index, segment in enumerate(ordered)], model
 

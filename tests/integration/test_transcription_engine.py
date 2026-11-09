@@ -112,6 +112,25 @@ def test_a_file_is_transcribed_with_no_meeting(tmp_path: Path) -> None:
     assert services.asr.unloaded == 1
 
 
+class ParkingAsr(FakeAsr):
+    """A backend that can keep its model for the next file, as LocalAsr does on the GPU."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parked = 0
+
+    def park(self) -> None:
+        self.parked += 1
+
+
+def test_a_file_hands_its_model_back_for_the_next_one(tmp_path: Path) -> None:
+    """Loading a new GPU model for every file leaked host memory (D108)."""
+    services = Services(ParkingAsr(), FakeClassifier("he"))
+    run(write_wav(tmp_path / "in" / "clip.wav", 20), tmp_path, services=services)
+    assert isinstance(services.asr, ParkingAsr)
+    assert services.asr.parked == 1 and services.asr.unloaded == 0
+
+
 @needs_ffmpeg
 def test_phases_report_in_order_and_progress_only_grows(tmp_path: Path) -> None:
     rec = Recorder()

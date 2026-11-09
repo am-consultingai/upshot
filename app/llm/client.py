@@ -221,6 +221,11 @@ class OllamaClient:
         self.requests: list[dict[str, Any]] = []
 
     def _post(self, payload: dict[str, Any]) -> str:
+        # Ollama loads its model on this computer's GPU and RAM: Whisper models kept for
+        # the next file go first (DESIGN.md §20.4, D108).
+        from app.asr.resident import RESIDENT
+
+        RESIDENT.drop_all()
         if self._transport is not None:
             return self._transport(payload)
         import httpx

@@ -34,6 +34,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from app.asr.models import CLASSIFIER, HEBREW, HEBREW_LANGUAGE, OTHER, require
+from app.asr.resident import RESIDENT, Key, keep_loaded_s
 from app.asr.wav import SAMPLE_RATE, read_audio
 from app.config import Config
 from app.errors import Cancelled
@@ -329,6 +330,9 @@ class WhisperClassifier:
         self.read_speech = read_speech or speech_of
         self.loads = 0
         self.unloads = 0
+        #: Loads answered by the model the last file left on the GPU (D108).
+        self.reused = 0
+        self._key: Key | None = None
         #: Called between windows; raises to stop (the meeting is being deleted).
         self.stop_check: Callable[[], None] | None = None
 
@@ -353,6 +357,9 @@ class WhisperClassifier:
                 answers.append(answer)
                 sampled.append(Window(window.track, window.start_s, top_n(dict(answer))))
         finally:
+            if device == "cuda" and self._key is not None:
+                # Kept for the next file: a new model each time leaked memory (D108).
+                RESIDENT.park(self._key, model, idle_s=keep_loaded_s(self.config))
             del model
             gc.collect()
             self.unloads += 1
@@ -364,11 +371,21 @@ class WhisperClassifier:
 
     def _load(self) -> tuple[Any, str]:
         """On the GPU if it has room for small, int8, with the same CUDA → CPU fallback."""
-        from app.asr.local import LocalAsr, probe_device
+        from app.asr.local import MIN_VRAM_MB, LocalAsr, cached_gpu_memory_mb, probe_device
 
         choice = require(self.config, CLASSIFIER)
         device, _compute, _dirs = probe_device(self.config, role=CLASSIFIER)
         threads = max(1, (os.cpu_count() or 4) - 2)
+        self._key = None
+        if device == "cuda":
+            key = Key(CLASSIFIER, str(choice.reference), "int8")
+            held = RESIDENT.take(key)
+            if held is not None:
+                self._key = key
+                self.reused += 1
+                return held, device
+            RESIDENT.make_room(CLASSIFIER, cached_gpu_memory_mb, MIN_VRAM_MB)
+            self._key = key
         try:
             model = self.model_factory(
                 model_size_or_path=choice.reference, device=device, compute_type="int8",

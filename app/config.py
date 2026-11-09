@@ -93,6 +93,9 @@ DEFAULTS: dict[str, Any] = {
         # (2026-09-27). The GPU always uses beam_size, where the extra beams cost little.
         "cpu_fast": False,
         "initial_prompt_max_tokens": 200,
+        # Seconds a GPU Whisper model stays loaded after a job, for the next one (D108):
+        # loading a new model for every file leaked host memory. 0 frees it at once.
+        "keep_loaded_s": 300,
         # onnx|fake|off — splits each track into its voices (D85). Always on in the app;
         # no setting offers "off", which is for development.
         "diarization": "onnx",
