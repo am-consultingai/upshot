@@ -460,15 +460,20 @@ class TranscriptionStore:
         return int(row["n"]) > 0
 
     def finish_delete(self, transcription_id: str) -> bool:
-        """The delete asked for while it ran, now that the engine has let go of its files."""
-        if self._stopping.get(transcription_id) != "delete":
-            return False
-        try:
-            self.purge(transcription_id)
-        except OSError as exc:  # a file still held (Windows): the sweep retries later
-            log.warning("transcription %s: could not finish deleting it: %s", transcription_id, exc)
-            return False
-        return True
+        """The delete asked for while it ran, now that the engine has let go of its files.
+        Under the lock ``delete`` takes, so a second Delete pressed now does not remove the
+        same folder at the same time."""
+        with self._lock:
+            if self._stopping.get(transcription_id) != "delete":
+                return False
+            try:
+                self.purge(transcription_id)
+            except OSError as exc:  # a file still held (Windows)
+                log.warning(
+                    "transcription %s: could not finish deleting it: %s", transcription_id, exc
+                )
+                return False
+            return True
 
     def stopping(self, transcription_id: str) -> str | None:
         return self._stopping.get(transcription_id)

@@ -422,11 +422,11 @@ class Worker:
             language_conf=result.language_conf,
             model=result.model,
         )
-        self.stats.completed += 1
         # A delete asked for after the finally above, as the job was being marked done:
         # it was handed to the worker, so the worker does it now.
         if store.finish_delete(job.id):
             return
+        self.stats.completed += 1
         if job.source_kind == "upload" and not bool(
             self.config.get("transcription.keep_input", False)
         ):
