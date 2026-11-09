@@ -679,7 +679,8 @@ class TranscriptionStore:
 
     def running(self) -> Transcription | None:
         row = self.conn.execute(
-            "SELECT * FROM transcriptions WHERE state='running' LIMIT 1"
+            # Not one being stopped for a delete: it is gone for the queue list and tray.
+            "SELECT * FROM transcriptions WHERE state='running' AND delete_pending=0 LIMIT 1"
         ).fetchone()
         return _row(row) if row else None
 
@@ -736,6 +737,8 @@ class TranscriptionStore:
             return estimate.at(progress, started_at, now)
 
     def _publish(self, job: Transcription) -> None:
+        if self._stopping.get(job.id) == "delete":
+            return  # the page was told it is deleted; no later state brings it back
         started = job.started_at if job.state == RUNNING else None
         self._emit(job.id, job.state, job.phase, job.progress, started)
 

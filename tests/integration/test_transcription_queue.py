@@ -955,10 +955,13 @@ def test_a_delete_with_a_held_file_as_the_job_finishes_keeps_it_deleted(
     store = store_for(h, events)
     job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
     finish = store.finish_delete
+    pressed: list[bool] = []
 
     def deleted_after_the_last_check(transcription_id: str) -> bool:
-        assert store.delete(transcription_id) is False, "running: handed to the worker"
-        held_once(store, monkeypatch)
+        if not pressed:  # the finally's call; the worker asks again on its way out
+            pressed.append(True)
+            assert store.delete(transcription_id) is False, "running: handed to the worker"
+            held_once(store, monkeypatch)
         return finish(transcription_id)
 
     monkeypatch.setattr(store, "finish_delete", deleted_after_the_last_check)
@@ -1021,3 +1024,57 @@ def test_a_handed_off_delete_is_said_at_once_and_progress_goes_quiet(tmp_path: P
     store.progress(job.id, "transcribe", 0.5)
     states = [e.payload.get("state") for e in events.history if e.type == "transcription"]
     assert states[-1] == "deleted" and len(events.history) == before
+
+
+def test_a_delete_pressed_between_the_runs_end_and_its_completion_is_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """After the finally's finish_delete, before the job is marked done."""
+    from app.transcription import engine
+
+    def copy(source: Path, target: Path, **kwargs: object) -> Path:  # no ffmpeg needed
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return target
+
+    monkeypatch.setattr(engine, "to_wav", copy)
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    visible = store.visible
+    pressed: list[bool] = []
+
+    def delete_first(transcription_id: str):  # type: ignore[no-untyped-def]
+        if not pressed:
+            pressed.append(store.delete(transcription_id))
+        return visible(transcription_id)
+
+    monkeypatch.setattr(store, "visible", delete_first)
+    worker = worker_for(h, store)
+    worker.run_once()
+    assert pressed == [False], "it was running: handed to the worker"
+    assert store.get(job.id) is None, "the worker did it"
+    assert not store.busy() and worker.stats.completed == 0
+
+
+def test_a_job_being_deleted_is_not_in_the_queue_list(tmp_path: Path) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    assert store.claim(job.id) is not None
+    assert store.running() is not None
+    store.delete(job.id)  # the run has not stopped yet
+    assert store.running() is None
+
+
+def test_no_state_is_published_after_a_handed_off_delete(tmp_path: Path) -> None:
+    events = EventBus()
+    h = harness(tmp_path)
+    store = store_for(h, events)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None
+    store.delete(job.id)
+    store.fail(running, "RuntimeError: boom")  # the run ended badly before its removal
+    states = [e.payload.get("state") for e in events.history if e.type == "transcription"]
+    assert states[-1] == "deleted"

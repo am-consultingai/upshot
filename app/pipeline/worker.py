@@ -419,7 +419,10 @@ class Worker:
             # However it ended: a job deleted meanwhile goes now its files are let go.
             store.finish_delete(job.id)
         if store.visible(job.id) is None:
-            return  # deleted as it finished (its files may still be going)
+            # Deleted as it finished: a delete pressed after the finally above is owed
+            # here, or the row would stay running (its files may still be going).
+            store.finish_delete(job.id)
+            return
         store.complete(
             job.id,
             duration_s=result.duration_s,
