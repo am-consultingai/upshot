@@ -18,7 +18,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PROVIDER="fake"
-PORT="${PORT:-43217}"
+# Outside the installed app's ports (43217-43247): in WSL with mirrored networking a port
+# bound here stays taken on Windows until WSL restarts.
+PORT="${PORT:-8124}"
 HOME_DIR="$ROOT/.demo"
 KEEP=0
 
