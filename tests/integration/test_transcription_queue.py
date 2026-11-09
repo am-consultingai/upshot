@@ -781,6 +781,14 @@ def test_a_delete_asked_for_as_the_job_is_marked_done_is_done(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After the run's last chance to stop: the worker was handed it, so it does it."""
+    from app.transcription import engine
+
+    def copy(source: Path, target: Path, **kwargs: object) -> Path:  # no ffmpeg needed
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return target
+
+    monkeypatch.setattr(engine, "to_wav", copy)
     h = harness(tmp_path)
     store = store_for(h)
     job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
@@ -791,6 +799,8 @@ def test_a_delete_asked_for_as_the_job_is_marked_done_is_done(
         return complete(transcription_id, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(store, "complete", deleted_just_before)
-    worker_for(h, store).run_once()
+    worker = worker_for(h, store)
+    worker.run_once()
     assert store.get(job.id) is None
     assert store.stopping(job.id) is None
+    assert worker.stats.completed == 0, "deleted as it finished: not counted as done"
