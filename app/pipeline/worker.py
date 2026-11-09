@@ -15,7 +15,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from app.clock import Clock, SystemClock, parse_iso
+from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
 from app.errors import Cancelled, Deferred, PermanentError, Preempted
@@ -36,10 +36,8 @@ StageFn = Callable[[StageContext], None]
 
 #: Policies under which a running meeting does *not* stop the worker.
 ALWAYS_RUN_POLICIES = frozenset({"asap"})
-#: A file job whose ffmpeg could not start waits this long before it tries again...
+#: A file job whose ffmpeg could not start waits this long before it tries again.
 FFMPEG_DEFER_S = 300
-#: ...and fails for good once it was created this long ago.
-FFMPEG_GIVE_UP_S = 24 * 3600
 
 
 @dataclass
@@ -377,16 +375,13 @@ class Worker:
         except FfmpegFailed as exc:
             # ffmpeg could not start (no memory, on the machine that reported it, for
             # days): nothing to do with this file, and five quick retries would not
-            # outlast it. Wait without counting attempts, up to FFMPEG_GIVE_UP_S.
-            now = self.clock.now()
-            if now - parse_iso(job.created_at) > timedelta(seconds=FFMPEG_GIVE_UP_S):
-                store.fail(job, exc, permanent=True)
-                self.stats.failed += 1
-                log.warning(
-                    "transcription %s failed: ffmpeg did not run for a day: %s", job.id, exc
-                )
+            # outlast it. Wait, counting no attempt; the job says why while it waits, and
+            # the user can cancel it. A cancel asked for meanwhile is honoured here: a
+            # child that fails at once never reaches the conversion's stop check.
+            if store.stopping(job.id) == "cancel":
+                store.mark_cancelled(job.id)
                 return
-            store.defer(job, exc, until=now + timedelta(seconds=FFMPEG_DEFER_S))
+            store.defer(job, exc, until=self.clock.now() + timedelta(seconds=FFMPEG_DEFER_S))
             log.warning("transcription %s waits: %s", job.id, exc)
             return
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:

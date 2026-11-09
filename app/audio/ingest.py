@@ -57,10 +57,21 @@ def _exit_text(returncode: int) -> str:
     return f"exit code {returncode:#010x}" if returncode > 0xFFFF else f"exit code {returncode}"
 
 
-def _said(source: Path, stderr: bytes, keep: int) -> str:
-    """The end of what ffmpeg said, for the log, with the file's full path cut down to its
-    name: the path holds the user's account name."""
-    return stderr.decode(errors="replace").replace(str(source), source.name).strip()[-keep:]
+def _said(source: Path, stderr: bytes, keep: int, target: Path | None = None) -> str:
+    """The end of what ffmpeg said, for the log, with the files' full paths cut down to
+    their names and the home folder to ``~``: paths hold the user's account name."""
+    text = stderr.decode(errors="replace")
+    for path in (source, target):
+        if path is not None:
+            text = text.replace(str(path), path.name)
+    text = text.replace(str(Path.home()), "~")
+    return text.strip()[-keep:]
+
+
+def _os_error(exc: OSError) -> str:
+    """An OSError without its file name, which is a path on this machine."""
+    code = getattr(exc, "winerror", None) or exc.errno
+    return f"{exc.strerror or type(exc).__name__} ({code})" if code else type(exc).__name__
 
 
 def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
@@ -155,14 +166,14 @@ def to_wav(
             f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
         ) from exc
     except OSError as exc:
-        raise _ffmpeg_failed(source, str(exc)) from exc
+        raise _ffmpeg_failed(source, _os_error(exc)) from exc
     if result.returncode != 0 or not target.exists():
-        raise _conversion_failed(source, result.returncode, result.stderr)
+        raise _conversion_failed(source, result.returncode, result.stderr, target)
     return target
 
 
 def _conversion_failed(
-    source: Path, returncode: int, stderr: bytes
+    source: Path, returncode: int, stderr: bytes, target: Path | None = None
 ) -> UnsupportedAudio | FfmpegFailed:
     if _did_not_run(returncode, stderr):
         return _ffmpeg_failed(source, _exit_text(returncode))
@@ -171,11 +182,13 @@ def _conversion_failed(
         "ffmpeg could not convert %s (%s): %s",
         source.name,
         _exit_text(returncode),
-        _said(source, stderr, 300),
+        _said(source, stderr, 300, target),
     )
     if "does not contain any stream" in text or "matches no streams" in text:
         return UnsupportedAudio(f"{source.name} has no audio")
-    return UnsupportedAudio(f"ffmpeg could not convert {source.name}: {text[-300:]}")
+    return UnsupportedAudio(
+        f"ffmpeg could not convert {source.name}: {_said(source, stderr, 300, target)}"
+    )
 
 
 def _to_wav_cancellable(
@@ -194,7 +207,7 @@ def _to_wav_cancellable(
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError as exc:
-            raise _ffmpeg_failed(source, str(exc)) from exc
+            raise _ffmpeg_failed(source, _os_error(exc)) from exc
         deadline = time.monotonic() + FFMPEG_TIMEOUT_S
         try:
             while True:
@@ -221,7 +234,7 @@ def _to_wav_cancellable(
         stderr = errors.read()
     if returncode != 0 or not target.exists():
         target.unlink(missing_ok=True)
-        raise _conversion_failed(source, returncode, stderr)
+        raise _conversion_failed(source, returncode, stderr, target)
     return target
 
 
@@ -317,7 +330,9 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
         raise UnsupportedAudio("ffmpeg was not found, so this file cannot be read")
     try:
         result = subprocess.run(
-            [binary, "-hide_banner", *SAFE_INPUT_ARGS, "-i", str(source)],
+            # No -hide_banner: ffmpeg that started has always printed its banner, so an
+            # empty stderr means it never ran (_did_not_run), even if the file crashed it.
+            [binary, *SAFE_INPUT_ARGS, "-i", str(source)],
             capture_output=True,
             check=False,
             timeout=PROBE_TIMEOUT_S,
@@ -328,7 +343,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
         log.warning("ffmpeg took more than %s s to read %s", PROBE_TIMEOUT_S, source.name)
         raise UnsupportedAudio(f"ffmpeg took too long to read {source.name}") from exc
     except OSError as exc:
-        raise _ffmpeg_failed(source, str(exc)) from exc
+        raise _ffmpeg_failed(source, _os_error(exc)) from exc
     if _did_not_run(result.returncode, result.stderr):
         raise _ffmpeg_failed(source, _exit_text(result.returncode))
     text = result.stderr.decode(errors="replace")

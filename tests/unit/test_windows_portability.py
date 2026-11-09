@@ -195,6 +195,36 @@ def test_a_file_ffmpeg_cannot_read_is_still_unsupported(
     assert "Invalid data" in caplog.text, "a failed conversion is in the log"
 
 
+def test_probe_keeps_the_banner_so_a_crash_on_the_file_is_never_silent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the banner, ffmpeg that started has always said something, so a file that
+    crashes it while it is being described is refused (415), not retried for ever."""
+    seen: list[list[str]] = []
+    banner = b"ffmpeg version 8.1 Copyright (c) 2000-2026 the FFmpeg developers\n"
+
+    def crashes(argv: list[str], **kwargs: Any) -> _Ran:
+        seen.append(argv)
+        return _Ran(0xC0000005, banner)
+
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", crashes)
+    with pytest.raises(ingest.UnsupportedAudio):
+        ingest.probe(tmp_path / "crafted.m4a")
+    assert "-hide_banner" not in seen[0]
+
+
+def test_an_os_error_names_no_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def refused(argv: list[str], **kwargs: Any) -> None:
+        raise PermissionError(13, "Permission denied", str(tmp_path / "someone" / "ffmpeg"))
+
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", refused)
+    with pytest.raises(ingest.FfmpegFailed) as caught:
+        ingest.probe(tmp_path / "call.m4a")
+    assert "Permission denied" in str(caught.value) and str(tmp_path) not in str(caught.value)
+
+
 def test_a_crash_after_ffmpeg_has_spoken_is_the_files_doing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -221,7 +251,7 @@ def test_ffmpeg_that_cannot_be_started_at_all_is_ffmpeg_failed(
     monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
     monkeypatch.setattr(ingest.subprocess, "run", refused)
     monkeypatch.setattr(ingest.subprocess, "Popen", refused)
-    with pytest.raises(ingest.FfmpegFailed, match="access denied"):
+    with pytest.raises(ingest.FfmpegFailed, match="PermissionError"):
         ingest.probe(tmp_path / "call.m4a")
     with pytest.raises(ingest.FfmpegFailed):
         ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav", stop_check=lambda: None)
@@ -250,14 +280,19 @@ def test_child_programs_get_no_windows_error_dialogs() -> None:
     if sys.platform != "win32":
         assert before is None
         return
-    # What the fix relies on: a program Upshot starts inherits the mode.
-    child = subprocess.run(
-        [sys.executable, "-c", "import ctypes; print(ctypes.windll.kernel32.GetErrorMode())"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert int(child.stdout) & errormode.SEM_FAILCRITICALERRORS
+    import ctypes
+
+    try:
+        # What the fix relies on: a program Upshot starts inherits the mode.
+        child = subprocess.run(
+            [sys.executable, "-c", "import ctypes; print(ctypes.windll.kernel32.GetErrorMode())"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert int(child.stdout) & errormode.SEM_FAILCRITICALERRORS
+    finally:
+        ctypes.windll.kernel32.SetErrorMode(before)  # type: ignore[attr-defined,unused-ignore]
 
 
 def test_the_window_opens_in_a_chromium_browser_in_app_mode() -> None:
