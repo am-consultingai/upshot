@@ -64,13 +64,16 @@ def test_the_windowed_build_gets_no_console_handler(
     assert any(isinstance(h, logging.FileHandler) for h in handlers)
 
 
-def test_a_taken_port_falls_back_to_the_next_free_one() -> None:
+def test_a_taken_port_falls_back_to_the_next_free_one(monkeypatch: pytest.MonkeyPatch) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
         holder.bind(("127.0.0.1", 0))
         holder.listen(1)
         taken = holder.getsockname()[1]
         assert not server.port_is_free("127.0.0.1", taken)
-        chosen = server.choose_port("127.0.0.1", taken)
+    # The fallback ports are the installed app's: probed in the test only, never bound
+    # (under WSL's mirrored networking a bind there keeps it from Windows' Upshot).
+    monkeypatch.setattr(server, "port_is_free", lambda host, port: port != taken)
+    chosen = server.choose_port("127.0.0.1", taken)
     assert chosen in server.FALLBACK_PORTS
 
 

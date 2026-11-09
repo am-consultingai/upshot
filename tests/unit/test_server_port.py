@@ -4,7 +4,6 @@ the old 8000 or a fallback a saved file still holds moved to it once."""
 from __future__ import annotations
 
 import json
-import socket
 from pathlib import Path
 
 import pytest
@@ -99,14 +98,12 @@ def test_a_port_set_deliberately_after_the_start_is_saved(tmp_path: Path) -> Non
     assert Config.load(file=path, environ={}).server_port == 9200
 
 
-def test_a_taken_default_falls_back_into_the_new_range() -> None:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
-        try:
-            holder.bind(("127.0.0.1", DEFAULT_PORT))
-        except OSError:
-            pytest.skip("43217 is already in use on this machine")
-        holder.listen()
-        chosen = server.choose_port("127.0.0.1", DEFAULT_PORT)
+def test_a_taken_default_falls_back_into_the_new_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Taken in the test only: binding the real port, even for a moment, keeps it from the
+    # installed app. Under WSL's mirrored networking a port bound in Linux stays taken on
+    # Windows until WSL restarts, and Upshot then started on 43219 for days.
+    monkeypatch.setattr(server, "port_is_free", lambda host, port: port != DEFAULT_PORT)
+    chosen = server.choose_port("127.0.0.1", DEFAULT_PORT)
     assert chosen in range(43218, 43248)
 
 
