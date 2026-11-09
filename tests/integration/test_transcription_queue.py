@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.asr.fake import FakeAsr
-from app.audio.ingest import UnsupportedAudio
+from app.audio.ingest import FfmpegBroken, FfmpegFailed, UnsupportedAudio
 from app.db import migrate as migrations
 from app.db.dao import Connection
 from app.errors import Cancelled
@@ -538,6 +538,89 @@ def test_an_undecodable_file_fails_at_once(tmp_path: Path) -> None:
     worker_for(h, store).run_once()
     failed = store.require(job.id)
     assert failed.state == FAILED and failed.attempts == 1, "permanent: no retries"
+
+
+def _ffmpeg_cannot_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.transcription import engine
+
+    def cannot_start(source: Path, *args: object, **kwargs: object) -> Path:
+        raise FfmpegFailed(f"ffmpeg could not run to read {source.name} (exit code 0xc0000017)")
+
+    monkeypatch.setattr(engine, "to_wav", cannot_start)
+
+
+def test_ffmpeg_that_did_not_run_waits_without_using_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ffmpeg that could not start says nothing about the file, and it lasted days on the
+    machine that reported it: wait, count no attempt, and say why while waiting. A job
+    created long before ffmpeg broke waits like any other."""
+    from app.pipeline import worker as worker_module
+
+    _ffmpeg_cannot_start(monkeypatch)
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    h.clock.advance(3 * 24 * 3600)
+    worker = worker_for(h, store)
+    for _ in range(7):  # more than MAX_ATTEMPTS
+        assert worker.run_once() is True
+        held = store.require(job.id)
+        assert held.state == PENDING and held.attempts == 0
+        assert "0xc0000017" in (held.last_error or "")
+        assert worker.run_once() is False, "it waits before trying again"
+        h.clock.advance(worker_module.FFMPEG_DEFER_S + 1)
+
+
+def test_a_cancel_during_a_failed_ffmpeg_start_is_honoured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.transcription import engine
+
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+
+    def cancelled_then_fails(source: Path, *args: object, **kwargs: object) -> Path:
+        store.cancel(job.id)  # the user presses Cancel while ffmpeg is starting
+        raise FfmpegFailed("ffmpeg could not run (exit code 0xc0000017)")
+
+    monkeypatch.setattr(engine, "to_wav", cancelled_then_fails)
+    worker_for(h, store).run_once()
+    assert store.require(job.id).state == CANCELLED
+
+
+def test_defer_honours_a_cancel_asked_for_while_the_job_ran(tmp_path: Path) -> None:
+    """Under the lock cancel takes: a cancel landing just before the deferral wins."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    running = store.claim(job.id)
+    assert running is not None and running.id == job.id
+    store.cancel(job.id)
+    until = datetime.fromisoformat("2030-01-01T00:00:00+00:00")
+    assert store.defer(running, "FfmpegFailed: no", until=until).state == CANCELLED
+
+
+def test_an_ffmpeg_that_can_never_run_fails_the_job_at_once_without_a_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.diagnostics import reporter
+    from app.transcription import engine
+
+    def broken(source: Path, *args: object, **kwargs: object) -> Path:
+        raise FfmpegBroken("ffmpeg cannot run on this computer (exit code 0xc0000135)")
+
+    reported: list[BaseException] = []
+    monkeypatch.setattr(engine, "to_wav", broken)
+    monkeypatch.setattr(reporter, "report", lambda exc, **kwargs: reported.append(exc))
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    worker_for(h, store).run_once()
+    failed = store.require(job.id)
+    assert failed.state == FAILED and "0xc0000135" in (failed.last_error or "")
+    assert reported == []
 
 
 def test_a_missing_path_fails_at_once(tmp_path: Path) -> None:

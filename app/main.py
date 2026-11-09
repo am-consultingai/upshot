@@ -297,6 +297,9 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     The tray entry point (``python -m app.tray``) is this plus the icon, and is what the
     installer runs. Use this one on a machine with no desktop, or to see the log.
     """
+    from app.errormode import quiet_child_errors
+
+    quiet_child_errors()  # no Windows error dialogs from ffmpeg and the rest
     setup()
     from app.server import LocalServer, choose_port
 

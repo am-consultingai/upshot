@@ -36,6 +36,8 @@ StageFn = Callable[[StageContext], None]
 
 #: Policies under which a running meeting does *not* stop the worker.
 ALWAYS_RUN_POLICIES = frozenset({"asap"})
+#: A file job whose ffmpeg could not start waits this long before it tries again.
+FFMPEG_DEFER_S = 300
 
 
 @dataclass
@@ -323,7 +325,7 @@ class Worker:
         import json
 
         from app.asr.models import ModelNotInstalled
-        from app.audio.ingest import UnsupportedAudio
+        from app.audio.ingest import FfmpegBroken, FfmpegFailed, UnsupportedAudio
         from app.transcription.engine import transcribe_file
         from app.transcription.store import INPUT_DIR, RESULT_NAME
         from app.transcription.types import overall_progress
@@ -369,6 +371,26 @@ class Worker:
             store.release(job)
             self.stats.preempted += 1
             log.info("transcription %s preempted by the recorder", job.id)
+            return
+        except FfmpegFailed as exc:
+            # ffmpeg could not start (no memory, on the machine that reported it, for
+            # days): nothing to do with this file, and five quick retries would not
+            # outlast it. Wait, counting no attempt; the job shows why while it waits, and
+            # a cancel asked for meanwhile is honoured by defer.
+            why = f"{type(exc).__name__}: {exc}".replace(
+                Path(job.source_path).name, job.source_name
+            )
+            until = self.clock.now() + timedelta(seconds=FFMPEG_DEFER_S)
+            if store.defer(job, why, until=until).state == "pending":
+                log.warning("transcription %s waits: %s", job.id, exc)
+            return
+        except FfmpegBroken as exc:
+            # ffmpeg can never run here (missing, blocked, the wrong program): trying again
+            # changes nothing until Upshot is reinstalled or ffmpeg_path corrected. Not a
+            # crash report either: it is this computer's setup, and the message says what to do.
+            store.fail(job, exc, permanent=True)
+            self.stats.failed += 1
+            log.warning("transcription %s failed: %s", job.id, exc)
             return
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
             # Trying again changes nothing: an undecodable file, a missing model, a path

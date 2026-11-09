@@ -1523,7 +1523,13 @@ def keep_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
 @router.post("/import")
 async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     """An uploaded recording becomes chunk files and runs the ordinary pipeline."""
-    from app.audio.ingest import UnsupportedAudio, ingest
+    from app.audio.ingest import (
+        FFMPEG_RETRY_AFTER_S,
+        FfmpegBroken,
+        FfmpegFailed,
+        UnsupportedAudio,
+        ingest,
+    )
 
     svc = services_of(request)
     meeting = svc.meetings.create(source="imported", title=Path(file.filename or "import").stem)
@@ -1536,6 +1542,14 @@ async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     except UnsupportedAudio as exc:
         svc.meetings.discard(meeting.id)
         raise HTTPException(415, str(exc)) from exc
+    except FfmpegBroken as exc:
+        svc.meetings.discard(meeting.id)
+        raise HTTPException(500, str(exc)) from exc
+    except FfmpegFailed as exc:
+        svc.meetings.discard(meeting.id)
+        raise HTTPException(
+            503, f"{exc}; send it again later", headers={"Retry-After": str(FFMPEG_RETRY_AFTER_S)}
+        ) from exc
     svc.meetings.finish(meeting.id, duration_s=imported.duration_s)
     svc.events.publish("meeting", meeting_id=meeting.id, action="imported")
     return {
@@ -3177,6 +3191,12 @@ def _seed_transcription(svc: Services, item: dict[str, Any]) -> str:
         "phase": item.get("phase"),
         "progress": float(item.get("progress", 1.0 if state == "done" else 0.0)),
         "last_error": item.get("last_error"),
+        # Waiting to try again this many seconds from now (a backoff or a deferral).
+        "not_before": (
+            iso(svc.clock.now() + timedelta(seconds=float(item["retry_in_s"])))
+            if item.get("retry_in_s") is not None
+            else None
+        ),
         "language": item.get("language"),
         "language_conf": 0.95 if item.get("language") else None,
         "finished_at": iso(svc.clock.now()) if state in ("done", "failed", "cancelled") else None,

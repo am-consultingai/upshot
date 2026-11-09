@@ -8,6 +8,7 @@ import subprocess
 import threading
 import time
 import wave
+from datetime import timedelta
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -128,6 +129,76 @@ def test_a_video_is_accepted_and_one_with_no_audio_is_refused(
     assert upload(program, junk).status_code == 415
     assert leftovers(h) == [], "nothing is left behind by a refused upload"
     assert len(h.services.transcriptions.recent()) == 1
+
+
+def activity(h: ApiHarness) -> list[tuple[str, str, str]]:
+    rows = h.services.access_log.conn.execute(
+        "SELECT action, target, outcome FROM access_log ORDER BY id"
+    ).fetchall()
+    return [tuple(row) for row in rows]
+
+
+def test_ffmpeg_that_did_not_run_is_503_not_415(
+    h: ApiHarness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Upshot's problem, not the file's: the program is told to send it again later, and
+    the failure is in the activity log, with the file's name."""
+    from app.audio.ingest import FFMPEG_RETRY_AFTER_S, FfmpegFailed
+
+    def cannot_start(source: Path, *, config: object = None) -> None:
+        raise FfmpegFailed(f"ffmpeg could not run to read {source.name} (exit code 0xc0000017)")
+
+    monkeypatch.setattr(api, "probe", cannot_start)
+    program = Program(h)
+    for _ in range(2):
+        response = upload(program, wav(tmp_path / "clip.wav", 3), name="ראיון.m4a")
+        assert response.status_code == 503, response.text
+        assert response.headers["retry-after"] == str(FFMPEG_RETRY_AFTER_S)
+        assert "ראיון.m4a" in response.json()["detail"]
+    assert leftovers(h) == [] and h.services.transcriptions.recent() == []
+    assert activity(h).count(("transcribe", "ראיון.m4a", "error")) == 2, "none collapsed"
+
+
+def test_an_ffmpeg_that_can_never_run_is_500_with_what_to_do(
+    h: ApiHarness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.audio.ingest import FfmpegBroken
+
+    def broken(source: Path, *, config: object = None) -> None:
+        raise FfmpegBroken("ffmpeg cannot run on this computer (exit code 0xc0000135)")
+
+    monkeypatch.setattr(api, "probe", broken)
+    response = upload(Program(h), wav(tmp_path / "clip.wav", 3), name="call.m4a")
+    assert response.status_code == 500 and "ffmpeg cannot run" in response.json()["detail"]
+    assert "retry-after" not in response.headers
+    assert ("transcribe", "call.m4a", "error") in activity(h)
+
+
+def test_a_deferred_job_is_described_as_waiting_to_retry_with_its_reason(
+    h: ApiHarness,
+) -> None:
+    store = h.services.transcriptions
+    job = store.create(source_name="call.m4a", source_kind="path", source_path="/nowhere",
+                       options=api.options_from({}), client="api")  # fmt: skip
+    running = store.claim(job.id)
+    assert running is not None
+    until = h.services.clock.now() + timedelta(seconds=300)
+    store.defer(running, "FfmpegFailed: ffmpeg could not run", until=until)
+    described = Program(h).get(f"/api/v1/transcriptions/{job.id}").json()
+    assert described["state"] == "pending" and described["waiting_reason"] == "retry"
+    assert described["error"] == "FfmpegFailed: ffmpeg could not run"
+
+
+def test_a_refused_file_is_in_the_activity_log_and_the_page_is_not(
+    h: ApiHarness, tmp_path: Path
+) -> None:
+    junk = tmp_path / "notes.mp3"
+    junk.write_text("not audio", encoding="utf-8")
+    assert upload(Program(h), junk).status_code == 415
+    assert ("transcribe", "notes.mp3", "refused") in activity(h)
+    before = len(activity(h))
+    assert upload(h.client(), junk).status_code == 415
+    assert len(activity(h)) == before, "the page is not a program"
 
 
 def test_the_uploaded_name_never_becomes_a_path(h: ApiHarness, tmp_path: Path) -> None:

@@ -72,7 +72,7 @@ export default function TranscriptionRow({ job }: { job: Transcription }) {
           >
             {stateLabel(job, t)}
           </p>
-          {job.state === "failed" && job.error && (
+          {(job.state === "failed" || (job.state === "pending" && job.waiting_reason === "retry")) && job.error && (
             <p data-testid="transcription-error" className="mt-0.5 max-w-xs truncate text-tertiary" title={job.error}>
               {job.error}
             </p>

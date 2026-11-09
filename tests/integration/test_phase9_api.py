@@ -454,6 +454,24 @@ def test_import_rejects_a_file_it_cannot_decode(api, tmp_path: Path) -> None:  #
     assert api.services.dao.list_meetings(state="DISCARDED") or response.status_code == 500
 
 
+def test_import_when_ffmpeg_did_not_run_is_503_with_retry_after(  # type: ignore[no-untyped-def]
+    api, tmp_path: Path, monkeypatch
+) -> None:
+    from app.audio import ingest
+
+    def cannot_start(source: Path, *args: object, **kwargs: object) -> None:
+        raise ingest.FfmpegFailed(f"ffmpeg could not run to read {source.name}")
+
+    monkeypatch.setattr(ingest, "ingest", cannot_start)
+    clip = tmp_path / "call.m4a"
+    clip.write_bytes(b"whatever")
+    with clip.open("rb") as handle:
+        response = api.client().post("/api/import", files={"file": ("call.m4a", handle)})
+    assert response.status_code == 503, response.text
+    assert response.headers["retry-after"] == str(ingest.FFMPEG_RETRY_AFTER_S)
+    assert api.services.dao.list_meetings(state="DISCARDED")
+
+
 def test_every_endpoint_the_ui_calls_exists() -> None:
     """A route deleted by an edit elsewhere is invisible until a screen goes blank.
 
