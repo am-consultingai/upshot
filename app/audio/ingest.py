@@ -32,6 +32,37 @@ class UnsupportedAudio(ValueError):
     """The file is not a WAV and no ffmpeg is available to convert it."""
 
 
+class FfmpegFailed(RuntimeError):
+    """ffmpeg itself did not run: it could not start, or the system ended it. This says
+    nothing about the file, so a caller tries again later instead of refusing it (a
+    Windows that could not start ffmpeg had 2,500 good uploads refused as "not audio")."""
+
+
+#: NTSTATUS error codes: how Windows ends a process that failed to start or crashed
+#: (0xC0000017, no memory to start it; 0xC0000005, an access violation). ffmpeg's own
+#: errors are small exit codes.
+_NTSTATUS_ERRORS = range(0xC0000000, 0xD0000000)
+
+
+def _did_not_run(returncode: int, stderr: bytes) -> bool:
+    """Whether ffmpeg ended without doing its own work: a Windows NTSTATUS error, a POSIX
+    signal (negative), or a failure without a word of output (ffmpeg always says why)."""
+    return (
+        returncode < 0 or returncode in _NTSTATUS_ERRORS or (returncode != 0 and not stderr.strip())
+    )
+
+
+def _exit_text(returncode: int) -> str:
+    if returncode < 0:
+        return f"ended by signal {-returncode}"
+    return f"exit code {returncode:#010x}" if returncode > 0xFFFF else f"exit code {returncode}"
+
+
+def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
+    log.warning("ffmpeg did not run on %s: %s", source.name, why)
+    return FfmpegFailed(f"ffmpeg could not run to read {source.name} ({why}); try again later")
+
+
 @dataclass(frozen=True)
 class Imported:
     records: list[ChunkRecord]
@@ -114,16 +145,26 @@ def to_wav(
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired as exc:
+        log.warning("ffmpeg took more than %s s to convert %s", FFMPEG_TIMEOUT_S, source.name)
         raise UnsupportedAudio(
             f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
         ) from exc
+    except OSError as exc:
+        raise _ffmpeg_failed(source, str(exc)) from exc
     if result.returncode != 0 or not target.exists():
-        raise _conversion_failed(source, result.stderr)
+        raise _conversion_failed(source, result.returncode, result.stderr)
     return target
 
 
-def _conversion_failed(source: Path, stderr: bytes) -> UnsupportedAudio:
+def _conversion_failed(
+    source: Path, returncode: int, stderr: bytes
+) -> UnsupportedAudio | FfmpegFailed:
+    if _did_not_run(returncode, stderr):
+        return _ffmpeg_failed(source, _exit_text(returncode))
     text = stderr.decode(errors="replace")
+    log.warning(
+        "ffmpeg could not convert %s (%s): %s", source.name, _exit_text(returncode), text[-300:]
+    )
     if "does not contain any stream" in text or "matches no streams" in text:
         return UnsupportedAudio(f"{source.name} has no audio")
     return UnsupportedAudio(f"ffmpeg could not convert {source.name}: {text[-300:]}")
@@ -136,13 +177,16 @@ def _to_wav_cancellable(
     # stderr to a file, not a pipe: ffmpeg writes progress there for as long as it runs,
     # and an unread pipe fills and stalls it.
     with tempfile.TemporaryFile() as errors:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=errors,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=errors,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError as exc:
+            raise _ffmpeg_failed(source, str(exc)) from exc
         deadline = time.monotonic() + FFMPEG_TIMEOUT_S
         try:
             while True:
@@ -152,6 +196,11 @@ def _to_wav_cancellable(
                 except subprocess.TimeoutExpired:
                     stop_check()
                     if time.monotonic() > deadline:
+                        log.warning(
+                            "ffmpeg took more than %s s to convert %s",
+                            FFMPEG_TIMEOUT_S,
+                            source.name,
+                        )
                         raise UnsupportedAudio(
                             f"ffmpeg took more than {FFMPEG_TIMEOUT_S} s to convert {source.name}"
                         ) from None
@@ -164,7 +213,7 @@ def _to_wav_cancellable(
         stderr = errors.read()
     if returncode != 0 or not target.exists():
         target.unlink(missing_ok=True)
-        raise _conversion_failed(source, stderr)
+        raise _conversion_failed(source, returncode, stderr)
     return target
 
 
@@ -251,8 +300,9 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
 
     Local files in ordinary containers only (:data:`SAFE_INPUT_ARGS`), as every
     conversion reads them. Raises
-    :class:`UnsupportedAudio` for anything ffmpeg cannot open; a file it opens with no
-    audio stream comes back with ``has_audio=False``.
+    :class:`UnsupportedAudio` for anything ffmpeg cannot open, and :class:`FfmpegFailed`
+    when ffmpeg itself did not run; a file it opens with no audio stream comes back with
+    ``has_audio=False``.
     """
     binary = ffmpeg_path(config)
     if binary is None:
@@ -267,9 +317,15 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except subprocess.TimeoutExpired as exc:
+        log.warning("ffmpeg took more than %s s to read %s", PROBE_TIMEOUT_S, source.name)
         raise UnsupportedAudio(f"ffmpeg took too long to read {source.name}") from exc
+    except OSError as exc:
+        raise _ffmpeg_failed(source, str(exc)) from exc
+    if _did_not_run(result.returncode, result.stderr):
+        raise _ffmpeg_failed(source, _exit_text(result.returncode))
     text = result.stderr.decode(errors="replace")
     if "Input #0" not in text:
+        log.info("ffmpeg cannot read %s: %s", source.name, text.strip()[-200:])
         raise UnsupportedAudio(f"{source.name} is not audio or video ffmpeg can read")
     match = _DURATION.search(text)
     duration = None

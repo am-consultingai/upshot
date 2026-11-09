@@ -145,6 +145,101 @@ def test_ffmpeg_runs_without_a_console_and_a_hang_is_an_error(
     assert seen["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
+class _Ran:
+    def __init__(self, returncode: int, stderr: bytes) -> None:
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+#: How Windows ends a process it had no memory to start (the 2026-11-09 report).
+NO_MEMORY = 0xC0000017
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stderr"),
+    [(NO_MEMORY, b""), (0xC0000005, b"partial output"), (-9, b""), (1, b"")],
+    ids=["could-not-start", "crashed", "killed", "silent"],
+)
+def test_ffmpeg_that_did_not_run_is_not_blamed_on_the_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    returncode: int,
+    stderr: bytes,
+) -> None:
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda argv, **kw: _Ran(returncode, stderr))
+    with caplog.at_level(logging.WARNING, logger=ingest.log.name):
+        with pytest.raises(ingest.FfmpegFailed, match="try again later"):
+            ingest.probe(tmp_path / "call.m4a")
+        with pytest.raises(ingest.FfmpegFailed):
+            ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
+    assert sum("ffmpeg did not run on call.m4a" in r.getMessage() for r in caplog.records) == 2
+    if returncode == NO_MEMORY:
+        assert "0xc0000017" in caplog.text
+
+
+def test_a_file_ffmpeg_cannot_read_is_still_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    said = b"call.m4a: Invalid data found when processing input\n"
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda argv, **kw: _Ran(1, said))
+    with pytest.raises(ingest.UnsupportedAudio, match="not audio or video"):
+        ingest.probe(tmp_path / "call.m4a")
+    with (
+        caplog.at_level(logging.WARNING, logger=ingest.log.name),
+        pytest.raises(ingest.UnsupportedAudio, match="could not convert"),
+    ):
+        ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
+    assert "Invalid data" in caplog.text, "a failed conversion is in the log"
+
+
+def test_ffmpeg_that_cannot_be_started_at_all_is_ffmpeg_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(argv: list[str], **kwargs: Any) -> None:
+        raise PermissionError("access denied")
+
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", refused)
+    monkeypatch.setattr(ingest.subprocess, "Popen", refused)
+    with pytest.raises(ingest.FfmpegFailed, match="access denied"):
+        ingest.probe(tmp_path / "call.m4a")
+    with pytest.raises(ingest.FfmpegFailed):
+        ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav", stop_check=lambda: None)
+
+
+def test_a_cancellable_conversion_that_could_not_start_is_ffmpeg_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Popen:
+        def __init__(self, command: list[str], **kwargs: Any) -> None:
+            pass
+
+        def wait(self, timeout: float | None = None) -> int:
+            return NO_MEMORY
+
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "Popen", Popen)
+    with pytest.raises(ingest.FfmpegFailed, match="0xc0000017"):
+        ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav", stop_check=lambda: None)
+
+
+def test_child_programs_get_no_windows_error_dialogs() -> None:
+    from app import errormode
+
+    before = errormode.quiet_child_errors()
+    if sys.platform != "win32":
+        assert before is None
+        return
+    import ctypes
+
+    now = int(ctypes.windll.kernel32.GetErrorMode())
+    assert now & errormode.SEM_FAILCRITICALERRORS
+    assert now & before == before, "what was set before is kept"
+
+
 def test_the_window_opens_in_a_chromium_browser_in_app_mode() -> None:
     """Upshot's window is a browser in app mode (app/window.py): the default browser when
     it can do that, and the executable is read from its registered open command."""

@@ -373,6 +373,7 @@ class Worker:
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
             # Trying again changes nothing: an undecodable file, a missing model, a path
             # that is not there. UnsupportedAudio is a ValueError, so it is named here.
+            # FfmpegFailed (ffmpeg did not run at all) is not: it is retried below.
             store.fail(job, exc, permanent=True)
             self.stats.failed += 1
             log.warning("transcription %s failed: %s", job.id, exc)

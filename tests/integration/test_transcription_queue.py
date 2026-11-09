@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.asr.fake import FakeAsr
-from app.audio.ingest import UnsupportedAudio
+from app.audio.ingest import FfmpegFailed, UnsupportedAudio
 from app.db import migrate as migrations
 from app.db.dao import Connection
 from app.errors import Cancelled
@@ -538,6 +538,26 @@ def test_an_undecodable_file_fails_at_once(tmp_path: Path) -> None:
     worker_for(h, store).run_once()
     failed = store.require(job.id)
     assert failed.state == FAILED and failed.attempts == 1, "permanent: no retries"
+
+
+def test_ffmpeg_that_did_not_run_is_retried_not_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ffmpeg that could not start says nothing about the file: back off and try again."""
+    from app.transcription import engine
+
+    def cannot_start(source: Path, *args: object, **kwargs: object) -> Path:
+        raise FfmpegFailed(f"ffmpeg could not run to read {source.name} (exit code 0xc0000017)")
+
+    monkeypatch.setattr(engine, "to_wav", cannot_start)
+    h = harness(tmp_path)
+    store = store_for(h)
+    clip = write_wav(tmp_path / "clip.wav", 2)
+    job = add(store, path=str(clip))
+    worker_for(h, store).run_once()
+    held = store.require(job.id)
+    assert held.state == PENDING and held.attempts == 1, "retried with a backoff"
+    assert "0xc0000017" in (held.last_error or "")
 
 
 def test_a_missing_path_fails_at_once(tmp_path: Path) -> None:

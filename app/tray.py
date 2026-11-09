@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app import actions, brand, window
+from app.errormode import quiet_child_errors
 from app.instance import ALREADY_RUNNING, SingleInstance
 from app.log import get, setup
 from app.services import Services
@@ -330,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - process en
     is the classic failure.
     """
     arguments = list(sys.argv[1:] if argv is None else argv)
+    # First: every mode below may start ffmpeg or another program (app/errormode.py).
+    quiet_child_errors()
     if sys.stderr is None:
         # Windowed: no stderr for the model download's progress bars to write to. Set
         # before huggingface_hub is imported, which reads it once.

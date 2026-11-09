@@ -31,7 +31,7 @@ from starlette.requests import ClientDisconnect
 
 from app.api.security import CSRF_COOKIE, CSRF_HEADER
 from app.asr import languages
-from app.audio.ingest import UnsupportedAudio, probe
+from app.audio.ingest import FfmpegFailed, UnsupportedAudio, probe
 from app.log import get
 from app.services import Services
 from app.transcription.render import FORMATS, filename, render
@@ -323,12 +323,19 @@ async def create(request: Request) -> JSONResponse:
     """A file, as a multipart upload (``file`` plus options) or as JSON ``{"path": …}``."""
     svc = require_enabled(request)
     kind = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if kind == "multipart/form-data":
-        job = await _from_upload(request, svc)
-    elif kind == "application/json":
-        job = await _from_path(request, svc)
-    else:
-        raise HTTPException(415, "send multipart/form-data with a file, or JSON with a path")
+    try:
+        if kind == "multipart/form-data":
+            job = await _from_upload(request, svc)
+        elif kind == "application/json":
+            job = await _from_path(request, svc)
+        else:
+            raise HTTPException(415, "send multipart/form-data with a file, or JSON with a path")
+    except HTTPException:
+        if not is_page(request, svc):
+            # A refused file is in the activity log too: a program that kept sending
+            # files Upshot could not read left no trace before.
+            note(request, svc, "refused", keyless=True)
+        raise
     if not is_page(request, svc):
         note(request, svc, target=job.source_name)
     return JSONResponse(describe(svc, job), status_code=202)
@@ -410,12 +417,24 @@ async def _from_upload(request: Request, svc: Services) -> Transcription:
             partial.unlink(missing_ok=True)
 
 
+#: How long a program should wait before sending a file again when ffmpeg did not run.
+FFMPEG_RETRY_AFTER_S = 60
+
+
 async def _check_media(svc: Services, source: Path, *, label: str) -> float | None:
-    """415 for what is not audio, 413 past ``max_hours``, 507 without room for the WAV."""
+    """415 for what is not audio, 413 past ``max_hours``, 507 without room for the WAV,
+    503 when ffmpeg itself did not run."""
     try:
         described = await anyio.to_thread.run_sync(lambda: probe(source, config=svc.config))
     except UnsupportedAudio as exc:
         raise HTTPException(415, str(exc).replace(source.name, label)) from None
+    except FfmpegFailed as exc:
+        # Upshot's problem, not the file's: 503 tells a program to send it again later.
+        raise HTTPException(
+            503,
+            str(exc).replace(source.name, label),
+            headers={"Retry-After": str(FFMPEG_RETRY_AFTER_S)},
+        ) from None
     if not described.has_audio:
         raise HTTPException(415, f"{label} has no audio")
     duration = described.duration_s
