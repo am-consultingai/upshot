@@ -104,7 +104,7 @@ def test_a_taken_default_falls_back_into_the_new_range(monkeypatch: pytest.Monke
     # Windows until WSL restarts, and Upshot then started on 43219 for days.
     monkeypatch.setattr(server, "port_is_free", lambda host, port: port != DEFAULT_PORT)
     chosen = server.choose_port("127.0.0.1", DEFAULT_PORT)
-    assert chosen in range(43218, 43248)
+    assert chosen == server.FALLBACK_PORTS[0] == 43218
 
 
 def test_another_instance_saving_never_writes_the_port(tmp_path: Path) -> None:

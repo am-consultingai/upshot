@@ -74,7 +74,7 @@ def test_a_taken_port_falls_back_to_the_next_free_one(monkeypatch: pytest.Monkey
     # (under WSL's mirrored networking a bind there keeps it from Windows' Upshot).
     monkeypatch.setattr(server, "port_is_free", lambda host, port: port != taken)
     chosen = server.choose_port("127.0.0.1", taken)
-    assert chosen in server.FALLBACK_PORTS
+    assert chosen == server.FALLBACK_PORTS[0]
 
 
 def test_a_free_port_is_kept() -> None:
