@@ -157,8 +157,8 @@ NO_MEMORY = 0xC0000017
 
 @pytest.mark.parametrize(
     ("returncode", "stderr"),
-    [(NO_MEMORY, b""), (0xC0000005, b"partial output"), (-9, b""), (1, b"")],
-    ids=["could-not-start", "crashed", "killed", "silent"],
+    [(NO_MEMORY, b""), (0xC0000005, b""), (-9, b""), (1, b"")],
+    ids=["could-not-start", "crashed-before-a-word", "killed", "silent"],
 )
 def test_ffmpeg_that_did_not_run_is_not_blamed_on_the_file(
     tmp_path: Path,
@@ -193,6 +193,23 @@ def test_a_file_ffmpeg_cannot_read_is_still_unsupported(
     ):
         ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
     assert "Invalid data" in caplog.text, "a failed conversion is in the log"
+
+
+def test_a_crash_after_ffmpeg_has_spoken_is_the_files_doing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A file that crashes ffmpeg every time would otherwise be sent again for ever."""
+    source = tmp_path / "Users" / "someone" / "crafted.m4a"
+    said = f"Input #0, mov, from '{source}':\n".encode()
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
+    monkeypatch.setattr(ingest.subprocess, "run", lambda argv, **kw: _Ran(0xC0000005, said))
+    with (
+        caplog.at_level(logging.WARNING, logger=ingest.log.name),
+        pytest.raises(ingest.UnsupportedAudio),
+    ):
+        ingest.to_wav(source, tmp_path / "out.wav")
+    assert "0xc0000005" in caplog.text
+    assert str(source) not in caplog.text and "crafted.m4a" in caplog.text, "no full path"
 
 
 def test_ffmpeg_that_cannot_be_started_at_all_is_ffmpeg_failed(
@@ -233,11 +250,14 @@ def test_child_programs_get_no_windows_error_dialogs() -> None:
     if sys.platform != "win32":
         assert before is None
         return
-    import ctypes
-
-    now = int(ctypes.windll.kernel32.GetErrorMode())
-    assert now & errormode.SEM_FAILCRITICALERRORS
-    assert now & before == before, "what was set before is kept"
+    # What the fix relies on: a program Upshot starts inherits the mode.
+    child = subprocess.run(
+        [sys.executable, "-c", "import ctypes; print(ctypes.windll.kernel32.GetErrorMode())"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert int(child.stdout) & errormode.SEM_FAILCRITICALERRORS
 
 
 def test_the_window_opens_in_a_chromium_browser_in_app_mode() -> None:

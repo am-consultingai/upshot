@@ -130,26 +130,44 @@ def test_a_video_is_accepted_and_one_with_no_audio_is_refused(
     assert len(h.services.transcriptions.recent()) == 1
 
 
+def activity(h: ApiHarness) -> list[tuple[str, str, str]]:
+    rows = h.services.access_log.conn.execute(
+        "SELECT action, target, outcome FROM access_log ORDER BY id"
+    ).fetchall()
+    return [tuple(row) for row in rows]
+
+
 def test_ffmpeg_that_did_not_run_is_503_not_415(
     h: ApiHarness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Upshot's problem, not the file's: the program is told to send it again later, and
-    the refusal is in the activity log."""
-    from app.audio.ingest import FfmpegFailed
+    the failure is in the activity log, with the file's name."""
+    from app.audio.ingest import FFMPEG_RETRY_AFTER_S, FfmpegFailed
 
     def cannot_start(source: Path, *, config: object = None) -> None:
         raise FfmpegFailed(f"ffmpeg could not run to read {source.name} (exit code 0xc0000017)")
 
     monkeypatch.setattr(api, "probe", cannot_start)
-    response = upload(Program(h), wav(tmp_path / "clip.wav", 3), name="ראיון.m4a")
-    assert response.status_code == 503, response.text
-    assert response.headers["retry-after"] == str(api.FFMPEG_RETRY_AFTER_S)
-    assert "ראיון.m4a" in response.json()["detail"]
+    program = Program(h)
+    for _ in range(2):
+        response = upload(program, wav(tmp_path / "clip.wav", 3), name="ראיון.m4a")
+        assert response.status_code == 503, response.text
+        assert response.headers["retry-after"] == str(FFMPEG_RETRY_AFTER_S)
+        assert "ראיון.m4a" in response.json()["detail"]
     assert leftovers(h) == [] and h.services.transcriptions.recent() == []
-    rows = h.services.access_log.conn.execute(
-        "SELECT action, outcome FROM access_log ORDER BY id"
-    ).fetchall()
-    assert ("transcribe", "refused") in [tuple(row) for row in rows]
+    assert activity(h).count(("transcribe", "ראיון.m4a", "error")) == 2, "none collapsed"
+
+
+def test_a_refused_file_is_in_the_activity_log_and_the_page_is_not(
+    h: ApiHarness, tmp_path: Path
+) -> None:
+    junk = tmp_path / "notes.mp3"
+    junk.write_text("not audio", encoding="utf-8")
+    assert upload(Program(h), junk).status_code == 415
+    assert ("transcribe", "notes.mp3", "refused") in activity(h)
+    before = len(activity(h))
+    assert upload(h.client(), junk).status_code == 415
+    assert len(activity(h)) == before, "the page is not a program"
 
 
 def test_the_uploaded_name_never_becomes_a_path(h: ApiHarness, tmp_path: Path) -> None:

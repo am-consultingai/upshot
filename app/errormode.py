@@ -31,7 +31,7 @@ def quiet_child_errors() -> int | None:
         return None
     import ctypes
 
-    kernel32 = ctypes.windll.kernel32
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined,unused-ignore]
     before = int(kernel32.GetErrorMode())
     kernel32.SetErrorMode(before | QUIET)
     return before

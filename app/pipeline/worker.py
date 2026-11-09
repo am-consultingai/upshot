@@ -15,7 +15,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
-from app.clock import Clock, SystemClock
+from app.clock import Clock, SystemClock, parse_iso
 from app.config import Config
 from app.db.dao import Dao
 from app.errors import Cancelled, Deferred, PermanentError, Preempted
@@ -36,6 +36,10 @@ StageFn = Callable[[StageContext], None]
 
 #: Policies under which a running meeting does *not* stop the worker.
 ALWAYS_RUN_POLICIES = frozenset({"asap"})
+#: A file job whose ffmpeg could not start waits this long before it tries again...
+FFMPEG_DEFER_S = 300
+#: ...and fails for good once it was created this long ago.
+FFMPEG_GIVE_UP_S = 24 * 3600
 
 
 @dataclass
@@ -323,7 +327,7 @@ class Worker:
         import json
 
         from app.asr.models import ModelNotInstalled
-        from app.audio.ingest import UnsupportedAudio
+        from app.audio.ingest import FfmpegFailed, UnsupportedAudio
         from app.transcription.engine import transcribe_file
         from app.transcription.store import INPUT_DIR, RESULT_NAME
         from app.transcription.types import overall_progress
@@ -370,10 +374,24 @@ class Worker:
             self.stats.preempted += 1
             log.info("transcription %s preempted by the recorder", job.id)
             return
+        except FfmpegFailed as exc:
+            # ffmpeg could not start (no memory, on the machine that reported it, for
+            # days): nothing to do with this file, and five quick retries would not
+            # outlast it. Wait without counting attempts, up to FFMPEG_GIVE_UP_S.
+            now = self.clock.now()
+            if now - parse_iso(job.created_at) > timedelta(seconds=FFMPEG_GIVE_UP_S):
+                store.fail(job, exc, permanent=True)
+                self.stats.failed += 1
+                log.warning(
+                    "transcription %s failed: ffmpeg did not run for a day: %s", job.id, exc
+                )
+                return
+            store.defer(job, exc, until=now + timedelta(seconds=FFMPEG_DEFER_S))
+            log.warning("transcription %s waits: %s", job.id, exc)
+            return
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
             # Trying again changes nothing: an undecodable file, a missing model, a path
             # that is not there. UnsupportedAudio is a ValueError, so it is named here.
-            # FfmpegFailed (ffmpeg did not run at all) is not: it is retried below.
             store.fail(job, exc, permanent=True)
             self.stats.failed += 1
             log.warning("transcription %s failed: %s", job.id, exc)

@@ -38,24 +38,29 @@ class FfmpegFailed(RuntimeError):
     Windows that could not start ffmpeg had 2,500 good uploads refused as "not audio")."""
 
 
-#: NTSTATUS error codes: how Windows ends a process that failed to start or crashed
-#: (0xC0000017, no memory to start it; 0xC0000005, an access violation). ffmpeg's own
-#: errors are small exit codes.
-_NTSTATUS_ERRORS = range(0xC0000000, 0xD0000000)
+#: How long a program should wait before sending a file again when ffmpeg did not run.
+FFMPEG_RETRY_AFTER_S = 60
 
 
 def _did_not_run(returncode: int, stderr: bytes) -> bool:
-    """Whether ffmpeg ended without doing its own work: a Windows NTSTATUS error, a POSIX
-    signal (negative), or a failure without a word of output (ffmpeg always says why)."""
-    return (
-        returncode < 0 or returncode in _NTSTATUS_ERRORS or (returncode != 0 and not stderr.strip())
-    )
+    """Whether ffmpeg failed before doing any work of its own. A program the loader could
+    not start (0xC0000017: no memory to start it) never prints a word, while ffmpeg always
+    says why it gives up. A crash after it has printed something (0xC0000005 on a crafted
+    file) is the file's doing, so it stays :class:`UnsupportedAudio`, or a client told to
+    try again would send the same file for ever."""
+    return returncode != 0 and not stderr.strip()
 
 
 def _exit_text(returncode: int) -> str:
     if returncode < 0:
         return f"ended by signal {-returncode}"
     return f"exit code {returncode:#010x}" if returncode > 0xFFFF else f"exit code {returncode}"
+
+
+def _said(source: Path, stderr: bytes, keep: int) -> str:
+    """The end of what ffmpeg said, for the log, with the file's full path cut down to its
+    name: the path holds the user's account name."""
+    return stderr.decode(errors="replace").replace(str(source), source.name).strip()[-keep:]
 
 
 def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
@@ -163,7 +168,10 @@ def _conversion_failed(
         return _ffmpeg_failed(source, _exit_text(returncode))
     text = stderr.decode(errors="replace")
     log.warning(
-        "ffmpeg could not convert %s (%s): %s", source.name, _exit_text(returncode), text[-300:]
+        "ffmpeg could not convert %s (%s): %s",
+        source.name,
+        _exit_text(returncode),
+        _said(source, stderr, 300),
     )
     if "does not contain any stream" in text or "matches no streams" in text:
         return UnsupportedAudio(f"{source.name} has no audio")
@@ -325,7 +333,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
         raise _ffmpeg_failed(source, _exit_text(result.returncode))
     text = result.stderr.decode(errors="replace")
     if "Input #0" not in text:
-        log.info("ffmpeg cannot read %s: %s", source.name, text.strip()[-200:])
+        log.info("ffmpeg cannot read %s: %s", source.name, _said(source, result.stderr, 200))
         raise UnsupportedAudio(f"{source.name} is not audio or video ffmpeg can read")
     match = _DURATION.search(text)
     duration = None

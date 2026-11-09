@@ -540,10 +540,12 @@ def test_an_undecodable_file_fails_at_once(tmp_path: Path) -> None:
     assert failed.state == FAILED and failed.attempts == 1, "permanent: no retries"
 
 
-def test_ffmpeg_that_did_not_run_is_retried_not_failed(
+def test_ffmpeg_that_did_not_run_waits_without_using_attempts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ffmpeg that could not start says nothing about the file: back off and try again."""
+    """ffmpeg that could not start says nothing about the file, and it lasted days on the
+    machine that reported it: wait, count no attempt, and give up only after a day."""
+    from app.pipeline import worker as worker_module
     from app.transcription import engine
 
     def cannot_start(source: Path, *args: object, **kwargs: object) -> Path:
@@ -554,10 +556,16 @@ def test_ffmpeg_that_did_not_run_is_retried_not_failed(
     store = store_for(h)
     clip = write_wav(tmp_path / "clip.wav", 2)
     job = add(store, path=str(clip))
-    worker_for(h, store).run_once()
-    held = store.require(job.id)
-    assert held.state == PENDING and held.attempts == 1, "retried with a backoff"
-    assert "0xc0000017" in (held.last_error or "")
+    worker = worker_for(h, store)
+    for _ in range(7):  # more than MAX_ATTEMPTS
+        worker.run_once()
+        held = store.require(job.id)
+        assert held.state == PENDING and held.attempts == 0
+        assert "0xc0000017" in (held.last_error or "")
+        h.clock.advance(worker_module.FFMPEG_DEFER_S + 1)
+    h.clock.advance(worker_module.FFMPEG_GIVE_UP_S)
+    worker.run_once()
+    assert store.require(job.id).state == FAILED
 
 
 def test_a_missing_path_fails_at_once(tmp_path: Path) -> None:

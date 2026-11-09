@@ -1523,7 +1523,7 @@ def keep_meeting(request: Request, meeting_id: str) -> dict[str, Any]:
 @router.post("/import")
 async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     """An uploaded recording becomes chunk files and runs the ordinary pipeline."""
-    from app.audio.ingest import FfmpegFailed, UnsupportedAudio, ingest
+    from app.audio.ingest import FFMPEG_RETRY_AFTER_S, FfmpegFailed, UnsupportedAudio, ingest
 
     svc = services_of(request)
     meeting = svc.meetings.create(source="imported", title=Path(file.filename or "import").stem)
@@ -1538,7 +1538,9 @@ async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
         raise HTTPException(415, str(exc)) from exc
     except FfmpegFailed as exc:
         svc.meetings.discard(meeting.id)
-        raise HTTPException(503, str(exc)) from exc
+        raise HTTPException(
+            503, str(exc), headers={"Retry-After": str(FFMPEG_RETRY_AFTER_S)}
+        ) from exc
     svc.meetings.finish(meeting.id, duration_s=imported.duration_s)
     svc.events.publish("meeting", meeting_id=meeting.id, action="imported")
     return {

@@ -31,7 +31,7 @@ from starlette.requests import ClientDisconnect
 
 from app.api.security import CSRF_COOKIE, CSRF_HEADER
 from app.asr import languages
-from app.audio.ingest import FfmpegFailed, UnsupportedAudio, probe
+from app.audio.ingest import FFMPEG_RETRY_AFTER_S, FfmpegFailed, UnsupportedAudio, probe
 from app.log import get
 from app.services import Services
 from app.transcription.render import FORMATS, filename, render
@@ -330,11 +330,13 @@ async def create(request: Request) -> JSONResponse:
             job = await _from_path(request, svc)
         else:
             raise HTTPException(415, "send multipart/form-data with a file, or JSON with a path")
-    except HTTPException:
+    except HTTPException as exc:
         if not is_page(request, svc):
             # A refused file is in the activity log too: a program that kept sending
-            # files Upshot could not read left no trace before.
-            note(request, svc, "refused", keyless=True)
+            # files Upshot could not read left no trace before. A 5xx is Upshot's own
+            # failure, not a refusal of the program.
+            outcome = "error" if exc.status_code >= 500 else "refused"
+            note(request, svc, outcome, target=getattr(exc, "upshot_target", ""))
         raise
     if not is_page(request, svc):
         note(request, svc, target=job.source_name)
@@ -417,13 +419,18 @@ async def _from_upload(request: Request, svc: Services) -> Transcription:
             partial.unlink(missing_ok=True)
 
 
-#: How long a program should wait before sending a file again when ffmpeg did not run.
-FFMPEG_RETRY_AFTER_S = 60
-
-
 async def _check_media(svc: Services, source: Path, *, label: str) -> float | None:
     """415 for what is not audio, 413 past ``max_hours``, 507 without room for the WAV,
-    503 when ffmpeg itself did not run."""
+    503 when ffmpeg itself did not run. The refusal carries ``label`` for the activity
+    log (``upshot_target``)."""
+    try:
+        return await _media_limits(svc, source, label=label)
+    except HTTPException as exc:
+        exc.upshot_target = label  # type: ignore[attr-defined]
+        raise
+
+
+async def _media_limits(svc: Services, source: Path, *, label: str) -> float | None:
     try:
         described = await anyio.to_thread.run_sync(lambda: probe(source, config=svc.config))
     except UnsupportedAudio as exc:
