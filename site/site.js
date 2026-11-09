@@ -15,9 +15,11 @@
   // Without this script the link opens the video on YouTube.
   document.querySelectorAll("a[data-yt]").forEach(function (link) {
     link.addEventListener("click", function (event) {
+      // A modified click (new tab, new window) still opens YouTube, as a link should.
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
       event.preventDefault();
       var frame = document.createElement("iframe");
-      frame.src = "https://www.youtube-nocookie.com/embed/" + link.dataset.yt + "?autoplay=1&rel=0";
+      frame.src = "https://www.youtube-nocookie.com/embed/" + link.dataset.yt + "?autoplay=1&rel=0&playsinline=1";
       frame.title = link.dataset.title;
       frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
       frame.allowFullscreen = true;
