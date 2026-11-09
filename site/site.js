@@ -1,4 +1,4 @@
-// Upshot site: copy button and the remembered language choice.
+// Upshot site: copy button, the remembered language choice, and the video player.
 // The page is complete without this file.
 (function () {
   "use strict";
@@ -8,6 +8,22 @@
   document.querySelectorAll("a[data-lang]").forEach(function (link) {
     link.addEventListener("click", function () {
       try { localStorage.setItem("upshot-lang", link.dataset.lang); } catch (e) {}
+    });
+  });
+
+  // The video: YouTube's player replaces the poster only when play is pressed.
+  // Without this script the link opens the video on YouTube.
+  document.querySelectorAll("a[data-yt]").forEach(function (link) {
+    link.addEventListener("click", function (event) {
+      event.preventDefault();
+      var frame = document.createElement("iframe");
+      frame.src = "https://www.youtube-nocookie.com/embed/" + link.dataset.yt + "?autoplay=1&rel=0";
+      frame.title = link.dataset.title;
+      frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+      frame.allowFullscreen = true;
+      frame.referrerPolicy = "strict-origin-when-cross-origin";
+      link.replaceWith(frame);
+      frame.focus();
     });
   });
 
