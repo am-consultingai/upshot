@@ -127,10 +127,10 @@ def create_app(services: Services | None = None, *, config: Config | None = None
                 yield
         finally:
             # A CUDA model still loaded while the interpreter shuts down can hang or crash
-            # the exit on Windows (D108).
+            # the exit on Windows (D108); a job still running keeps nothing after this.
             from app.asr.resident import RESIDENT
 
-            RESIDENT.drop_all()
+            RESIDENT.close()
 
     app = FastAPI(
         title="Upshot",

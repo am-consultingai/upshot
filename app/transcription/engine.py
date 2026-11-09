@@ -138,11 +138,17 @@ def _language(
     hooked = hasattr(classifier, "stop_check")
     if hooked:
         setattr(classifier, "stop_check", stop_check)  # noqa: B010 - not on the protocol
+    # The next file reuses its GPU model (D108); a meeting's classifier is never kept.
+    keeps = hasattr(classifier, "keep_for_next")
+    if keeps:
+        setattr(classifier, "keep_for_next", True)  # noqa: B010 - not on the protocol
     try:
         decision = classifier.classify({"them": wav})
     finally:
         if hooked:
             setattr(classifier, "stop_check", None)  # noqa: B010
+        if keeps:
+            setattr(classifier, "keep_for_next", False)  # noqa: B010
     log.info("%s", decision.log_line())
     return decision
 
@@ -189,8 +195,9 @@ def _transcribe(
         for name in hooked:
             setattr(backend, name, None)
         # Before diarization, which needs the memory (the meeting stage frees it later).
-        # On the GPU the model stays loaded for the next file instead: its weights are in
-        # video memory, and loading a new one for every file leaked host memory (D108).
+        # On the GPU the model stays loaded for the next file instead (D108): its weights
+        # are in video memory, and loading a new one for every file leaked host memory.
+        # Kept, the classifier and transcriber hold about 1.1 GB of RAM during diarization.
         park = getattr(backend, "park", None)
         if healthy and callable(park):
             park()

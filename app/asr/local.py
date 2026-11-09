@@ -16,6 +16,7 @@ import gc
 import os
 import subprocess
 import sys
+import traceback
 import wave
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -501,27 +502,36 @@ class LocalAsr:
         else:
             # In RAM, one model at a time (D66, D80): none kept on the GPU beside it.
             RESIDENT.drop_all()
+        error = self._attempt(device, compute)
+        if error is None:
+            return self.model
+        if RESIDENT.drop_all():
+            # The models kept for the next file may be what filled the card.
+            log.warning("GPU load failed (%s); freed the kept models, trying again", error)
+            error = self._attempt(device, compute)
+            if error is None:
+                return self.model
+        log.warning("GPU load failed (%s); falling back to CPU/int8", error)
+        self.fell_back = True
+        # The same model on the CPU: slower, but the meeting's language already chose it.
+        self._load_on("cpu", "int8")
+        return self.model
+
+    def _attempt(self, device: str, compute_type: str) -> str | None:
+        """Load on ``device``: None when it worked, the CUDA error's text when it did not.
+        Anything else is raised. A failed model is freed before this returns: the error's
+        traceback would otherwise keep it loaded through the next attempt."""
         try:
-            self._load_on(device, compute)
+            self._load_on(device, compute_type)
+            return None
         except Exception as exc:
             if device == "cpu" or not self._is_cuda_error(exc):
                 raise
-            if RESIDENT.drop_all():
-                # The models kept for the next file may be what filled the card.
-                log.warning("GPU load failed (%s); freed the kept models, trying again", exc)
-                try:
-                    self._load_on(device, compute)
-                    return self.model
-                except Exception as again:
-                    if not self._is_cuda_error(again):
-                        raise
-                    exc = again
-            log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
-            self.fell_back = True
-            # The same model on the CPU: slower, but the meeting's language already
-            # chose it.
-            self._load_on("cpu", "int8")
-        return self.model
+            text = str(exc)
+            traceback.clear_frames(exc.__traceback__)
+        self.model = None
+        gc.collect()
+        return text
 
     def _load_on(self, device: str, compute_type: str) -> None:
         self.model = None

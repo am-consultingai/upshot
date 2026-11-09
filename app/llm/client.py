@@ -203,6 +203,14 @@ OLLAMA_TIMEOUT_S = 600.0
 OLLAMA_KEEP_ALIVE_S = 300.0
 
 
+def _on_this_computer(url: str) -> bool:
+    """Whether an Ollama URL points at this computer, where its model shares the GPU."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} or host.startswith("127.")
+
+
 class OllamaClient:
     """The sensitive-meeting path: nothing leaves the machine.
 
@@ -232,7 +240,8 @@ class OllamaClient:
         # next file go first, and none is kept until then (DESIGN.md §20.4, D108).
         from app.asr.resident import RESIDENT
 
-        RESIDENT.hold_off(OLLAMA_TIMEOUT_S + OLLAMA_KEEP_ALIVE_S)
+        if _on_this_computer(self.url):
+            RESIDENT.hold_off(OLLAMA_TIMEOUT_S + OLLAMA_KEEP_ALIVE_S)
         if self._transport is not None:
             return self._transport(payload)
         import httpx

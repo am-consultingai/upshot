@@ -332,6 +332,9 @@ class WhisperClassifier:
         self.unloads = 0
         #: Loads answered by the model the last file left on the GPU (D108).
         self.reused = 0
+        #: Keep the GPU model for the next file instead of freeing it (D108). File jobs
+        #: only: a meeting frees it before the large model loads (D80).
+        self.keep_for_next = False
         self._key: Key | None = None
         #: Called between windows; raises to stop (the meeting is being deleted).
         self.stop_check: Callable[[], None] | None = None
@@ -364,12 +367,13 @@ class WhisperClassifier:
             healthy = False
             raise
         finally:
-            if healthy and device == "cuda" and self._key is not None:
+            if healthy and self.keep_for_next and device == "cuda" and self._key is not None:
                 # Kept for the next file: a new model each time leaked memory (D108).
                 RESIDENT.park(self._key, model, idle_s=keep_loaded_s(self.config))
+            else:
+                self.unloads += 1
             del model
             gc.collect()
-            self.unloads += 1
         decision = decide(mean_probabilities(answers))
         return LanguageDecision(
             decision.language, decision.route, decision.forced, decision.p_he, decision.p_top,
@@ -478,6 +482,8 @@ class IsolatedClassifier:
     def __init__(self, config: Config, *, run_child: ChildRunner | None = None) -> None:
         self.config = config
         self.run_child = run_child or spawn_child
+        #: See ``WhisperClassifier.keep_for_next``; only the GPU, in-place path keeps.
+        self.keep_for_next = False
         self.isolated = False
         self.stop_check: Callable[[], None] | None = None
 
@@ -506,4 +512,5 @@ class IsolatedClassifier:
     def _in_place(self, inputs: Mapping[str, Path]) -> LanguageDecision:
         classifier = WhisperClassifier(self.config)
         classifier.stop_check = self.stop_check
+        classifier.keep_for_next = self.keep_for_next
         return classifier.classify(inputs)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import weakref
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -330,11 +331,13 @@ def test_the_classifier_reuses_its_gpu_model() -> None:
         return model
 
     def classifier() -> WhisperClassifier:
-        return WhisperClassifier(
+        made = WhisperClassifier(
             default_config(asr__device="cuda"),
             model_factory=factory,
             read_speech=lambda track, wav: speech(track, 120),
         )
+        made.keep_for_next = True  # a file job
+        return made
 
     inputs = {"them": Path("them.wav")}
     classifier().classify(inputs)
@@ -356,6 +359,7 @@ def test_a_classifier_that_failed_is_not_kept() -> None:
         model_factory=lambda **kwargs: Broken([]),
         read_speech=lambda track, wav: speech(track, 120),
     )
+    classifier.keep_for_next = True
     with pytest.raises(RuntimeError):
         classifier.classify({"them": Path("them.wav")})
     assert RESIDENT.held() == []
@@ -393,3 +397,96 @@ def test_a_local_llm_request_frees_the_kept_models() -> None:
     assert seen and seen[0] == [], "Whisper is gone before Ollama loads its model"
     RESIDENT.park(A, object(), idle_s=300)  # a file job that was running meanwhile
     assert RESIDENT.held() == [], "nothing is kept while Ollama may hold its model"
+
+
+# -- review round 2 ---------------------------------------------------------
+
+
+def classifier_on_gpu(model: StubModel, *, keep: bool) -> WhisperClassifier:
+    classifier = WhisperClassifier(
+        default_config(asr__device="cuda"),
+        model_factory=lambda **kwargs: model,
+        read_speech=lambda track, wav: speech(track, 120),
+    )
+    classifier.keep_for_next = keep
+    return classifier
+
+
+@pytest.mark.usefixtures("installed_models", "big_card")
+def test_a_meetings_classifier_is_not_kept() -> None:
+    """A meeting frees the classifier before the transcriber loads (D80)."""
+    classifier = classifier_on_gpu(StubModel([{"he": 0.9, "en": 0.1}]), keep=False)
+    classifier.classify({"them": Path("them.wav")})
+    assert RESIDENT.held() == [] and classifier.unloads == 1
+
+
+def test_a_meeting_frees_the_models_kept_for_files(tmp_path: Path) -> None:
+    from app.asr.fake import FakeAsr
+    from app.pipeline.stages import transcribe
+    from tests.fixtures.meetings import harness, write_chunks
+
+    class Services:
+        def __init__(self) -> None:
+            self.asr = FakeAsr()
+
+    h = harness(tmp_path, asr__backend="fake", audio__vad="energy")
+    meeting = h.meeting()
+    write_chunks(meeting.path, seconds=90)
+    RESIDENT.park(A, object(), idle_s=300)
+    transcribe.run(h.context(meeting, services=Services()))
+    assert RESIDENT.held() == []
+
+
+@pytest.mark.usefixtures("installed_models", "big_card")
+def test_a_failed_warmup_frees_its_model_before_the_retry() -> None:
+    """The error's traceback must not keep the first model on the card."""
+    first: list[weakref.ref[RecordingModel]] = []
+    alive_at_retry: list[bool] = []
+
+    class OutOfMemory(RecordingModel):
+        def transcribe(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("CUDA failed with error out of memory")
+
+    def factory(**kwargs: object) -> RecordingModel:
+        if not first:
+            model = OutOfMemory(**kwargs)
+            first.append(weakref.ref(model))
+            return model
+        alive_at_retry.append(first[0]() is not None)
+        return RecordingModel(**kwargs)
+
+    RESIDENT.park(B, object(), idle_s=300)
+    backend = LocalAsr(default_config(asr__device="cuda"), model_factory=factory)
+    backend.load()
+    assert alive_at_retry == [False]
+    assert backend.device == "cuda" and not backend.fell_back
+
+
+def test_nothing_is_kept_after_close() -> None:
+    held, _, _ = resident()
+    held.park(A, object(), idle_s=300)
+    held.close()
+    assert held.held() == []
+    held.park(A, object(), idle_s=300)  # a job that was still running
+    assert held.held() == []
+
+
+def test_no_thread_for_the_timer_frees_instead_of_holding() -> None:
+    class NoThread(FakeTimer):
+        def start(self) -> None:
+            raise RuntimeError("can't start new thread")
+
+    held = Resident(timer=NoThread)
+    held.park(A, object(), idle_s=300)
+    assert held.held() == []
+
+
+def test_a_remote_ollama_keeps_the_models() -> None:
+    RESIDENT.park(A, object(), idle_s=300)
+    client = OllamaClient(
+        default_config(llm__ollama_url="http://gpu-box.lan:11434"),
+        transport=lambda payload: json.dumps({"title": "t"}),
+    )
+    with pytest.raises(PermanentError):
+        client.complete_json(system_blocks=system_blocks("s", None), user="transcript")
+    assert RESIDENT.held() == [A]

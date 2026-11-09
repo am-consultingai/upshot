@@ -81,6 +81,8 @@ class Resident:
         self._generation = 0
         #: Until then a local LLM may be loaded: nothing is kept (DESIGN.md §20.4).
         self._llm_until = float("-inf")
+        #: Upshot is shutting down: nothing is kept.
+        self._closed = False
 
     def held(self) -> list[Key]:
         with self._lock:
@@ -90,7 +92,8 @@ class Resident:
         """The loaded model for ``key``, now the caller's; None when none is held."""
         with self._lock:
             entry = self._held.pop(key, None)
-            self._arm_locked()
+            stranded = self._arm_locked()
+        _free(stranded)
         return entry[0] if entry is not None else None
 
     def make_room(
@@ -118,12 +121,12 @@ class Resident:
         del model
         with self._lock:
             now = self._clock()
-            if idle_s > 0 and now >= self._llm_until:
+            if idle_s > 0 and now >= self._llm_until and not self._closed:
                 entry = self._held.pop(key, None)
                 if entry is not None:
                     dropped.append(entry[0])
                 self._held[key] = (dropped.pop(0), now + idle_s)
-                self._arm_locked()
+                dropped.extend(self._arm_locked())
         _free(dropped)
 
     def hold_off(self, seconds: float) -> None:
@@ -142,32 +145,49 @@ class Resident:
         _free(dropped)
         return count
 
+    def close(self) -> None:
+        """Upshot is shutting down: free everything, and keep nothing a job hands back
+        after this. A CUDA model alive at interpreter exit can hang it on Windows."""
+        with self._lock:
+            self._closed = True
+            dropped = self._clear_locked()
+        _free(dropped)
+
     def reset(self) -> None:
-        """Free everything and forget any local LLM: a clean start, for tests."""
+        """Free everything, forget any local LLM, reopen: a clean start, for tests."""
         with self._lock:
             self._llm_until = float("-inf")
+            self._closed = False
         self.drop_all()
 
     def _clear_locked(self) -> list[Any]:
         models = [model for model, _until in self._held.values()]
         self._held.clear()
-        self._arm_locked()
+        self._arm_locked()  # nothing held: only cancels
         return models
 
-    def _arm_locked(self) -> None:
-        """One timer, for the model due first."""
+    def _arm_locked(self) -> list[Any]:
+        """One timer, for the model due first. When no thread can be started for it (the
+        commit charge this module exists to spare can be full), nothing may stay held
+        without one: the held models are returned for the caller to free."""
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
         self._generation += 1
         if not self._held:
-            return
+            return []
         due = min(until for _model, until in self._held.values())
         generation = self._generation
-        self._timer = self._make_timer(
-            max(0.0, due - self._clock()), lambda: self._expire(generation)
-        )
-        self._timer.start()
+        timer = self._make_timer(max(0.0, due - self._clock()), lambda: self._expire(generation))
+        try:
+            timer.start()
+        except RuntimeError as exc:  # "can't start new thread"
+            log.warning("asr: no timer for the kept models (%s); freeing them", exc)
+            stranded = [model for model, _until in self._held.values()]
+            self._held.clear()
+            return stranded
+        self._timer = timer
+        return []
 
     def _expire(self, generation: int) -> None:
         with self._lock:
@@ -177,7 +197,7 @@ class Resident:
             now = self._clock()
             expired = [key for key, (_model, until) in self._held.items() if until <= now]
             dropped = [self._held.pop(key)[0] for key in expired]
-            self._arm_locked()
+            dropped.extend(self._arm_locked())
         if dropped:
             log.info("asr: freed %d model(s) nobody used for a while", len(dropped))
         _free(dropped)

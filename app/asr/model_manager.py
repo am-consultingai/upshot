@@ -36,6 +36,7 @@ from typing import Any
 
 from app import paths
 from app.asr.models import MODELS, RETIRED_REPOS, ROLES, SpeechModel, looks_like_model_dir
+from app.asr.resident import RESIDENT
 from app.log import get
 
 log = get(__name__)
@@ -346,14 +347,13 @@ class ModelManager:
             )
             # A model kept loaded for the next file holds these files open, and would go
             # on answering with the old weights (D108).
-            from app.asr.resident import RESIDENT
-
             RESIDENT.drop_all()
             self.downloader(self.model, self.target, self._progress_class(present))
             self._verify(files)
             if not looks_like_model_dir(self.target):
                 raise RuntimeError(f"{self.target} has no model.bin/config.json after the download")
             (self.target / VERIFIED).write_text(self.model.marker, encoding="utf-8")
+            RESIDENT.drop_all()  # one a job kept during the download has the old weights
             with self._lock:
                 self._status.state = "ready"
                 self._status.done_bytes = total
