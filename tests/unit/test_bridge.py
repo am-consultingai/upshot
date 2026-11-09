@@ -565,3 +565,8 @@ def test_a_job_waiting_to_try_again_says_why() -> None:
     }
     assert "0xc0000017" in tools._status(job)
     assert tools._status({"state": "pending", "waiting_reason": "queue", "error": "x"}) == "waiting"
+
+
+def test_a_long_waiting_reason_is_cut_short() -> None:
+    job = {"state": "pending", "waiting_reason": "retry", "error": "x" * 2000}
+    assert len(tools._status(job)) < 400

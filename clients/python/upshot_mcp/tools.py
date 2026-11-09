@@ -336,11 +336,8 @@ def _status(job: dict[str, Any]) -> str:
         reason = REASONS.get(job.get("waiting_reason") or "")
         position = job.get("position")
         where = f", position {position} in the queue" if position else ""
-        why = (
-            f" ({job['error']})"
-            if job.get("waiting_reason") == "retry" and job.get("error")
-            else ""
-        )
+        error = str(job.get("error") or "")[:300]  # last_error holds up to 2,000 characters
+        why = f" ({error})" if job.get("waiting_reason") == "retry" and error else ""
         return f"waiting{where}" + (f"; {reason}{why}" if reason else "")
     if state == "running":
         percent = round(float(job.get("progress") or 0) * 100)

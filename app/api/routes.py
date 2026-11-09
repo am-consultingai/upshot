@@ -1548,7 +1548,7 @@ async def import_audio(request: Request, file: UploadFile) -> dict[str, Any]:
     except FfmpegFailed as exc:
         svc.meetings.discard(meeting.id)
         raise HTTPException(
-            503, str(exc), headers={"Retry-After": str(FFMPEG_RETRY_AFTER_S)}
+            503, f"{exc}; send it again later", headers={"Retry-After": str(FFMPEG_RETRY_AFTER_S)}
         ) from exc
     svc.meetings.finish(meeting.id, duration_s=imported.duration_s)
     svc.events.publish("meeting", meeting_id=meeting.id, action="imported")

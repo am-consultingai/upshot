@@ -325,7 +325,7 @@ class Worker:
         import json
 
         from app.asr.models import ModelNotInstalled
-        from app.audio.ingest import FfmpegFailed, UnsupportedAudio
+        from app.audio.ingest import FfmpegBroken, FfmpegFailed, UnsupportedAudio
         from app.transcription.engine import transcribe_file
         from app.transcription.store import INPUT_DIR, RESULT_NAME
         from app.transcription.types import overall_progress
@@ -383,6 +383,14 @@ class Worker:
             until = self.clock.now() + timedelta(seconds=FFMPEG_DEFER_S)
             if store.defer(job, why, until=until).state == "pending":
                 log.warning("transcription %s waits: %s", job.id, exc)
+            return
+        except FfmpegBroken as exc:
+            # ffmpeg can never run here (missing, blocked, the wrong program): trying again
+            # changes nothing until Upshot is reinstalled or ffmpeg_path corrected. Not a
+            # crash report either: it is this computer's setup, and the message says what to do.
+            store.fail(job, exc, permanent=True)
+            self.stats.failed += 1
+            log.warning("transcription %s failed: %s", job.id, exc)
             return
         except (PermanentError, UnsupportedAudio, ModelNotInstalled, FileNotFoundError) as exc:
             # Trying again changes nothing: an undecodable file, a missing model, a path

@@ -448,7 +448,7 @@ async def _media_limits(svc: Services, source: Path, *, label: str) -> float | N
         # Upshot's problem, not the file's: 503 tells a program to send it again later.
         raise HTTPException(
             503,
-            str(exc).replace(source.name, label),
+            f"{str(exc).replace(source.name, label)}; send it again later",
             headers={"Retry-After": str(FFMPEG_RETRY_AFTER_S)},
         ) from None
     if not described.has_audio:

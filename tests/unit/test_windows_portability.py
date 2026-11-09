@@ -171,7 +171,7 @@ def test_ffmpeg_that_did_not_run_is_not_blamed_on_the_file(
     monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
     monkeypatch.setattr(ingest.subprocess, "run", lambda argv, **kw: _Ran(returncode, stderr))
     with caplog.at_level(logging.WARNING, logger=ingest.log.name):
-        with pytest.raises(ingest.FfmpegFailed, match="try again later"):
+        with pytest.raises(ingest.FfmpegFailed, match=r"could not run to read call\.m4a"):
             ingest.probe(tmp_path / "call.m4a")
         with pytest.raises(ingest.FfmpegFailed):
             ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
@@ -239,12 +239,32 @@ class _WinError(OSError):
         (_WinError(8, "Not enough memory resources"), "FfmpegFailed"),  # wait, as in the report
         (_WinError(193, "%1 is not a valid Win32 application"), "FfmpegBroken"),
         (_WinError(216, "machine type mismatch"), "FfmpegBroken"),
+        (_WinError(5, "Access is denied"), "FfmpegBroken"),
+        (_WinError(1260, "blocked by group policy"), "FfmpegBroken"),
+        (_WinError(225, "contains a virus"), "FfmpegBroken"),
+        (_WinError(2, "cannot find the file"), "FfmpegBroken"),
+        (_WinError(32, "used by another process"), "FfmpegFailed"),
+        (_WinError(1450, "insufficient system resources"), "FfmpegFailed"),
         (OSError(8, "Exec format error"), "FfmpegBroken"),  # ENOEXEC on Linux is 8 too
         (OSError(21, "Is a directory"), "FfmpegBroken"),
         (OSError(13, "Permission denied"), "FfmpegBroken"),
         (OSError(16, "Device or resource busy"), "FfmpegFailed"),
     ],
-    ids=["win-no-memory", "win-bad-exe", "win-arch", "enoexec", "eisdir", "eacces", "ebusy"],
+    ids=[
+        "win-no-memory",
+        "win-bad-exe",
+        "win-arch",
+        "win-denied",
+        "win-policy",
+        "win-virus",
+        "win-gone",
+        "win-sharing",
+        "win-resources",
+        "enoexec",
+        "eisdir",
+        "eacces",
+        "ebusy",
+    ],
 )
 def test_a_start_that_failed_is_waited_for_only_when_waiting_can_help(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError, expected: str
@@ -273,6 +293,21 @@ def test_an_ffmpeg_that_can_never_run_is_broken_not_waited_for(
         ingest.probe(tmp_path / "call.m4a")
     with pytest.raises(ingest.FfmpegBroken):
         ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
+
+
+def test_a_missing_ffmpeg_is_broken_in_the_installed_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The app ships ffmpeg, so a missing one was removed: not the file's fault."""
+    monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: None)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    with pytest.raises(ingest.FfmpegBroken, match="missing"):
+        ingest.probe(tmp_path / "call.m4a")
+    with pytest.raises(ingest.FfmpegBroken):
+        ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav")
+    monkeypatch.delattr(sys, "frozen")
+    with pytest.raises(ingest.UnsupportedAudio, match="not found"):
+        ingest.probe(tmp_path / "call.m4a")
 
 
 def test_a_folder_set_as_ffmpeg_path_is_not_used(tmp_path: Path) -> None:
@@ -325,12 +360,12 @@ def test_ffmpeg_that_cannot_be_started_at_all_is_ffmpeg_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def refused(argv: list[str], **kwargs: Any) -> None:
-        raise PermissionError("access denied")
+        raise _WinError(8, "Not enough memory resources")
 
     monkeypatch.setattr(ingest, "ffmpeg_path", lambda config=None: "ffmpeg")
     monkeypatch.setattr(ingest.subprocess, "run", refused)
     monkeypatch.setattr(ingest.subprocess, "Popen", refused)
-    with pytest.raises(ingest.FfmpegFailed, match="PermissionError"):
+    with pytest.raises(ingest.FfmpegFailed, match="Not enough memory"):
         ingest.probe(tmp_path / "call.m4a")
     with pytest.raises(ingest.FfmpegFailed):
         ingest.to_wav(tmp_path / "call.m4a", tmp_path / "out.wav", stop_check=lambda: None)

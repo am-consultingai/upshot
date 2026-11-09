@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.asr.fake import FakeAsr
-from app.audio.ingest import FfmpegFailed, UnsupportedAudio
+from app.audio.ingest import FfmpegBroken, FfmpegFailed, UnsupportedAudio
 from app.db import migrate as migrations
 from app.db.dao import Connection
 from app.errors import Cancelled
@@ -600,6 +600,27 @@ def test_defer_honours_a_cancel_asked_for_while_the_job_ran(tmp_path: Path) -> N
     store.cancel(job.id)
     until = datetime.fromisoformat("2030-01-01T00:00:00+00:00")
     assert store.defer(running, "FfmpegFailed: no", until=until).state == CANCELLED
+
+
+def test_an_ffmpeg_that_can_never_run_fails_the_job_at_once_without_a_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.diagnostics import reporter
+    from app.transcription import engine
+
+    def broken(source: Path, *args: object, **kwargs: object) -> Path:
+        raise FfmpegBroken("ffmpeg cannot run on this computer (exit code 0xc0000135)")
+
+    reported: list[BaseException] = []
+    monkeypatch.setattr(engine, "to_wav", broken)
+    monkeypatch.setattr(reporter, "report", lambda exc, **kwargs: reported.append(exc))
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    worker_for(h, store).run_once()
+    failed = store.require(job.id)
+    assert failed.state == FAILED and "0xc0000135" in (failed.last_error or "")
+    assert reported == []
 
 
 def test_a_missing_path_fails_at_once(tmp_path: Path) -> None:

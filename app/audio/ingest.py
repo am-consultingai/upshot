@@ -90,12 +90,14 @@ def _os_error(exc: OSError) -> str:
     return f"{exc.strerror or type(exc).__name__} ({code})" if code else type(exc).__name__
 
 
-#: Not a program at all, so waiting will not fix it: ERROR_BAD_EXE_FORMAT and
-#: ERROR_EXE_MACHINE_TYPE_MISMATCH (Windows error codes, ``winerror``) ...
-_NOT_A_PROGRAM_WINDOWS = {193, 216}
-#: ... and ENOEXEC, EISDIR and EACCES (POSIX, ``errno``). The two are never mixed: Windows
-#: error 8 is "not enough memory", which is exactly the case that must wait.
-_NOT_A_PROGRAM_POSIX = {errno.ENOEXEC, errno.EISDIR, errno.EACCES}
+#: Can never run, so waiting will not fix it (Windows error codes, ``winerror``):
+#: not found (2, 3), access denied (5), not a program (193), the wrong architecture
+#: (216), flagged by the antivirus (225, 226), needs elevation (740), blocked by policy
+#: (1260). A sharing violation (32) and lack of memory (8, 14, 1450) pass, so they wait.
+_NOT_A_PROGRAM_WINDOWS = {2, 3, 5, 193, 216, 225, 226, 740, 1260}
+#: ... and the same on POSIX (``errno``). The two are never mixed: Windows error 8 is
+#: "not enough memory", which is exactly the case that must wait, and errno 8 ENOEXEC.
+_NOT_A_PROGRAM_POSIX = {errno.ENOENT, errno.ENOEXEC, errno.EISDIR, errno.EACCES}
 #: How Windows ends a program it could never run: STATUS_DLL_NOT_FOUND,
 #: STATUS_INVALID_IMAGE_FORMAT, STATUS_ENTRYPOINT_NOT_FOUND.
 _BROKEN_EXITS = {0xC0000135, 0xC000007B, 0xC0000139}
@@ -132,7 +134,16 @@ def _not_run(source: Path, returncode: int, stderr: bytes) -> Exception | None:
 
 def _ffmpeg_failed(source: Path, why: str) -> FfmpegFailed:
     log.warning("ffmpeg did not run on %s: %s", source.name, why)
-    return FfmpegFailed(f"ffmpeg could not run to read {source.name} ({why}); try again later")
+    return FfmpegFailed(f"ffmpeg could not run to read {source.name} ({why})")
+
+
+def _missing(message: str) -> Exception:
+    """No ffmpeg at all. The installed app ships one, so there it was removed (an
+    antivirus, a broken update): FfmpegBroken, not the file's fault. A source checkout
+    without ffmpeg can still read WAV, and says so."""
+    if getattr(sys, "frozen", False):
+        return _ffmpeg_broken("ffmpeg.exe is missing")
+    return UnsupportedAudio(message)
 
 
 @dataclass(frozen=True)
@@ -196,7 +207,7 @@ def to_wav(
     """
     binary = ffmpeg_path(config)
     if binary is None:
-        raise UnsupportedAudio(
+        raise _missing(
             f"{source.name} is not a WAV and ffmpeg was not found — convert it first, "
             "or set ffmpeg_path"
         )
@@ -384,7 +395,7 @@ def probe(source: Path, *, config: Config | None = None) -> Probe:
     """
     binary = ffmpeg_path(config)
     if binary is None:
-        raise UnsupportedAudio("ffmpeg was not found, so this file cannot be read")
+        raise _missing("ffmpeg was not found, so this file cannot be read")
     try:
         result = subprocess.run(
             # No -hide_banner: ffmpeg that started has always printed its banner, so an
