@@ -25,6 +25,7 @@ from app.asr.backend import Segment
 from app.asr.classify import LanguageDecision
 from app.audio.ingest import to_wav, wav_duration_s
 from app.config import Config
+from app.errors import Cancelled, Preempted
 from app.log import get
 from app.pipeline.stages.transcribe import (
     backend_for,
@@ -137,11 +138,17 @@ def _language(
     hooked = hasattr(classifier, "stop_check")
     if hooked:
         setattr(classifier, "stop_check", stop_check)  # noqa: B010 - not on the protocol
+    # The next file reuses its GPU model (D108); a meeting's classifier is never kept.
+    keeps = hasattr(classifier, "keep_for_next")
+    if keeps:
+        setattr(classifier, "keep_for_next", True)  # noqa: B010 - not on the protocol
     try:
         decision = classifier.classify({"them": wav})
     finally:
         if hooked:
             setattr(classifier, "stop_check", None)  # noqa: B010
+        if keeps:
+            setattr(classifier, "keep_for_next", False)  # noqa: B010
     log.info("%s", decision.log_line())
     return decision
 
@@ -166,6 +173,7 @@ def _transcribe(
     hooked = [name for name in hooks if hasattr(backend, name)]
     for name in hooked:
         setattr(backend, name, hooks[name])
+    healthy = True
     try:
         segments = backend.transcribe(
             wav,
@@ -175,13 +183,26 @@ def _transcribe(
             multilingual=decision.multilingual,
         )
         model = describe_backend(backend)
+    except (Cancelled, Preempted):
+        raise
+    except BaseException:
+        # A CUDA error may have left the model unusable: the next file loads its own.
+        healthy = False
+        raise
     finally:
         # An injected backend is shared between jobs: a stale hook would report this
         # file's progress during the next meeting.
         for name in hooked:
             setattr(backend, name, None)
         # Before diarization, which needs the memory (the meeting stage frees it later).
-        backend.unload()
+        # On the GPU the model stays loaded for the next file instead (D108): its weights
+        # are in video memory, and loading a new one for every file leaked host memory.
+        # Kept, the classifier and transcriber hold about 1.1 GB of RAM during diarization.
+        park = getattr(backend, "park", None)
+        if healthy and callable(park):
+            park()
+        else:
+            backend.unload()
     ordered = sorted(segments, key=lambda segment: segment.start)
     return [segment.shifted(0.0, new_id=index) for index, segment in enumerate(ordered)], model
 

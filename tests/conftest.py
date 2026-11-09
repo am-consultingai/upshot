@@ -108,3 +108,14 @@ def _no_model_catalog_between_tests():  # type: ignore[no-untyped-def]
     from app.llm import model_choice
 
     model_choice.set_catalog(None)
+
+
+@pytest.fixture(autouse=True)
+def _no_whisper_kept_between_tests():  # type: ignore[no-untyped-def]
+    """GPU Whisper models are kept for the next job in one set for the process
+    (app.asr.resident); a model one test left there must not answer the next test."""
+    from app.asr.resident import RESIDENT
+
+    RESIDENT.reset()
+    yield
+    RESIDENT.reset()

@@ -239,6 +239,11 @@ def run(ctx: StageContext) -> None:
         return
 
     check_installation(ctx.config, ctx.services)
+    # Models kept for the next file go: a meeting loads one model at a time, frees the
+    # classifier before the transcriber (D80) and keeps nothing for later (D108).
+    from app.asr.resident import RESIDENT
+
+    RESIDENT.drop_all()
     ctx.report("prepare", 0.0)
     echo_model = _measure_echo(ctx)
 

@@ -197,6 +197,20 @@ def _usage(response: Any) -> dict[str, Any]:
 Transport = Callable[[dict[str, Any]], str]
 
 
+#: How long one Ollama request may take.
+OLLAMA_TIMEOUT_S = 600.0
+#: How long Ollama keeps its model loaded after answering: its default, which Upshot keeps.
+OLLAMA_KEEP_ALIVE_S = 300.0
+
+
+def _on_this_computer(url: str) -> bool:
+    """Whether an Ollama URL points at this computer, where its model shares the GPU."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} or host.startswith("127.")
+
+
 class OllamaClient:
     """The sensitive-meeting path: nothing leaves the machine.
 
@@ -221,11 +235,18 @@ class OllamaClient:
         self.requests: list[dict[str, Any]] = []
 
     def _post(self, payload: dict[str, Any]) -> str:
+        # Ollama loads its model on this computer's GPU and RAM, and keeps it for five
+        # minutes after answering (its default keep_alive). Whisper models kept for the
+        # next file go first, and none is kept until then (DESIGN.md §20.4, D108).
+        from app.asr.resident import RESIDENT
+
+        if _on_this_computer(self.url):
+            RESIDENT.hold_off(OLLAMA_TIMEOUT_S + OLLAMA_KEEP_ALIVE_S)
         if self._transport is not None:
             return self._transport(payload)
         import httpx
 
-        response = httpx.post(f"{self.url}/api/chat", json=payload, timeout=600.0)
+        response = httpx.post(f"{self.url}/api/chat", json=payload, timeout=OLLAMA_TIMEOUT_S)
         response.raise_for_status()
         body = response.json()
         return str(body.get("message", {}).get("content", ""))

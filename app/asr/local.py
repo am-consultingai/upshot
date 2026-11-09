@@ -16,6 +16,7 @@ import gc
 import os
 import subprocess
 import sys
+import traceback
 import wave
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -35,6 +36,7 @@ from app.asr.models import (
     require,
     resolve,
 )
+from app.asr.resident import RESIDENT, Key, keep_loaded_s
 from app.asr.wav import read_audio
 from app.config import Config
 from app.log import get
@@ -456,6 +458,8 @@ class LocalAsr:
         self.registered_dll_dirs: list[str] = []
         self.fell_back = False
         self.warmups = 0
+        #: Loads answered by a model the last job left on the GPU (D108).
+        self.reused = 0
         #: Called between segments while transcribing; raises to stop (a deletion). One
         #: track can take many minutes on the CPU, far too long to wait out.
         self.stop_check: Callable[[], None] | None = None
@@ -485,21 +489,55 @@ class LocalAsr:
         # The installed model or ModelNotInstalled: never a download (R12). A repo id
         # handed to faster-whisper would fetch it unseen into the Hugging Face cache.
         self.choice = self._given_choice or require(self.config, self.role)
+        if device == "cuda":
+            # A model the last job left loaded: already warm, and loading another one is
+            # what leaked memory (D108).
+            held = RESIDENT.take(self._key(compute))
+            if held is not None:
+                self.model = held
+                self.device, self.compute_type = device, compute
+                self.reused += 1
+                return self.model
+            RESIDENT.make_room(self.role, cached_gpu_memory_mb, MIN_VRAM_MB)
+        else:
+            # In RAM, one model at a time (D66, D80): none kept on the GPU beside it.
+            RESIDENT.drop_all()
+        error = self._attempt(device, compute)
+        if error is None:
+            return self.model
+        if RESIDENT.drop_all():
+            # The models kept for the next file may be what filled the card.
+            log.warning("GPU load failed (%s); freed the kept models, trying again", error)
+            error = self._attempt(device, compute)
+            if error is None:
+                return self.model
+        log.warning("GPU load failed (%s); falling back to CPU/int8", error)
+        self.fell_back = True
+        # The same model on the CPU: slower, but the meeting's language already chose it.
+        self._load_on("cpu", "int8")
+        return self.model
+
+    def _attempt(self, device: str, compute_type: str) -> str | None:
+        """Load on ``device``: None when it worked, the CUDA error's text when it did not.
+        Anything else is raised. A failed model is freed before this returns: the error's
+        traceback would otherwise keep it loaded through the next attempt."""
         try:
-            self.model = self._build(device, compute)
-            self.device, self.compute_type = device, compute
-            self._warmup()
+            self._load_on(device, compute_type)
+            return None
         except Exception as exc:
             if device == "cpu" or not self._is_cuda_error(exc):
                 raise
-            log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
-            self.fell_back = True
-            # The same model on the CPU: slower, but the meeting's language already
-            # chose it.
-            self.model = self._build("cpu", "int8")
-            self.device, self.compute_type = "cpu", "int8"
-            self._warmup()
-        return self.model
+            text = str(exc)
+            traceback.clear_frames(exc.__traceback__)
+        self.model = None
+        gc.collect()
+        return text
+
+    def _load_on(self, device: str, compute_type: str) -> None:
+        self.model = None
+        self.model = self._build(device, compute_type)
+        self.device, self.compute_type = device, compute_type
+        self._warmup()
 
     def _build(self, device: str, compute_type: str) -> Any:
         choice = self.choice or require(self.config, self.role)
@@ -634,7 +672,22 @@ class LocalAsr:
             )
         return out
 
+    def _key(self, compute_type: str) -> Key:
+        choice = self.choice or require(self.config, self.role)
+        return Key(self.role, str(choice.reference), compute_type)
+
+    def park(self) -> None:
+        """The job is done with the model: on the GPU it stays loaded for the next job
+        (D108); anywhere else it is unloaded."""
+        if self.model is None or self.device != "cuda":
+            self.unload()
+            return
+        model, self.model = self.model, None
+        RESIDENT.park(self._key(self.compute_type), model, idle_s=keep_loaded_s(self.config))
+
     def unload(self) -> None:
-        """ASR and the LLM are never resident together (DESIGN.md §20.4)."""
+        """ASR and the LLM are never resident together (DESIGN.md §20.4): this frees the
+        models kept for the next job too."""
         self.model = None
+        RESIDENT.drop_all()
         gc.collect()
