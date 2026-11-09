@@ -394,11 +394,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "fr": "Upshot ne peut pas lire de fichiers audio pour le moment",
     },
     "toast.ffmpegFailing.body": {
-        "en": "Windows could not start ffmpeg {count} times in a row. Transcriptions wait and try again.",
-        "he": "Windows לא הצליח להפעיל את ffmpeg {count} פעמים ברציפות. התמלולים ממתינים וינסו שוב.",
-        "de": "Windows konnte ffmpeg {count}-mal hintereinander nicht starten. Transkriptionen warten und versuchen es erneut.",
-        "es": "Windows no pudo iniciar ffmpeg {count} veces seguidas. Las transcripciones esperan y lo vuelven a intentar.",
-        "fr": "Windows n'a pas pu démarrer ffmpeg {count} fois de suite. Les transcriptions attendent et réessaient.",
+        "en": "ffmpeg could not start {count} times in a row. Waiting files are tried again later, and programs sending files are asked to send them again.",
+        "he": "ffmpeg לא הצליח לפעול {count} פעמים ברציפות. קבצים ממתינים ינוסו שוב מאוחר יותר, ותוכנות ששולחות קבצים יתבקשו לשלוח אותם שוב.",
+        "de": "ffmpeg konnte {count}-mal hintereinander nicht starten. Wartende Dateien werden später erneut versucht, und Programme, die Dateien senden, werden gebeten, sie erneut zu senden.",
+        "es": "ffmpeg no pudo iniciarse {count} veces seguidas. Los archivos en espera se reintentarán más tarde y a los programas que envían archivos se les pedirá que los vuelvan a enviar.",
+        "fr": "ffmpeg n'a pas pu démarrer {count} fois de suite. Les fichiers en attente seront réessayés plus tard, et les programmes qui envoient des fichiers devront les renvoyer.",
     },
     "toast.ffmpegFailing.memory": {
         "en": "Windows is low on memory: {free} GB of {limit} GB left. Closing programs helps.",

@@ -9,7 +9,14 @@ from typing import Any
 import pytest
 
 from app.audio import ingest
-from app.audio.ingest import FFMPEG_HOLD_AFTER, FFMPEG_HOLD_S, FfmpegHealth, FfmpegHold
+from app.audio.ingest import (
+    FFMPEG_HOLD_AFTER,
+    FFMPEG_HOLD_S,
+    FFMPEG_NOTICE_S,
+    FFMPEG_TRIAL_S,
+    FfmpegHealth,
+    FfmpegHold,
+)
 from app.notify import FakeNotifier
 
 
@@ -103,21 +110,77 @@ def test_after_the_hold_one_ffmpeg_is_tried_and_a_failure_holds_again_quietly(
     assert len(holds) == 1, "said once, not at every hold"
 
 
-def test_a_run_that_works_ends_the_hold_and_a_new_streak_is_said_again(
+def test_a_run_that_works_ends_the_hold(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, health: Any
 ) -> None:
-    record, clock, holds = health
-    answers(monkeypatch, *[NO_MEMORY] * 3, READ, *[NO_MEMORY] * 3)
+    record, clock, _holds = health
+    answers(monkeypatch, *[NO_MEMORY] * 3, READ)
     for _ in range(3):
         with pytest.raises(ingest.FfmpegFailed):
             ingest.probe(tmp_path / "clip.m4a")
     clock.now += FFMPEG_HOLD_S
     ingest.probe(tmp_path / "clip.m4a")
     assert not record.held() and record.state()["ok"] is True
+
+
+def test_the_notice_is_not_repeated_within_half_an_hour(health: Any) -> None:
+    record, clock, holds = health
+    for streak in range(3):
+        token = record.check(Path("clip.m4a"))
+        record.worked(token)
+        for _ in range(3):
+            record.failed("exit code 0xc0000017")
+        clock.now += FFMPEG_HOLD_S
+        record.worked(record.check(Path("clip.m4a")))  # the trial works
+        clock.now += 60 * (10 if streak == 0 else 25)
+    assert len(holds) == 2, "the first, then the one more than half an hour later"
+    assert FFMPEG_NOTICE_S == 1800
+
+
+def test_a_run_that_started_before_the_failures_does_not_end_them(health: Any) -> None:
+    """A long conversion that began before memory ran out says nothing about now."""
+    record, _clock, _holds = health
+    before = record.check(Path("long.m4a"))
     for _ in range(3):
-        with pytest.raises(ingest.FfmpegFailed):
-            ingest.probe(tmp_path / "clip.m4a")
-    assert len(holds) == 2
+        record.failed("exit code 0xc0000017")
+    record.worked(before)
+    assert record.held() and record.failures == 3
+
+
+def test_after_the_hold_only_one_caller_tries(health: Any) -> None:
+    record, clock, _holds = health
+    for _ in range(3):
+        record.failed("exit code 0xc0000017")
+    clock.now += FFMPEG_HOLD_S
+    trial = record.check(Path("first.m4a"))
+    with pytest.raises(ingest.FfmpegFailed):
+        record.check(Path("second.m4a"))  # waits for the trial
+    record.worked(trial)
+    record.check(Path("second.m4a"))
+
+
+def test_a_trial_that_never_reports_lets_another_try(health: Any) -> None:
+    """A trial cancelled or timed out says neither failed nor worked."""
+    record, clock, _holds = health
+    for _ in range(3):
+        record.failed("exit code 0xc0000017")
+    clock.now += FFMPEG_HOLD_S
+    record.check(Path("first.m4a"))
+    clock.now += FFMPEG_TRIAL_S
+    record.check(Path("second.m4a"))
+
+
+def test_a_trial_that_fails_holds_again(health: Any) -> None:
+    record, clock, _holds = health
+    for _ in range(3):
+        record.failed("exit code 0xc0000017")
+    clock.now += FFMPEG_HOLD_S
+    record.check(Path("first.m4a"))
+    record.failed("exit code 0xc0000017")
+    assert record.held()
+    clock.now += FFMPEG_HOLD_S - 1
+    with pytest.raises(ingest.FfmpegFailed):
+        record.check(Path("second.m4a"))
 
 
 def test_a_file_ffmpeg_refuses_is_ffmpeg_working(
