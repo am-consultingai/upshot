@@ -40,7 +40,7 @@ def running_progress(svc: Any) -> float | None:
     that reports one is running (a summary, or an idle worker)."""
     store = svc.transcriptions
     current = store.running() if store is not None else None
-    if current is not None:
+    if current is not None and store.visible(current.id) is not None:  # not one deleted
         return float(current.progress)
     tracker = getattr(svc, "progress", None)
     if tracker is None:

@@ -271,6 +271,8 @@ class TranscriptionStore:
             "UPDATE transcriptions SET phase=?, progress=?, updated_at=? WHERE id=?",
             (phase, round(progress, 4), iso(self.clock.now()), transcription_id),
         )
+        if self._stopping.get(transcription_id) == "delete":
+            return  # deleted for the page already: no event brings it back
         now = self.clock.monotonic()
         last = self._last_event.get(transcription_id)
         if last is None or now - last >= EVENT_INTERVAL_S:
@@ -290,6 +292,9 @@ class TranscriptionStore:
     ) -> Transcription:
         now = iso(self.clock.now())
         with self._lock:
+            if self._delete_pending(transcription_id):
+                # Deleted as it finished, its files still in use: it stays deleted.
+                return self.require(transcription_id)
             self.conn.execute(
                 "UPDATE transcriptions SET state='done', phase=NULL, progress=1, "
                 "last_error=NULL, duration_s=?, language=?, language_conf=?, model=?, "
@@ -444,6 +449,9 @@ class TranscriptionStore:
                 self.conn.execute(
                     "UPDATE transcriptions SET delete_pending=1 WHERE id=?", (transcription_id,)
                 )
+                # Gone for the page now, while the run stops (its progress goes quiet).
+                if self.events is not None:
+                    self.events.publish("transcription", id=transcription_id, state="deleted")
                 return False
             return self._purge_or_later(transcription_id)
 
@@ -480,6 +488,10 @@ class TranscriptionStore:
         if self.events is not None:
             self.events.publish("transcription", id=transcription_id, state="deleted")
 
+    def _is_running(self, transcription_id: str) -> bool:
+        job = self.get(transcription_id)
+        return job is not None and job.state == RUNNING
+
     def _delete_pending(self, transcription_id: str) -> bool:
         row = self.conn.execute(
             "SELECT delete_pending FROM transcriptions WHERE id=?", (transcription_id,)
@@ -489,17 +501,21 @@ class TranscriptionStore:
     def finish_pending_deletes(self) -> int:
         """Remove the deleted jobs whose files were still in use. How many went."""
         removed = 0
-        with self._lock:
-            rows = self.conn.execute(
-                "SELECT id FROM transcriptions WHERE delete_pending=1 AND state != 'running'"
-            ).fetchall()
-            for row in rows:
-                try:
-                    self.purge(str(row["id"]))
-                except OSError as exc:
-                    log.info("transcription %s: still in use (%s)", row["id"], exc.strerror)
+        rows = self.conn.execute(
+            "SELECT id FROM transcriptions WHERE delete_pending=1 AND state != 'running'"
+        ).fetchall()
+        for row in rows:
+            transcription_id = str(row["id"])
+            # One folder at a time under the lock: a long list never holds up the API.
+            with self._lock:
+                if not self._delete_pending(transcription_id) or self._is_running(transcription_id):
                     continue
-                removed += 1
+                try:
+                    self.purge(transcription_id)
+                except OSError as exc:
+                    log.info("transcription %s: still in use (%s)", transcription_id, exc.strerror)
+                    continue
+            removed += 1
         if removed:
             log.info("removed %d deleted transcription(s) whose files were in use", removed)
         return removed
@@ -534,7 +550,7 @@ class TranscriptionStore:
         count."""
         row = self.conn.execute(
             "SELECT count(*) AS n FROM transcriptions WHERE state='running' OR "
-            "(state='pending' AND (not_before IS NULL OR not_before <= ?))",
+            "(state='pending' AND delete_pending=0 AND (not_before IS NULL OR not_before <= ?))",
             (iso(self.clock.now()),),
         ).fetchone()
         return int(row["n"]) > 0
@@ -565,9 +581,12 @@ class TranscriptionStore:
         """Crash recovery: a job left running by a dead process is runnable again, unless
         it was being deleted: that one stays deleted, for ``finish_pending_deletes``."""
         now = iso(self.clock.now())
+        # A delete_pending row is deleted for the user whatever state a crash left it in
+        # (re-queued by a failure just before its removal, say): it never waits to run.
         self.conn.execute(
-            "UPDATE transcriptions SET state='cancelled', phase=NULL, finished_at=?, "
-            "updated_at=? WHERE state='running' AND delete_pending=1",
+            "UPDATE transcriptions SET state='cancelled', phase=NULL, not_before=NULL, "
+            "finished_at=COALESCE(finished_at, ?), updated_at=? "
+            "WHERE delete_pending=1 AND state != 'cancelled'",
             (now, now),
         )
         cur = self.conn.execute(
@@ -603,10 +622,16 @@ class TranscriptionStore:
         return job
 
     def recent(
-        self, *, state: str | None = None, limit: int = 50, before: str | None = None
+        self,
+        *,
+        state: str | None = None,
+        limit: int = 50,
+        before: str | None = None,
+        include_deleted: bool = False,
     ) -> list[Transcription]:
-        """Newest first. ``before`` is a ``created_at`` to page from."""
-        clauses, params = ["delete_pending = 0"], []
+        """Newest first. ``before`` is a ``created_at`` to page from. A job deleted whose
+        files are still in use is left out, unless ``include_deleted``."""
+        clauses, params = ([] if include_deleted else ["delete_pending = 0"]), []
         if state is not None:
             clauses.append("state = ?")
             params.append(state)
@@ -640,12 +665,15 @@ class TranscriptionStore:
 
     def pending(self) -> list[Transcription]:
         """Every waiting job, due or backing off, oldest key first."""
-        rows = self.conn.execute("SELECT * FROM transcriptions WHERE state='pending'").fetchall()
+        rows = self.conn.execute(
+            "SELECT * FROM transcriptions WHERE state='pending' AND delete_pending=0"
+        ).fetchall()
         return sorted(map(_row, rows), key=lambda job: (parse_iso(job.queued_at), job.id))
 
     def depth(self) -> int:
         row = self.conn.execute(
-            "SELECT count(*) AS n FROM transcriptions WHERE state IN ('pending','running')"
+            "SELECT count(*) AS n FROM transcriptions "
+            "WHERE state IN ('pending','running') AND delete_pending=0"
         ).fetchone()
         return int(row["n"])
 
@@ -659,7 +687,9 @@ class TranscriptionStore:
         """Finished before ``keep_days`` ago: what retention removes."""
         cutoff = now - timedelta(days=keep_days)
         rows = self.conn.execute(
-            "SELECT * FROM transcriptions WHERE state IN ('done','failed','cancelled')"
+            # A deleted job whose files are still in use is finish_pending_deletes' own.
+            "SELECT * FROM transcriptions "
+            "WHERE state IN ('done','failed','cancelled') AND delete_pending=0"
         ).fetchall()
         return [
             job for job in map(_row, rows) if parse_iso(job.finished_at or job.updated_at) < cutoff

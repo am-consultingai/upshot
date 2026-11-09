@@ -3318,7 +3318,7 @@ def test_router() -> APIRouter:
             svc.conn.execute("DELETE FROM assistant_sessions")
             svc.conn.execute("DELETE FROM access_log")  # the AI apps activity (D98)
             if svc.transcriptions is not None:
-                for job in svc.transcriptions.recent(limit=500):
+                for job in svc.transcriptions.recent(limit=500, include_deleted=True):
                     svc.transcriptions.purge(job.id)
             svc.extras.pop("storage_bytes", None)
             svc.conn.execute("DELETE FROM detector_events")

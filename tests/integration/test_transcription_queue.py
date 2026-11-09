@@ -6,7 +6,7 @@ import json
 import shutil
 import sqlite3
 import wave
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -915,7 +915,9 @@ def test_a_file_removed_by_someone_else_mid_removal_is_fine(tmp_path: Path) -> N
         _gone_is_fine(None, str(tmp_path / "x"), PermissionError(13, "held"))
 
 
-def test_the_input_of_a_job_deleted_meanwhile_is_left_to_the_delete(tmp_path: Path) -> None:
+def test_a_finished_uploads_input_goes_unless_the_job_was_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     h = harness(tmp_path)
     store = store_for(h)
     job = add(store)
@@ -925,3 +927,97 @@ def test_the_input_of_a_job_deleted_meanwhile_is_left_to_the_delete(tmp_path: Pa
     store.remove_input(job.id)
     assert not folder.exists(), "a finished upload's copy goes"
     store.remove_input("tr_nosuchjob00")  # deleted meanwhile: nothing to do
+
+    other = add(store)
+    kept = store.folder(other.id) / "input"
+    kept.mkdir(parents=True)
+    (kept / "clip.wav").write_bytes(b"x")
+    held_once(store, monkeypatch)
+    store.delete(other.id)  # hidden, its folder still there
+    store.remove_input(other.id)
+    assert kept.exists(), "a deleted job's folder is the delete's to remove, whole"
+
+
+def test_a_delete_with_a_held_file_as_the_job_finishes_keeps_it_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker's own removal fails: the job must not come back as done."""
+    from app.transcription import engine
+
+    def copy(source: Path, target: Path, **kwargs: object) -> Path:  # no ffmpeg needed
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return target
+
+    monkeypatch.setattr(engine, "to_wav", copy)
+    events = EventBus()
+    h = harness(tmp_path)
+    store = store_for(h, events)
+    job = add(store, path=str(write_wav(tmp_path / "clip.wav", 2)))
+    finish = store.finish_delete
+
+    def deleted_after_the_last_check(transcription_id: str) -> bool:
+        assert store.delete(transcription_id) is False, "running: handed to the worker"
+        held_once(store, monkeypatch)
+        return finish(transcription_id)
+
+    monkeypatch.setattr(store, "finish_delete", deleted_after_the_last_check)
+    worker = worker_for(h, store)
+    worker.run_once()
+    row = store.get(job.id)
+    assert row is not None and row.state == CANCELLED and store.visible(job.id) is None
+    assert worker.stats.completed == 0
+    states = [e.payload.get("state") for e in events.history if e.type == "transcription"]
+    assert "done" not in states and states[-1] == "deleted"
+    assert store.finish_pending_deletes() == 1 and store.get(job.id) is None
+
+
+def test_completing_a_deleted_job_leaves_it_deleted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    held_once(store, monkeypatch)
+    store.delete(job.id)
+    row = store.complete(job.id, duration_s=1.0, language="he", language_conf=0.9, model={})
+    assert row.state == CANCELLED and store.visible(job.id) is None
+
+
+def test_a_hidden_job_is_not_retentions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    held_once(store, monkeypatch)
+    store.delete(job.id)
+    far = datetime(2099, 1, 1, tzinfo=UTC)
+    assert store.expired(0, far) == []
+
+
+def test_a_hidden_job_left_waiting_by_a_crash_ends_cancelled(tmp_path: Path) -> None:
+    """A failure re-queued it just before its removal, then the app died."""
+    h = harness(tmp_path)
+    store = store_for(h)
+    job = add(store)
+    store.conn.execute(
+        "UPDATE transcriptions SET delete_pending=1 WHERE id=?", (job.id,)
+    )  # pending, and deleted
+    assert not store.busy() and store.depth() == 0 and store.pending() == []
+    restarted = store_for(h)
+    restarted.reset_running()
+    row = restarted.get(job.id)
+    assert row is not None and row.state == CANCELLED
+
+
+def test_a_handed_off_delete_is_said_at_once_and_progress_goes_quiet(tmp_path: Path) -> None:
+    events = EventBus()
+    h = harness(tmp_path)
+    store = store_for(h, events)
+    job = add(store)
+    assert store.claim(job.id) is not None
+    store.delete(job.id)
+    before = len(events.history)
+    h.clock.advance(5)
+    store.progress(job.id, "transcribe", 0.5)
+    states = [e.payload.get("state") for e in events.history if e.type == "transcription"]
+    assert states[-1] == "deleted" and len(events.history) == before
