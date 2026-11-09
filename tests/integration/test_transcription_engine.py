@@ -123,12 +123,39 @@ class ParkingAsr(FakeAsr):
         self.parked += 1
 
 
+@pytest.fixture
+def no_ffmpeg_needed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The source is already the WAV the engine wants: copied, not converted."""
+
+    def copy(source: Path, target: Path, **kwargs: object) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+
+    monkeypatch.setattr(engine, "to_wav", copy)
+
+
+@pytest.mark.usefixtures("no_ffmpeg_needed")
 def test_a_file_hands_its_model_back_for_the_next_one(tmp_path: Path) -> None:
     """Loading a new GPU model for every file leaked host memory (D108)."""
     services = Services(ParkingAsr(), FakeClassifier("he"))
     run(write_wav(tmp_path / "in" / "clip.wav", 20), tmp_path, services=services)
     assert isinstance(services.asr, ParkingAsr)
     assert services.asr.parked == 1 and services.asr.unloaded == 0
+
+
+class BrokenAsr(ParkingAsr):
+    def transcribe(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        raise RuntimeError("CUDA failed with error an illegal memory access")
+
+
+@pytest.mark.usefixtures("no_ffmpeg_needed")
+def test_a_model_that_failed_is_not_kept(tmp_path: Path) -> None:
+    """It may be unusable: the next file loads its own."""
+    services = Services(BrokenAsr(), FakeClassifier("he"))
+    with pytest.raises(RuntimeError):
+        run(write_wav(tmp_path / "in" / "clip.wav", 20), tmp_path, services=services)
+    assert isinstance(services.asr, BrokenAsr)
+    assert services.asr.parked == 0 and services.asr.unloaded == 1
 
 
 @needs_ffmpeg

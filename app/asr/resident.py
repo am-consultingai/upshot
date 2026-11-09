@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import gc
 import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -67,14 +68,19 @@ def keep_loaded_s(config: Config) -> float:
 class Resident:
     """The models no job is using right now. A model is in here or in one job, never both."""
 
-    def __init__(self, *, timer: TimerFactory = _thread_timer) -> None:
+    def __init__(
+        self, *, timer: TimerFactory = _thread_timer, clock: Callable[[], float] = time.monotonic
+    ) -> None:
         self._lock = threading.Lock()
-        self._held: dict[Key, Any] = {}
+        #: Each model with the time it is to be freed at.
+        self._held: dict[Key, tuple[Any, float]] = {}
         self._make_timer = timer
+        self._clock = clock
         self._timer: Timer | None = None
-        #: Bumped whenever the set changes hands, so a timer armed earlier does nothing.
+        #: Bumped whenever the timer is replaced, so a timer armed earlier does nothing.
         self._generation = 0
-        self.reuses = 0
+        #: Until then a local LLM may be loaded: nothing is kept (DESIGN.md §20.4).
+        self._llm_until = float("-inf")
 
     def held(self) -> list[Key]:
         with self._lock:
@@ -83,10 +89,9 @@ class Resident:
     def take(self, key: Key) -> Any | None:
         """The loaded model for ``key``, now the caller's; None when none is held."""
         with self._lock:
-            model = self._held.pop(key, None)
-            if model is not None:
-                self.reuses += 1
-            return model
+            entry = self._held.pop(key, None)
+            self._arm_locked()
+        return entry[0] if entry is not None else None
 
     def make_room(
         self, role: str, vram_mb: Callable[[], int | None], need_mb: Mapping[str, int]
@@ -97,8 +102,9 @@ class Resident:
         with self._lock:
             if not self._held:
                 return
+        memory = vram_mb()  # nvidia-smi, the first time: not under the lock
+        with self._lock:
             total = need_mb.get(role, 0) + sum(need_mb.get(key.role, 0) for key in self._held)
-            memory = vram_mb()
             if memory is not None and total <= memory:
                 return
             dropped = self._clear_locked()
@@ -106,16 +112,27 @@ class Resident:
         _free(dropped)
 
     def park(self, key: Key, model: Any, *, idle_s: float) -> None:
-        """Keep ``model`` for the next job, for ``idle_s`` seconds at most."""
-        if idle_s <= 0:
-            _free([model])
-            return
+        """Keep ``model`` for the next job, for ``idle_s`` seconds at most; free it instead
+        when keeping is off or a local LLM may be loaded."""
+        dropped = [model]
+        del model
         with self._lock:
-            replaced = self._held.pop(key, None)
-            self._held[key] = model
-            self._arm_locked(idle_s)
-        if replaced is not None:
-            _free([replaced])
+            now = self._clock()
+            if idle_s > 0 and now >= self._llm_until:
+                entry = self._held.pop(key, None)
+                if entry is not None:
+                    dropped.append(entry[0])
+                self._held[key] = (dropped.pop(0), now + idle_s)
+                self._arm_locked()
+        _free(dropped)
+
+    def hold_off(self, seconds: float) -> None:
+        """A local LLM may be loaded for ``seconds`` from now: free every held model, and
+        keep none until then."""
+        with self._lock:
+            self._llm_until = max(self._llm_until, self._clock() + seconds)
+            dropped = self._clear_locked()
+        _free(dropped)
 
     def drop_all(self) -> int:
         """Free every held model now. How many there were."""
@@ -125,21 +142,31 @@ class Resident:
         _free(dropped)
         return count
 
+    def reset(self) -> None:
+        """Free everything and forget any local LLM: a clean start, for tests."""
+        with self._lock:
+            self._llm_until = float("-inf")
+        self.drop_all()
+
     def _clear_locked(self) -> list[Any]:
-        models = list(self._held.values())
+        models = [model for model, _until in self._held.values()]
         self._held.clear()
+        self._arm_locked()
+        return models
+
+    def _arm_locked(self) -> None:
+        """One timer, for the model due first."""
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
         self._generation += 1
-        return models
-
-    def _arm_locked(self, idle_s: float) -> None:
-        if self._timer is not None:
-            self._timer.cancel()
-        self._generation += 1
+        if not self._held:
+            return
+        due = min(until for _model, until in self._held.values())
         generation = self._generation
-        self._timer = self._make_timer(idle_s, lambda: self._expire(generation))
+        self._timer = self._make_timer(
+            max(0.0, due - self._clock()), lambda: self._expire(generation)
+        )
         self._timer.start()
 
     def _expire(self, generation: int) -> None:
@@ -147,13 +174,17 @@ class Resident:
             if generation != self._generation:
                 return
             self._timer = None
-            dropped = self._clear_locked()
+            now = self._clock()
+            expired = [key for key, (_model, until) in self._held.items() if until <= now]
+            dropped = [self._held.pop(key)[0] for key in expired]
+            self._arm_locked()
         if dropped:
             log.info("asr: freed %d model(s) nobody used for a while", len(dropped))
         _free(dropped)
 
 
 def _free(models: list[Any]) -> None:
+    """Drop the list's references (the caller holds no other) and collect."""
     if not models:
         return
     models.clear()

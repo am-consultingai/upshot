@@ -498,21 +498,36 @@ class LocalAsr:
                 self.reused += 1
                 return self.model
             RESIDENT.make_room(self.role, cached_gpu_memory_mb, MIN_VRAM_MB)
+        else:
+            # In RAM, one model at a time (D66, D80): none kept on the GPU beside it.
+            RESIDENT.drop_all()
         try:
-            self.model = self._build(device, compute)
-            self.device, self.compute_type = device, compute
-            self._warmup()
+            self._load_on(device, compute)
         except Exception as exc:
             if device == "cpu" or not self._is_cuda_error(exc):
                 raise
+            if RESIDENT.drop_all():
+                # The models kept for the next file may be what filled the card.
+                log.warning("GPU load failed (%s); freed the kept models, trying again", exc)
+                try:
+                    self._load_on(device, compute)
+                    return self.model
+                except Exception as again:
+                    if not self._is_cuda_error(again):
+                        raise
+                    exc = again
             log.warning("GPU load failed (%s); falling back to CPU/int8", exc)
             self.fell_back = True
             # The same model on the CPU: slower, but the meeting's language already
             # chose it.
-            self.model = self._build("cpu", "int8")
-            self.device, self.compute_type = "cpu", "int8"
-            self._warmup()
+            self._load_on("cpu", "int8")
         return self.model
+
+    def _load_on(self, device: str, compute_type: str) -> None:
+        self.model = None
+        self.model = self._build(device, compute_type)
+        self.device, self.compute_type = device, compute_type
+        self._warmup()
 
     def _build(self, device: str, compute_type: str) -> Any:
         choice = self.choice or require(self.config, self.role)

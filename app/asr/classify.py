@@ -37,7 +37,7 @@ from app.asr.models import CLASSIFIER, HEBREW, HEBREW_LANGUAGE, OTHER, require
 from app.asr.resident import RESIDENT, Key, keep_loaded_s
 from app.asr.wav import SAMPLE_RATE, read_audio
 from app.config import Config
-from app.errors import Cancelled
+from app.errors import Cancelled, Preempted
 from app.log import get
 
 log = get(__name__)
@@ -346,6 +346,7 @@ class WhisperClassifier:
                 seconds=time.monotonic() - started,
             )  # fmt: skip
         model, device = self._load()
+        healthy = True
         try:
             answers: list[list[tuple[str, float]]] = []
             sampled: list[Window] = []
@@ -356,8 +357,14 @@ class WhisperClassifier:
                 answer = [(str(lang), float(p)) for lang, p in probs]
                 answers.append(answer)
                 sampled.append(Window(window.track, window.start_s, top_n(dict(answer))))
+        except (Cancelled, Preempted):
+            raise
+        except BaseException:
+            # A CUDA error may have left the model unusable: the next file loads its own.
+            healthy = False
+            raise
         finally:
-            if device == "cuda" and self._key is not None:
+            if healthy and device == "cuda" and self._key is not None:
                 # Kept for the next file: a new model each time leaked memory (D108).
                 RESIDENT.park(self._key, model, idle_s=keep_loaded_s(self.config))
             del model
@@ -386,14 +393,30 @@ class WhisperClassifier:
                 return held, device
             RESIDENT.make_room(CLASSIFIER, cached_gpu_memory_mb, MIN_VRAM_MB)
             self._key = key
-        try:
-            model = self.model_factory(
-                model_size_or_path=choice.reference, device=device, compute_type="int8",
-                cpu_threads=threads if device == "cpu" else 0,
+        else:
+            RESIDENT.drop_all()  # in RAM, one model at a time (D66, D80)
+
+        def build(on: str) -> Any:
+            return self.model_factory(
+                model_size_or_path=choice.reference, device=on, compute_type="int8",
+                cpu_threads=threads if on == "cpu" else 0,
             )  # fmt: skip
+
+        try:
+            model = build(device)
         except Exception as exc:
             if device == "cpu" or not LocalAsr._is_cuda_error(exc):
                 raise
+            if RESIDENT.drop_all():
+                # The models kept for the next file may be what filled the card.
+                try:
+                    model = build(device)
+                    self.loads += 1
+                    return model, device
+                except Exception as again:
+                    if not LocalAsr._is_cuda_error(again):
+                        raise
+                    exc = again
             log.warning("classifier: GPU load failed (%s); on the CPU instead", exc)
             device = "cpu"
             model = self.model_factory(
@@ -464,6 +487,8 @@ class IsolatedClassifier:
         require(self.config, CLASSIFIER)  # a missing model is said here, not in the child
         if planned_device(self.config, role=CLASSIFIER) != "cpu":
             return self._in_place(inputs)
+        # In RAM, one model at a time (D66, D80): none kept on the GPU beside it.
+        RESIDENT.drop_all()
         try:
             answer = self.run_child(
                 self.config.as_dict(),

@@ -344,6 +344,11 @@ class ModelManager:
                 total / 1e9,
                 self.target,
             )
+            # A model kept loaded for the next file holds these files open, and would go
+            # on answering with the old weights (D108).
+            from app.asr.resident import RESIDENT
+
+            RESIDENT.drop_all()
             self.downloader(self.model, self.target, self._progress_class(present))
             self._verify(files)
             if not looks_like_model_dir(self.target):

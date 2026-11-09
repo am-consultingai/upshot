@@ -116,6 +116,6 @@ def _no_whisper_kept_between_tests():  # type: ignore[no-untyped-def]
     (app.asr.resident); a model one test left there must not answer the next test."""
     from app.asr.resident import RESIDENT
 
-    RESIDENT.drop_all()
+    RESIDENT.reset()
     yield
-    RESIDENT.drop_all()
+    RESIDENT.reset()

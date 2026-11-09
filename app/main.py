@@ -122,8 +122,15 @@ def create_app(services: Services | None = None, *, config: Config | None = None
             svc.models.refresh_in_background(providers_to_list(svc.config))
         # The assistant's MCP server keeps its sessions in a task group that must be
         # running for as long as the app is; a mounted app's own lifespan never runs.
-        async with mcp_server.session_manager.run(), ext_server.session_manager.run():
-            yield
+        try:
+            async with mcp_server.session_manager.run(), ext_server.session_manager.run():
+                yield
+        finally:
+            # A CUDA model still loaded while the interpreter shuts down can hang or crash
+            # the exit on Windows (D108).
+            from app.asr.resident import RESIDENT
+
+            RESIDENT.drop_all()
 
     app = FastAPI(
         title="Upshot",

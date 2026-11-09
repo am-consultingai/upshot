@@ -25,6 +25,7 @@ from app.asr.backend import Segment
 from app.asr.classify import LanguageDecision
 from app.audio.ingest import to_wav, wav_duration_s
 from app.config import Config
+from app.errors import Cancelled, Preempted
 from app.log import get
 from app.pipeline.stages.transcribe import (
     backend_for,
@@ -166,6 +167,7 @@ def _transcribe(
     hooked = [name for name in hooks if hasattr(backend, name)]
     for name in hooked:
         setattr(backend, name, hooks[name])
+    healthy = True
     try:
         segments = backend.transcribe(
             wav,
@@ -175,6 +177,12 @@ def _transcribe(
             multilingual=decision.multilingual,
         )
         model = describe_backend(backend)
+    except (Cancelled, Preempted):
+        raise
+    except BaseException:
+        # A CUDA error may have left the model unusable: the next file loads its own.
+        healthy = False
+        raise
     finally:
         # An injected backend is shared between jobs: a stale hook would report this
         # file's progress during the next meeting.
@@ -184,7 +192,7 @@ def _transcribe(
         # On the GPU the model stays loaded for the next file instead: its weights are in
         # video memory, and loading a new one for every file leaked host memory (D108).
         park = getattr(backend, "park", None)
-        if callable(park):
+        if healthy and callable(park):
             park()
         else:
             backend.unload()
