@@ -190,11 +190,12 @@ def _load_cublas(folders: Sequence[str]) -> None:
     if _cublas_from is not None:
         return
     for text in folders:
-        if not all((Path(text) / name).is_file() for name in CUBLAS_LIBRARIES):
+        folder = Path(text).resolve()  # a load by full path needs an absolute one
+        if not all((folder / name).is_file() for name in CUBLAS_LIBRARIES):
             continue
         try:
             for name in CUBLAS_LIBRARIES:
-                _loaded.append(_load_library(Path(text) / name))
+                _loaded.append(_load_library(folder / name))
         except OSError as exc:
             message = f"could not load cuBLAS from {text}: {exc}"
             if message not in _warned:

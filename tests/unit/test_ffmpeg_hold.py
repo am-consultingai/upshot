@@ -301,6 +301,7 @@ def recheck() -> None:
     thread = ingest.recheck_ffmpeg()
     if thread is not None:
         thread.join(10)
+        assert not thread.is_alive(), "a recheck must not outlive its test"
 
 
 def held_three_times(record: FfmpegHealth, clock: Clock) -> None:
@@ -354,10 +355,11 @@ def test_rechecks_without_a_hold_run_at_most_once_a_minute(
 def test_only_one_recheck_runs_at_a_time(health: Any) -> None:
     record, clock, _holds = health
     held_three_times(record, clock)
-    assert record.begin_recheck() is not None
+    token = record.begin_recheck()
+    assert token is not None
     clock.now += ingest.FFMPEG_RECHECK_EVERY_S * 10
     assert record.begin_recheck() is None, "the first is still running"
-    record.end_recheck()
+    record.end_recheck(token)
     assert record.begin_recheck() is not None
 
 
@@ -369,20 +371,58 @@ def test_no_recheck_when_ffmpeg_has_not_failed(
     assert started == []
 
 
-def test_a_recheck_that_cannot_start_records_the_failure(
+def test_a_recheck_without_memory_to_start_records_the_failure(
     monkeypatch: pytest.MonkeyPatch, health: Any
 ) -> None:
-    """An ffmpeg that can never run (an antivirus lock: access denied) is recorded too,
-    so the rechecks stop instead of starting it at every poll."""
     record, clock, _holds = health
     held_three_times(record, clock)
 
     def run(argv: list[str], **kwargs: Any) -> Ran:
-        raise OSError(13, "Permission denied")
+        raise OSError(12, "Cannot allocate memory")
 
     monkeypatch.setattr(ingest.subprocess, "run", run)
     recheck()
     assert record.held() and record.failures == FFMPEG_HOLD_AFTER + 1
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [OSError(13, "Permission denied"), Ran(0xC0000135, b"")],
+    ids=["blocked", "dll-missing"],
+)
+def test_a_recheck_of_an_ffmpeg_that_can_never_run_holds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, health: Any, outcome: object
+) -> None:
+    """Waiting will not fix it: a hold would tell programs to send again for ever. The
+    next file is told to reinstall, as it would have been without the recheck."""
+    record, clock, _holds = health
+    held_three_times(record, clock)
+
+    def run(argv: list[str], **kwargs: Any) -> Ran:
+        if isinstance(outcome, OSError):
+            raise outcome
+        assert isinstance(outcome, Ran)
+        return outcome
+
+    monkeypatch.setattr(ingest.subprocess, "run", run)
+    recheck()
+    assert not record.held() and record.failures == FFMPEG_HOLD_AFTER
+    with pytest.raises(ingest.FfmpegBroken, match="reinstall"):
+        ingest.probe(tmp_path / "clip.m4a")
+
+
+def test_a_recheck_that_ends_without_an_answer_frees_the_trial(
+    monkeypatch: pytest.MonkeyPatch, health: Any
+) -> None:
+    record, clock, _holds = health
+    held_three_times(record, clock)
+
+    def run(argv: list[str], **kwargs: Any) -> Ran:
+        raise RuntimeError("no thread state")
+
+    monkeypatch.setattr(ingest.subprocess, "run", run)
+    recheck()
+    assert not record.held(), "uploads must not wait on a check that found nothing"
 
 
 def test_a_recheck_that_hangs_frees_the_trial(monkeypatch: pytest.MonkeyPatch, health: Any) -> None:
