@@ -502,7 +502,7 @@ footer{font-size:var(--t-label)}
   .wer-row{grid-template-columns:minmax(0,1fr) 4rem;gap:6px 12px}
   .wer-name{grid-column:1/-1}
   :root{--t-body:16px;--t-sub:15px}
-  .pillars h2,.steps h3{font-size:21px}
+  .steps h3{font-size:21px}
   .copy-card h3{font-size:22px}
   .signals b,.tile b{font-size:18px}
   .tool{font-size:16px}
