@@ -19,7 +19,14 @@ from app import meta
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
-from app.errors import Cancelled, Deferred, PermanentError, Preempted, SignInRequired
+from app.errors import (
+    Cancelled,
+    Deferred,
+    PermanentError,
+    Preempted,
+    QuotaExhausted,
+    SignInRequired,
+)
 from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
 from app.pipeline.context import StageContext
@@ -521,13 +528,16 @@ class Worker:
         self.queue.complete(job)
         self.stats.completed += 1
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}
-        if job.stage == JobStage.SUMMARIZE and self._told_signed_out:
-            # A summary written by a provider means it is signed in: its next sign-out is
-            # news again, however soon it comes.
+        if job.stage == JobStage.SUMMARIZE:
+            # A summary written by a provider means it is signed in and has allowance: its
+            # next sign-out is news again, and it may be offered on the meeting page.
             written = meta.read(Path(self.dao.require_meeting(job.meeting_id).folder))
             by = written.get("llm")
-            if isinstance(by, dict):
-                self._told_signed_out.pop(str(by.get("name") or ""), None)
+            name = str(by.get("name") or "") if isinstance(by, dict) else ""
+            self._told_signed_out.pop(name, None)
+            status = getattr(self.services, "cli_status", None) if self.services else None
+            if status is not None and name:
+                status.unspent(name)
         stage = self._stage(job)
         if stage is not None and not (context is not None and context.hold_state):
             from app.pipeline.states import is_legal
@@ -579,6 +589,10 @@ class Worker:
         # In the clock's own offset: `not_before` is compared as a string, and a
         # timestamp written in another offset sorts wrongly against every other one.
         until = min(until, now + timedelta(days=7)).astimezone(now.tzinfo)
+        if isinstance(exc, QuotaExhausted) and exc.provider:
+            status = getattr(self.services, "cli_status", None) if self.services else None
+            if status is not None:
+                status.spent(exc.provider, until)  # not offered on the page until then
         signed_out = isinstance(exc, SignInRequired) and bool(exc.provider)
         self.queue.defer(
             job, str(exc), until=until, waiting_for=exc.provider if signed_out else None

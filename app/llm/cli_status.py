@@ -17,6 +17,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 #: Long enough that no refetch storm runs the CLIs, short enough that a sign-in made in
@@ -35,6 +36,10 @@ class CliStatusCache:
         self._generation: dict[str, int] = {}
         self._all_generation = 0
         self._lock = threading.Lock()
+        #: provider → when its plan's allowance is back, as it last said (QuotaExhausted).
+        #: The status cannot tell a spent allowance, so the meeting page would otherwise
+        #: offer a provider that can only park the summary until its reset.
+        self._spent: dict[str, datetime] = {}
 
     def _generation_of(self, provider: str) -> tuple[int, int]:
         return self._all_generation, self._generation.get(provider, 0)
@@ -84,3 +89,19 @@ class CliStatusCache:
                 self._generation[provider] = self._generation.get(provider, 0) + 1
             for key in [key for key in self._held if key[0] in providers]:
                 del self._held[key]
+
+    def spent(self, provider: str, until: datetime) -> None:
+        """``provider`` said its allowance is used up until ``until``."""
+        with self._lock:
+            self._spent[provider] = until
+
+    def unspent(self, provider: str) -> None:
+        """``provider`` wrote a summary: whatever it said before, it runs now."""
+        with self._lock:
+            self._spent.pop(provider, None)
+
+    def spent_until(self, provider: str, now: datetime) -> datetime | None:
+        """When ``provider``'s spent allowance is back, if that is still to come."""
+        with self._lock:
+            until = self._spent.get(provider)
+        return until if until is not None and until > now else None

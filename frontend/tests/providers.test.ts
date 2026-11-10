@@ -76,21 +76,29 @@ describe("alternatives (what the signed-out card offers)", () => {
   const cli = (id: string, fields: Partial<LlmProvider> = {}): LlmProvider => ({
     id, label: id, needs: "cli", ready: true, signed_in: true, ...fields,
   });
-  const rows = [cli("claude-subscription", { signed_in: false }), cli("codex-subscription"), cli("antigravity-subscription")];
   const ids = (list: LlmProvider[]) => list.map((row) => row.id);
+  const SPENT = "2026-11-12T10:00:00.000+02:00";
 
   it("offers the ready others when the usual provider is signed out", () => {
-    const at = { waitingFor: "claude-subscription", active: "claude-subscription", fallback: "", sensitive: false };
-    expect(ids(alternatives(rows, at))).toEqual(["codex-subscription", "antigravity-subscription"]);
+    const rows = [cli("claude-subscription", { signed_in: false }), cli("codex-subscription"), cli("antigravity-subscription")];
+    expect(ids(alternatives(rows, { waitingFor: "claude-subscription", sensitive: false }))).toEqual([
+      "codex-subscription",
+      "antigravity-subscription",
+    ]);
   });
 
-  it("not the usual provider when the job waits on the fallback (its allowance is spent)", () => {
-    const at = { waitingFor: "antigravity-subscription", active: "codex-subscription", fallback: "antigravity-subscription", sensitive: false };
-    expect(ids(alternatives(rows, at))).toEqual([]);
+  it("not the usual provider when its allowance is spent and the job waits on the fallback", () => {
+    const rows = [cli("codex-subscription", { spent_until: SPENT }), cli("antigravity-subscription", { signed_in: false })];
+    expect(alternatives(rows, { waitingFor: "antigravity-subscription", sensitive: false })).toEqual([]);
+  });
+
+  it("not the fallback when its allowance is spent and the job waits on the usual provider", () => {
+    const rows = [cli("claude-subscription", { signed_in: false }), cli("codex-subscription", { spent_until: SPENT })];
+    expect(alternatives(rows, { waitingFor: "claude-subscription", sensitive: false })).toEqual([]);
   });
 
   it("nothing for a sensitive meeting", () => {
-    const at = { waitingFor: "claude-subscription", active: "claude-subscription", fallback: "", sensitive: true };
-    expect(alternatives(rows, at)).toEqual([]);
+    const rows = [cli("claude-subscription", { signed_in: false }), cli("codex-subscription")];
+    expect(alternatives(rows, { waitingFor: "claude-subscription", sensitive: true })).toEqual([]);
   });
 });

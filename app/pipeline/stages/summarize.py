@@ -464,6 +464,7 @@ def run(ctx: StageContext) -> None:
     try:
         summarize(ctx, transcript, system=system, system_version=system_version)
     except (QuotaExhausted, SignInRequired) as stuck:
+        note_spent(ctx, stuck)
         fallback = fallback_client(ctx, stuck)
         if fallback is None:
             raise  # the worker parks the job until the allowance resets or a sign-in
@@ -484,6 +485,7 @@ def run(ctx: StageContext) -> None:
             )
         except Deferred as also:
             log.warning("the fallback %s cannot run either: %s", fallback.name, also)
+            note_spent(ctx, stuck, also)
             if isinstance(stuck, QuotaExhausted) and isinstance(also, QuotaExhausted):
                 # Both allowances spent: wait for whichever comes back first, which then
                 # writes the summary (the usual provider, or the fallback after it).
@@ -502,18 +504,31 @@ def run(ctx: StageContext) -> None:
             raise stuck from also
 
 
+def back_at(deferred: Deferred, now: datetime) -> datetime:
+    """When a provider that said "not now" can run again, as the worker reads it: an
+    unstated or past time counts as the class's default wait."""
+    at = deferred.retry_at
+    if at is not None and at.tzinfo is None:
+        at = at.astimezone()
+    default = now + timedelta(seconds=deferred.default_wait_s)
+    return default if at is None or at <= now else at
+
+
 def sooner(first: Deferred, second: Deferred, now: datetime) -> Deferred:
-    """Of two providers that are both out, the one back first (an unstated time counts as
-    the class's default wait, as the worker reads it)."""
+    """Of two providers that are both out, the one back first."""
+    return second if back_at(second, now) < back_at(first, now) else first
 
-    def back_at(deferred: Deferred) -> datetime:
-        at = deferred.retry_at
-        if at is not None and at.tzinfo is None:
-            at = at.astimezone()
-        default = now + timedelta(seconds=deferred.default_wait_s)
-        return default if at is None or at <= now else at
 
-    return second if back_at(second) < back_at(first) else first
+def note_spent(ctx: StageContext, *errors: BaseException) -> None:
+    """Remember a provider whose allowance is used up, so the meeting page does not offer
+    it until it is back (the CLI's status cannot tell)."""
+    status = getattr(ctx.services, "cli_status", None) if ctx.services is not None else None
+    if status is None:
+        return
+    now = ctx.clock.now()
+    for error in errors:
+        if isinstance(error, QuotaExhausted) and error.provider:
+            status.spent(error.provider, back_at(error, now))
 
 
 def chosen_provider(ctx: StageContext) -> str | None:

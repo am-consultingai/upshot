@@ -2535,6 +2535,7 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
     # for it even when the CLI's own status reads signed in, and a fresh "signed in" (as
     # after a sign-in) lets the parked summaries try now instead of in a quarter hour.
     waiting = provider in svc.queue.waiting_for_sign_in()
+    spent_until = svc.cli_status.spent_until(provider, svc.clock.now())
     if waiting and fresh and cli.signed_in is True and svc.queue.wake_waiting(provider):
         log.info("%s reads signed in: its waiting summaries try now", provider)
     # Only probed when there is something to install: winget's own start-up is slow
@@ -2547,6 +2548,9 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
         "product": CLI_PRODUCTS.get(provider, label),
         # A summary waits for this CLI's sign-in (jobs.waiting_for): offer Sign in.
         "waiting": waiting,
+        # Its plan's allowance is used up until then, as it last said: not offered as an
+        # alternative on the meeting page (the status itself cannot tell).
+        "spent_until": iso(spent_until) if spent_until else None,
         "needs": "cli",
         "ready": cli.installed,
         # Three-valued on purpose: `None` means the build is too old to be asked,
