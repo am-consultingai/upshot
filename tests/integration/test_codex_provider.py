@@ -651,14 +651,18 @@ def test_a_fallback_whose_allowance_is_spent_is_not_offered(  # type: ignore[no-
     assert _row(api, "antigravity-subscription")["spent_until"] is None
 
 
-def test_a_picked_provider_whose_allowance_is_spent_is_marked(  # type: ignore[no-untyped-def]
+def test_a_picked_provider_whose_allowance_is_spent_is_given_up(  # type: ignore[no-untyped-def]
     api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The pick cannot run until its reset: it is dropped and marked, and the run goes on
+    as if never made, so the meeting waits on the usual provider's sign-in again (card,
+    Settings, wake on sign-in) rather than on a reset days away."""
     from datetime import timedelta
 
     from app.errors import QuotaExhausted
     from app.pipeline.stages import summarize
 
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
     reset = api.services.clock.now() + timedelta(days=3)
 
     class Spent(FakeLlm):
@@ -667,16 +671,36 @@ def test_a_picked_provider_whose_allowance_is_spent_is_marked(  # type: ignore[n
         def complete_json(self, **_: Any) -> Any:
             raise QuotaExhausted("spent", provider=self.name, retry_at=reset)
 
-    monkeypatch.setattr(summarize, "make_client", lambda config, *, provider=None, **_: Spent())
+    monkeypatch.setattr(
+        summarize,
+        "make_client",
+        lambda config, *, provider=None, **_: (
+            Spent() if provider == "antigravity-subscription" else _codex(api)
+        ),
+    )
     meeting = ready_meeting(api)
     api.client().post(
         f"/api/meetings/{meeting.id}/jobs/summarize/retry",
         params={"provider": "antigravity-subscription"},
     )
     job = run_summarize(api)
-    assert job.state == "pending" and job.waiting_for is None
-    assert meta.read(meeting.path)["summary_provider"] == "antigravity-subscription"
+    assert job.state == "pending" and job.waiting_for == "codex-subscription"
+    assert meta.read(meeting.path)["summary_provider"] is None
     assert parse_iso(_row(api, "antigravity-subscription")["spent_until"]) == reset
+
+
+def test_a_summary_found_current_does_not_clear_a_spent_mark(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import timedelta
+
+    meeting = ready_meeting(api)
+    assert run_summarize(api).state == "done"  # written by Codex
+    until = api.services.clock.now() + timedelta(days=1)
+    api.services.cli_status.spent("codex-subscription", until)
+    api.services.queue.enqueue(meeting.id, JobStage.SUMMARIZE)  # not forced: skips
+    assert run_summarize(api).state == "done"
+    assert _row(api, "codex-subscription")["spent_until"] is not None, "it did not run"
 
 
 def test_signed_out_tells_the_user_once_and_refreshes_the_status(  # type: ignore[no-untyped-def]

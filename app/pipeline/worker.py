@@ -529,11 +529,10 @@ class Worker:
         self.stats.completed += 1
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}
         if job.stage == JobStage.SUMMARIZE:
-            # A summary written by a provider means it is signed in and has allowance: its
-            # next sign-out is news again, and it may be offered on the meeting page.
-            written = meta.read(Path(self.dao.require_meeting(job.meeting_id).folder))
-            by = written.get("llm")
-            name = str(by.get("name") or "") if isinstance(by, dict) else ""
+            # A summary written by a provider (in this run: not one that found the notes
+            # current and skipped) means it is signed in and has allowance: its next
+            # sign-out is news again, and it may be offered on the meeting page.
+            name = str((context.metrics if context else {}).get("written_by") or "")
             self._told_signed_out.pop(name, None)
             status = getattr(self.services, "cli_status", None) if self.services else None
             if status is not None and name:

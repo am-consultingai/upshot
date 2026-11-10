@@ -411,6 +411,7 @@ def summarize(
         windows=len(windows),
         llm=written_by(client, _sum_usage(usage), instead_of, chosen_for=chosen_for),
     )
+    ctx.metrics["written_by"] = client.name  # it ran and has allowance (the worker clears a mark)
     log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
 
 
@@ -446,21 +447,29 @@ def run(ctx: StageContext) -> None:
         # this provider, and the notes say so. Cleared when the run ends (the notes are
         # written, or the job fails for good: the worker), so a later automatic run (a
         # calendar change, a merge) uses Settings again. If the picked provider is signed
-        # out too, the job waits on it — the provider the page then names.
+        # out too, the job waits on it — the provider the page then names. If its allowance
+        # turns out spent, the pick is given up and this run goes on as if never made: the
+        # usual provider (or its fallback), else a wait the page can offer a way out of.
         configured = str(ctx.config.get("llm.provider", "") or "")
         log.info("summarizing with %s, chosen for this meeting", chosen)
-        summarize(
-            ctx,
-            transcript,
-            system=system,
-            system_version=system_version,
-            client=make_client(
-                ctx.config, provider=chosen, sensitive=bool(ctx.meeting.sensitive), fetch=True
-            ),
-            chosen_for=configured if configured not in ("", "none", chosen) else None,
-        )
-        drop_chosen_provider(folder, only=chosen)
-        return
+        try:
+            summarize(
+                ctx,
+                transcript,
+                system=system,
+                system_version=system_version,
+                client=make_client(
+                    ctx.config, provider=chosen, sensitive=bool(ctx.meeting.sensitive), fetch=True
+                ),
+                chosen_for=configured if configured not in ("", "none", chosen) else None,
+            )
+        except QuotaExhausted as spent:
+            log.warning("%s, chosen for this meeting, is out of allowance: %s", chosen, spent)
+            note_spent(ctx, spent)
+            drop_chosen_provider(folder, only=chosen)
+        else:
+            drop_chosen_provider(folder, only=chosen)
+            return
     try:
         summarize(ctx, transcript, system=system, system_version=system_version)
     except (QuotaExhausted, SignInRequired) as stuck:
