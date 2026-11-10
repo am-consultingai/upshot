@@ -596,6 +596,110 @@ def test_summarize_with_another_provider_for_one_meeting(  # type: ignore[no-unt
     assert job.waiting_for is None
 
 
+def test_a_picked_run_that_is_preempted_keeps_the_pick(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording that starts mid-run must not undo the user's choice."""
+    from app.errors import Preempted
+    from app.pipeline.stages import summarize
+
+    stand_in = FakeLlm()
+    stand_in.name = "antigravity-subscription"
+    yields = [True]
+
+    class YieldsOnce(FakeLlm):
+        name = "antigravity-subscription"
+
+        def complete_json(self, **kwargs: Any) -> Any:
+            if yields and yields.pop():
+                raise Preempted("a recording started")
+            return stand_in.complete_json(**kwargs)
+
+    built: list[str | None] = []
+
+    def make(config: Config, *, provider: str | None = None, **_: Any) -> Any:
+        built.append(provider)
+        return YieldsOnce() if provider == "antigravity-subscription" else _codex(api)
+
+    monkeypatch.setattr(summarize, "make_client", make)
+    meeting = ready_meeting(api)
+    api.client().post(
+        f"/api/meetings/{meeting.id}/jobs/summarize/retry",
+        params={"provider": "antigravity-subscription"},
+    )
+    assert run_summarize(api).state == "pending", "released, not failed"
+    assert meta.read(meeting.path)["summary_provider"] == "antigravity-subscription"
+    assert run_summarize(api).state == "done"
+    assert built == ["antigravity-subscription", "antigravity-subscription"]
+    assert meta.read(meeting.path)["summary_provider"] is None
+
+
+def test_a_picked_provider_signed_out_too_is_what_the_job_waits_for(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page and the queue agree: it waits on the provider the user picked."""
+    from app.errors import SignInRequired
+    from app.pipeline.stages import summarize
+
+    class SignedOut(FakeLlm):
+        name = "antigravity-subscription"
+
+        def complete_json(self, **_: Any) -> Any:
+            raise SignInRequired("Antigravity is not signed in.", provider=self.name)
+
+    built: list[str | None] = []
+
+    def make(config: Config, *, provider: str | None = None, **_: Any) -> Any:
+        built.append(provider)
+        return SignedOut() if provider == "antigravity-subscription" else _codex(api)
+
+    monkeypatch.setattr(summarize, "make_client", make)
+    meeting = ready_meeting(api)
+    api.client().post(
+        f"/api/meetings/{meeting.id}/jobs/summarize/retry",
+        params={"provider": "antigravity-subscription"},
+    )
+    job = run_summarize(api)
+    assert job.state == "pending" and job.waiting_for == "antigravity-subscription"
+    assert meta.read(meeting.path)["summary_provider"] == "antigravity-subscription"
+    assert built == ["antigravity-subscription"]
+
+
+def test_settings_offers_sign_in_while_a_summary_waits_and_wakes_it(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sign in is offered even if the CLI reads signed in; a fresh "signed in" lets the
+    waiting summary try now, but not more than once a minute."""
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.pipeline.stages import summarize
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
+    ready_meeting(api)
+    job = run_summarize(api)
+    assert job.not_before is not None
+
+    monkeypatch.setenv("FAKE_CODEX_MODE", "ok")  # signed in again, in its own window
+    client = api.client()
+    row = next(
+        p
+        for p in client.get("/api/llm/status?fresh=true").json()["providers"]
+        if p["id"] == "codex-subscription"
+    )
+    assert row["waiting"] is True and row["signed_in"] is True
+    assert api.services.queue.require(job.id).not_before is not None, "parked under a minute"
+
+    api.services.clock.advance(61)
+    client.get("/api/llm/status?fresh=true")
+    assert api.services.queue.require(job.id).not_before is None, "tries now"
+    assert run_summarize(api).state == "done"
+    row = next(
+        p
+        for p in client.get("/api/llm/status").json()["providers"]
+        if p["id"] == "codex-subscription"
+    )
+    assert row["waiting"] is False
+
+
 @pytest.mark.parametrize(
     ("stage", "provider", "why"),
     [

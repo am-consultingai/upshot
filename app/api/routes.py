@@ -1481,8 +1481,9 @@ def retry_stage(
         if meeting.sensitive:
             raise HTTPException(422, "a sensitive meeting is summarized on this computer")
         force = True
-    if stage == str(JobStage.SUMMARIZE) and force:
-        # Set for the next run alone, or withdrawn by a plain Summarize.
+    # Set for the next run alone, or withdrawn by a plain Summarize.
+    picked_before = meta.read(meeting.path).get("summary_provider") is not None
+    if stage == str(JobStage.SUMMARIZE) and force and (provider is not None or picked_before):
         meta.update(meeting.path, summary_provider=provider)
     if force:
         # A button press is a decision. Every later stage is redone too, or a fresh
@@ -2525,6 +2526,12 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
     module = cli_module(provider)
     client = cli_client(svc, provider)
     cli = svc.cli_status.get(provider, client.status, program=client.executable, fresh=fresh)
+    # A summary parked because this CLI turned out signed out. Settings offers Sign in
+    # for it even when the CLI's own status reads signed in, and a fresh "signed in" (as
+    # after a sign-in) lets the parked summaries try now instead of in a quarter hour.
+    waiting = provider in svc.queue.waiting_for_sign_in()
+    if waiting and fresh and cli.signed_in is True and svc.queue.wake_waiting(provider):
+        log.info("%s reads signed in: its waiting summaries try now", provider)
     # Only probed when there is something to install: winget's own start-up is slow
     # enough to be felt on every settings load otherwise.
     plan = module.install_plan() if not cli.installed else None
@@ -2533,6 +2540,8 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
         "label": label,
         # The program, as notices and the meeting page name it ("Codex").
         "product": CLI_PRODUCTS.get(provider, label),
+        # A summary waits for this CLI's sign-in (jobs.waiting_for): offer Sign in.
+        "waiting": waiting,
         "needs": "cli",
         "ready": cli.installed,
         # Three-valued on purpose: `None` means the build is too old to be asked,

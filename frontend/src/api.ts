@@ -394,6 +394,8 @@ export interface LlmProvider {
   can_sign_out?: boolean;
   /** A CLI's program, as the page names it ("Codex"). */
   product?: string;
+  /** A summary waits for this CLI's sign-in: Sign in is offered even if it reads signed in. */
+  waiting?: boolean;
   /** Sign out opens a window where the CLI's own /logout is typed (Antigravity, D79). */
   signout_in_window?: boolean;
   /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */

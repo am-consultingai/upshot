@@ -15,6 +15,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from app import meta
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
@@ -502,6 +503,13 @@ class Worker:
         self.queue.complete(job)
         self.stats.completed += 1
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}
+        if job.stage == JobStage.SUMMARIZE and self._told_signed_out:
+            # A summary written by a provider means it is signed in: its next sign-out is
+            # news again, however soon it comes.
+            written = meta.read(Path(self.dao.require_meeting(job.meeting_id).folder))
+            by = written.get("llm")
+            if isinstance(by, dict):
+                self._told_signed_out.pop(str(by.get("name") or ""), None)
         stage = self._stage(job)
         if stage is not None and not (context is not None and context.hold_state):
             from app.pipeline.states import is_legal
@@ -587,6 +595,13 @@ class Worker:
         log.warning("stage %s failed (attempt %s): %s", job.stage, updated.attempts, exc)
         if updated.state != "failed":
             return
+        if job.stage == JobStage.SUMMARIZE:
+            # A provider picked on the meeting page was for this run, and it has ended.
+            from app.pipeline.stages.summarize import drop_chosen_provider
+
+            folder = Path(self.dao.require_meeting(job.meeting_id).folder)
+            if folder.exists():
+                drop_chosen_provider(folder)
         # Failed for good, not a retry: worth a crash report, if the user agreed (D87).
         if isinstance(exc, Exception):
             from app.diagnostics.reporter import report

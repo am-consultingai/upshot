@@ -16,8 +16,8 @@ function canRunNow(provider: LlmProvider): boolean {
 }
 
 /**
- * The summary waits because `provider` is signed out — as the job itself says, not the
- * CLI's status, which can read "signed in" over an expired session. Rather than a failure
+ * The summary waits because `provider` is signed out — as the job itself says
+ * (`waiting_for`), whatever the CLI's own status reads. Rather than a failure
  * and a stack trace: sign in, or let another service that is ready write this one
  * meeting's summary.
  */

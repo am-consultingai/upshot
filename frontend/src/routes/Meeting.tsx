@@ -949,7 +949,7 @@ export default function MeetingPage() {
                   }}
                 />
               )}
-              {waiting && (
+              {waiting && !(waiting.stage === "summarize" && waiting.waiting_for) && (
                 <p data-testid="stage-waiting-reason" className="mb-3 max-w-prose text-xs text-secondary">
                   {waiting.message}
                 </p>

@@ -39,15 +39,20 @@ class Deferred(RecoverableError):
 class QuotaExhausted(Deferred):
     """A subscription's allowance is used up: the plan's limit, not a transient 429.
 
-    The one failure ``llm.fallback_provider`` answers to. Anything else — a timeout, a
-    malformed answer, a signed-out CLI — never sends the transcript to a second provider,
-    because a meeting quietly leaving the machine for a provider the user did not pick is
-    exactly the surprise this application exists to avoid.
+    One of the two failures ``llm.fallback_provider`` answers to, with
+    :class:`SignInRequired`. Anything else — a timeout, a malformed answer — never sends
+    the transcript to a second provider, because a meeting quietly leaving the machine for
+    a provider the user did not pick is exactly the surprise this application exists to
+    avoid. The fallback is the user's own choice, made in Settings for these two cases.
     """
 
 
 class SignInRequired(Deferred):
     """The CLI is installed but nobody is signed in. A Settings problem, not a failed job.
+
+    Answered by ``llm.fallback_provider`` when one is set, as a spent allowance is; the
+    job records the provider in ``jobs.waiting_for`` so the meeting page can offer the
+    sign-in and the services that are ready.
 
     Waits a quarter of an hour at a time rather than an hour: signing in takes a minute,
     and the summary should follow soon after without anyone pressing Retry.

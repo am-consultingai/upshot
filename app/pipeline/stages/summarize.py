@@ -409,6 +409,8 @@ def summarize(
         summary_language=language,
         windows=len(windows),
         llm=written_by(client, _sum_usage(usage), instead_of, chosen_for=chosen_for),
+        # The pick, if any, was for this run, and it has ended.
+        summary_provider=None,
     )
     log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
 
@@ -423,6 +425,9 @@ def run(ctx: StageContext) -> None:
     # did nothing at all: the transcript had not moved, so the stage skipped and the old
     # summary stood.
     recorded = str(meta.read(folder).get("prompt_versions", {}).get("system", ""))
+    # Read here, before anything can end the run early, and kept until the run ends: a
+    # recording that preempts it, or a crash, must not lose the user's choice.
+    chosen = chosen_provider(ctx)
     if ctx.force:
         # Asked for by hand: no staleness test, no comparison against what is on disk.
         # Pressing Summarize is a decision, and second-guessing it is how an edited
@@ -430,6 +435,8 @@ def run(ctx: StageContext) -> None:
         log.info("re-summarizing on request")
     elif up_to_date(output, [transcript_md]) and recorded == system_version:
         log.info("notes.json is current; skipping")
+        if chosen is not None:
+            meta.update(folder, summary_provider=None)  # the run ended: nothing to keep
         return
     elif recorded and recorded != system_version:
         log.info("prompt changed (%s -> %s); re-summarizing", recorded, system_version)
@@ -437,11 +444,12 @@ def run(ctx: StageContext) -> None:
         raise FileNotFoundError(f"{transcript_md} is missing — run the assemble stage first")
 
     transcript = transcript_md.read_text(encoding="utf-8")
-    chosen = take_chosen_provider(ctx)
     if chosen is not None:
         # Picked on the meeting page while the usual provider could not run: this run,
-        # this provider, and the notes say so. Taken before the run, so a run that fails
-        # leaves nothing behind for a later automatic one (a calendar change, a merge).
+        # this provider, and the notes say so. Cleared when the run ends (the notes are
+        # written, or the job fails for good: the worker), so a later automatic run (a
+        # calendar change, a merge) uses Settings again. If the picked provider is signed
+        # out too, the job waits on it — the provider the page then names.
         configured = str(ctx.config.get("llm.provider", "") or "")
         log.info("summarizing with %s, chosen for this meeting", chosen)
         summarize(
@@ -483,20 +491,25 @@ def run(ctx: StageContext) -> None:
             raise stuck from also
 
 
-def take_chosen_provider(ctx: StageContext) -> str | None:
-    """The provider picked on the meeting page for its next summary, or ``None``; taken,
-    so it applies to one run only, however that run ends.
+def chosen_provider(ctx: StageContext) -> str | None:
+    """The provider picked on the meeting page for its next summary, or ``None``.
 
     Never for a sensitive meeting: that one is summarized on this computer, whatever
-    anyone picked (the endpoint refuses it too).
+    anyone picked (the endpoint refuses it too), and a pick found on one is dropped.
     """
     picked = meta.read(ctx.folder).get("summary_provider")
     if picked is None:
         return None
-    meta.update(ctx.folder, summary_provider=None)
     if ctx.meeting.sensitive or not isinstance(picked, str) or not picked:
+        meta.update(ctx.folder, summary_provider=None)
         return None
     return picked
+
+
+def drop_chosen_provider(folder: Path) -> None:
+    """The run the pick was for has ended: the next one uses Settings."""
+    if meta.read(folder).get("summary_provider") is not None:
+        meta.update(folder, summary_provider=None)
 
 
 def fallback_client(ctx: StageContext, spent: Deferred) -> LlmClient | None:

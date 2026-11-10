@@ -413,7 +413,9 @@ export default function ProviderSettings() {
                               {t("settings.signOut")}
                             </Button>
                           )}
-                          {provider.needs === "cli" && provider.ready && provider.signed_in !== true && (
+                          {/* Also when a summary waits for its sign-in: the CLI's own status can
+                              read signed in over a session the provider refuses. */}
+                          {provider.needs === "cli" && provider.ready && (provider.signed_in !== true || provider.waiting) && (
                             <Button
                               data-testid="provider-signin"
                               busy={(signin.isPending && signin.variables === provider.id) || (mine && !signingIn)}

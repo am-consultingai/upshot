@@ -262,6 +262,26 @@ class JobQueue:
         )
         return self.require(job.id)
 
+    def waiting_for_sign_in(self) -> set[str]:
+        """The providers some waiting job needs signed in (migration 0014)."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT waiting_for FROM jobs "
+            "WHERE state='pending' AND waiting_for IS NOT NULL"
+        ).fetchall()
+        return {str(row["waiting_for"]) for row in rows}
+
+    def wake_waiting(self, provider: str, *, idle_s: float = 60.0) -> int:
+        """``provider`` reads signed in: its waiting jobs try now, not at their next
+        quarter hour. Only jobs parked at least ``idle_s`` ago, so a status that says
+        "signed in" over a session the provider refuses cannot spin them."""
+        now = self.clock.now()
+        cursor = self.conn.execute(
+            "UPDATE jobs SET not_before=NULL WHERE state='pending' AND waiting_for=? "
+            "AND updated_at <= ?",
+            (provider, iso(now - timedelta(seconds=idle_s))),
+        )
+        return int(cursor.rowcount or 0)
+
     def cancel(self, job: Job) -> Job:
         now = iso(self.clock.now())
         self.conn.execute(
