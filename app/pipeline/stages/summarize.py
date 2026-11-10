@@ -409,8 +409,6 @@ def summarize(
         summary_language=language,
         windows=len(windows),
         llm=written_by(client, _sum_usage(usage), instead_of, chosen_for=chosen_for),
-        # The pick, if any, was for this run, and it has ended.
-        summary_provider=None,
     )
     log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
 
@@ -428,15 +426,13 @@ def run(ctx: StageContext) -> None:
     # Read here, before anything can end the run early, and kept until the run ends: a
     # recording that preempts it, or a crash, must not lose the user's choice.
     chosen = chosen_provider(ctx)
-    if ctx.force:
+    if ctx.force or chosen is not None:
         # Asked for by hand: no staleness test, no comparison against what is on disk.
         # Pressing Summarize is a decision, and second-guessing it is how an edited
         # prompt came to have no visible effect at all.
         log.info("re-summarizing on request")
     elif up_to_date(output, [transcript_md]) and recorded == system_version:
         log.info("notes.json is current; skipping")
-        if chosen is not None:
-            meta.update(folder, summary_provider=None)  # the run ended: nothing to keep
         return
     elif recorded and recorded != system_version:
         log.info("prompt changed (%s -> %s); re-summarizing", recorded, system_version)
@@ -462,6 +458,7 @@ def run(ctx: StageContext) -> None:
             ),
             chosen_for=configured if configured not in ("", "none", chosen) else None,
         )
+        drop_chosen_provider(folder, only=chosen)
         return
     try:
         summarize(ctx, transcript, system=system, system_version=system_version)
@@ -506,9 +503,11 @@ def chosen_provider(ctx: StageContext) -> str | None:
     return picked
 
 
-def drop_chosen_provider(folder: Path) -> None:
-    """The run the pick was for has ended: the next one uses Settings."""
-    if meta.read(folder).get("summary_provider") is not None:
+def drop_chosen_provider(folder: Path, *, only: str | None = None) -> None:
+    """The run the pick was for has ended: the next one uses Settings. With ``only``, a
+    pick made meanwhile — a different provider, for the run after this one — is kept."""
+    picked = meta.read(folder).get("summary_provider")
+    if picked is not None and (only is None or picked == only):
         meta.update(folder, summary_provider=None)
 
 

@@ -151,7 +151,7 @@ class JobQueue:
     def claim_next(self) -> Job | None:
         now = iso(self.clock.now())
         row = self.conn.execute(
-            "UPDATE jobs SET state='running', started_at=?, updated_at=? "
+            "UPDATE jobs SET state='running', started_at=?, updated_at=?, waiting_for=NULL "
             "WHERE id = (SELECT id FROM jobs WHERE state='pending' "
             "            AND (not_before IS NULL OR not_before <= ?) "
             "            ORDER BY priority, id LIMIT 1) "
@@ -175,7 +175,7 @@ class JobQueue:
         (a deletion) between :meth:`peek` and here."""
         now = iso(self.clock.now())
         row = self.conn.execute(
-            "UPDATE jobs SET state='running', started_at=?, updated_at=? "
+            "UPDATE jobs SET state='running', started_at=?, updated_at=?, waiting_for=NULL "
             "WHERE id = ? AND state='pending' RETURNING *",
             (now, now, job_id),
         ).fetchone()

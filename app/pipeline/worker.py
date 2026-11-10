@@ -293,17 +293,20 @@ class Worker:
                         settle_stopped(self.dao, job.meeting_id, before)
                     return
                 except Preempted:
+                    self._keep_force(job, context)
                     self.queue.release(job)
                     self.stats.preempted += 1
                     log.info("stage %s preempted by the recorder", job.stage)
                     return
                 except Deferred as exc:
+                    self._keep_force(job, context)
                     self._on_deferred(job, exc)
                     return
                 except PermanentError as exc:
                     self._on_failure(job, exc, permanent=True)
                     return
                 except Exception as exc:
+                    self._keep_force(job, context)
                     self._on_failure(job, exc, permanent=False)
                     return
                 finally:
@@ -318,6 +321,14 @@ class Worker:
         except BaseException:
             release()  # raised before the stage's own ``try`` was reached
             raise
+
+    def _keep_force(self, job: Job, context: StageContext) -> None:
+        """A run asked for by hand that did not finish (a recording took over, the provider
+        said not now, an error to retry) is still asked for: the next attempt redoes the
+        work too, instead of finding the old output current and skipping. A final failure
+        ends the request (``_on_failure`` drops it again)."""
+        if context.force:
+            self.queue.request_rerun(job.meeting_id, job.stage)
 
     def _announce(self, job: Job, *, ended_only: bool = False) -> None:
         """A ``job`` event as a stage starts and ends: the lists of what is running
@@ -595,6 +606,7 @@ class Worker:
         log.warning("stage %s failed (attempt %s): %s", job.stage, updated.attempts, exc)
         if updated.state != "failed":
             return
+        self.queue.take_rerun(job.meeting_id, job.stage)  # the asked-for run has ended
         if job.stage == JobStage.SUMMARIZE:
             # A provider picked on the meeting page was for this run, and it has ended.
             from app.pipeline.stages.summarize import drop_chosen_provider

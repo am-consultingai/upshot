@@ -700,6 +700,119 @@ def test_settings_offers_sign_in_while_a_summary_waits_and_wakes_it(  # type: ig
     assert row["waiting"] is False
 
 
+def summarized_meeting(api) -> Any:  # type: ignore[no-untyped-def]
+    """A meeting whose summary is already written and current (by the fake Codex)."""
+    meeting = ready_meeting(api)
+    assert run_summarize(api).state == "done"
+    assert (meeting.path / "notes.json").exists()
+    return meeting
+
+
+def test_a_pick_on_a_summarized_meeting_survives_a_preemption(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With notes already current, the second attempt must still redo them, by the pick."""
+    from app.errors import Preempted
+    from app.pipeline.stages import summarize
+
+    meeting = summarized_meeting(api)
+    stand_in = FakeLlm()
+    yields = [True]
+
+    class YieldsOnce(FakeLlm):
+        name = "antigravity-subscription"
+
+        def complete_json(self, **kwargs: Any) -> Any:
+            if yields and yields.pop():
+                raise Preempted("a recording started")
+            return stand_in.complete_json(**kwargs)
+
+    monkeypatch.setattr(
+        summarize,
+        "make_client",
+        lambda config, *, provider=None, **_: (
+            YieldsOnce() if provider == "antigravity-subscription" else _codex(api)
+        ),
+    )
+    api.client().post(
+        f"/api/meetings/{meeting.id}/jobs/summarize/retry",
+        params={"provider": "antigravity-subscription"},
+    )
+    assert run_summarize(api).state == "pending"
+    assert run_summarize(api).state == "done"
+    assert meta.read(meeting.path)["llm"]["name"] == "antigravity-subscription"
+    assert meta.read(meeting.path)["summary_provider"] is None
+
+
+def test_a_forced_summary_deferred_then_woken_is_redone_not_skipped(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Summarize pressed on a summarized meeting while signed out: after the sign-in the
+    summary is written again, not skipped as current."""
+    from app.pipeline.stages import summarize
+
+    meeting = summarized_meeting(api)
+    before = (meeting.path / "notes.json").stat().st_mtime_ns
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    api.client().post(f"/api/meetings/{meeting.id}/jobs/summarize/retry?force=true")
+    job = run_summarize(api)
+    assert job.state == "pending" and job.waiting_for == "codex-subscription"
+
+    monkeypatch.setenv("FAKE_CODEX_MODE", "ok")
+    api.services.clock.advance(16 * 60)
+    done = run_summarize(api)
+    assert done.state == "done"
+    assert (meeting.path / "notes.json").stat().st_mtime_ns != before, "written again"
+    assert api.services.queue.take_rerun(meeting.id, "summarize") is False, "and only once"
+
+
+def test_a_pick_made_while_a_run_is_in_flight_is_kept_for_the_next(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.pipeline.stages import summarize
+
+    meeting = ready_meeting(api)
+    real = _codex(api)
+
+    class PicksMidRun(FakeLlm):
+        name = "codex-subscription"
+
+        def count_tokens(self, text: str) -> int:
+            return real.count_tokens(text)
+
+        def complete_json(self, **kwargs: Any) -> Any:
+            # The user presses "Summarize with Antigravity" while this run is going.
+            meta.update(meeting.path, summary_provider="antigravity-subscription")
+            return real.complete_json(**kwargs)
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: PicksMidRun())
+    assert run_summarize(api).state == "done"
+    assert meta.read(meeting.path)["summary_provider"] == "antigravity-subscription"
+
+
+def test_a_claimed_job_no_longer_says_it_waits_for_a_sign_in(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.errors import Preempted
+    from app.pipeline.stages import summarize
+
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
+    ready_meeting(api)
+    job = run_summarize(api)
+    assert job.waiting_for == "codex-subscription"
+
+    class Yields(FakeLlm):
+        def complete_json(self, **_: Any) -> Any:
+            raise Preempted("a recording started")
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: Yields())
+    api.services.clock.advance(16 * 60)
+    released = run_summarize(api)
+    assert released.state == "pending" and released.waiting_for is None
+
+
 @pytest.mark.parametrize(
     ("stage", "provider", "why"),
     [

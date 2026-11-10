@@ -23,4 +23,22 @@ describe("watchFinished", () => {
   it("leaves an older server that does not report the window to the timeout", () => {
     expect(watchFinished({ signedIn: false, consoleOpen: undefined, checkedAt: 2_000, launchedAt })).toBe(false);
   });
+
+  it("keeps watching a CLI that reads signed in while a summary still waits for it", () => {
+    expect(
+      watchFinished({ signedIn: true, waiting: true, consoleOpen: true, checkedAt: 2_000, launchedAt }),
+    ).toBe(false);
+  });
+
+  it("ends it once the waiting summary has gone through", () => {
+    expect(
+      watchFinished({ signedIn: true, waiting: false, consoleOpen: true, checkedAt: 2_000, launchedAt }),
+    ).toBe(true);
+  });
+
+  it("still ends it when the sign-in window is closed", () => {
+    expect(
+      watchFinished({ signedIn: true, waiting: true, consoleOpen: false, checkedAt: 2_000, launchedAt }),
+    ).toBe(true);
+  });
 });
