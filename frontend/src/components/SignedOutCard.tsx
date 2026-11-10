@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api, reason, type LlmProvider } from "../api";
@@ -51,6 +52,9 @@ export default function SignedOutCard({
     },
     onError: (error) => toast({ title: reason(error), tone: "danger" }),
   });
+  // Waiting on another provider now (the picked one is signed out too): a new choice.
+  const { reset } = pick;
+  useEffect(() => reset(), [provider, reset]);
 
   const providers = status.data?.providers ?? [];
   const named = (row: LlmProvider | undefined, id: string) => row?.product ?? row?.label ?? id;

@@ -54,8 +54,8 @@ NOT_SIGNED_IN = (
     "invalid api key",
     "authentication",
     "failed to authenticate",
-    "oauth session expired",
-    "oauth token has expired",
+    "session expired and could not be refreshed",
+    "token has expired",
 )
 RATE_LIMITED = ("rate limit", "usage limit", "quota", "429", "overloaded")
 #: The plan's allowance, not a transient 429: "Claude AI usage limit reached|<epoch>" from
