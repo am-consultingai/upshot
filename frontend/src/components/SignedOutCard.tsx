@@ -1,35 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { api, type LlmProvider } from "../api";
+import { api, reason, type LlmProvider } from "../api";
 import { useI18n } from "../i18n";
 import Button from "./Button";
+import { toast } from "./Toaster";
 
-/** The program a CLI provider runs, as the toast and the card name it. */
-const PRODUCT: Record<string, string> = {
-  "claude-subscription": "Claude Code",
-  "codex-subscription": "Codex",
-  "antigravity-subscription": "Antigravity CLI",
-};
-
-/** A provider that could write this summary now: signed in, or a key that is set. */
+/**
+ * A provider that could write this summary now: a signed-in CLI, or an API provider whose
+ * key is set. Not "Transcripts only", and not the local model, whose "ready" says only
+ * that it is configured.
+ */
 function canRunNow(provider: LlmProvider): boolean {
   if (provider.needs === "cli") return provider.ready && provider.signed_in === true;
-  // The local model is always "ready" by this measure, and is not an alternative a
-  // signed-out subscription is waiting for.
-  return provider.ready && provider.id !== "ollama";
+  return provider.needs === "key" && provider.ready;
 }
 
 /**
- * The summary is held because the provider in Settings is signed out. Rather than a
- * failure and a stack trace: sign in, or let another service that is ready write this
- * one meeting's summary. `null` when the provider is signed in, or nothing is known yet.
+ * The summary waits because `provider` is signed out — as the job itself says, not the
+ * CLI's status, which can read "signed in" over an expired session. Rather than a failure
+ * and a stack trace: sign in, or let another service that is ready write this one
+ * meeting's summary.
  */
 export default function SignedOutCard({
   meetingId,
+  provider,
   sensitive,
   onPicked,
 }: {
   meetingId: string;
+  provider: string;
   sensitive: boolean;
   onPicked: () => void;
 }) {
@@ -37,27 +36,27 @@ export default function SignedOutCard({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   // The server's held answer, not a fresh one: the pipeline drops it the moment a CLI
-  // turns out signed out, so it is already current where it matters.
+  // turns out signed out, so asking every CLI again here would only cost time.
   const status = useQuery({
     queryKey: ["llm-status", "held"],
     queryFn: () => api.llmStatus(),
     refetchInterval: 15000,
   });
   const pick = useMutation({
-    mutationFn: (provider: string) => api.retry(meetingId, "summarize", true, undefined, provider),
+    mutationFn: (other: string) => api.retry(meetingId, "summarize", true, undefined, other),
     onSuccess: () => {
       onPicked();
-      queryClient.invalidateQueries();
+      queryClient.invalidateQueries({ queryKey: ["meeting", meetingId] });
+      queryClient.invalidateQueries({ queryKey: ["attention"] });
     },
+    onError: (error) => toast({ title: reason(error), tone: "danger" }),
   });
 
-  const active = status.data?.providers.find((provider) => provider.id === status.data?.active);
-  if (!active || active.needs !== "cli" || active.signed_in !== false) return null;
-  const product = PRODUCT[active.id] ?? active.label;
+  const providers = status.data?.providers ?? [];
+  const named = (row: LlmProvider | undefined, id: string) => row?.product ?? row?.label ?? id;
+  const product = named(providers.find((row) => row.id === provider), provider);
   // A sensitive meeting is summarized on this computer only: nothing else is offered.
-  const others = sensitive
-    ? []
-    : (status.data?.providers ?? []).filter((p) => p.id !== active.id && canRunNow(p));
+  const others = sensitive ? [] : providers.filter((row) => row.id !== provider && canRunNow(row));
 
   return (
     <div data-testid="signed-out" className="mb-4 rounded-lg bg-surface-2 p-3 text-sm">
@@ -66,17 +65,17 @@ export default function SignedOutCard({
         <Button data-testid="signed-out-sign-in" variant="primary" onClick={() => navigate("/settings#summaries")}>
           {t("meeting.signedOutSignIn")}
         </Button>
-        {others.map((provider) => (
+        {others.map((row) => (
           <Button
-            key={provider.id}
+            key={row.id}
             data-testid="signed-out-use"
-            data-provider={provider.id}
+            data-provider={row.id}
             variant="secondary"
-            busy={pick.isPending && pick.variables === provider.id}
-            disabled={pick.isPending}
-            onClick={() => pick.mutate(provider.id)}
+            busy={pick.isPending && pick.variables === row.id}
+            disabled={pick.isPending || pick.isSuccess}
+            onClick={() => pick.mutate(row.id)}
           >
-            {t("meeting.signedOutUse").replace("{product}", PRODUCT[provider.id] ?? provider.label)}
+            {t("meeting.signedOutUse").replace("{product}", named(row, row.id))}
           </Button>
         ))}
       </div>

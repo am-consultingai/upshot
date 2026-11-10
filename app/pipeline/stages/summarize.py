@@ -409,8 +409,6 @@ def summarize(
         summary_language=language,
         windows=len(windows),
         llm=written_by(client, _sum_usage(usage), instead_of, chosen_for=chosen_for),
-        # Picked for this one run from the meeting page; the next run uses Settings again.
-        summary_provider=None,
     )
     log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
 
@@ -439,10 +437,11 @@ def run(ctx: StageContext) -> None:
         raise FileNotFoundError(f"{transcript_md} is missing — run the assemble stage first")
 
     transcript = transcript_md.read_text(encoding="utf-8")
-    chosen = chosen_provider(ctx)
+    chosen = take_chosen_provider(ctx)
     if chosen is not None:
         # Picked on the meeting page while the usual provider could not run: this run,
-        # this provider, and the notes say so.
+        # this provider, and the notes say so. Taken before the run, so a run that fails
+        # leaves nothing behind for a later automatic one (a calendar change, a merge).
         configured = str(ctx.config.get("llm.provider", "") or "")
         log.info("summarizing with %s, chosen for this meeting", chosen)
         summarize(
@@ -450,8 +449,10 @@ def run(ctx: StageContext) -> None:
             transcript,
             system=system,
             system_version=system_version,
-            client=make_client(ctx.config, provider=chosen, fetch=True),
-            chosen_for=configured if configured != chosen else None,
+            client=make_client(
+                ctx.config, provider=chosen, sensitive=bool(ctx.meeting.sensitive), fetch=True
+            ),
+            chosen_for=configured if configured not in ("", "none", chosen) else None,
         )
         return
     try:
@@ -482,16 +483,20 @@ def run(ctx: StageContext) -> None:
             raise stuck from also
 
 
-def chosen_provider(ctx: StageContext) -> str | None:
-    """The provider picked for this meeting's next summary on its page, or ``None``.
+def take_chosen_provider(ctx: StageContext) -> str | None:
+    """The provider picked on the meeting page for its next summary, or ``None``; taken,
+    so it applies to one run only, however that run ends.
 
     Never for a sensitive meeting: that one is summarized on this computer, whatever
     anyone picked (the endpoint refuses it too).
     """
-    if ctx.meeting.sensitive:
-        return None
     picked = meta.read(ctx.folder).get("summary_provider")
-    return picked if isinstance(picked, str) and picked else None
+    if picked is None:
+        return None
+    meta.update(ctx.folder, summary_provider=None)
+    if ctx.meeting.sensitive or not isinstance(picked, str) or not picked:
+        return None
+    return picked
 
 
 def fallback_client(ctx: StageContext, spent: Deferred) -> LlmClient | None:

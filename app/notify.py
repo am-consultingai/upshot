@@ -197,7 +197,7 @@ class BaseNotifier:
             Toast(
                 title=self._t("toast.signedOut.title", product=product),
                 buttons=(Button(self._t("button.open"), "meeting.open", meeting_id),),
-                key=f"signedout:{meeting_id}",
+                key=f"signedout:{product}",
                 meeting_id=meeting_id,
             )
         )

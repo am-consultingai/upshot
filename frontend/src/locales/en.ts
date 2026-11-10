@@ -764,7 +764,7 @@ export const en = {
   "settings.antigravityMissing": "Antigravity CLI is not installed on this machine.",
   "settings.antigravitySignInHint": "Opens Google's own sign-in in your browser. Google then shows a code: paste it into the window within a minute. Upshot never sees your credentials.",
   "settings.antigravityPlanNote": "Uses your Google AI plan's Antigravity allowance, shared with your other Antigravity use. Antigravity keeps its own copy of what it summarizes, in its history on this computer.",
-  "settings.fallbackLabel": "If the subscription's allowance runs out:",
+  "settings.fallbackLabel": "If the subscription is signed out or its allowance runs out:",
   "settings.fallbackNone": "Wait and try again later (nothing is sent elsewhere)",
   "settings.models.title": "Models",
   "settings.models.hint": "The list comes from the provider itself. Automatic picks a quick model where the provider's own default is slow.",

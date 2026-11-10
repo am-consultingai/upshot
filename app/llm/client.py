@@ -474,11 +474,11 @@ def make_client(
     always routes to the local model.
 
     ``provider`` overrides the configured one — the summarize stage passes
-    ``llm.fallback_provider`` here when a plan's allowance is spent — and loses to
-    ``sensitive`` like everything else does. ``use`` is ``summary`` or ``assistant``
-    (``app.llm.model_choice``): the model the user chose for it, or ours. ``fetch`` lets a
-    caller that may wait ask the provider for its list when the choice needs one; never
-    on the event loop.
+    ``llm.fallback_provider`` here when a plan's allowance is spent or its CLI is signed
+    out — and loses to ``sensitive`` like everything else does. ``use`` is ``summary``
+    or ``assistant`` (``app.llm.model_choice``): the model the user chose for it, or
+    ours. ``fetch`` lets a caller that may wait ask the provider for its list when the
+    choice needs one; never on the event loop.
     """
     if not sensitive and provider is None:
         provider = str(config.get("llm.provider", "anthropic"))

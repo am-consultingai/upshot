@@ -714,7 +714,7 @@ export const de: Record<MessageKey, string> = {
   "settings.antigravityMissing": "Antigravity CLI ist auf diesem Gerät nicht installiert.",
   "settings.antigravitySignInHint": "Öffnet die Anmeldung von Google in Ihrem Browser. Google zeigt dann einen Code an: Fügen Sie ihn innerhalb einer Minute in das Fenster ein. Upshot sieht Ihre Anmeldedaten nie.",
   "settings.antigravityPlanNote": "Nutzt das Antigravity-Kontingent Ihres Google AI-Plans, das Sie mit Ihrer übrigen Antigravity-Nutzung teilen. Antigravity speichert eine eigene Kopie dessen, was es zusammenfasst, in seinem Verlauf auf diesem Computer.",
-  "settings.fallbackLabel": "Wenn das Kontingent des Abonnements aufgebraucht ist:",
+  "settings.fallbackLabel": "Wenn das Abonnement nicht angemeldet oder sein Kontingent aufgebraucht ist:",
   "settings.fallbackNone": "Warten und später erneut versuchen (nichts wird anderswohin gesendet)",
   "settings.models.title": "Modelle",
   "settings.models.hint": "Die Liste stammt vom Anbieter selbst. „Automatisch“ wählt ein schnelles Modell, wenn die Voreinstellung des Anbieters langsam ist.",

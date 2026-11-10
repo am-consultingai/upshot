@@ -661,27 +661,32 @@ class ClaudeCliClient:
         )
 
     @staticmethod
-    def _reason(out: str) -> str:
-        """The CLI's own words for a failure, from its JSON envelope, or ``""``.
+    def _reason(out: str) -> str | None:
+        """The CLI's own words for a failure, from its JSON envelope.
 
         With ``--output-format json`` a failed run still prints the envelope, and the reason
         is its ``result``, near the end of a long line of usage counters. Cut to a prefix,
-        the raw line showed only the counters and never the reason.
+        the raw line showed only the counters and never the reason. ``None`` when stdout
+        is not an envelope; ``""`` for an envelope that gives no reason, whose counters
+        are never matched against (a cost of 0.0429 is not a 429).
         """
         try:
             envelope = json.loads(out.strip() or "null")
         except ValueError:
-            return ""
-        if isinstance(envelope, dict) and envelope.get("is_error"):
-            result = envelope.get("result")
-            if isinstance(result, str):
-                return result.strip()
-        return ""
+            return None
+        if not isinstance(envelope, dict):
+            return None
+        result = envelope.get("result")
+        if isinstance(result, str) and result.strip():
+            return result.strip()
+        subtype = envelope.get("subtype")
+        return f"no reason given ({subtype})" if isinstance(subtype, str) else ""
 
     @classmethod
     def _raise_for(cls, code: int, out: str, err: str, path: str = DEFAULT_EXECUTABLE) -> None:
         reason = cls._reason(out)
-        text = "\n".join(part for part in (err.strip(), reason or out.strip()) if part)
+        said = out.strip() if reason is None else reason
+        text = "\n".join(part for part in (err.strip(), said) if part)
         lowered = text.lower()
         if any(marker in lowered for marker in NEEDS_UPDATE):
             # Retrying an argument the build does not know can never succeed, so this is

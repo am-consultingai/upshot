@@ -191,6 +191,19 @@ def test_claude_cli_an_error_envelope_with_exit_0_is_classified_too(tmp_path) ->
         client.complete_json(system_blocks=BLOCKS, user="x")
 
 
+def test_claude_cli_never_reads_the_counters_as_a_reason(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    envelope = json.loads(EXPIRED_ENVELOPE)
+    del envelope["result"]
+    envelope["total_cost_usd"] = 0.0429  # "429" in a number is not a rate limit
+    (tmp_path / "claude").write_text("#!/bin/sh\n")
+    config = default_config()
+    config.set("llm.claude_cli_path", str(tmp_path / "claude"))
+    client = ClaudeCliClient(config, runner=fake_runner([(1, json.dumps(envelope), "")]))
+    with pytest.raises(RecoverableError) as caught:
+        client.complete_json(system_blocks=BLOCKS, user="x")
+    assert str(caught.value) == "Claude Code exited 1: no reason given (success)"
+
+
 def test_claude_cli_maps_rate_limit(tmp_path) -> None:  # type: ignore[no-untyped-def]
     (tmp_path / "claude").write_text("#!/bin/sh\n")
     config = default_config()

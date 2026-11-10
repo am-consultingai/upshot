@@ -343,6 +343,8 @@ def attention(request: Request) -> dict[str, Any]:
                 "state": "failed" if job.state == "failed" else "waiting",
                 "message": job.last_error,
                 "retry_at": job.not_before if job.state != "failed" else None,
+                # The provider to sign in to, when that is why it waits (0014).
+                "waiting_for": job.waiting_for if job.state != "failed" else None,
             }
         )
     return {"items": items}
@@ -1479,7 +1481,8 @@ def retry_stage(
         if meeting.sensitive:
             raise HTTPException(422, "a sensitive meeting is summarized on this computer")
         force = True
-    if stage == str(JobStage.SUMMARIZE) and (force or provider is not None):
+    if stage == str(JobStage.SUMMARIZE) and force:
+        # Set for the next run alone, or withdrawn by a plain Summarize.
         meta.update(meeting.path, summary_provider=provider)
     if force:
         # A button press is a decision. Every later stage is redone too, or a fresh
@@ -2510,7 +2513,8 @@ def llm_status(request: Request, fresh: bool = False) -> dict[str, Any]:
     )
     return {
         "active": str(svc.config.get("llm.provider")),
-        # Used only when a subscription reports its allowance spent; "" is none.
+        # Used only when a subscription's allowance is spent or its CLI is signed out;
+        # "" is none.
         "fallback": str(svc.config.get("llm.fallback_provider", "") or ""),
         "providers": providers,
     }
@@ -2527,6 +2531,8 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
     return {
         "id": provider,
         "label": label,
+        # The program, as notices and the meeting page name it ("Codex").
+        "product": CLI_PRODUCTS.get(provider, label),
         "needs": "cli",
         "ready": cli.installed,
         # Three-valued on purpose: `None` means the build is too old to be asked,

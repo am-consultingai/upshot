@@ -714,7 +714,7 @@ export const es: Record<MessageKey, string> = {
   "settings.antigravityMissing": "La CLI de Antigravity no está instalada en este equipo.",
   "settings.antigravitySignInHint": "Abre el inicio de sesión de Google en su navegador. Después, Google muestra un código: péguelo en la ventana antes de un minuto. Upshot nunca ve sus credenciales.",
   "settings.antigravityPlanNote": "Usa la cuota de Antigravity de su plan de Google AI, compartida con el resto de su uso de Antigravity. Antigravity guarda su propia copia de lo que resume, en su historial en este equipo.",
-  "settings.fallbackLabel": "Si se agota la cuota de la suscripción:",
+  "settings.fallbackLabel": "Si se agota la cuota de la suscripción o no hay sesión iniciada:",
   "settings.fallbackNone": "Esperar y volver a intentarlo más tarde (no se envía nada a otro sitio)",
   "settings.models.title": "Modelos",
   "settings.models.hint": "La lista viene del propio proveedor. «Automático» elige un modelo rápido cuando el predeterminado del proveedor es lento.",

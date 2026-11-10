@@ -32,6 +32,10 @@ from app.pipeline.states import (
 
 log = get(__name__)
 
+#: A provider still signed out after this long is mentioned again (a day of waiting
+#: summaries is worth a second word; every fifteen-minute retry is not).
+SIGNED_OUT_TOLD_S = 6 * 3600.0
+
 StageFn = Callable[[StageContext], None]
 
 #: Policies under which a running meeting does *not* stop the worker.
@@ -119,6 +123,8 @@ class Worker:
         self.recorder: RecorderState = recorder or FakeRecorderState(False)
         self.activity = activity
         self.services = services
+        #: When each provider's sign-out was last told (monotonic): one toast per sign-out.
+        self._told_signed_out: dict[str, float] = {}
         #: File transcription (D86): the store of file jobs, and the scheduler that picks
         #: between them and meeting jobs, first in, first out. Without them the worker
         #: runs meeting jobs only, as it always has.
@@ -547,25 +553,33 @@ class Worker:
         # In the clock's own offset: `not_before` is compared as a string, and a
         # timestamp written in another offset sorts wrongly against every other one.
         until = min(until, now + timedelta(days=7)).astimezone(now.tzinfo)
-        first = job.last_error != str(exc)
-        self.queue.defer(job, str(exc), until=until)
+        signed_out = isinstance(exc, SignInRequired) and bool(exc.provider)
+        self.queue.defer(
+            job, str(exc), until=until, waiting_for=exc.provider if signed_out else None
+        )
         log.warning("stage %s deferred until %s: %s", job.stage, until.isoformat(), exc)
-        if isinstance(exc, SignInRequired):
-            self._signed_out(job, exc, first=first)
+        if signed_out:
+            self._signed_out(job, exc.provider)
 
-    def _signed_out(self, job: Job, exc: SignInRequired, *, first: bool) -> None:
+    def _signed_out(self, job: Job, provider: str) -> None:
         """A CLI turned out signed out: the page must see it now, not at the status
-        cache's next refresh, and the user hears it once, not every fifteen minutes."""
+        cache's next refresh, and the user hears it once per sign-out — not once per
+        waiting meeting, and not again every fifteen minutes while it waits."""
         services = self.services
         status = getattr(services, "cli_status", None) if services is not None else None
-        if status is not None and exc.provider:
-            status.forget(exc.provider)
+        if status is not None:
+            status.forget(provider)
         notifier = getattr(services, "notifier", None) if services is not None else None
-        if not first or notifier is None or not hasattr(notifier, "signed_out"):
+        if notifier is None or not hasattr(notifier, "signed_out"):
             return
+        now = self.clock.monotonic()
+        told = self._told_signed_out.get(provider)
+        if told is not None and now - told < SIGNED_OUT_TOLD_S:
+            return
+        self._told_signed_out[provider] = now
         from app.llm.model_choice import CLI_PRODUCTS
 
-        notifier.signed_out(job.meeting_id, CLI_PRODUCTS.get(exc.provider, exc.provider))
+        notifier.signed_out(job.meeting_id, CLI_PRODUCTS.get(provider, provider))
 
     def _on_failure(self, job: Job, exc: BaseException, *, permanent: bool) -> None:
         updated = self.queue.fail(job, exc, permanent=permanent)

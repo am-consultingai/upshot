@@ -364,6 +364,7 @@ def test_a_spent_allowance_requeues_the_job_and_says_why(  # type: ignore[no-unt
             "state": "waiting",
             "message": job.last_error,
             "retry_at": job.not_before,
+            "waiting_for": None,
         }
     ]
     page = api.client().get(f"/api/meetings/{meeting.id}").json()
@@ -484,27 +485,80 @@ def test_when_the_fallback_cannot_run_either_the_job_waits_on_the_usual_one(  # 
 def test_signed_out_tells_the_user_once_and_refreshes_the_status(  # type: ignore[no-untyped-def]
     api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """One toast per sign-out: not one per waiting meeting, nor one per retry."""
     monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
     from app.pipeline.stages import summarize
 
     monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
     forgotten: list[str] = []
     monkeypatch.setattr(api.services.cli_status, "forget", lambda *p: forgotten.extend(p))
+    first = ready_meeting(api)
+    job = run_summarize(api)
+    assert job.state == "pending" and job.waiting_for == "codex-subscription"
+    assert forgotten == ["codex-subscription"], "the page sees the sign-out at once"
+    second = api.services.meetings.create(source="manual", title="Backlog")
+    second.path.mkdir(parents=True, exist_ok=True)
+    (second.path / "transcript.md").write_text(TRANSCRIPT, encoding="utf-8")
+    api.services.queue.enqueue(second.id, JobStage.SUMMARIZE)
+    assert run_summarize(api).waiting_for == "codex-subscription"
+
+    notifier = api.services.notifier
+    titles = [t.title for t in notifier.shown if t.key.startswith("signedout:")]
+    assert titles == ["Codex is signed out — the summary is waiting"], "two meetings, one toast"
+    assert first.id != second.id
+
+    attention = api.client().get("/api/attention").json()["items"]
+    assert {item["waiting_for"] for item in attention} == {"codex-subscription"}
+
+
+def test_a_signed_in_run_clears_what_the_job_was_waiting_for(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.pipeline.stages import summarize
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
     meeting = ready_meeting(api)
     job = run_summarize(api)
-    assert job.state == "pending"
-    assert forgotten == ["codex-subscription"], "the page sees the sign-out at once"
-    notifier = api.services.notifier
-    toasts = [t for t in notifier.shown if t.key == f"signedout:{meeting.id}"]
-    assert [t.title for t in toasts] == ["Codex is signed out — the summary is waiting"]
+    assert job.waiting_for == "codex-subscription"
+    monkeypatch.setenv("FAKE_CODEX_MODE", "ok")
+    api.services.queue.retry(meeting.id, JobStage.SUMMARIZE)
+    done = run_summarize(api)
+    assert done.state == "done" and done.waiting_for is None
 
-    # Fifteen minutes on, still signed out: no second toast, however long it waits.
-    notifier.clock.advance(3600)
-    again = api.services.queue.require(job.id)
-    api.services.worker._on_deferred(
-        again, summarize.SignInRequired(again.last_error, provider="codex-subscription")
+
+def test_a_chosen_provider_that_fails_is_not_used_again_by_itself(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pick is one run's, however it ends: a later automatic run uses Settings."""
+    from app.errors import PermanentError
+    from app.pipeline.stages import summarize
+
+    class Refuses(FakeLlm):
+        name = "anthropic"
+
+        def complete_json(self, **_: Any) -> Any:
+            raise PermanentError("Anthropic rejected the key", category="auth")
+
+    built: list[str | None] = []
+
+    def make(config: Config, *, provider: str | None = None, **_: Any) -> Any:
+        built.append(provider)
+        return Refuses() if provider == "anthropic" else _codex(api)
+
+    monkeypatch.setattr(summarize, "make_client", make)
+    meeting = ready_meeting(api)
+    picked = api.client().post(
+        f"/api/meetings/{meeting.id}/jobs/summarize/retry", params={"provider": "anthropic"}
     )
-    assert len([t for t in notifier.shown if t.key == f"signedout:{meeting.id}"]) == 1
+    assert picked.status_code == 200
+    assert run_summarize(api).state == "failed"
+    assert meta.read(meeting.path).get("summary_provider") is None, "taken, not left behind"
+
+    # Later, something re-summarizes by itself (here: a retry with no provider named).
+    api.services.queue.retry(meeting.id, JobStage.SUMMARIZE)
+    assert run_summarize(api).state == "done"
+    assert built[-1] is None, "the provider in Settings, not the one picked once"
 
 
 def test_summarize_with_another_provider_for_one_meeting(  # type: ignore[no-untyped-def]
@@ -539,6 +593,7 @@ def test_summarize_with_another_provider_for_one_meeting(  # type: ignore[no-unt
     assert written["llm"]["name"] == "antigravity-subscription"
     assert written["llm"]["fallback_for"] == "codex-subscription"
     assert written.get("summary_provider") is None, "one run only; Settings decides the next"
+    assert job.waiting_for is None
 
 
 @pytest.mark.parametrize(

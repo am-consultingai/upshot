@@ -49,6 +49,7 @@ JOB_COLUMNS = (
     "created_at",
     "updated_at",
     "queued_at",
+    "waiting_for",
 )
 
 
@@ -68,6 +69,8 @@ class Job:
     updated_at: str
     #: When the meeting entered the queue: the FIFO key it shares with file jobs (D86).
     queued_at: str | None = None
+    #: The provider this waiting job needs signed in (migration 0014), else ``None``.
+    waiting_for: str | None = None
 
     @property
     def fifo_key(self) -> str:
@@ -199,8 +202,8 @@ class JobQueue:
     def complete(self, job: Job) -> Job:
         now = iso(self.clock.now())
         self.conn.execute(
-            "UPDATE jobs SET state='done', finished_at=?, updated_at=?, last_error=NULL "
-            "WHERE id = ?",
+            "UPDATE jobs SET state='done', finished_at=?, updated_at=?, last_error=NULL, "
+            "waiting_for=NULL WHERE id = ?",
             (now, now, job.id),
         )
         return self.require(job.id)
@@ -220,15 +223,15 @@ class JobQueue:
         message = f"{type(error).__name__}: {error}" if isinstance(error, BaseException) else error
         if permanent or attempts >= self.max_attempts:
             self.conn.execute(
-                "UPDATE jobs SET state='failed', attempts=?, last_error=?, finished_at=?, "
-                "updated_at=?, not_before=NULL WHERE id = ?",
+                "UPDATE jobs SET state='failed', attempts=?, last_error=?, waiting_for=NULL, "
+                "finished_at=?, updated_at=?, not_before=NULL WHERE id = ?",
                 (attempts, message[:2000], iso(now), iso(now), job.id),
             )
         else:
             delay = backoff_seconds(attempts, self.rng)
             self.conn.execute(
-                "UPDATE jobs SET state='pending', attempts=?, last_error=?, not_before=?, "
-                "started_at=NULL, updated_at=? WHERE id = ?",
+                "UPDATE jobs SET state='pending', attempts=?, last_error=?, waiting_for=NULL, "
+                "not_before=?, started_at=NULL, updated_at=? WHERE id = ?",
                 (
                     attempts,
                     message[:2000],
@@ -239,20 +242,23 @@ class JobQueue:
             )
         return self.require(job.id)
 
-    def defer(self, job: Job, message: str, *, until: datetime) -> Job:
+    def defer(
+        self, job: Job, message: str, *, until: datetime, waiting_for: str | None = None
+    ) -> Job:
         """Back to pending until ``until``, **without** counting an attempt.
 
         For a provider that has said "not now" in a way backoff cannot fix — a plan's
         allowance spent until a stated hour, a CLI waiting for someone to sign in. Counting
         those against ``max_attempts`` would fail the meeting after five retries a minute
         apart, all inside the same window the provider had already announced. The message
-        is kept in ``last_error``, which is where a waiting job says why it is waiting.
+        is kept in ``last_error``, which is where a waiting job says why it is waiting;
+        ``waiting_for`` names the provider to sign in to, when that is the reason.
         """
         now = iso(self.clock.now())
         self.conn.execute(
             "UPDATE jobs SET state='pending', last_error=?, not_before=?, started_at=NULL, "
-            "updated_at=? WHERE id = ?",
-            (message[:2000], iso(until), now, job.id),
+            "waiting_for=?, updated_at=? WHERE id = ?",
+            (message[:2000], iso(until), waiting_for, now, job.id),
         )
         return self.require(job.id)
 
@@ -414,7 +420,7 @@ class JobQueue:
         now = iso(self.clock.now())
         self.conn.execute(
             "UPDATE jobs SET state='pending', attempts=0, not_before=NULL, last_error=NULL, "
-            "started_at=NULL, finished_at=NULL, updated_at=?, queued_at=? "
+            "waiting_for=NULL, started_at=NULL, finished_at=NULL, updated_at=?, queued_at=? "
             "WHERE meeting_id=? AND stage=?",
             (now, now, meeting_id, str(stage)),
         )

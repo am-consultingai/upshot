@@ -392,6 +392,8 @@ export interface LlmProvider {
   update_hint?: string;
   /** False for a CLI that cannot be signed out from outside it (Antigravity, D79). */
   can_sign_out?: boolean;
+  /** A CLI's program, as the page names it ("Codex"). */
+  product?: string;
   /** Sign out opens a window where the CLI's own /logout is typed (Antigravity, D79). */
   signout_in_window?: boolean;
   /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */
@@ -1100,6 +1102,8 @@ export const api = {
         state: "failed" | "waiting";
         message: string;
         retry_at: string | null;
+        /** The provider to sign in to, when that is why it waits. */
+        waiting_for?: string | null;
       }[];
     }>("/api/attention"),
   audioUrl: (id: string, track: string) =>

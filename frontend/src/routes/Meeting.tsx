@@ -938,9 +938,10 @@ export default function MeetingPage() {
                * Signed out: the summary waits, and the page offers what can be done about
                * it — sign in, or another service that is ready — instead of a stack trace.
                */}
-              {(waiting?.stage === "summarize" || failed.some((job) => job.stage === "summarize")) && (
+              {waiting?.stage === "summarize" && waiting.waiting_for && !awaitingFirstPoll && current?.state !== "running" && (
                 <SignedOutCard
                   meetingId={id}
+                  provider={waiting.waiting_for}
                   sensitive={Boolean(meeting.data?.sensitive)}
                   onPicked={() => {
                     setPressedAt(Date.now());

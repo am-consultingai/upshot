@@ -758,7 +758,7 @@ export const he: Record<MessageKey, string> = {
   "settings.antigravityMissing": "Antigravity CLI לא מותקן במחשב הזה.",
   "settings.antigravitySignInHint": "פותח את הכניסה של Google עצמה בדפדפן. Google מציגה אז קוד: מדביקים אותו בחלון תוך דקה. Upshot לעולם לא רואה את פרטי הכניסה שלכם.",
   "settings.antigravityPlanNote": "משתמש במכסת Antigravity של מנוי Google AI שלכם, המשותפת לשאר השימוש שלכם ב-Antigravity. Antigravity שומר עותק משלו של מה שהוא מסכם, בהיסטוריה שלו במחשב הזה.",
-  "settings.fallbackLabel": "אם מכסת המנוי נגמרת:",
+  "settings.fallbackLabel": "אם מכסת המנוי נגמרת או שהוא לא מחובר:",
   "settings.fallbackNone": "להמתין ולנסות שוב אחר כך (שום דבר לא נשלח למקום אחר)",
   "settings.models.title": "מודלים",
   "settings.models.hint": "הרשימה מגיעה מהספק עצמו. 'אוטומטי' בוחר מודל מהיר כשברירת המחדל של הספק איטית.",

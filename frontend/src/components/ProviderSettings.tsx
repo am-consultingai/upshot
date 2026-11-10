@@ -533,7 +533,8 @@ export default function ProviderSettings() {
       </div>
 
       {/*
-       * What happens when a plan's allowance runs out mid-week. Waiting is the default
+       * What happens when a plan's allowance runs out mid-week, or its CLI is signed out
+       * (PR #86). Waiting is the default
        * and sends nothing anywhere; another provider is a deliberate choice, made here,
        * never a silent substitution — a transcript leaving the machine for a provider
        * nobody picked is exactly the surprise this app exists to avoid.
