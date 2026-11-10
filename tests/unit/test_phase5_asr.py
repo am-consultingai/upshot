@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from app.asr import local
 from app.asr.backend import max_consecutive_repeats, sort_segments
 from app.asr.factory import make_backend
 from app.asr.fake import FakeAsr
@@ -420,24 +421,86 @@ def test_unload_drops_the_model() -> None:
     assert backend.model is None
 
 
-@pytest.mark.windows
-def test_windows_dll_dirs_registered(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    if sys.platform != "win32":
-        pytest.skip("PATH/add_dll_directory behaviour is Windows-specific")
+@pytest.fixture
+def cuda_loads(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """The libraries register_cuda_dirs loads, by full path, with nothing really loaded
+    and add_dll_directory only recorded; the process's record starts empty."""
+    loaded: list[Path] = []
+    local.reset_cuda_registration()
+    monkeypatch.setattr(local, "_load_library", lambda path: loaded.append(path) or object())
+    monkeypatch.setattr(os, "add_dll_directory", lambda d: None, raising=False)
+    yield loaded
+    local.reset_cuda_registration()
+
+
+def _cublas_folder(home: Path) -> Path:
+    folder = home / "cuda" / "nvidia" / "cu12" / ("bin" if sys.platform == "win32" else "lib")
+    folder.mkdir(parents=True)
+    for name in local.CUBLAS_LIBRARIES:
+        (folder / name).touch()
+    return folder
+
+
+def test_cuda_setup_never_grows_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cuda_loads: list[Path]
+) -> None:
+    """Every model load used to put the CUDA folder on PATH again: 570 loads made it
+    32,665 characters long, and Windows could no longer start ffmpeg (0xC0000017)."""
     home = tmp_path / "home"
-    cuda_dir = home / "cuda" / "nvidia" / "cublas" / "bin"
-    cuda_dir.mkdir(parents=True)
-    (cuda_dir / "cublas64_12.dll").touch()
+    folder = _cublas_folder(home)
     monkeypatch.setenv("PATH", "C:\\Windows\\System32")
-    registered: list[str] = []
-    monkeypatch.setattr(os, "add_dll_directory", lambda d: registered.append(d))
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/lib")
     config = default_config()
     config.set("asr.device", "cuda")
-    device, _compute, dirs = probe_device(config, app_home=home, search_path=[], system_dirs=())
-    assert device == "cuda"
-    assert str(cuda_dir) in dirs
-    assert str(cuda_dir) in registered, "add_dll_directory alone is not enough"
-    assert str(cuda_dir) in os.environ["PATH"], "CTranslate2 loads cuBLAS from PATH, lazily"
+    config.set("asr.compute_type", "int8")
+    for _ in range(1000):
+        device, _compute, dirs = probe_device(config, app_home=home, search_path=[], system_dirs=())
+        assert device == "cuda" and dirs == [str(folder)]
+    assert os.environ["PATH"] == "C:\\Windows\\System32"
+    assert os.environ["LD_LIBRARY_PATH"] == "/usr/lib"
+    assert cuda_loads == [folder / name for name in local.CUBLAS_LIBRARIES], (
+        "cuBLASLt then cuBLAS, each once, by full path"
+    )
+
+
+@pytest.mark.windows
+def test_each_dll_directory_is_registered_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cuda_loads: list[Path]
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("add_dll_directory is Windows-only")
+    folder = _cublas_folder(tmp_path / "home")
+    registered: list[str] = []
+    monkeypatch.setattr(os, "add_dll_directory", lambda d: registered.append(d))
+    for _ in range(5):
+        assert local.register_cuda_dirs([folder]) == [str(folder)]
+    assert registered == [str(folder)]
+
+
+def test_cublas_comes_from_the_first_folder_that_has_it(
+    tmp_path: Path, cuda_loads: list[Path]
+) -> None:
+    first = _cublas_folder(tmp_path / "first")
+    second = _cublas_folder(tmp_path / "second")
+    local.register_cuda_dirs([first, second])
+    assert {path.parent for path in cuda_loads} == {first}
+
+
+def test_a_cublas_that_will_not_load_is_tried_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cuda_loads: list[Path]
+) -> None:
+    """A half-downloaded library must not stay unloaded for the life of the process."""
+    folder = _cublas_folder(tmp_path / "home")
+    tries: list[Path] = []
+
+    def broken(path: Path) -> object:
+        tries.append(path)
+        raise OSError("not a valid Win32 application")
+
+    monkeypatch.setattr(local, "_load_library", broken)
+    local.register_cuda_dirs([folder])
+    local.register_cuda_dirs([folder])
+    assert len(tries) == 2 * len(local.CUBLAS_LIBRARIES)
 
 
 def test_model_resolution_prefers_configured_path(tmp_path: Path, app_home: Path) -> None:

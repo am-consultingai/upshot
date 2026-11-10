@@ -38,6 +38,7 @@ from app.audio.ingest import (
     FfmpegFailed,
     UnsupportedAudio,
     probe,
+    recheck_ffmpeg,
 )
 from app.log import get
 from app.services import Services
@@ -710,6 +711,8 @@ def info(request: Request) -> dict[str, Any]:
 
         missing = list(missing_roles(svc.config))
     worker = svc.worker
+    # After a hold, a quick ffmpeg -version: else the last failure stays until a file comes.
+    recheck_ffmpeg(svc.config)
     return {
         "app": "upshot",
         "api": 1,

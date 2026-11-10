@@ -289,3 +289,71 @@ def test_a_stale_failure_during_a_trial_holds_again(health: Any) -> None:
     record.failed("exit code 0xc0000017")  # the old run's answer, late
     record.worked(trial)
     assert record.held() and stale != trial
+
+
+# -- /info asks again after a hold ------------------------------------------
+
+VERSION = Ran(0, b"")
+
+
+def test_after_the_hold_info_learns_that_ffmpeg_starts_again(
+    monkeypatch: pytest.MonkeyPatch, health: Any
+) -> None:
+    """A program waiting for ``ok`` before it sends a file must not wait for ever: the
+    leadgen speech check sat two hours on an ``ok: false`` from the last failure."""
+    record, clock, _holds = health
+    started = answers(monkeypatch, VERSION)
+    for _ in range(FFMPEG_HOLD_AFTER):
+        record.failed("exit code 0xc0000017")
+    ingest.recheck_ffmpeg()
+    assert started == [], "nothing is started while held"
+    clock.now += FFMPEG_HOLD_S + 1
+    ingest.recheck_ffmpeg()
+    assert started == [["ffmpeg", "-hide_banner", "-version"]]
+    assert record.state()["ok"] is True and record.failures == 0
+
+
+def test_a_recheck_that_fails_holds_again(monkeypatch: pytest.MonkeyPatch, health: Any) -> None:
+    record, clock, _holds = health
+    started = answers(monkeypatch, NO_MEMORY)
+    for _ in range(FFMPEG_HOLD_AFTER):
+        record.failed("exit code 0xc0000017")
+    clock.now += FFMPEG_HOLD_S + 1
+    ingest.recheck_ffmpeg()
+    ingest.recheck_ffmpeg()
+    assert len(started) == 1, "one try a hold, however often /info is asked"
+    assert record.held() and record.failures == FFMPEG_HOLD_AFTER + 1
+
+
+def test_no_recheck_when_ffmpeg_has_not_failed(
+    monkeypatch: pytest.MonkeyPatch, health: Any
+) -> None:
+    started = answers(monkeypatch)
+    ingest.recheck_ffmpeg()
+    assert started == []
+
+
+def test_a_recheck_that_cannot_start_records_the_failure(
+    monkeypatch: pytest.MonkeyPatch, health: Any
+) -> None:
+    record, clock, _holds = health
+    for _ in range(FFMPEG_HOLD_AFTER):
+        record.failed("exit code 0xc0000017")
+    clock.now += FFMPEG_HOLD_S + 1
+
+    def run(argv: list[str], **kwargs: Any) -> Ran:
+        raise OSError(12, "Cannot allocate memory")
+
+    monkeypatch.setattr(ingest.subprocess, "run", run)
+    ingest.recheck_ffmpeg()
+    assert record.held() and record.failures == FFMPEG_HOLD_AFTER + 1
+
+
+def test_the_hold_log_says_how_much_memory_was_left(
+    health: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    record, _clock, _holds = health
+    with caplog.at_level("WARNING", logger="app.audio.ingest"):
+        for _ in range(FFMPEG_HOLD_AFTER):
+            record.failed("exit code 0xc0000017")
+    assert "Windows memory left: 0.5 of 64.0 GB" in caplog.text

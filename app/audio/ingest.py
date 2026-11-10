@@ -52,7 +52,9 @@ class FfmpegFailed(RuntimeError):
 FFMPEG_RETRY_AFTER_S = 60
 
 
-#: STATUS_NO_MEMORY: Windows had no memory for the process, whatever it had printed.
+#: STATUS_NO_MEMORY: Windows could not set the process up, whatever it had printed. Not
+#: always the machine's memory: a ``PATH`` past 32,767 characters, inherited from Upshot,
+#: ends ffmpeg the same way. The log line of a hold says how much memory was left.
 NO_MEMORY = 0xC0000017
 
 #: Failures to run ffmpeg in a row before Upshot stops starting it for a while
@@ -180,15 +182,18 @@ class FfmpegHealth:
             if self._noticed_at is None or now - self._noticed_at >= FFMPEG_NOTICE_S:
                 self._noticed_at = now
                 notify = self.on_hold
+        memory = commit_memory()
         log.warning(
-            "ffmpeg failed to run %d times in a row (%s); no ffmpeg is started for %.0f s",
+            "ffmpeg failed to run %d times in a row (%s); no ffmpeg is started for %.0f s%s",
             failures,
             error,
             FFMPEG_HOLD_S,
-        )
+            "" if memory is None else
+            f"; Windows memory left: {memory[0] / 2**30:.1f} of {memory[1] / 2**30:.1f} GB",
+        )  # fmt: skip
         if notify is not None:
             try:
-                notify(FfmpegHold(failures, error, commit_memory()))
+                notify(FfmpegHold(failures, error, memory))
             except Exception:  # a notice must never turn into the caller's error
                 log.exception("ffmpeg hold: the notice failed")
 
@@ -204,6 +209,12 @@ class FfmpegHealth:
             self._trial_until = None
         if held:
             log.info("ffmpeg runs again, after %d failures in a row", failures)
+
+    def stale(self) -> bool:
+        """Failures on record and no hold or trial in the way: only a new run can say
+        whether ffmpeg starts now."""
+        with self._lock:
+            return self.failures > 0 and self._wait_left_locked(self._clock()) <= 0
 
     def state(self) -> dict[str, object]:
         """For ``/info``: whether ffmpeg is held, and why."""
@@ -227,6 +238,47 @@ class FfmpegHealth:
 
 #: The process's one record: every caller runs the same ffmpeg on the same Windows.
 HEALTH = FfmpegHealth()
+
+
+#: ``ffmpeg -version`` answers at once; past this it hangs, which says nothing either way.
+FFMPEG_RECHECK_TIMEOUT_S = 30
+
+
+def recheck_ffmpeg(config: Config | None = None) -> None:
+    """After failures, try ``ffmpeg -version`` to learn whether ffmpeg starts now
+    (z8tj1hwjvv). Called by ``/info``: without it, the last failure stayed on record until
+    a file came, and a program that waits for ``ok`` before sending one waited for ever.
+    It runs only once the hold is over, as the trial a file would have been, so a
+    Windows that still cannot start ffmpeg holds it again and this tries at most once a
+    hold."""
+    if not HEALTH.stale():
+        return
+    binary = ffmpeg_path(config)
+    if binary is None:
+        return
+    source = Path("ffmpeg -version")
+    try:
+        token = HEALTH.check(source)
+    except FfmpegFailed:
+        return  # held again meanwhile, or another caller's trial runs
+    try:
+        result = subprocess.run(
+            [binary, "-hide_banner", "-version"],
+            capture_output=True,
+            check=False,
+            timeout=FFMPEG_RECHECK_TIMEOUT_S,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("ffmpeg -version took more than %s s", FFMPEG_RECHECK_TIMEOUT_S)
+        return
+    except OSError as exc:
+        _start_failed(source, exc)  # records the failure; the exception is nobody's
+        return
+    if result.returncode == 0:
+        HEALTH.worked(token)
+        return
+    _not_run(source, result.returncode, result.stderr)  # records it, if it did not run
 
 
 def _did_not_run(returncode: int, stderr: bytes) -> bool:

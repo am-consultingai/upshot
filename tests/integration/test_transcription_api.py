@@ -529,6 +529,17 @@ def test_info_says_ffmpeg_is_held(h: ApiHarness) -> None:
     assert ffmpeg["held"] is True and ffmpeg["failures_in_a_row"] == 3
 
 
+def test_info_tries_ffmpeg_again_rather_than_repeat_an_old_failure(h: ApiHarness) -> None:
+    """A program that waits for ``ok`` before it sends a file would otherwise wait for
+    ever: nothing else runs ffmpeg while no file comes."""
+    from app.audio.ingest import FFMPEG_HOLD_AFTER, HEALTH
+
+    for _ in range(FFMPEG_HOLD_AFTER - 1):  # failures on record, and no hold to wait out
+        HEALTH.failed("exit code 0xc0000017")
+    ffmpeg = Program(h).get("/api/v1/info").json()["ffmpeg"]
+    assert ffmpeg == {"ok": True, "held": False, "failures_in_a_row": 0, "error": None}
+
+
 # ----------------------------------------------------------------------- waiting
 
 
