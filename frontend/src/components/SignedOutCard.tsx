@@ -12,7 +12,9 @@ import { toast } from "./Toaster";
  * that it is configured.
  */
 function canRunNow(provider: LlmProvider): boolean {
-  if (provider.needs === "cli") return provider.ready && provider.signed_in === true;
+  // Not a CLI another summary is already waiting on: its status can read signed in over
+  // a session it refuses, and the run would only wait again.
+  if (provider.needs === "cli") return provider.ready && provider.signed_in === true && !provider.waiting;
   return provider.needs === "key" && provider.ready;
 }
 
@@ -36,12 +38,13 @@ export default function SignedOutCard({
   const { t } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  // The server's held answer, not a fresh one: the pipeline drops it the moment a CLI
-  // turns out signed out, so asking every CLI again here would only cost time.
+  // The server's held answer, not a fresh one, and no polling: asking runs the CLIs, and
+  // one of them flashes a console window (see lib/refetchAll.ts). Asked again when the
+  // window comes back to the front, as after signing in from Settings or a terminal.
   const status = useQuery({
     queryKey: ["llm-status", "held"],
     queryFn: () => api.llmStatus(),
-    refetchInterval: 15000,
+    refetchOnWindowFocus: true,
   });
   const pick = useMutation({
     mutationFn: (other: string) => api.retry(meetingId, "summarize", true, undefined, other),
