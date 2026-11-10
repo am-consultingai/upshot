@@ -131,14 +131,6 @@ footer a:hover{color:var(--ink)}
 /* ---- responsive ---- */
 
 /* ---- brand band: the Afterprompt logo above the header ---- */
-.brand-band{position:relative;overflow:hidden;padding:64px var(--pad) 52px;text-align:center;
-  background:radial-gradient(60% 120% at 50% 0%,rgba(56,189,248,.14),transparent 70%),var(--deep)}
-.brand-band::before{content:"";position:absolute;inset:0;opacity:.35;pointer-events:none;
-  background-image:radial-gradient(rgba(148,163,184,.25) 1px,transparent 1px);background-size:22px 22px;
-  mask-image:linear-gradient(180deg,#000,transparent 85%);-webkit-mask-image:linear-gradient(180deg,#000,transparent 85%)}
-.up-logo{position:relative;display:block;width:min(560px,86vw);height:auto;margin:0 auto}
-.brand-tag{position:relative;margin-top:18px;font-family:var(--mono);font-size:13px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--s3)}
 .hero-meta{margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--s4);letter-spacing:.02em}
 
 /* ---- tools carousel ---- */
@@ -301,7 +293,6 @@ body{font-size:var(--t-body)}
 .btn{font-size:16px}
 .btn-sm{font-size:var(--t-label)}
 .nav-mark{font-size:20px}
-.brand-tag{font-size:15px}
 .lede{font-size:clamp(18px,2.2vw,21px)}
 .hero-meta{font-size:var(--t-label)}
 .acc summary{font-size:19px}
@@ -466,7 +457,7 @@ footer{font-size:var(--t-label)}
 [dir=rtl] .marquee,[dir=rtl] .term pre,[dir=rtl] .ltr{direction:ltr}
 [dir=rtl] .term pre{text-align:left}
 /* Hebrew has no capitals: tracking meant for uppercase Latin just spaces the letters apart */
-[lang=he] .eyebrow,[lang=he] .nav-links a,[lang=he] .brand-tag,[lang=he] .fmt-label,[lang=he] .ready-top,
+[lang=he] .eyebrow,[lang=he] .nav-links a,[lang=he] .fmt-label,[lang=he] .ready-top,
 [lang=he] .legend,[lang=he] .powered,[lang=he] .tag-new,[lang=he] .demo,[lang=he] .tool b{letter-spacing:0}
 [lang=he]{--display:"Rubik","Space Grotesk",system-ui,sans-serif;--sans:"Heebo","Inter",system-ui,sans-serif;
   --mono:"JetBrains Mono","Heebo",ui-monospace,monospace}
@@ -474,7 +465,7 @@ footer{font-size:var(--t-label)}
 /* brand.css sets labels, buttons and nav in JetBrains Mono, which has no Hebrew; the
    browser's fallback is a typewriter face. On the Hebrew page they take Heebo, and
    only commands and code stay monospaced. */
-[lang=he] .eyebrow, [lang=he] .nav-links a, [lang=he] .brand-tag, [lang=he] .btn, [lang=he] .hero-meta,
+[lang=he] .eyebrow, [lang=he] .nav-links a, [lang=he] .btn, [lang=he] .hero-meta,
 [lang=he] .ready-top, [lang=he] .people small, [lang=he] .people i, [lang=he] .fmt-label, [lang=he] .legend,
 [lang=he] .tool b, [lang=he] .demo, [lang=he] .tag-new, [lang=he] figcaption,
 [lang=he] .req, [lang=he] .copy, [lang=he] .cw-bar span, [lang=he] .cw-t em, [lang=he] .mail-head span,
@@ -525,7 +516,6 @@ footer{font-size:var(--t-label)}
   .steps{gap:34px}
   .steps::before{display:none}
   .tiles,.callouts,.callouts.three,.leak-grid,.signals,.bot-grid{grid-template-columns:1fr}
-  .brand-band{padding:40px var(--pad) 34px}
   .tool{height:52px;font-size:15px;padding:0 16px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -544,3 +534,26 @@ footer{font-size:var(--t-label)}
 .yt-btn svg{width:32px;height:32px;fill:var(--cyan);margin-left:4px}
 .yt-play:hover .yt-btn,.yt-play:focus-visible .yt-btn{transform:scale(1.08)}
 .yt-play:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+
+/* Compact cards: the pillars and the two data stops. */
+.pillars{gap:14px;padding-top:44px}
+.pillars article{padding:20px 20px 22px;border-radius:14px}
+.pillars .p-ic{width:38px;height:38px;border-radius:11px}
+.pillars .p-ic .ic{width:19px;height:19px}
+.pillars h2{font-size:18px;margin-top:14px;line-height:1.3}
+.pillars p{font-size:15px;margin-top:8px;line-height:1.5}
+.stops.two,.dial .track-line{max-width:760px}
+.stop{padding:20px 18px 18px}
+.stop-name{font-size:18px}
+.journey{margin-top:16px}
+.node{width:72px;gap:6px}
+.node .ic{width:20px;height:20px;padding:9px;border-radius:12px}
+.stop-facts{margin-top:16px;padding-top:12px;gap:4px}
+.stop-facts li{font-size:15px}
+@media (max-width:980px){
+  .pillars{grid-template-columns:repeat(2,1fr)}
+  .stops.two .stop:last-child{grid-column:auto}
+}
+@media (max-width:640px){
+  .pillars,.stops.two{grid-template-columns:1fr}
+}
