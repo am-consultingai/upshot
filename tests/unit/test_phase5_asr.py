@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import wave
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -422,7 +423,7 @@ def test_unload_drops_the_model() -> None:
 
 
 @pytest.fixture
-def cuda_loads(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+def cuda_loads(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Path]]:
     """The libraries register_cuda_dirs loads, by full path, with nothing really loaded
     and add_dll_directory only recorded; the process's record starts empty."""
     loaded: list[Path] = []
@@ -486,10 +487,14 @@ def test_cublas_comes_from_the_first_folder_that_has_it(
     assert {path.parent for path in cuda_loads} == {first}
 
 
-def test_a_cublas_that_will_not_load_is_tried_again(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cuda_loads: list[Path]
+def test_a_cublas_that_will_not_load_is_tried_again_and_said_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cuda_loads: list[Path],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """A half-downloaded library must not stay unloaded for the life of the process."""
+    """A half-downloaded library must not stay unloaded for the life of the process,
+    nor fill the log at every model load."""
     folder = _cublas_folder(tmp_path / "home")
     tries: list[Path] = []
 
@@ -498,9 +503,37 @@ def test_a_cublas_that_will_not_load_is_tried_again(
         raise OSError("not a valid Win32 application")
 
     monkeypatch.setattr(local, "_load_library", broken)
-    local.register_cuda_dirs([folder])
-    local.register_cuda_dirs([folder])
-    assert len(tries) == 2 * len(local.CUBLAS_LIBRARIES)
+    with caplog.at_level("WARNING", logger="app.asr.local"):
+        for _ in range(3):
+            local.register_cuda_dirs([folder])
+    assert len(tries) == 3
+    assert caplog.text.count("could not load cuBLAS") == 1
+
+
+def test_cublas_never_comes_from_two_folders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cuda_loads: list[Path]
+) -> None:
+    """cuBLAS binds to the cuBLASLt already loaded: one from each release do not mix."""
+    first = _cublas_folder(tmp_path / "first")
+    second = _cublas_folder(tmp_path / "second")
+    lt = local.CUBLAS_LIBRARIES[0]
+
+    def load(path: Path) -> object:
+        cuda_loads.append(path)
+        if path.parent == first and path.name != lt:
+            raise OSError("bad image")
+        return object()
+
+    monkeypatch.setattr(local, "_load_library", load)
+    local.register_cuda_dirs([first, second])
+    assert {path.parent for path in cuda_loads} == {first}
+
+
+def test_the_cublas_files_are_the_ones_the_download_fetches() -> None:
+    from app.asr import cuda_libs
+
+    assert set(local.WINDOWS_CUBLAS) == set(cuda_libs.REQUIRED)
+    assert cuda_libs.CUDA_GENERATION == "cu12" and all("_12" in n for n in local.WINDOWS_CUBLAS)
 
 
 def test_model_resolution_prefers_configured_path(tmp_path: Path, app_home: Path) -> None:

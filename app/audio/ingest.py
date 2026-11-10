@@ -135,6 +135,9 @@ class FfmpegHealth:
         #: Bumped at every failure: a run started before one does not end the streak.
         self._serial = 0
         self._noticed_at: float | None = None
+        #: The ``/info`` recheck: one at a time, and not often (begin_recheck).
+        self._rechecking = False
+        self._rechecked_at: float | None = None
         self.on_hold: Callable[[FfmpegHold], None] | None = None
 
     def held(self) -> bool:
@@ -210,11 +213,27 @@ class FfmpegHealth:
         if held:
             log.info("ffmpeg runs again, after %d failures in a row", failures)
 
-    def stale(self) -> bool:
-        """Failures on record and no hold or trial in the way: only a new run can say
-        whether ffmpeg starts now."""
+    def begin_recheck(self) -> int | None:
+        """Claim the one ``ffmpeg -version`` that tells whether ffmpeg starts again: only
+        with failures on record, no hold or trial in the way, none running and none in
+        the last :data:`FFMPEG_RECHECK_EVERY_S`. During a hold it is the trial. The token
+        for ``worked``, or None."""
         with self._lock:
-            return self.failures > 0 and self._wait_left_locked(self._clock()) <= 0
+            now = self._clock()
+            if self.failures == 0 or self._rechecking or self._wait_left_locked(now) > 0:
+                return None
+            last = self._rechecked_at
+            if last is not None and now - last < FFMPEG_RECHECK_EVERY_S:
+                return None
+            self._rechecking = True
+            self._rechecked_at = now
+            if self._held_until is not None:
+                self._trial_until = now + FFMPEG_TRIAL_S
+            return self._serial
+
+    def end_recheck(self) -> None:
+        with self._lock:
+            self._rechecking = False
 
     def state(self) -> dict[str, object]:
         """For ``/info``: whether ffmpeg is held, and why."""
@@ -234,51 +253,77 @@ class FfmpegHealth:
             self._held_until = None
             self._trial_until = None
             self._noticed_at = None
+            self._rechecking = False
+            self._rechecked_at = None
 
 
 #: The process's one record: every caller runs the same ffmpeg on the same Windows.
 HEALTH = FfmpegHealth()
 
 
-#: ``ffmpeg -version`` answers at once; past this it hangs, which says nothing either way.
+#: ``ffmpeg -version`` answers at once; one still running after this has started.
 FFMPEG_RECHECK_TIMEOUT_S = 30
+#: The least time between two rechecks, however often ``/info`` is asked.
+FFMPEG_RECHECK_EVERY_S = float(FFMPEG_RETRY_AFTER_S)
 
 
-def recheck_ffmpeg(config: Config | None = None) -> None:
-    """After failures, try ``ffmpeg -version`` to learn whether ffmpeg starts now
-    (z8tj1hwjvv). Called by ``/info``: without it, the last failure stayed on record until
-    a file came, and a program that waits for ``ok`` before sending one waited for ever.
-    It runs only once the hold is over, as the trial a file would have been, so a
-    Windows that still cannot start ffmpeg holds it again and this tries at most once a
-    hold."""
-    if not HEALTH.stale():
-        return
+def recheck_ffmpeg(config: Config | None = None) -> threading.Thread | None:
+    """After failures, start ``ffmpeg -version`` in the background to learn whether
+    ffmpeg starts now (z8tj1hwjvv); a later ``/info`` reports what it found. Without it
+    the last failure stayed on record until a file came, and a program that waits for
+    ``ok`` before sending one waited for ever. Never on the request itself: ``/info`` is
+    how a client finds Upshot, with a 2 s timeout, and starting a program is slowest just
+    when it has been failing. One at a time, at most once a minute
+    (:meth:`FfmpegHealth.begin_recheck`). The thread, for tests; None when none starts."""
     binary = ffmpeg_path(config)
     if binary is None:
-        return
-    source = Path("ffmpeg -version")
+        return None
+    token = HEALTH.begin_recheck()
+    if token is None:
+        return None
+    thread = threading.Thread(
+        target=_recheck, args=(binary, token), name="ffmpeg-recheck", daemon=True
+    )
     try:
-        token = HEALTH.check(source)
-    except FfmpegFailed:
-        return  # held again meanwhile, or another caller's trial runs
+        thread.start()
+    except RuntimeError:  # no thread to be had: the next /info tries again
+        HEALTH.end_recheck()
+        return None
+    return thread
+
+
+def _recheck(binary: str, token: int) -> None:
+    """Run ``ffmpeg -version`` once and record what it says, whatever happens: every
+    outcome ends the trial, so no upload waits on a check."""
     try:
-        result = subprocess.run(
-            [binary, "-hide_banner", "-version"],
-            capture_output=True,
-            check=False,
-            timeout=FFMPEG_RECHECK_TIMEOUT_S,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-    except subprocess.TimeoutExpired:
-        log.warning("ffmpeg -version took more than %s s", FFMPEG_RECHECK_TIMEOUT_S)
-        return
-    except OSError as exc:
-        _start_failed(source, exc)  # records the failure; the exception is nobody's
-        return
-    if result.returncode == 0:
-        HEALTH.worked(token)
-        return
-    _not_run(source, result.returncode, result.stderr)  # records it, if it did not run
+        try:
+            result = subprocess.run(
+                [binary, "-hide_banner", "-version"],
+                capture_output=True,
+                check=False,
+                timeout=FFMPEG_RECHECK_TIMEOUT_S,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except subprocess.TimeoutExpired:
+            HEALTH.worked(token)  # it ran until stopped: it started, which is the question
+            return
+        except OSError as exc:
+            why = _os_error(exc)
+            log.warning("ffmpeg -version could not start: %s", why)
+            HEALTH.failed(why)
+            return
+        if result.returncode == 0 or not (
+            result.returncode in _BROKEN_EXITS or _did_not_run(result.returncode, result.stderr)
+        ):
+            HEALTH.worked(token)  # it ran its own code, whatever it said
+            return
+        why = _exit_text(result.returncode)
+        log.warning("ffmpeg -version did not run: %s", why)
+        HEALTH.failed(why)
+    except Exception:  # a thread's error would be lost; the check must still end
+        log.exception("ffmpeg recheck failed")
+    finally:
+        HEALTH.end_recheck()
 
 
 def _did_not_run(returncode: int, stderr: bytes) -> bool:

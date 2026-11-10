@@ -152,22 +152,26 @@ def cuda_library_dirs(
 
 
 #: The cuBLAS files the engine loads by name, in the order to load them: cuBLAS needs
-#: cuBLASLt. CTranslate2 4 is built against CUDA 12; the driver's own library
+#: cuBLASLt. The same files as ``cuda_libs.REQUIRED`` and its ``CUDA_GENERATION``: a new
+#: CUDA generation changes both (a test keeps them in step). The driver's own library
 #: (nvcuda.dll) is in System32 and needs nothing.
+WINDOWS_CUBLAS = ("cublasLt64_12.dll", "cublas64_12.dll")
 CUBLAS_LIBRARIES = (
-    ("cublasLt64_12.dll", "cublas64_12.dll")
-    if sys.platform == "win32"
-    else ("libcublasLt.so.12", "libcublas.so.12")
+    WINDOWS_CUBLAS if sys.platform == "win32" else ("libcublasLt.so.12", "libcublas.so.12")
 )
 #: LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS: what a library
 #: loaded by full path needs is looked for beside it, then where Windows always looks.
 _LOAD_FLAGS = 0x00000100 | 0x00001000
 
 #: What this process has done already, so every model load after the first does nothing:
-#: the directories registered for DLL lookups, and the cuBLAS files loaded.
+#: the directories registered for DLL lookups, and the folder cuBLAS was loaded from.
 _registered_dirs: set[str] = set()
-_loaded: dict[str, Any] = {}
+_cublas_from: str | None = None
 _cuda_lock = threading.Lock()
+#: Keeps the loaded libraries referenced for the life of the process.
+_loaded: list[Any] = []
+#: Warnings already given: a broken cuBLAS is tried at every model load, said once.
+_warned: set[str] = set()
 
 
 def _load_library(path: Path) -> Any:
@@ -179,15 +183,38 @@ def _load_library(path: Path) -> Any:
     return ctypes.CDLL(str(path), mode=ctypes.RTLD_GLOBAL)
 
 
+def _load_cublas(folders: Sequence[str]) -> None:
+    """Load cuBLASLt then cuBLAS from the first folder that has both, never one from
+    each: cuBLAS binds to the cuBLASLt already loaded, and two releases do not mix."""
+    global _cublas_from
+    if _cublas_from is not None:
+        return
+    for text in folders:
+        if not all((Path(text) / name).is_file() for name in CUBLAS_LIBRARIES):
+            continue
+        try:
+            for name in CUBLAS_LIBRARIES:
+                _loaded.append(_load_library(Path(text) / name))
+        except OSError as exc:
+            message = f"could not load cuBLAS from {text}: {exc}"
+            if message not in _warned:
+                _warned.add(message)
+                log.warning(message)
+            return  # not another folder: its cuBLAS would bind to this cuBLASLt
+        _cublas_from = text
+        log.info("loaded cuBLAS from %s", text)
+        return
+
+
 def register_cuda_dirs(dirs: Sequence[Path]) -> list[str]:
     """Make the GPU libraries in ``dirs`` loadable, once per process.
 
     Each directory is registered for DLL lookups (``add_dll_directory``, Windows), and
-    cuBLAS is loaded by its full path from the first directory that has it. Windows
+    cuBLAS is loaded by its full path from the first directory that has all of it. Windows
     resolves a later load by name — CTranslate2's — to the library already loaded, so no
     search path is needed. Calls after the first change nothing: ``PATH`` used to gain
-    one entry per model load. A cuBLAS that will not load is logged and tried again on
-    the next load; the engine then fails its warmup and the model runs on the CPU.
+    one entry per model load. A cuBLAS that will not load is logged once and tried again
+    on the next load; the engine then fails its warmup and the model runs on the CPU.
     Returns the directories registered."""
     with _cuda_lock:
         registered: list[str] = []
@@ -203,29 +230,18 @@ def register_cuda_dirs(dirs: Sequence[Path]) -> list[str]:
                         continue
             _registered_dirs.add(text)
             registered.append(text)
-        for name in CUBLAS_LIBRARIES:
-            if name in _loaded:
-                continue
-            for text in registered:
-                candidate = Path(text) / name
-                if not candidate.is_file():
-                    continue
-                try:
-                    _loaded[name] = _load_library(candidate)
-                except OSError as exc:
-                    log.warning("could not load %s from %s: %s", name, text, exc)
-                    continue
-                log.info("loaded %s from %s", name, text)
-                break
+        _load_cublas(registered)
         return registered
 
 
 def reset_cuda_registration() -> None:
     """Forget what was registered and loaded: a clean start, for tests. The libraries
     themselves stay loaded; only the record is cleared."""
+    global _cublas_from
     with _cuda_lock:
         _registered_dirs.clear()
-        _loaded.clear()
+        _cublas_from = None
+        _warned.clear()
 
 
 #: The least GPU memory the automatic choice will run each model on (D99, superseding
