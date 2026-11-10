@@ -431,6 +431,143 @@ def test_a_signed_out_cli_waits_in_the_queue(api, monkeypatch: pytest.MonkeyPatc
     assert job.not_before is not None
 
 
+def test_a_signed_out_cli_goes_to_the_fallback_the_user_chose(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Signed out is answered like a spent allowance: the fallback, when one is set."""
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.pipeline.stages import summarize
+
+    stand_in = FakeLlm()
+    stand_in.name = "gemini"
+
+    def make(config: Config, *, provider: str | None = None, **_: Any) -> Any:
+        return stand_in if provider == "gemini" else _codex(api)
+
+    monkeypatch.setattr(summarize, "make_client", make)
+    api.services.config.set("llm.fallback_provider", "gemini")
+    meeting = ready_meeting(api)
+    job = run_summarize(api)
+
+    assert job.state == "done", job.last_error
+    written = meta.read(meeting.path)["llm"]
+    assert written["name"] == "gemini"
+    assert written["fallback_for"] == "codex-subscription"
+    assert "not signed in" in written["fallback_reason"]
+
+
+def test_when_the_fallback_cannot_run_either_the_job_waits_on_the_usual_one(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.errors import SignInRequired
+    from app.pipeline.stages import summarize
+
+    class SignedOutToo(FakeLlm):
+        name = "antigravity-subscription"
+
+        def complete_json(self, **_: Any) -> Any:
+            raise SignInRequired("Antigravity is not signed in.", provider=self.name)
+
+    def make(config: Config, *, provider: str | None = None, **_: Any) -> Any:
+        return SignedOutToo() if provider == "antigravity-subscription" else _codex(api)
+
+    monkeypatch.setattr(summarize, "make_client", make)
+    api.services.config.set("llm.fallback_provider", "antigravity-subscription")
+    ready_meeting(api)
+    job = run_summarize(api)
+
+    assert job.state == "pending" and job.attempts == 0
+    assert job.last_error.startswith("Codex is not signed in"), "the one the user can act on"
+
+
+def test_signed_out_tells_the_user_once_and_refreshes_the_status(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.pipeline.stages import summarize
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
+    forgotten: list[str] = []
+    monkeypatch.setattr(api.services.cli_status, "forget", lambda *p: forgotten.extend(p))
+    meeting = ready_meeting(api)
+    job = run_summarize(api)
+    assert job.state == "pending"
+    assert forgotten == ["codex-subscription"], "the page sees the sign-out at once"
+    notifier = api.services.notifier
+    toasts = [t for t in notifier.shown if t.key == f"signedout:{meeting.id}"]
+    assert [t.title for t in toasts] == ["Codex is signed out — the summary is waiting"]
+
+    # Fifteen minutes on, still signed out: no second toast, however long it waits.
+    notifier.clock.advance(3600)
+    again = api.services.queue.require(job.id)
+    api.services.worker._on_deferred(
+        again, summarize.SignInRequired(again.last_error, provider="codex-subscription")
+    )
+    assert len([t for t in notifier.shown if t.key == f"signedout:{meeting.id}"]) == 1
+
+
+def test_summarize_with_another_provider_for_one_meeting(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "Summarize with …" on the meeting page: that run, that provider, and it says so."""
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.pipeline.stages import summarize
+
+    built: list[str | None] = []
+    stand_in = FakeLlm()
+    stand_in.name = "antigravity-subscription"
+
+    def make(config: Config, *, provider: str | None = None, **_: Any) -> Any:
+        built.append(provider)
+        return stand_in if provider == "antigravity-subscription" else _codex(api)
+
+    monkeypatch.setattr(summarize, "make_client", make)
+    meeting = ready_meeting(api)
+    assert run_summarize(api).state == "pending", "signed out: waiting"
+
+    client = api.client()
+    picked = client.post(
+        f"/api/meetings/{meeting.id}/jobs/summarize/retry",
+        params={"provider": "antigravity-subscription"},
+    )
+    assert picked.status_code == 200, picked.text
+    job = run_summarize(api)
+    assert job.state == "done", job.last_error
+    assert built[-1] == "antigravity-subscription"
+    written = meta.read(meeting.path)
+    assert written["llm"]["name"] == "antigravity-subscription"
+    assert written["llm"]["fallback_for"] == "codex-subscription"
+    assert written.get("summary_provider") is None, "one run only; Settings decides the next"
+
+
+@pytest.mark.parametrize(
+    ("stage", "provider", "why"),
+    [
+        ("transcribe", "gemini", "summarize stage only"),
+        ("summarize", "fake", "not a provider"),
+        ("summarize", "none", "not a provider"),
+        ("summarize", "made-up", "not a provider"),
+    ],
+)
+def test_a_provider_for_one_run_is_checked(api, stage: str, provider: str, why: str) -> None:  # type: ignore[no-untyped-def]
+    meeting = ready_meeting(api)
+    refused = api.client().post(
+        f"/api/meetings/{meeting.id}/jobs/{stage}/retry", params={"provider": provider}
+    )
+    assert refused.status_code == 422 and why in refused.text
+
+
+def test_a_sensitive_meeting_cannot_be_sent_elsewhere_by_hand(api) -> None:  # type: ignore[no-untyped-def]
+    meeting = ready_meeting(api)
+    api.services.dao.update_meeting(meeting.id, sensitive=1)
+    refused = api.client().post(
+        f"/api/meetings/{meeting.id}/jobs/summarize/retry", params={"provider": "gemini"}
+    )
+    assert refused.status_code == 422 and "sensitive" in refused.text
+    assert meta.read(meeting.path).get("summary_provider") is None
+
+
 def _codex(api) -> Any:  # type: ignore[no-untyped-def]
     from app.llm.codex_cli import CodexCliClient
 

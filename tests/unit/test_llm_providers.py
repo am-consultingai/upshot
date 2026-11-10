@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from app.config import Config, default_config
-from app.errors import PermanentError, RecoverableError
+from app.errors import PermanentError, RecoverableError, SignInRequired
 from app.llm.claude_cli import (
     ClaudeCliClient,
     install_candidates,
@@ -136,7 +136,58 @@ def test_claude_cli_maps_not_signed_in(tmp_path) -> None:  # type: ignore[no-unt
     client = ClaudeCliClient(
         config, runner=fake_runner([(1, "", "Not logged in. Please run /login")])
     )
-    with pytest.raises(PermanentError, match="not signed in"):
+    with pytest.raises(SignInRequired, match="not signed in") as caught:
+        client.complete_json(system_blocks=BLOCKS, user="x")
+    assert caught.value.provider == "claude-subscription"
+
+
+#: What Claude Code 2.1.263 printed on 2026-11-10 when its sign-in had lapsed: exit 1, and
+#: the reason at the end of a long envelope, past any 300-character prefix.
+EXPIRED_ENVELOPE = json.dumps(
+    {
+        "duration_api_ms": 0,
+        "stop_reason": "stop_sequence",
+        "usage": {"input_tokens": 0, "output_tokens": 0, "server_tool_use": {"x": 0}},
+        "modelUsage": {},
+        "permission_denials": [],
+        "terminal_reason": "api_error",
+        "subagent_stats": {"spawned": 0, "by_type": {}, "padding": "." * 400},
+        "is_error": True,
+        "num_turns": 1,
+        "subtype": "success",
+        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "type": "result",
+    }
+)
+
+
+def test_claude_cli_reads_an_expired_sign_in_from_the_envelope(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "claude").write_text("#!/bin/sh\n")
+    config = default_config()
+    config.set("llm.claude_cli_path", str(tmp_path / "claude"))
+    client = ClaudeCliClient(config, runner=fake_runner([(1, EXPIRED_ENVELOPE, "")]))
+    with pytest.raises(SignInRequired, match="not signed in"):
+        client.complete_json(system_blocks=BLOCKS, user="x")
+
+
+def test_claude_cli_error_names_the_reason_not_the_counters(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    envelope = json.loads(EXPIRED_ENVELOPE)
+    envelope["result"] = "Something nobody has seen before"
+    (tmp_path / "claude").write_text("#!/bin/sh\n")
+    config = default_config()
+    config.set("llm.claude_cli_path", str(tmp_path / "claude"))
+    client = ClaudeCliClient(config, runner=fake_runner([(1, json.dumps(envelope), "")]))
+    with pytest.raises(RecoverableError) as caught:
+        client.complete_json(system_blocks=BLOCKS, user="x")
+    assert str(caught.value) == "Claude Code exited 1: Something nobody has seen before"
+
+
+def test_claude_cli_an_error_envelope_with_exit_0_is_classified_too(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "claude").write_text("#!/bin/sh\n")
+    config = default_config()
+    config.set("llm.claude_cli_path", str(tmp_path / "claude"))
+    client = ClaudeCliClient(config, runner=fake_runner([(0, EXPIRED_ENVELOPE, "")]))
+    with pytest.raises(SignInRequired):
         client.complete_json(system_blocks=BLOCKS, user="x")
 
 

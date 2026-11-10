@@ -18,7 +18,7 @@ from typing import Any
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
-from app.errors import Cancelled, Deferred, PermanentError, Preempted
+from app.errors import Cancelled, Deferred, PermanentError, Preempted, SignInRequired
 from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
 from app.pipeline.context import StageContext
@@ -547,8 +547,25 @@ class Worker:
         # In the clock's own offset: `not_before` is compared as a string, and a
         # timestamp written in another offset sorts wrongly against every other one.
         until = min(until, now + timedelta(days=7)).astimezone(now.tzinfo)
+        first = job.last_error != str(exc)
         self.queue.defer(job, str(exc), until=until)
         log.warning("stage %s deferred until %s: %s", job.stage, until.isoformat(), exc)
+        if isinstance(exc, SignInRequired):
+            self._signed_out(job, exc, first=first)
+
+    def _signed_out(self, job: Job, exc: SignInRequired, *, first: bool) -> None:
+        """A CLI turned out signed out: the page must see it now, not at the status
+        cache's next refresh, and the user hears it once, not every fifteen minutes."""
+        services = self.services
+        status = getattr(services, "cli_status", None) if services is not None else None
+        if status is not None and exc.provider:
+            status.forget(exc.provider)
+        notifier = getattr(services, "notifier", None) if services is not None else None
+        if not first or notifier is None or not hasattr(notifier, "signed_out"):
+            return
+        from app.llm.model_choice import CLI_PRODUCTS
+
+        notifier.signed_out(job.meeting_id, CLI_PRODUCTS.get(exc.provider, exc.provider))
 
     def _on_failure(self, job: Job, exc: BaseException, *, permanent: bool) -> None:
         updated = self.queue.fail(job, exc, permanent=permanent)

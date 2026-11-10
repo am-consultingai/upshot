@@ -22,6 +22,7 @@ from app import meta
 from app.clock import iso
 from app.config import LLM_PROVIDERS, Config
 from app.db.dao import GlossaryTerm, Meeting, capabilities, transaction
+from app.llm.model_choice import CLI_PRODUCTS
 from app.log import get
 from app.pipeline.queue import STOPPED
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
@@ -1443,12 +1444,18 @@ def retry_stage(
     stage: str,
     force: bool = False,
     language: str | None = None,
+    provider: str | None = None,
 ) -> dict[str, Any]:
     """Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.
 
     ``language`` (transcribe only) is the hidden "Transcribe again as…" (R9): the meeting
     is transcribed in that language whatever the classifier said, by the model for it,
     and stays so on every later rerun. Implies ``force``.
+
+    ``provider`` (summarize only) is "Summarize with …" on a meeting whose provider is
+    signed out: this one run uses it, and the notes record that. Never for a sensitive
+    meeting, which is summarized on this computer. Implies ``force``. A summarize asked
+    for without it goes back to the provider in Settings.
     """
     svc = services_of(request)
     if stage not in {str(item) for item in STAGE_ORDER}:
@@ -1464,6 +1471,16 @@ def retry_stage(
             raise HTTPException(422, f"{language!r} is not a language Whisper transcribes")
         meta.update(meeting.path, asr_language_override=language)
         force = True
+    if provider is not None:
+        if stage != str(JobStage.SUMMARIZE):
+            raise HTTPException(422, "a provider applies to the summarize stage only")
+        if provider not in LLM_PROVIDERS or provider in ("fake", "none"):
+            raise HTTPException(422, f"{provider!r} is not a provider that can summarize")
+        if meeting.sensitive:
+            raise HTTPException(422, "a sensitive meeting is summarized on this computer")
+        force = True
+    if stage == str(JobStage.SUMMARIZE) and (force or provider is not None):
+        meta.update(meeting.path, summary_provider=provider)
     if force:
         # A button press is a decision. Every later stage is redone too, or a fresh
         # summary would be rendered from the previous one's HTML.
@@ -1877,13 +1894,7 @@ PROBE_SCHEMA: dict[str, Any] = {
 #: one needs installed — named as the software it is, because that is what gets
 #: installed. Removing Codex from ``LLM_PROVIDERS`` removes it here too.
 CLI_PROVIDERS: dict[str, str] = {
-    provider: product
-    for provider, product in (
-        ("claude-subscription", "Claude Code"),
-        ("codex-subscription", "Codex"),
-        ("antigravity-subscription", "Antigravity CLI"),
-    )
-    if provider in LLM_PROVIDERS
+    provider: product for provider, product in CLI_PRODUCTS.items() if provider in LLM_PROVIDERS
 }
 
 

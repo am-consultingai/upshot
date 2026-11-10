@@ -866,10 +866,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
   /** `language` (transcribe only): the hidden "Transcribe again as…"; implies force. */
-  retry: (id: string, stage: string, force = false, language?: string) =>
+  /** `provider` (summarize only): this one run uses it, as "Summarize with …" asks. */
+  retry: (id: string, stage: string, force = false, language?: string, provider?: string) =>
     request<Job>(
       `/api/meetings/${id}/jobs/${stage}/retry?force=${force}` +
-        (language ? `&language=${encodeURIComponent(language)}` : ""),
+        (language ? `&language=${encodeURIComponent(language)}` : "") +
+        (provider ? `&provider=${encodeURIComponent(provider)}` : ""),
       { method: "POST" },
     ),
   /** Stop a meeting's transcription, running or waiting; the meeting and its audio stay. */

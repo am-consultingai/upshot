@@ -274,6 +274,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Resumen listo — {title}",
         "fr": "Résumé prêt — {title}",
     },
+    "toast.signedOut.title": {
+        "en": "{product} is signed out — the summary is waiting",
+        "he": "{product} לא מחובר — הסיכום ממתין",
+        "de": "{product} ist nicht angemeldet – die Zusammenfassung wartet",
+        "es": "{product} no tiene la sesión iniciada — el resumen está en espera",
+        "fr": "{product} n'est pas connecté — le résumé attend",
+    },
     "toast.failed.title": {
         "en": "{stage} failed — audio is safe",
         "he": "שלב {stage} נכשל — השמע שמור",

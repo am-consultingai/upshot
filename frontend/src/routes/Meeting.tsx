@@ -14,6 +14,7 @@ import MeetingSpeakers, { useSpeakerNames, useSpeakerRename } from "../component
 import MeetingChips from "../components/MeetingChips";
 import Menu from "../components/Menu";
 import TranscribeAgainDialog from "../components/TranscribeAgainDialog";
+import SignedOutCard from "../components/SignedOutCard";
 import { openMeetingInfo } from "../components/MeetingInfoDialog";
 import Tooltip from "../components/Tooltip";
 import StateBadge from "../components/StateBadge";
@@ -933,6 +934,20 @@ export default function MeetingPage() {
                * A waiting job is not a failed one, and without this line it looked like
                * one that had silently stalled.
                */}
+              {/*
+               * Signed out: the summary waits, and the page offers what can be done about
+               * it — sign in, or another service that is ready — instead of a stack trace.
+               */}
+              {(waiting?.stage === "summarize" || failed.some((job) => job.stage === "summarize")) && (
+                <SignedOutCard
+                  meetingId={id}
+                  sensitive={Boolean(meeting.data?.sensitive)}
+                  onPicked={() => {
+                    setPressedAt(Date.now());
+                    setPipelineBusy(true);
+                  }}
+                />
+              )}
               {waiting && (
                 <p data-testid="stage-waiting-reason" className="mb-3 max-w-prose text-xs text-secondary">
                   {waiting.message}
