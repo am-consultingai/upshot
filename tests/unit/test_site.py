@@ -156,12 +156,12 @@ def test_metadata_present(page: Path) -> None:
 def test_examples_are_marked_as_demo(page: Path) -> None:
     """Every illustration that invents data says so where it stands.
 
-    A diagram is exempt: the benchmark chart states a measured source, and the hero
-    flow draws where a meeting goes. Neither puts words in anyone's mouth.
+    A diagram is exempt: the hero flow draws where a meeting goes and puts words in no
+    one's mouth.
     """
     html, _ = _parse(page)
     label = DEMO_LABEL[page.relative_to(SITE).as_posix()]
-    diagrams = ('class="wer"', 'class="flow"')
+    diagrams = ('class="flow"',)
     figures = [
         f
         for f in re.findall(r"<figure\b[^>]*>.*?</figure>", html, flags=re.S)

@@ -342,21 +342,8 @@ footer{font-size:var(--t-label)}
 .lang-switch:hover{color:var(--ink);border-color:var(--cyan)}
 .nav .lang-switch+.nav-cta{margin-inline-start:16px}
 
-/* ---- Hebrew quality: error rate bars from a public Hebrew transcription leaderboard ---- */
+/* ---- Hebrew section: subtitle and cards ---- */
 .he-sub{margin-top:16px;max-width:62ch;font-size:var(--t-body);color:var(--s2);line-height:1.6}
-.wer{margin:40px 0 0;padding:28px;background:var(--card);border:1px solid var(--line);border-radius:16px}
-.wer-title{font-family:var(--display);font-size:20px;font-weight:600;color:var(--ink);margin-bottom:22px}
-.wer-row{display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr) 4.5rem;gap:18px;align-items:center;padding:10px 0}
-.wer-name{font-size:var(--t-sub);color:var(--s2)}
-.wer-track{height:14px;border-radius:999px;background:var(--tile);overflow:hidden;display:flex}
-.wer-track i{display:block;height:100%;border-radius:999px;background:var(--s4)}
-.wer-row b{white-space:nowrap;font-family:var(--display);font-size:24px;font-weight:600;color:var(--s2);text-align:end}
-.wer-row.us .wer-name{color:var(--ink);font-weight:600}
-.wer-row.us .wer-track i{background:var(--grad)}
-.wer-row.us b{color:var(--cyan)}
-.wer-row.range .wer-track i{background:linear-gradient(90deg,rgba(239,68,68,.45),rgba(239,68,68,.8))}
-.wer figcaption{margin-top:18px;font-size:var(--t-label);color:var(--s4);line-height:1.6}
-.wer figcaption a{color:var(--s3)}
 .he-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
 .he-cards article{border-top:2px solid var(--cyan);padding-top:16px}
 .he-cards .ic{color:var(--cyan)}
@@ -498,9 +485,6 @@ footer{font-size:var(--t-label)}
   .toc ol{columns:1}
   .legal{padding-top:48px}
   .he-cards{grid-template-columns:1fr}
-  .wer{padding:20px}
-  .wer-row{grid-template-columns:minmax(0,1fr) 4rem;gap:6px 12px}
-  .wer-name{grid-column:1/-1}
   :root{--t-body:16px;--t-sub:15px}
   .steps h3{font-size:21px}
   .copy-card h3{font-size:22px}
@@ -555,4 +539,21 @@ footer{font-size:var(--t-label)}
 }
 @media (max-width:640px){
   .pillars,.stops.two{grid-template-columns:1fr}
+}
+
+/* The header's second button: GitHub beside Download. */
+.nav .nav-gh{margin-inline-start:10px}
+@media (max-width:640px){
+  .nav .lang-switch+.nav-cta{margin-inline-start:12px}
+  .nav .nav-gh{margin-inline-start:8px}
+}
+.nav-links a{white-space:nowrap}
+@media (max-width:1180px){.nav-links{gap:14px}}
+@media (max-width:440px){
+  .nav .btn-sm{padding-inline:12px}
+  .nav-mark span{display:none}
+}
+@media (max-width:1100px){
+  .nav-links{display:none}
+  .nav .lang-switch{margin-inline-start:auto}
 }
