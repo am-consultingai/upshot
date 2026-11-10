@@ -342,7 +342,7 @@ footer{font-size:var(--t-label)}
 .lang-switch:hover{color:var(--ink);border-color:var(--cyan)}
 .nav .lang-switch+.nav-cta{margin-inline-start:16px}
 
-/* ---- Hebrew quality: error rate bars from a public Hebrew transcription leaderboard ---- */
+/* ---- Hebrew section: subtitle and cards ---- */
 .he-sub{margin-top:16px;max-width:62ch;font-size:var(--t-body);color:var(--s2);line-height:1.6}
 .he-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
 .he-cards article{border-top:2px solid var(--cyan);padding-top:16px}
@@ -543,9 +543,7 @@ footer{font-size:var(--t-label)}
 
 /* The header's second button: GitHub beside Download. */
 .nav .nav-gh{margin-inline-start:10px}
-[dir=rtl] .nav .nav-gh{margin-left:0}
 @media (max-width:640px){
-  .nav .lang-switch{margin-inline-start:auto}
   .nav .lang-switch+.nav-cta{margin-inline-start:12px}
   .nav .nav-gh{margin-inline-start:8px}
 }
