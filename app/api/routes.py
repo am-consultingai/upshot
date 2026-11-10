@@ -1480,6 +1480,11 @@ def retry_stage(
             raise HTTPException(422, f"{provider!r} is not a provider that can summarize")
         if meeting.sensitive:
             raise HTTPException(422, "a sensitive meeting is summarized on this computer")
+        running = svc.queue.running_for(meeting_id)
+        if running is not None and running.stage == str(JobStage.SUMMARIZE):
+            # The run under way would finish and end the job: the pick would not run, and
+            # would stay behind for some later automatic summary to find.
+            raise HTTPException(409, "This meeting is being summarized now. Try again after.")
         force = True
     # Set for the next run alone, or withdrawn by a plain Summarize.
     picked_before = meta.read(meeting.path).get("summary_provider") is not None

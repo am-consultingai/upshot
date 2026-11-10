@@ -138,7 +138,7 @@ class JobQueue:
         self.conn.execute(
             "INSERT INTO jobs(meeting_id, stage, state, attempts, not_before, priority, "
             "created_at, updated_at, queued_at) VALUES (?,?,?,0,?,?,?,?,?) "
-            "ON CONFLICT(meeting_id, stage) DO UPDATE SET state='pending', "
+            "ON CONFLICT(meeting_id, stage) DO UPDATE SET state='pending', waiting_for=NULL, "
             "not_before=excluded.not_before, priority=excluded.priority, "
             "updated_at=excluded.updated_at, queued_at=excluded.queued_at",
             (meeting_id, str(stage), JobState.PENDING, not_before, priority, now, now,

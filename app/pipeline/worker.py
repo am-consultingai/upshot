@@ -274,6 +274,13 @@ class Worker:
             if tracker is not None:
                 tracker.start(job.meeting_id, job.stage)
             folder = Path(meeting.folder)
+            # The provider picked on the meeting page that this run starts with, if any: a
+            # final failure ends that pick, and only that one.
+            ran_with = (
+                meta.read(folder).get("summary_provider")
+                if job.stage == JobStage.SUMMARIZE and folder.exists()
+                else None
+            )
             if folder.exists():
                 handler = meeting_log_handler(folder)
                 logging.getLogger().addHandler(handler)
@@ -303,11 +310,11 @@ class Worker:
                     self._on_deferred(job, exc)
                     return
                 except PermanentError as exc:
-                    self._on_failure(job, exc, permanent=True)
+                    self._on_failure(job, exc, permanent=True, ran_with=ran_with)
                     return
                 except Exception as exc:
                     self._keep_force(job, context)
-                    self._on_failure(job, exc, permanent=False)
+                    self._on_failure(job, exc, permanent=False, ran_with=ran_with)
                     return
                 finally:
                     release()
@@ -327,7 +334,7 @@ class Worker:
         said not now, an error to retry) is still asked for: the next attempt redoes the
         work too, instead of finding the old output current and skipping. A final failure
         ends the request (``_on_failure`` drops it again)."""
-        if context.force:
+        if context.force and not self.queue.deleting(job.meeting_id):
             self.queue.request_rerun(job.meeting_id, job.stage)
 
     def _announce(self, job: Job, *, ended_only: bool = False) -> None:
@@ -600,20 +607,22 @@ class Worker:
 
         notifier.signed_out(job.meeting_id, CLI_PRODUCTS.get(provider, provider))
 
-    def _on_failure(self, job: Job, exc: BaseException, *, permanent: bool) -> None:
+    def _on_failure(
+        self, job: Job, exc: BaseException, *, permanent: bool, ran_with: str | None = None
+    ) -> None:
         updated = self.queue.fail(job, exc, permanent=permanent)
         self.stats.failed += 1
         log.warning("stage %s failed (attempt %s): %s", job.stage, updated.attempts, exc)
         if updated.state != "failed":
             return
         self.queue.take_rerun(job.meeting_id, job.stage)  # the asked-for run has ended
-        if job.stage == JobStage.SUMMARIZE:
+        if job.stage == JobStage.SUMMARIZE and isinstance(ran_with, str):
             # A provider picked on the meeting page was for this run, and it has ended.
             from app.pipeline.stages.summarize import drop_chosen_provider
 
             folder = Path(self.dao.require_meeting(job.meeting_id).folder)
             if folder.exists():
-                drop_chosen_provider(folder)
+                drop_chosen_provider(folder, only=ran_with)
         # Failed for good, not a retry: worth a crash report, if the user agreed (D87).
         if isinstance(exc, Exception):
             from app.diagnostics.reporter import report

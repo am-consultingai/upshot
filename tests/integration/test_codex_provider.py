@@ -813,6 +813,49 @@ def test_a_claimed_job_no_longer_says_it_waits_for_a_sign_in(  # type: ignore[no
     assert released.state == "pending" and released.waiting_for is None
 
 
+def test_a_pick_pressed_while_the_summary_runs_is_refused_not_lost(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.pipeline.stages import summarize
+
+    meeting = ready_meeting(api)
+    real = _codex(api)
+    answers: list[Any] = []
+
+    class PressedMidRun(FakeLlm):
+        name = "codex-subscription"
+
+        def count_tokens(self, text: str) -> int:
+            return real.count_tokens(text)
+
+        def complete_json(self, **kwargs: Any) -> Any:
+            answers.append(
+                api.client().post(
+                    f"/api/meetings/{meeting.id}/jobs/summarize/retry",
+                    params={"provider": "antigravity-subscription"},
+                )
+            )
+            return real.complete_json(**kwargs)
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: PressedMidRun())
+    assert run_summarize(api).state == "done"
+    assert [a.status_code for a in answers] == [409]
+    assert meta.read(meeting.path).get("summary_provider") is None, "nothing left behind"
+
+
+def test_re_enqueued_summary_no_longer_says_it_waits_for_a_sign_in(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.pipeline.stages import summarize
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: _codex(api))
+    meeting = ready_meeting(api)
+    assert run_summarize(api).waiting_for == "codex-subscription"
+    again = api.services.queue.enqueue(meeting.id, JobStage.SUMMARIZE)
+    assert again.waiting_for is None and again.not_before is None
+
+
 @pytest.mark.parametrize(
     ("stage", "provider", "why"),
     [
