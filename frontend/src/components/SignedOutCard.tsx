@@ -11,7 +11,7 @@ import { toast } from "./Toaster";
  * key is set. Not "Transcripts only", and not the local model, whose "ready" says only
  * that it is configured.
  */
-function canRunNow(provider: LlmProvider): boolean {
+export function canRunNow(provider: LlmProvider): boolean {
   // Not a CLI another summary is already waiting on: its status can read signed in over
   // a session it refuses, and the run would only wait again.
   if (provider.needs === "cli") return provider.ready && provider.signed_in === true && !provider.waiting;

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { watchFinished } from "../src/components/ProviderSettings";
+import { canRunNow } from "../src/components/SignedOutCard";
+import type { LlmProvider } from "../src/api";
 
 const launchedAt = 1_000;
 
@@ -40,5 +42,32 @@ describe("watchFinished", () => {
     expect(
       watchFinished({ signedIn: true, waiting: true, consoleOpen: false, checkedAt: 2_000, launchedAt }),
     ).toBe(true);
+  });
+});
+
+describe("canRunNow (the signed-out card's alternatives)", () => {
+  const row = (fields: Partial<LlmProvider>): LlmProvider => ({ id: "x", label: "X", needs: "cli", ready: true, ...fields });
+
+  it("offers a signed-in CLI", () => {
+    expect(canRunNow(row({ signed_in: true }))).toBe(true);
+  });
+
+  it("not a CLI another summary already waits on, whatever its status reads", () => {
+    expect(canRunNow(row({ signed_in: true, waiting: true }))).toBe(false);
+  });
+
+  it("not a signed-out or uninstalled CLI", () => {
+    expect(canRunNow(row({ signed_in: false }))).toBe(false);
+    expect(canRunNow(row({ signed_in: true, ready: false }))).toBe(false);
+  });
+
+  it("an API provider only with its key", () => {
+    expect(canRunNow(row({ id: "gemini", needs: "key", ready: true }))).toBe(true);
+    expect(canRunNow(row({ id: "gemini", needs: "key", ready: false }))).toBe(false);
+  });
+
+  it("never the local model or transcripts only", () => {
+    expect(canRunNow(row({ id: "ollama", needs: "ollama" }))).toBe(false);
+    expect(canRunNow(row({ id: "none", needs: "none" }))).toBe(false);
   });
 });

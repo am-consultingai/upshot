@@ -482,9 +482,18 @@ def run(ctx: StageContext) -> None:
                 instead_of=stuck,
             )
         except Deferred as also:
-            # The fallback cannot run either: the job waits on the usual provider, whose
-            # message is the one the user can act on.
             log.warning("the fallback %s cannot run either: %s", fallback.name, also)
+            if isinstance(stuck, QuotaExhausted) and isinstance(also, SignInRequired):
+                # The usual provider is out until its reset, perhaps days away; signing in
+                # the fallback is what the user can do now, so that is what the job waits
+                # for (and the page and Settings offer).
+                raise also from stuck
+            if isinstance(also, SignInRequired):
+                # Waiting on the usual provider, whose message the user can act on; the
+                # fallback's held status must not keep offering it on the meeting page.
+                status = getattr(ctx.services, "cli_status", None) if ctx.services else None
+                if status is not None and also.provider:
+                    status.forget(also.provider)
             raise stuck from also
 
 

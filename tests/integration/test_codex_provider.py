@@ -482,6 +482,63 @@ def test_when_the_fallback_cannot_run_either_the_job_waits_on_the_usual_one(  # 
     assert job.last_error.startswith("Codex is not signed in"), "the one the user can act on"
 
 
+def test_allowance_spent_and_the_fallback_signed_out_waits_for_the_sign_in(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reset may be days away; signing in the fallback is what can be done now."""
+    monkeypatch.setenv("FAKE_CODEX_MODE", "quota")
+    from app.errors import SignInRequired
+    from app.pipeline.stages import summarize
+
+    class SignedOut(FakeLlm):
+        name = "antigravity-subscription"
+
+        def complete_json(self, **_: Any) -> Any:
+            raise SignInRequired("Antigravity is not signed in.", provider=self.name)
+
+    monkeypatch.setattr(
+        summarize,
+        "make_client",
+        lambda config, *, provider=None, **_: (
+            SignedOut() if provider == "antigravity-subscription" else _codex(api)
+        ),
+    )
+    api.services.config.set("llm.fallback_provider", "antigravity-subscription")
+    ready_meeting(api)
+    job = run_summarize(api)
+    assert job.state == "pending"
+    assert job.waiting_for == "antigravity-subscription"
+    assert job.last_error.startswith("Antigravity is not signed in")
+
+
+def test_a_signed_out_fallback_is_not_offered_from_its_held_status(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.errors import SignInRequired
+    from app.pipeline.stages import summarize
+
+    class SignedOut(FakeLlm):
+        name = "antigravity-subscription"
+
+        def complete_json(self, **_: Any) -> Any:
+            raise SignInRequired("Antigravity is not signed in.", provider=self.name)
+
+    monkeypatch.setattr(
+        summarize,
+        "make_client",
+        lambda config, *, provider=None, **_: (
+            SignedOut() if provider == "antigravity-subscription" else _codex(api)
+        ),
+    )
+    forgotten: list[str] = []
+    monkeypatch.setattr(api.services.cli_status, "forget", lambda *p: forgotten.extend(p))
+    api.services.config.set("llm.fallback_provider", "antigravity-subscription")
+    ready_meeting(api)
+    assert run_summarize(api).waiting_for == "codex-subscription"
+    assert set(forgotten) == {"antigravity-subscription", "codex-subscription"}
+
+
 def test_signed_out_tells_the_user_once_and_refreshes_the_status(  # type: ignore[no-untyped-def]
     api, monkeypatch: pytest.MonkeyPatch
 ) -> None:
