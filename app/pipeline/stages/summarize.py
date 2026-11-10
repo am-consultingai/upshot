@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -483,6 +484,10 @@ def run(ctx: StageContext) -> None:
             )
         except Deferred as also:
             log.warning("the fallback %s cannot run either: %s", fallback.name, also)
+            if isinstance(stuck, QuotaExhausted) and isinstance(also, QuotaExhausted):
+                # Both allowances spent: wait for whichever comes back first, which then
+                # writes the summary (the usual provider, or the fallback after it).
+                raise sooner(stuck, also, ctx.clock.now()) from None
             if isinstance(stuck, QuotaExhausted) and isinstance(also, SignInRequired):
                 # The usual provider is out until its reset, perhaps days away; signing in
                 # the fallback is what the user can do now, so that is what the job waits
@@ -495,6 +500,20 @@ def run(ctx: StageContext) -> None:
                 if status is not None and also.provider:
                     status.forget(also.provider)
             raise stuck from also
+
+
+def sooner(first: Deferred, second: Deferred, now: datetime) -> Deferred:
+    """Of two providers that are both out, the one back first (an unstated time counts as
+    the class's default wait, as the worker reads it)."""
+
+    def back_at(deferred: Deferred) -> datetime:
+        at = deferred.retry_at
+        if at is not None and at.tzinfo is None:
+            at = at.astimezone()
+        default = now + timedelta(seconds=deferred.default_wait_s)
+        return default if at is None or at <= now else at
+
+    return second if back_at(second) < back_at(first) else first
 
 
 def chosen_provider(ctx: StageContext) -> str | None:

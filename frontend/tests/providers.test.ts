@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { watchFinished } from "../src/components/ProviderSettings";
-import { canRunNow } from "../src/components/SignedOutCard";
+import { alternatives, canRunNow } from "../src/components/SignedOutCard";
 import type { LlmProvider } from "../src/api";
 
 const launchedAt = 1_000;
@@ -69,5 +69,28 @@ describe("canRunNow (the signed-out card's alternatives)", () => {
   it("never the local model or transcripts only", () => {
     expect(canRunNow(row({ id: "ollama", needs: "ollama" }))).toBe(false);
     expect(canRunNow(row({ id: "none", needs: "none" }))).toBe(false);
+  });
+});
+
+describe("alternatives (what the signed-out card offers)", () => {
+  const cli = (id: string, fields: Partial<LlmProvider> = {}): LlmProvider => ({
+    id, label: id, needs: "cli", ready: true, signed_in: true, ...fields,
+  });
+  const rows = [cli("claude-subscription", { signed_in: false }), cli("codex-subscription"), cli("antigravity-subscription")];
+  const ids = (list: LlmProvider[]) => list.map((row) => row.id);
+
+  it("offers the ready others when the usual provider is signed out", () => {
+    const at = { waitingFor: "claude-subscription", active: "claude-subscription", fallback: "", sensitive: false };
+    expect(ids(alternatives(rows, at))).toEqual(["codex-subscription", "antigravity-subscription"]);
+  });
+
+  it("not the usual provider when the job waits on the fallback (its allowance is spent)", () => {
+    const at = { waitingFor: "antigravity-subscription", active: "codex-subscription", fallback: "antigravity-subscription", sensitive: false };
+    expect(ids(alternatives(rows, at))).toEqual([]);
+  });
+
+  it("nothing for a sensitive meeting", () => {
+    const at = { waitingFor: "claude-subscription", active: "claude-subscription", fallback: "", sensitive: true };
+    expect(alternatives(rows, at)).toEqual([]);
   });
 });

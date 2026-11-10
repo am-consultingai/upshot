@@ -539,6 +539,75 @@ def test_a_signed_out_fallback_is_not_offered_from_its_held_status(  # type: ign
     assert set(forgotten) == {"antigravity-subscription", "codex-subscription"}
 
 
+@pytest.mark.parametrize(("usual_h", "fallback_h", "waits_h"), [(120, 2, 2), (2, 120, 2)])
+def test_both_allowances_spent_waits_for_the_one_back_first(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch, usual_h: int, fallback_h: int, waits_h: int
+) -> None:
+    from datetime import timedelta
+
+    from app.errors import QuotaExhausted
+    from app.pipeline.stages import summarize
+
+    now = api.services.clock.now()
+
+    def spent(name: str, hours: int) -> Any:
+        class Spent(FakeLlm):
+            def complete_json(self, **_: Any) -> Any:
+                raise QuotaExhausted(
+                    f"{name} spent", provider=name, retry_at=now + timedelta(hours=hours)
+                )
+
+        client = Spent()
+        client.name = name
+        return client
+
+    monkeypatch.setattr(summarize, "client_for", lambda ctx: spent("codex-subscription", usual_h))
+    monkeypatch.setattr(
+        summarize,
+        "make_client",
+        lambda config, *, provider=None, **_: spent("antigravity-subscription", fallback_h),
+    )
+    api.services.config.set("llm.fallback_provider", "antigravity-subscription")
+    ready_meeting(api)
+    job = run_summarize(api)
+    assert job.state == "pending" and job.waiting_for is None
+    assert parse_iso(job.not_before) == now + timedelta(hours=waits_h)
+
+
+def test_usual_signed_out_and_fallback_spent_is_written_after_the_reset(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Better than before: the fallback is tried again at each retry, and writes the
+    summary once its allowance is back, if the usual provider is still signed out."""
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    from app.errors import QuotaExhausted
+    from app.pipeline.stages import summarize
+
+    spent = [True]
+    stand_in = FakeLlm()
+
+    class SpentOnce(FakeLlm):
+        name = "gemini"
+
+        def complete_json(self, **kwargs: Any) -> Any:
+            if spent and spent.pop():
+                raise QuotaExhausted("Gemini spent", provider="gemini")
+            return stand_in.complete_json(**kwargs)
+
+    monkeypatch.setattr(
+        summarize,
+        "make_client",
+        lambda config, *, provider=None, **_: SpentOnce() if provider == "gemini" else _codex(api),
+    )
+    api.services.config.set("llm.fallback_provider", "gemini")
+    meeting = ready_meeting(api)
+    first = run_summarize(api)
+    assert first.state == "pending" and first.waiting_for == "codex-subscription"
+    api.services.clock.advance(16 * 60)
+    assert run_summarize(api).state == "done"
+    assert meta.read(meeting.path)["llm"]["fallback_for"] == "codex-subscription"
+
+
 def test_signed_out_tells_the_user_once_and_refreshes_the_status(  # type: ignore[no-untyped-def]
     api, monkeypatch: pytest.MonkeyPatch
 ) -> None:

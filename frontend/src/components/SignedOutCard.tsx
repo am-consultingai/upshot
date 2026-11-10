@@ -19,6 +19,23 @@ export function canRunNow(provider: LlmProvider): boolean {
 }
 
 /**
+ * What the card offers instead: every provider that could run now, except the one waited
+ * for, and except the usual one when the job waits on the fallback — the usual provider's
+ * allowance is spent then, and picking it would park the summary until its reset. Nothing
+ * for a sensitive meeting, which is summarized on this computer only.
+ */
+export function alternatives(
+  providers: LlmProvider[],
+  at: { waitingFor: string; active?: string; fallback?: string; sensitive: boolean },
+): LlmProvider[] {
+  if (at.sensitive) return [];
+  const usualIsOut = Boolean(at.fallback) && at.waitingFor === at.fallback;
+  return providers.filter(
+    (row) => row.id !== at.waitingFor && !(usualIsOut && row.id === at.active) && canRunNow(row),
+  );
+}
+
+/**
  * The summary waits because `provider` is signed out — as the job itself says
  * (`waiting_for`), whatever the CLI's own status reads. Rather than a failure
  * and a stack trace: sign in, or let another service that is ready write this one
@@ -62,8 +79,12 @@ export default function SignedOutCard({
   const providers = status.data?.providers ?? [];
   const named = (row: LlmProvider | undefined, id: string) => row?.product ?? row?.label ?? id;
   const product = named(providers.find((row) => row.id === provider), provider);
-  // A sensitive meeting is summarized on this computer only: nothing else is offered.
-  const others = sensitive ? [] : providers.filter((row) => row.id !== provider && canRunNow(row));
+  const others = alternatives(providers, {
+    waitingFor: provider,
+    active: status.data?.active,
+    fallback: status.data?.fallback,
+    sensitive,
+  });
 
   return (
     <div data-testid="signed-out" className="mb-4 rounded-lg bg-surface-2 p-3 text-sm">
