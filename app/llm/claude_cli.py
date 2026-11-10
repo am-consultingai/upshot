@@ -31,7 +31,7 @@ from typing import Any, Protocol
 
 from app import paths
 from app.config import Config
-from app.errors import PermanentError, QuotaExhausted, RecoverableError
+from app.errors import PermanentError, QuotaExhausted, RecoverableError, SignInRequired
 from app.llm.client import LlmResult
 from app.llm.console_log import transcribed
 from app.llm.repair import complete_with_repair, schema_instruction
@@ -45,7 +45,18 @@ log = get(__name__)
 #: reading or writing the user's disk.
 DISALLOWED_TOOLS = "Bash,Read,Write,Edit,NotebookEdit,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite"
 
-NOT_SIGNED_IN = ("not logged in", "please run /login", "invalid api key", "authentication")
+#: "Failed to authenticate: OAuth session expired and could not be refreshed" is what a
+#: lapsed subscription sign-in says (2.1.x, 2026-11-10); it does not contain
+#: "authentication", so it went by as a bare "exited 1" and the meeting failed.
+NOT_SIGNED_IN = (
+    "not logged in",
+    "please run /login",
+    "invalid api key",
+    "authentication",
+    "failed to authenticate",
+    "session expired and could not be refreshed",
+    "token has expired",
+)
 RATE_LIMITED = ("rate limit", "usage limit", "quota", "429", "overloaded")
 #: The plan's allowance, not a transient 429: "Claude AI usage limit reached|<epoch>" from
 #: older builds, "5-hour limit reached ∙ resets 3pm" and "You've hit your limit · resets
@@ -63,6 +74,7 @@ _RESETS = re.compile(r"resets ([^\n.]{1,40})", re.IGNORECASE)
 NEEDS_UPDATE = ("unknown option", "unknown command", "error: unknown", "unknown argument")
 
 DEFAULT_EXECUTABLE = "claude"
+NAME = "claude-subscription"
 #: Anthropic's own winget package, from the documented install instructions.
 WINGET_PACKAGE = "Anthropic.ClaudeCode"
 INSTALL_DOCS_URL = "https://code.claude.com/docs/en/setup"
@@ -90,7 +102,7 @@ def quota_exhausted(text: str) -> QuotaExhausted:
     return QuotaExhausted(
         f"Your Claude plan's usage allowance is used up{when}. The summary will be written "
         "when it resets, or by the fallback provider if one is set in Settings.",
-        provider="claude-subscription",
+        provider=NAME,
         retry_at=retry_at,
     )
 
@@ -641,8 +653,40 @@ class ClaudeCliClient:
         return LlmResult(data=data, model=f"claude-code:{self.name}", attempts=attempts)
 
     @staticmethod
-    def _raise_for(code: int, out: str, err: str, path: str = DEFAULT_EXECUTABLE) -> None:
-        text = f"{err}\n{out}".strip()
+    def _signed_out() -> SignInRequired:
+        return SignInRequired(
+            "Claude Code is not signed in. Open Settings, AI agents, and press Sign in; the "
+            "summary will be written once you have.",
+            provider=NAME,
+        )
+
+    @staticmethod
+    def _reason(out: str) -> str | None:
+        """The CLI's own words for a failure, from its JSON envelope.
+
+        With ``--output-format json`` a failed run still prints the envelope, and the reason
+        is its ``result``, near the end of a long line of usage counters. Cut to a prefix,
+        the raw line showed only the counters and never the reason. ``None`` when stdout
+        is not an envelope; ``""`` for an envelope that gives no reason, whose counters
+        are never matched against (a cost of 0.0429 is not a 429).
+        """
+        try:
+            envelope = json.loads(out.strip() or "null")
+        except ValueError:
+            return None
+        if not isinstance(envelope, dict):
+            return None
+        result = envelope.get("result")
+        if isinstance(result, str) and result.strip():
+            return result.strip()
+        subtype = envelope.get("subtype")
+        return f"no reason given ({subtype})" if isinstance(subtype, str) else ""
+
+    @classmethod
+    def _raise_for(cls, code: int, out: str, err: str, path: str = DEFAULT_EXECUTABLE) -> None:
+        reason = cls._reason(out)
+        said = out.strip() if reason is None else reason
+        text = "\n".join(part for part in (err.strip(), said) if part)
         lowered = text.lower()
         if any(marker in lowered for marker in NEEDS_UPDATE):
             # Retrying an argument the build does not know can never succeed, so this is
@@ -653,19 +697,19 @@ class ClaudeCliClient:
                 category="setup",
             )
         if any(marker in lowered for marker in NOT_SIGNED_IN):
-            raise PermanentError(
-                "Claude Code is not signed in. Run `claude` and complete the login, then "
-                "try again.",
-                category="auth",
-            )
+            # A Settings problem, not a failed meeting: the job waits for the sign-in, or
+            # goes to the fallback the user chose (as Codex and Antigravity do).
+            raise cls._signed_out()
         if any(marker in lowered.replace("\u2019", "'") for marker in QUOTA_SPENT):
             raise quota_exhausted(text)
         if any(marker in lowered for marker in RATE_LIMITED):
             raise RecoverableError(f"Claude Code is rate limited: {text[:200]}")
+        if code == 0:
+            raise RecoverableError(f"Claude Code reported an error: {text[:300]}")
         raise RecoverableError(f"Claude Code exited {code}: {text[:300]}")
 
-    @staticmethod
-    def _payload(stdout: str) -> str:
+    @classmethod
+    def _payload(cls, stdout: str) -> str:
         """`--output-format json` wraps the answer in an envelope; unwrap it."""
         text = stdout.strip()
         if not text:
@@ -676,7 +720,8 @@ class ClaudeCliClient:
             return text  # not an envelope: treat stdout as the answer
         if isinstance(envelope, dict):
             if envelope.get("is_error"):
-                raise RecoverableError(str(envelope.get("result") or envelope)[:300])
+                # The same failures as a non-zero exit, said with exit code 0.
+                cls._raise_for(0, text, "")
             for key in ("result", "text", "content", "response"):
                 value = envelope.get(key)
                 if isinstance(value, str) and value.strip():

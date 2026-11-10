@@ -15,10 +15,18 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from app import meta
 from app.clock import Clock, SystemClock
 from app.config import Config
 from app.db.dao import Dao
-from app.errors import Cancelled, Deferred, PermanentError, Preempted
+from app.errors import (
+    Cancelled,
+    Deferred,
+    PermanentError,
+    Preempted,
+    QuotaExhausted,
+    SignInRequired,
+)
 from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
 from app.pipeline.context import StageContext
@@ -31,6 +39,10 @@ from app.pipeline.states import (
 )
 
 log = get(__name__)
+
+#: A provider still signed out after this long is mentioned again (a day of waiting
+#: summaries is worth a second word; every fifteen-minute retry is not).
+SIGNED_OUT_TOLD_S = 6 * 3600.0
 
 StageFn = Callable[[StageContext], None]
 
@@ -119,6 +131,8 @@ class Worker:
         self.recorder: RecorderState = recorder or FakeRecorderState(False)
         self.activity = activity
         self.services = services
+        #: When each provider's sign-out was last told (monotonic): one toast per sign-out.
+        self._told_signed_out: dict[str, float] = {}
         #: File transcription (D86): the store of file jobs, and the scheduler that picks
         #: between them and meeting jobs, first in, first out. Without them the worker
         #: runs meeting jobs only, as it always has.
@@ -267,6 +281,13 @@ class Worker:
             if tracker is not None:
                 tracker.start(job.meeting_id, job.stage)
             folder = Path(meeting.folder)
+            # The provider picked on the meeting page that this run starts with, if any: a
+            # final failure ends that pick, and only that one.
+            ran_with = (
+                meta.read(folder).get("summary_provider")
+                if job.stage == JobStage.SUMMARIZE and folder.exists()
+                else None
+            )
             if folder.exists():
                 handler = meeting_log_handler(folder)
                 logging.getLogger().addHandler(handler)
@@ -286,18 +307,21 @@ class Worker:
                         settle_stopped(self.dao, job.meeting_id, before)
                     return
                 except Preempted:
+                    self._keep_force(job, context)
                     self.queue.release(job)
                     self.stats.preempted += 1
                     log.info("stage %s preempted by the recorder", job.stage)
                     return
                 except Deferred as exc:
+                    self._keep_force(job, context)
                     self._on_deferred(job, exc)
                     return
                 except PermanentError as exc:
-                    self._on_failure(job, exc, permanent=True)
+                    self._on_failure(job, exc, permanent=True, ran_with=ran_with)
                     return
                 except Exception as exc:
-                    self._on_failure(job, exc, permanent=False)
+                    self._keep_force(job, context)
+                    self._on_failure(job, exc, permanent=False, ran_with=ran_with)
                     return
                 finally:
                     release()
@@ -311,6 +335,14 @@ class Worker:
         except BaseException:
             release()  # raised before the stage's own ``try`` was reached
             raise
+
+    def _keep_force(self, job: Job, context: StageContext) -> None:
+        """A run asked for by hand that did not finish (a recording took over, the provider
+        said not now, an error to retry) is still asked for: the next attempt redoes the
+        work too, instead of finding the old output current and skipping. A final failure
+        ends the request (``_on_failure`` drops it again)."""
+        if context.force and not self.queue.deleting(job.meeting_id):
+            self.queue.request_rerun(job.meeting_id, job.stage)
 
     def _announce(self, job: Job, *, ended_only: bool = False) -> None:
         """A ``job`` event as a stage starts and ends: the lists of what is running
@@ -496,6 +528,15 @@ class Worker:
         self.queue.complete(job)
         self.stats.completed += 1
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}
+        if job.stage == JobStage.SUMMARIZE:
+            # A summary written by a provider (in this run: not one that found the notes
+            # current and skipped) means it is signed in and has allowance: its next
+            # sign-out is news again, and it may be offered on the meeting page.
+            name = str((context.metrics if context else {}).get("written_by") or "")
+            self._told_signed_out.pop(name, None)
+            status = getattr(self.services, "cli_status", None) if self.services else None
+            if status is not None and name:
+                status.unspent(name)
         stage = self._stage(job)
         if stage is not None and not (context is not None and context.hold_state):
             from app.pipeline.states import is_legal
@@ -547,15 +588,54 @@ class Worker:
         # In the clock's own offset: `not_before` is compared as a string, and a
         # timestamp written in another offset sorts wrongly against every other one.
         until = min(until, now + timedelta(days=7)).astimezone(now.tzinfo)
-        self.queue.defer(job, str(exc), until=until)
+        if isinstance(exc, QuotaExhausted) and exc.provider:
+            status = getattr(self.services, "cli_status", None) if self.services else None
+            if status is not None:
+                status.spent(exc.provider, until)  # not offered on the page until then
+        signed_out = isinstance(exc, SignInRequired) and bool(exc.provider)
+        self.queue.defer(
+            job, str(exc), until=until, waiting_for=exc.provider if signed_out else None
+        )
         log.warning("stage %s deferred until %s: %s", job.stage, until.isoformat(), exc)
+        if signed_out:
+            self._signed_out(job, exc.provider)
 
-    def _on_failure(self, job: Job, exc: BaseException, *, permanent: bool) -> None:
+    def _signed_out(self, job: Job, provider: str) -> None:
+        """A CLI turned out signed out: the page must see it now, not at the status
+        cache's next refresh, and the user hears it once per sign-out — not once per
+        waiting meeting, and not again every fifteen minutes while it waits."""
+        services = self.services
+        status = getattr(services, "cli_status", None) if services is not None else None
+        if status is not None:
+            status.forget(provider)
+        notifier = getattr(services, "notifier", None) if services is not None else None
+        if notifier is None or not hasattr(notifier, "signed_out"):
+            return
+        now = self.clock.monotonic()
+        told = self._told_signed_out.get(provider)
+        if told is not None and now - told < SIGNED_OUT_TOLD_S:
+            return
+        self._told_signed_out[provider] = now
+        from app.llm.model_choice import CLI_PRODUCTS
+
+        notifier.signed_out(job.meeting_id, CLI_PRODUCTS.get(provider, provider))
+
+    def _on_failure(
+        self, job: Job, exc: BaseException, *, permanent: bool, ran_with: str | None = None
+    ) -> None:
         updated = self.queue.fail(job, exc, permanent=permanent)
         self.stats.failed += 1
         log.warning("stage %s failed (attempt %s): %s", job.stage, updated.attempts, exc)
         if updated.state != "failed":
             return
+        self.queue.take_rerun(job.meeting_id, job.stage)  # the asked-for run has ended
+        if job.stage == JobStage.SUMMARIZE and isinstance(ran_with, str):
+            # A provider picked on the meeting page was for this run, and it has ended.
+            from app.pipeline.stages.summarize import drop_chosen_provider
+
+            folder = Path(self.dao.require_meeting(job.meeting_id).folder)
+            if folder.exists():
+                drop_chosen_provider(folder, only=ran_with)
         # Failed for good, not a retry: worth a crash report, if the user agreed (D87).
         if isinstance(exc, Exception):
             from app.diagnostics.reporter import report

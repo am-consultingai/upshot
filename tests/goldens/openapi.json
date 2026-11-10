@@ -4004,7 +4004,7 @@
     },
     "/api/meetings/{meeting_id}/jobs/{stage}/retry": {
       "post": {
-        "description": "Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.\n\n``language`` (transcribe only) is the hidden \"Transcribe again as…\" (R9): the meeting\nis transcribed in that language whatever the classifier said, by the model for it,\nand stays so on every later rerun. Implies ``force``.",
+        "description": "Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.\n\n``language`` (transcribe only) is the hidden \"Transcribe again as…\" (R9): the meeting\nis transcribed in that language whatever the classifier said, by the model for it,\nand stays so on every later rerun. Implies ``force``.\n\n``provider`` (summarize only) is \"Summarize with …\" on a meeting whose provider is\nsigned out: this one run uses it, and the notes record that. Never for a sensitive\nmeeting, which is summarized on this computer. Implies ``force``. A summarize asked\nfor without it goes back to the provider in Settings.",
         "operationId": "retry_stage_api_meetings__meeting_id__jobs__stage__retry_post",
         "parameters": [
           {
@@ -4049,6 +4049,22 @@
                 }
               ],
               "title": "Language"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
             }
           }
         ],

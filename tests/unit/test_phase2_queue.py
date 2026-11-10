@@ -4,12 +4,14 @@ import random
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from app.clock import FakeClock, parse_iso
 from app.config import default_config
 from app.db.dao import Dao, connect
+from app.errors import Preempted
 from app.pipeline.activity import FakeActivity, FakeRecorderState
 from app.pipeline.fake_stages import FakeStages
 from app.pipeline.queue import JobQueue
@@ -289,3 +291,65 @@ def test_only_a_stage_that_failed_for_good_is_reported(h: Harness, tmp_path: Pat
         assert meeting.id not in str(sent[0])
     finally:
         set_active(None)
+
+
+# ------------------------------------------------- a run asked for by hand (PR #86)
+
+
+def _custom(tmp_path: Path, fn: Any) -> Harness:
+    harness = Harness(tmp_path)
+    harness.worker.stages["custom"] = fn
+    return harness
+
+
+def test_a_forced_stage_retried_after_errors_stays_forced_then_ends(tmp_path: Path) -> None:
+    seen: list[bool] = []
+
+    def stage(ctx: Any) -> None:
+        seen.append(ctx.force)
+        raise RuntimeError("boom")
+
+    harness = _custom(tmp_path, stage)
+    meeting = harness.meeting()
+    harness.queue.enqueue(meeting.id, "custom")
+    harness.queue.request_rerun(meeting.id, "custom")
+    for _ in range(10):
+        harness.clock.advance(3600)
+        if not harness.worker.run_once():
+            break
+    job = harness.queue.get_by_stage(meeting.id, "custom")
+    assert job is not None and job.state == "failed"
+    assert len(seen) > 1 and all(seen), "every attempt redoes the work"
+    assert harness.queue.take_rerun(meeting.id, "custom") is False, "and a final failure ends it"
+
+
+def test_a_forced_stage_preempted_runs_forced_once_more(tmp_path: Path) -> None:
+    """e.g. "Transcribe again as…" when a recording starts: redone, not skipped as current."""
+    seen: list[bool] = []
+
+    def stage(ctx: Any) -> None:
+        seen.append(ctx.force)
+        if len(seen) == 1:
+            raise Preempted("a recording started")
+
+    harness = _custom(tmp_path, stage)
+    meeting = harness.meeting()
+    harness.queue.enqueue(meeting.id, "custom")
+    harness.queue.request_rerun(meeting.id, "custom")
+    harness.worker.run_once()
+    harness.worker.run_once()
+    assert seen == [True, True]
+    assert harness.queue.take_rerun(meeting.id, "custom") is False
+
+
+def test_a_meeting_being_deleted_keeps_no_rerun_request(tmp_path: Path) -> None:
+    def stage(ctx: Any) -> None:
+        ctx.queue.request_delete(ctx.meeting.id)
+        raise RuntimeError("folder gone")
+
+    harness = _custom(tmp_path, stage)
+    meeting = harness.meeting()
+    harness.queue.enqueue(meeting.id, "custom")
+    harness.queue.request_rerun(meeting.id, "custom")
+    harness.worker.run_once()
+    assert harness.queue.take_rerun(meeting.id, "custom") is False

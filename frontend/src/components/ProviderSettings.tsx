@@ -93,8 +93,10 @@ export function watchFinished(state: {
   consoleOpen: boolean | undefined;
   checkedAt: number;
   launchedAt: number;
+  /** A summary still waits for this CLI's sign-in: "signed in" alone is not the end. */
+  waiting?: boolean;
 }): boolean {
-  if (state.signedIn) return true;
+  if (state.signedIn && !state.waiting) return true;
   return state.consoleOpen === false && state.checkedAt > state.launchedAt;
 }
 
@@ -244,6 +246,7 @@ export default function ProviderSettings() {
   const cli = (status.data?.providers ?? []).find((provider) => provider.id === watching);
   const finished = watchFinished({
     signedIn: cli?.signed_in === true,
+    waiting: cli?.waiting === true,
     consoleOpen: cli?.console_open,
     checkedAt: status.dataUpdatedAt,
     launchedAt: since.current,
@@ -413,7 +416,9 @@ export default function ProviderSettings() {
                               {t("settings.signOut")}
                             </Button>
                           )}
-                          {provider.needs === "cli" && provider.ready && provider.signed_in !== true && (
+                          {/* Also when a summary waits for its sign-in: the CLI's own status can
+                              read signed in over a session the provider refuses. */}
+                          {provider.needs === "cli" && provider.ready && (provider.signed_in !== true || provider.waiting) && (
                             <Button
                               data-testid="provider-signin"
                               busy={(signin.isPending && signin.variables === provider.id) || (mine && !signingIn)}
@@ -533,7 +538,8 @@ export default function ProviderSettings() {
       </div>
 
       {/*
-       * What happens when a plan's allowance runs out mid-week. Waiting is the default
+       * What happens when a plan's allowance runs out mid-week, or its CLI is signed out
+       * (PR #86). Waiting is the default
        * and sends nothing anywhere; another provider is a deliberate choice, made here,
        * never a silent substitution — a transcript leaving the machine for a provider
        * nobody picked is exactly the surprise this app exists to avoid.

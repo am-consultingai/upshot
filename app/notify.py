@@ -190,6 +190,18 @@ class BaseNotifier:
             )
         )
 
+    def signed_out(self, meeting_id: str, product: str) -> None:
+        """The summary waits because ``product`` is signed out: say so, once, and lead to
+        the meeting, where the other signed-in services are offered."""
+        self.show(
+            Toast(
+                title=self._t("toast.signedOut.title", product=product),
+                buttons=(Button(self._t("button.open"), "meeting.open", meeting_id),),
+                key=f"signedout:{product}",
+                meeting_id=meeting_id,
+            )
+        )
+
     def failed(self, meeting_id: str, stage: str) -> None:
         # A stage the catalogue does not name keeps its own name, as English always did.
         name = self._t(f"stage.{stage}") if f"stage.{stage}" in MESSAGES else stage.title()

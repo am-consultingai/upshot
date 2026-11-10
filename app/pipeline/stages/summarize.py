@@ -6,6 +6,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from app import meta
 from app.asr.languages import english_name
 from app.asr.models import DEFAULT_LANGUAGE
 from app.due import anchor_date, resolve_due
-from app.errors import QuotaExhausted
+from app.errors import Deferred, QuotaExhausted, SignInRequired
 from app.llm import schema
 from app.llm.client import LlmClient, LlmResult, make_client, system_blocks
 from app.llm.prompts import load as load_prompt
@@ -278,7 +279,8 @@ def summarize(
     system: str,
     system_version: str,
     client: LlmClient | None = None,
-    instead_of: QuotaExhausted | None = None,
+    instead_of: Deferred | None = None,
+    chosen_for: str | None = None,
 ) -> None:
     """Free-form: the prompt writes the summary, and nothing here rewrites it.
 
@@ -407,8 +409,9 @@ def summarize(
         prompt_versions={"system": system_version, "format": "free"},
         summary_language=language,
         windows=len(windows),
-        llm=written_by(client, _sum_usage(usage), instead_of),
+        llm=written_by(client, _sum_usage(usage), instead_of, chosen_for=chosen_for),
     )
+    ctx.metrics["written_by"] = client.name  # it ran and has allowance (the worker clears a mark)
     log.info("wrote free-form notes (%d chars)", len(notes["summary_html"]))
 
 
@@ -422,7 +425,10 @@ def run(ctx: StageContext) -> None:
     # did nothing at all: the transcript had not moved, so the stage skipped and the old
     # summary stood.
     recorded = str(meta.read(folder).get("prompt_versions", {}).get("system", ""))
-    if ctx.force:
+    # Read here, before anything can end the run early, and kept until the run ends: a
+    # recording that preempts it, or a crash, must not lose the user's choice.
+    chosen = chosen_provider(ctx)
+    if ctx.force or chosen is not None:
         # Asked for by hand: no staleness test, no comparison against what is on disk.
         # Pressing Summarize is a decision, and second-guessing it is how an edited
         # prompt came to have no visible effect at all.
@@ -436,34 +442,134 @@ def run(ctx: StageContext) -> None:
         raise FileNotFoundError(f"{transcript_md} is missing — run the assemble stage first")
 
     transcript = transcript_md.read_text(encoding="utf-8")
+    if chosen is not None:
+        # Picked on the meeting page while the usual provider could not run: this run,
+        # this provider, and the notes say so. Cleared when the run ends (the notes are
+        # written, or the job fails for good: the worker), so a later automatic run (a
+        # calendar change, a merge) uses Settings again. If the picked provider is signed
+        # out too, the job waits on it — the provider the page then names. If its allowance
+        # turns out spent, the pick is given up and this run goes on as if never made: the
+        # usual provider (or its fallback), else a wait the page can offer a way out of.
+        configured = str(ctx.config.get("llm.provider", "") or "")
+        log.info("summarizing with %s, chosen for this meeting", chosen)
+        try:
+            summarize(
+                ctx,
+                transcript,
+                system=system,
+                system_version=system_version,
+                client=make_client(
+                    ctx.config, provider=chosen, sensitive=bool(ctx.meeting.sensitive), fetch=True
+                ),
+                chosen_for=configured if configured not in ("", "none", chosen) else None,
+            )
+        except QuotaExhausted as spent:
+            log.warning("%s, chosen for this meeting, is out of allowance: %s", chosen, spent)
+            note_spent(ctx, spent)
+            drop_chosen_provider(folder, only=chosen)
+        else:
+            drop_chosen_provider(folder, only=chosen)
+            return
     try:
         summarize(ctx, transcript, system=system, system_version=system_version)
-    except QuotaExhausted as spent:
-        fallback = fallback_client(ctx, spent)
+    except (QuotaExhausted, SignInRequired) as stuck:
+        note_spent(ctx, stuck)
+        fallback = fallback_client(ctx, stuck)
         if fallback is None:
-            raise  # the worker parks the job until the allowance resets
+            raise  # the worker parks the job until the allowance resets or a sign-in
         log.warning(
-            "%s allowance used up; summarizing with the configured fallback %s instead",
-            spent.provider,
+            "%s cannot run (%s); summarizing with the configured fallback %s instead",
+            stuck.provider,
+            type(stuck).__name__,
             fallback.name,
         )
-        summarize(
-            ctx,
-            transcript,
-            system=system,
-            system_version=system_version,
-            client=fallback,
-            instead_of=spent,
-        )
+        try:
+            summarize(
+                ctx,
+                transcript,
+                system=system,
+                system_version=system_version,
+                client=fallback,
+                instead_of=stuck,
+            )
+        except Deferred as also:
+            log.warning("the fallback %s cannot run either: %s", fallback.name, also)
+            note_spent(ctx, stuck, also)
+            if isinstance(stuck, QuotaExhausted) and isinstance(also, QuotaExhausted):
+                # Both allowances spent: wait for whichever comes back first, which then
+                # writes the summary (the usual provider, or the fallback after it).
+                raise sooner(stuck, also, ctx.clock.now()) from None
+            if isinstance(stuck, QuotaExhausted) and isinstance(also, SignInRequired):
+                # The usual provider is out until its reset, perhaps days away; signing in
+                # the fallback is what the user can do now, so that is what the job waits
+                # for (and the page and Settings offer).
+                raise also from stuck
+            if isinstance(also, SignInRequired):
+                # Waiting on the usual provider, whose message the user can act on; the
+                # fallback's held status must not keep offering it on the meeting page.
+                status = getattr(ctx.services, "cli_status", None) if ctx.services else None
+                if status is not None and also.provider:
+                    status.forget(also.provider)
+            raise stuck from also
 
 
-def fallback_client(ctx: StageContext, spent: QuotaExhausted) -> LlmClient | None:
+def back_at(deferred: Deferred, now: datetime) -> datetime:
+    """When a provider that said "not now" can run again, as the worker reads it: an
+    unstated or past time counts as the class's default wait."""
+    at = deferred.retry_at
+    if at is not None and at.tzinfo is None:
+        at = at.astimezone()
+    default = now + timedelta(seconds=deferred.default_wait_s)
+    return default if at is None or at <= now else at
+
+
+def sooner(first: Deferred, second: Deferred, now: datetime) -> Deferred:
+    """Of two providers that are both out, the one back first."""
+    return second if back_at(second, now) < back_at(first, now) else first
+
+
+def note_spent(ctx: StageContext, *errors: BaseException) -> None:
+    """Remember a provider whose allowance is used up, so the meeting page does not offer
+    it until it is back (the CLI's status cannot tell)."""
+    status = getattr(ctx.services, "cli_status", None) if ctx.services is not None else None
+    if status is None:
+        return
+    now = ctx.clock.now()
+    for error in errors:
+        if isinstance(error, QuotaExhausted) and error.provider:
+            status.spent(error.provider, back_at(error, now))
+
+
+def chosen_provider(ctx: StageContext) -> str | None:
+    """The provider picked on the meeting page for its next summary, or ``None``.
+
+    Never for a sensitive meeting: that one is summarized on this computer, whatever
+    anyone picked (the endpoint refuses it too), and a pick found on one is dropped.
+    """
+    picked = meta.read(ctx.folder).get("summary_provider")
+    if picked is None:
+        return None
+    if ctx.meeting.sensitive or not isinstance(picked, str) or not picked:
+        meta.update(ctx.folder, summary_provider=None)
+        return None
+    return picked
+
+
+def drop_chosen_provider(folder: Path, *, only: str | None = None) -> None:
+    """The run the pick was for has ended: the next one uses Settings. With ``only``, a
+    pick made meanwhile — a different provider, for the run after this one — is kept."""
+    picked = meta.read(folder).get("summary_provider")
+    if picked is not None and (only is None or picked == only):
+        meta.update(folder, summary_provider=None)
+
+
+def fallback_client(ctx: StageContext, spent: Deferred) -> LlmClient | None:
     """The provider the user chose for exactly this case, or ``None`` — never a guess.
 
-    Only a spent allowance reaches here (Codex 3). A fallback that is unset, that names
-    the provider which just ran out, or a meeting marked sensitive (which never left the
-    machine to begin with) means the summary waits instead: a transcript going to a
-    provider nobody picked is the surprise this application exists to avoid.
+    Only a spent allowance or a signed-out CLI reaches here. A fallback that is unset,
+    that names the provider which just stopped, or a meeting marked sensitive (which
+    never left the machine to begin with) means the summary waits instead: a transcript
+    going to a provider nobody picked is the surprise this application exists to avoid.
     """
     injected = getattr(ctx.services, "fallback_llm", None) if ctx.services is not None else None
     if injected is not None:
@@ -475,7 +581,11 @@ def fallback_client(ctx: StageContext, spent: QuotaExhausted) -> LlmClient | Non
 
 
 def written_by(
-    client: LlmClient, usage: dict[str, int], instead_of: QuotaExhausted | None
+    client: LlmClient,
+    usage: dict[str, int],
+    instead_of: Deferred | None,
+    *,
+    chosen_for: str | None = None,
 ) -> dict[str, Any]:
     """Which provider wrote these notes, for ``meta.json`` and the meeting page.
 
@@ -486,6 +596,9 @@ def written_by(
     if instead_of is not None:
         record["fallback_for"] = instead_of.provider
         record["fallback_reason"] = str(instead_of)
+    elif chosen_for:
+        record["fallback_for"] = chosen_for
+        record["fallback_reason"] = "Chosen for this meeting on its page."
     return record
 
 

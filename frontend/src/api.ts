@@ -392,6 +392,12 @@ export interface LlmProvider {
   update_hint?: string;
   /** False for a CLI that cannot be signed out from outside it (Antigravity, D79). */
   can_sign_out?: boolean;
+  /** A CLI's program, as the page names it ("Codex"). */
+  product?: string;
+  /** A summary waits for this CLI's sign-in: Sign in is offered even if it reads signed in. */
+  waiting?: boolean;
+  /** Its plan's allowance is used up until then (ISO), as it last said; else null. */
+  spent_until?: string | null;
   /** Sign out opens a window where the CLI's own /logout is typed (Antigravity, D79). */
   signout_in_window?: boolean;
   /** The window Install or Sign in opened is still open, or a windowless sign-in runs. */
@@ -866,10 +872,12 @@ export const api = {
       body: JSON.stringify(body),
     }),
   /** `language` (transcribe only): the hidden "Transcribe again as…"; implies force. */
-  retry: (id: string, stage: string, force = false, language?: string) =>
+  /** `provider` (summarize only): this one run uses it, as "Summarize with …" asks. */
+  retry: (id: string, stage: string, force = false, language?: string, provider?: string) =>
     request<Job>(
       `/api/meetings/${id}/jobs/${stage}/retry?force=${force}` +
-        (language ? `&language=${encodeURIComponent(language)}` : ""),
+        (language ? `&language=${encodeURIComponent(language)}` : "") +
+        (provider ? `&provider=${encodeURIComponent(provider)}` : ""),
       { method: "POST" },
     ),
   /** Stop a meeting's transcription, running or waiting; the meeting and its audio stay. */
@@ -1098,6 +1106,8 @@ export const api = {
         state: "failed" | "waiting";
         message: string;
         retry_at: string | null;
+        /** The provider to sign in to, when that is why it waits. */
+        waiting_for?: string | null;
       }[];
     }>("/api/attention"),
   audioUrl: (id: string, track: string) =>

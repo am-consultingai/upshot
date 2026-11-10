@@ -286,6 +286,12 @@ def _list_api(provider: str, config: Config, http: Any) -> list[ModelInfo]:
 
 
 CLI_PROVIDERS = ("claude-subscription", "codex-subscription", "antigravity-subscription")
+#: The program each CLI provider runs, named as the software it is (D46, D58, D79).
+CLI_PRODUCTS = {
+    "claude-subscription": "Claude Code",
+    "codex-subscription": "Codex",
+    "antigravity-subscription": "Antigravity CLI",
+}
 API_PROVIDERS = ("anthropic", "gemini", "openai", "ollama")
 PROVIDERS = (*CLI_PROVIDERS, *API_PROVIDERS)
 #: The providers the assistant panel talks to (``app.assistant.api.route_for``): only

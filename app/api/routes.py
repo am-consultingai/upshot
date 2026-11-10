@@ -22,6 +22,7 @@ from app import meta
 from app.clock import iso
 from app.config import LLM_PROVIDERS, Config
 from app.db.dao import GlossaryTerm, Meeting, capabilities, transaction
+from app.llm.model_choice import CLI_PRODUCTS
 from app.log import get
 from app.pipeline.queue import STOPPED
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
@@ -342,6 +343,8 @@ def attention(request: Request) -> dict[str, Any]:
                 "state": "failed" if job.state == "failed" else "waiting",
                 "message": job.last_error,
                 "retry_at": job.not_before if job.state != "failed" else None,
+                # The provider to sign in to, when that is why it waits (0014).
+                "waiting_for": job.waiting_for if job.state != "failed" else None,
             }
         )
     return {"items": items}
@@ -1443,12 +1446,18 @@ def retry_stage(
     stage: str,
     force: bool = False,
     language: str | None = None,
+    provider: str | None = None,
 ) -> dict[str, Any]:
     """Re-run a stage. With ``force``, redo the work rather than reuse what is on disk.
 
     ``language`` (transcribe only) is the hidden "Transcribe again as…" (R9): the meeting
     is transcribed in that language whatever the classifier said, by the model for it,
     and stays so on every later rerun. Implies ``force``.
+
+    ``provider`` (summarize only) is "Summarize with …" on a meeting whose provider is
+    signed out: this one run uses it, and the notes record that. Never for a sensitive
+    meeting, which is summarized on this computer. Implies ``force``. A summarize asked
+    for without it goes back to the provider in Settings.
     """
     svc = services_of(request)
     if stage not in {str(item) for item in STAGE_ORDER}:
@@ -1464,6 +1473,23 @@ def retry_stage(
             raise HTTPException(422, f"{language!r} is not a language Whisper transcribes")
         meta.update(meeting.path, asr_language_override=language)
         force = True
+    if provider is not None:
+        if stage != str(JobStage.SUMMARIZE):
+            raise HTTPException(422, "a provider applies to the summarize stage only")
+        if provider not in LLM_PROVIDERS or provider in ("fake", "none"):
+            raise HTTPException(422, f"{provider!r} is not a provider that can summarize")
+        if meeting.sensitive:
+            raise HTTPException(422, "a sensitive meeting is summarized on this computer")
+        running = svc.queue.running_for(meeting_id)
+        if running is not None and running.stage == str(JobStage.SUMMARIZE):
+            # The run under way would finish and end the job: the pick would not run, and
+            # would stay behind for some later automatic summary to find.
+            raise HTTPException(409, "This meeting is being summarized now. Try again after.")
+        force = True
+    # Set for the next run alone, or withdrawn by a plain Summarize.
+    picked_before = meta.read(meeting.path).get("summary_provider") is not None
+    if stage == str(JobStage.SUMMARIZE) and force and (provider is not None or picked_before):
+        meta.update(meeting.path, summary_provider=provider)
     if force:
         # A button press is a decision. Every later stage is redone too, or a fresh
         # summary would be rendered from the previous one's HTML.
@@ -1877,13 +1903,7 @@ PROBE_SCHEMA: dict[str, Any] = {
 #: one needs installed — named as the software it is, because that is what gets
 #: installed. Removing Codex from ``LLM_PROVIDERS`` removes it here too.
 CLI_PROVIDERS: dict[str, str] = {
-    provider: product
-    for provider, product in (
-        ("claude-subscription", "Claude Code"),
-        ("codex-subscription", "Codex"),
-        ("antigravity-subscription", "Antigravity CLI"),
-    )
-    if provider in LLM_PROVIDERS
+    provider: product for provider, product in CLI_PRODUCTS.items() if provider in LLM_PROVIDERS
 }
 
 
@@ -2499,7 +2519,8 @@ def llm_status(request: Request, fresh: bool = False) -> dict[str, Any]:
     )
     return {
         "active": str(svc.config.get("llm.provider")),
-        # Used only when a subscription reports its allowance spent; "" is none.
+        # Used only when a subscription's allowance is spent or its CLI is signed out;
+        # "" is none.
         "fallback": str(svc.config.get("llm.fallback_provider", "") or ""),
         "providers": providers,
     }
@@ -2510,12 +2531,26 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
     module = cli_module(provider)
     client = cli_client(svc, provider)
     cli = svc.cli_status.get(provider, client.status, program=client.executable, fresh=fresh)
+    # A summary parked because this CLI turned out signed out. Settings offers Sign in
+    # for it even when the CLI's own status reads signed in, and a fresh "signed in" (as
+    # after a sign-in) lets the parked summaries try now instead of in a quarter hour.
+    waiting = provider in svc.queue.waiting_for_sign_in()
+    spent_until = svc.cli_status.spent_until(provider, svc.clock.now())
+    if waiting and fresh and cli.signed_in is True and svc.queue.wake_waiting(provider):
+        log.info("%s reads signed in: its waiting summaries try now", provider)
     # Only probed when there is something to install: winget's own start-up is slow
     # enough to be felt on every settings load otherwise.
     plan = module.install_plan() if not cli.installed else None
     return {
         "id": provider,
         "label": label,
+        # The program, as notices and the meeting page name it ("Codex").
+        "product": CLI_PRODUCTS.get(provider, label),
+        # A summary waits for this CLI's sign-in (jobs.waiting_for): offer Sign in.
+        "waiting": waiting,
+        # Its plan's allowance is used up until then, as it last said: not offered as an
+        # alternative on the meeting page (the status itself cannot tell).
+        "spent_until": iso(spent_until) if spent_until else None,
         "needs": "cli",
         "ready": cli.installed,
         # Three-valued on purpose: `None` means the build is too old to be asked,

@@ -32,6 +32,13 @@ test.beforeAll(() => {
     ["-c", `from pathlib import Path; from tests.fixtures.codex import install_fake_codex; install_fake_codex(Path(${JSON.stringify(FOLDER)}))`],
     { cwd: ROOT },
   );
+  // A signed-in Antigravity beside it: the service a signed-out Codex is offered.
+  execFileSync(
+    join(ROOT, ".venv/bin/python"),
+    ["-c", `from pathlib import Path; from tests.fixtures.antigravity import install_fake_agy; install_fake_agy(Path(${JSON.stringify(join(FOLDER, "agy-ok"))}))`],
+    { cwd: ROOT },
+  );
+  PATHS.agy = join(FOLDER, "agy-ok", "agy");
   for (const mode of ["ok", "signed-out", "quota"]) {
     const wrapper = join(FOLDER, `codex-${mode}`);
     writeFileSync(wrapper, `#!/bin/sh\nFAKE_CODEX_MODE=${mode} exec "${join(FOLDER, "codex")}" "$@"\n`);
@@ -54,7 +61,7 @@ test.beforeEach(async ({ request, seed }) => {
 test.afterEach(async ({ request }) => {
   // Put everything back: a real-looking provider left selected stalls later specs.
   await settings(request, { "llm.provider": "fake", "llm.fallback_provider": "" });
-  await settings(request, { "llm.codex_cli_path": "codex" });
+  await settings(request, { "llm.codex_cli_path": "codex", "llm.antigravity_cli_path": "agy" });
 });
 
 const row = (page: Page) => page.locator('[data-provider="codex-subscription"]');
@@ -167,4 +174,47 @@ test("an_exhausted_allowance_waits_and_says_why_instead_of_failing", async ({ pa
   await expect(page.getByTestId("stage-failed")).toHaveCount(0);
   const attention = await (await request.get("/api/attention", { headers: HEADERS })).json();
   expect(JSON.stringify(attention)).toContain("e2e-quota");
+});
+
+test("a_signed_out_service_offers_sign_in_and_the_services_that_are_ready", async ({ page, request, seed }) => {
+  await seed([
+    {
+      id: "e2e-signed-out",
+      title: "Tableau",
+      state: "RENDERED",
+      started_at: isoAt(0, 10),
+      language: "en",
+      turns: [{ speaker: "ME", at_ms: 0, end_ms: 3000, text: "The dashboard ships Friday." }],
+      summary_html: "<p>An older summary.</p>",
+    },
+  ]);
+  await settings(request, {
+    "llm.codex_cli_path": PATHS["signed-out"],
+    "llm.antigravity_cli_path": PATHS.agy,
+    "detection.decided": true,
+  });
+  expect((await settings(request, { "llm.provider": "codex-subscription" })).status()).toBe(200);
+
+  await gotoApp(page, "/m/e2e-signed-out");
+  await page.getByTestId("overflow-menu-trigger").click();
+  await page.locator("[data-testid=overflow-menu-item][data-item=resummarize]").click();
+  await expect(page.getByTestId("stage-running")).toBeVisible();
+  await request.post("/api/test/run-jobs", { headers: HEADERS });
+
+  // Not a failure and not a stack trace: what is wrong, and what can be done now.
+  const card = page.getByTestId("signed-out");
+  await expect(card).toContainText("Codex is signed out", { timeout: 15_000 });
+  await expect(page.getByTestId("stage-failed")).toHaveCount(0);
+  await expect(card.getByTestId("signed-out-sign-in")).toBeVisible();
+  const other = card.locator('[data-testid=signed-out-use][data-provider="antigravity-subscription"]');
+  await expect(other).toHaveText("Summarize with Antigravity CLI");
+
+  await other.click();
+  await request.post("/api/test/run-jobs", { headers: HEADERS });
+  await expect(page.getByTestId("summary-html")).toContainText("Summarized by the fake Antigravity.", {
+    timeout: 15_000,
+  });
+  const meeting = await (await request.get("/api/meetings/e2e-signed-out", { headers: HEADERS })).json();
+  expect(meeting.summarized_by?.provider).toBe("antigravity-subscription");
+  expect(meeting.summarized_by?.fallback_for).toBe("codex-subscription");
 });

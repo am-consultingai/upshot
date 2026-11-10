@@ -254,8 +254,9 @@ DEFAULTS: dict[str, Any] = {
         "summary_models": {},
         "assistant_models": {},
         # Who summarizes when a subscription provider reports its plan allowance used up
-        # (and only then). Empty means nobody: the summary waits for the reset and the
-        # transcript does not leave the machine. A deliberate choice, never a default.
+        # or its CLI signed out (and only then). Empty means nobody: the summary waits for
+        # the reset or the sign-in and the transcript does not leave the machine. A
+        # deliberate choice, never a default.
         "fallback_provider": "",
     },
     # Test-only hooks behind the launcher key: calendar events added straight into the
