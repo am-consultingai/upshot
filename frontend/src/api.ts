@@ -372,6 +372,21 @@ export interface ModelChoices {
   effective: Record<ModelUse, string>;
 }
 
+/** A meeting that failed for good for a reason Upshot does not recognise (the error window). */
+export interface ErrorNotice {
+  id: string;
+  meeting_id: string;
+  title: string | null;
+  stage: string;
+  /** What went wrong, as the job recorded it: shown here, never sent. */
+  message: string;
+  at: string;
+  report:
+    | { status: "sent"; reference: string }
+    | { status: "ask"; event: Record<string, unknown> }
+    | { status: "none" };
+}
+
 export interface LlmProvider {
   id: string;
   label: string;
@@ -794,6 +809,14 @@ export const api = {
   noticeTexts: (id: number) => request<{ id: number; texts: string[] }>(`/api/legal/notices/${id}`),
   updates: () => request<UpdateState>("/api/updates"),
   diagnostics: () => request<DiagnosticsState>("/api/diagnostics"),
+  /** Meetings that failed for a reason Upshot does not recognise, not closed yet. */
+  errorNotices: () => request<{ items: ErrorNotice[] }>("/api/diagnostics/errors"),
+  /** Close the error window; with `send`, the report it showed is sent first. */
+  closeErrorNotice: (id: string, send: boolean) =>
+    request<{ report: { status: string; reference?: string } }>(
+      `/api/diagnostics/errors/${encodeURIComponent(id)}/close`,
+      { method: "POST", body: JSON.stringify({ send }) },
+    ),
   feedback: () => request<{ available: boolean }>("/api/feedback"),
   feedbackPreview: (body: FeedbackBody) =>
     request<FeedbackPreview>("/api/feedback/preview", { method: "POST", body: JSON.stringify(body) }),

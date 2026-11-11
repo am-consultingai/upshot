@@ -273,6 +273,17 @@
         "title": "ClientError",
         "type": "object"
       },
+      "CloseNotice": {
+        "properties": {
+          "send": {
+            "default": false,
+            "title": "Send",
+            "type": "boolean"
+          }
+        },
+        "title": "CloseNotice",
+        "type": "object"
+      },
       "FeedbackPost": {
         "properties": {
           "details": {
@@ -2155,6 +2166,79 @@
           }
         },
         "summary": "Client Error"
+      }
+    },
+    "/api/diagnostics/errors": {
+      "get": {
+        "description": "Meetings that failed for a reason Upshot does not recognise, not closed yet, each\nwith the report sent or, when the user has not agreed to reports, the one that would\nbe (owner, 2026-11-10). Meetings no longer listed are left out.",
+        "operationId": "error_notices_api_diagnostics_errors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Error Notices Api Diagnostics Errors Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Error Notices"
+      }
+    },
+    "/api/diagnostics/errors/{notice_id}/close": {
+      "post": {
+        "description": "Close the window: with ``send``, the report it showed goes first.",
+        "operationId": "close_error_notice_api_diagnostics_errors__notice_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseNotice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Close Error Notice Api Diagnostics Errors  Notice Id  Close Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Error Notice"
       }
     },
     "/api/diagnostics/setup-failure": {

@@ -84,3 +84,39 @@ def setup_failure(request: Request, body: SetupFailure) -> dict[str, Any]:
             product=product, stage=body.stage, reason=body.reason, log=lines
         )
     return {"reported": sent is not None}
+
+
+# --------------------------------------------------------------------- the error window
+
+
+@router.get("/errors")
+def error_notices(request: Request) -> dict[str, Any]:
+    """Meetings that failed for a reason Upshot does not recognise, not closed yet, each
+    with the report sent or, when the user has not agreed to reports, the one that would
+    be (owner, 2026-11-10). Meetings no longer listed are left out."""
+    from app.diagnostics import notices
+
+    dao = request.app.state.services.dao
+    items = []
+    for notice in notices.pending():
+        meeting = dao.visible_meeting(str(notice.get("meeting_id", "")))
+        if meeting is None:
+            continue
+        items.append({**notice, "title": meeting.title})
+    return {"items": items}
+
+
+class CloseNotice(BaseModel):
+    #: Send the report the window showed (only for one that asked).
+    send: bool = False
+
+
+@router.post("/errors/{notice_id}/close")
+def close_error_notice(request: Request, notice_id: str, body: CloseNotice) -> dict[str, Any]:
+    """Close the window: with ``send``, the report it showed goes first."""
+    from app.diagnostics import notices
+
+    closed = notices.close(notice_id, send=body.send)
+    if closed is None:
+        raise HTTPException(404, "no such notice")
+    return {"report": {k: v for k, v in closed["report"].items() if k != "event"}}
