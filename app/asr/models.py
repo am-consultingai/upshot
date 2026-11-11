@@ -245,7 +245,9 @@ class ModelNotInstalled(PermanentError):
         super().__init__(
             f"the {role} speech model ({model.repo}) is not installed at {where}: "
             "the installation is incomplete. Run the installer again to repair it "
-            "(or Settings → Speech → Download)."
+            "(or Settings → Speech → Download).",
+            # Its message says what to do: no error window, no crash report offered.
+            category="setup",
         )
 
 

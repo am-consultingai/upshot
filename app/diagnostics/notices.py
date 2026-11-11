@@ -172,30 +172,39 @@ def close(
     """Close a notice, and with it the other notices of the same error the window showed
     (``with_ids``: never one recorded after it was drawn); with ``send``, first send the
     report it showed — one report, whatever the number of meetings, and only for a notice
-    that asked. The notice as it ended, or ``None`` when there is no such notice."""
+    that asked. The notice as it ended, or ``None`` when there is no such notice.
+
+    The report goes before the notice is removed, and a send that fails says so rather
+    than raising: the user's Send is never lost to a file Windows holds open."""
     with _lock:
-        items = _read(home)
-        found = next((item for item in items if item.get("id") == notice_id), None)
-        if found is None:
-            return None
-        key = found.get("fingerprint")
-        closing = {notice_id} | {
-            str(item.get("id"))
-            for item in items
-            if item.get("id") in with_ids and item.get("fingerprint") == key
-        }
-        _write([item for item in items if item.get("id") not in closing], home)
+        found = next((item for item in _read(home) if item.get("id") == notice_id), None)
+    if found is None:
+        return None
     report = found.get("report") or {}
     if send and report.get("status") == "ask" and isinstance(report.get("event"), dict):
         from app.diagnostics import reporter as reporting
 
         active = reporting.active()
         event = report["event"]
-        if active is not None and active.send_prepared(event):
+        try:
+            went = active is not None and active.send_prepared(event)
+        except Exception:
+            log.exception("error notice %s: the report could not be sent", notice_id)
+            went = False
+        if went:
             found["report"] = {"status": "sent", "reference": str(event.get("event_id", ""))[:8]}
             log.info("error notice %s: report sent on the user's word", notice_id)
         else:
             found["report"] = {"status": "not_sent"}
+    key = found.get("fingerprint")
+    with _lock:
+        items = _read(home)
+        closing = {notice_id} | {
+            str(item.get("id"))
+            for item in items
+            if item.get("id") in with_ids and item.get("fingerprint") == key
+        }
+        _write([item for item in items if item.get("id") not in closing], home)
     return found
 
 
@@ -216,11 +225,14 @@ def forget_meeting(meeting_id: str, *, stage: str | None = None, home: Path | No
 
 
 @_never_raises(None)
-def keep_only(meeting_ids: set[str], home: Path | None = None) -> None:
-    """Drop the notices of meetings that no longer exist (removed by a path that could not
-    tidy up, or from another library): their error text must not outlive them."""
+def drop_meetings(meeting_ids: set[str], home: Path | None = None) -> None:
+    """Drop the notices of these meetings, found to no longer exist (removed by a path
+    that could not tidy up, or from another library): their error text must not outlive
+    them. Only these: a notice recorded meanwhile for another meeting stays."""
+    if not meeting_ids:
+        return
     with _lock:
         items = _read(home)
-        kept = [item for item in items if str(item.get("meeting_id")) in meeting_ids]
+        kept = [item for item in items if str(item.get("meeting_id")) not in meeting_ids]
         if len(kept) != len(items):
             _write(kept, home)

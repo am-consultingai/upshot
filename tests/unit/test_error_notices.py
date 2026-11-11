@@ -253,3 +253,32 @@ def test_a_report_sent_by_hand_counts_for_the_day(tmp_path: Path, active: None) 
     assert len(sent) == 1
     reporter.config.set("diagnostics.crash_reports", "on")
     assert reporter.report_exception(error, where="stage:summarize") is None
+
+
+def test_dropping_gone_meetings_never_takes_a_notice_recorded_meanwhile() -> None:
+    _record("gone", _boom())
+    seen = notices.pending()  # the list route reads...
+    _record("new", ValueError("meanwhile"))  # ...the worker records another...
+    notices.drop_meetings({str(item["meeting_id"]) for item in seen})  # ...the route prunes
+    assert [item["meeting_id"] for item in notices.pending()] == ["new"]
+
+
+def test_a_send_that_raises_is_not_lost_and_says_so(
+    tmp_path: Path, active: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reporter, _ = _reporter(tmp_path, "off")
+    set_active(reporter)
+    notice = _record("m", _boom())
+
+    def locked(_event: dict[str, Any]) -> bool:
+        raise PermissionError("sent.json is in use")
+
+    monkeypatch.setattr(reporter, "send_prepared", locked)
+    closed = notices.close(notice["id"], send=True)
+    assert closed is not None and closed["report"] == {"status": "not_sent"}
+
+
+def test_a_missing_speech_model_opens_no_window() -> None:
+    from app.asr.models import ModelNotInstalled
+
+    assert notices.recognised(ModelNotInstalled("hebrew", "C:/models"))

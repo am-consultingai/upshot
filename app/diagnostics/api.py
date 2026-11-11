@@ -98,16 +98,19 @@ def error_notices(request: Request) -> dict[str, Any]:
 
     dao = request.app.state.services.dao
     items = []
-    existing: set[str] = set()
+    gone: set[str] = set()
     for notice in notices.pending():
         meeting_id = str(notice.get("meeting_id", ""))
-        if dao.get_meeting(meeting_id) is not None:
-            existing.add(meeting_id)  # hidden (another calendar account) is still there
+        if dao.get_meeting(meeting_id) is None:
+            gone.add(meeting_id)  # hidden (another calendar account) is still there
+            continue
         meeting = dao.visible_meeting(meeting_id)
         if meeting is None:
             continue
         items.append({**notice, "title": meeting.title})
-    notices.keep_only(existing)  # gone meetings: their error text goes too
+    # Gone meetings: their error text goes too. Only those found gone here, never a notice
+    # the worker recorded since this list was read.
+    notices.drop_meetings(gone)
     # One window per error: how many other open notices the same error stopped, which a
     # close of the first closes with it.
     for item in items:
