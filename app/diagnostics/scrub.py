@@ -323,7 +323,8 @@ def platform_tags() -> dict[str, str]:
 #: (owner, 2026-11-11: as much as is relevant). A fixed list: anything else attached to an
 #: exception is dropped. None of these can hold meeting content: names of providers and
 #: models, numbers, and ``cli_message``, which is set only from what a CLI said about
-#: itself (its error stream, or its answer when it never reached the model).
+#: itself: Claude Code's own failure messages when the model was never reached, Codex's
+#: ``ERROR:`` lines that are not part of the prompt it echoed, Antigravity's result error.
 FACTS = (
     "provider",
     "model",
@@ -440,5 +441,6 @@ def _anonymous_message(text: str) -> str:
         return f"{match.group(1)}{match.group(2)}…"
 
     text = _NAMED.sub(hide, text)
-    # A name of several words: what is left of it up to the next ordinary word goes too.
-    return re.sub(r"… (?:[A-Z][\w&.-]*\s+)*(?=(?:[a-z]|$))", "… ", text)
+    # A name of several words: what is left of it, up to the next ordinary word or the
+    # end of the clause, goes too.
+    return re.sub(r"…(?:\s+[A-Z][\w&'.-]*)+(?=[\s,;:!?)]|$)", "…", text)

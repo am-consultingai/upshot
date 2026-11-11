@@ -82,6 +82,22 @@ NEEDS_UPDATE = ("unknown option", "unknown command", "error: unknown", "unknown 
 
 DEFAULT_EXECUTABLE = "claude"
 NAME = "claude-subscription"
+#: How Claude Code's own failure messages begin: the only ones a crash report quotes.
+OWN_PHRASES = (
+    "api error",
+    "failed to authenticate",
+    "invalid api key",
+    "not logged in",
+    "please run /login",
+    "claude ai usage limit reached",
+    "you've hit your limit",
+    "you\u2019ve hit your limit",
+    "5-hour limit reached",
+    "weekly limit reached",
+    "error: unknown option",
+    "error: unknown command",
+    "credit balance is too low",
+)
 #: Each program's ``--version`` by file and modification time: what a report says it ran.
 _VERSIONS: dict[str, str] = {}
 #: Anthropic's own winget package, from the documented install instructions.
@@ -713,9 +729,9 @@ class ClaudeCliClient:
 
     @classmethod
     def _envelope_facts(cls, out: str, err: str) -> dict[str, object]:
-        """What the failed run's envelope says about itself, for the crash report. The
-        CLI's own message only when the model was never reached (nothing a model wrote can
-        be in it then), or from its error stream."""
+        """What the failed run's envelope says about itself, for the crash report: its
+        status fields, and its own message only when it is one of Claude Code's own (see
+        below). Never its error stream."""
         try:
             envelope = json.loads(out.strip() or "null")
         except ValueError:
@@ -732,21 +748,13 @@ class ClaudeCliClient:
                 reached = api_ms > 0
                 facts["model_reached"] = reached
         # Only Claude Code's own account of a failure it knows: the model never reached,
-        # and the reason one of the failures it reports (a sign-in, a plan, an API error).
-        # Not the text of a hook that blocked the prompt, which can quote the prompt —
-        # the transcript — nor whatever else printed on the error stream.
-        if reached is False:
+        # no other stop reason than an API error, and a message that *starts* with one of
+        # its own phrases. A hook that blocked the prompt explains itself in words that can
+        # quote the prompt (the transcript) and may contain "quota" or "authentication".
+        stop = facts.get("terminal_reason")
+        if reached is False and stop in (None, "api_error"):
             own = (cls._reason(out) or "").strip()
-            lowered = own.lower()
-            known = (
-                facts.get("terminal_reason") == "api_error"
-                or lowered.startswith("api error")
-                or any(
-                    marker in lowered
-                    for marker in (*NOT_SIGNED_IN, *QUOTA_SPENT, *RATE_LIMITED, *NEEDS_UPDATE)
-                )
-            )
-            if own and known:
+            if own.lower().startswith(OWN_PHRASES):
                 facts["cli_message"] = own
         return facts
 

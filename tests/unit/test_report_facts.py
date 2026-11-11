@@ -255,3 +255,50 @@ def test_the_cli_version_is_asked_again_after_an_update(tmp_path: Path) -> None:
     os.utime(program, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10_000_000))  # updated
     assert client._version(str(program)) == "2.1.300 (Claude Code)"
     assert len(asked) == 2
+
+
+@pytest.mark.parametrize("stop", [None, "hook_blocked"])
+def test_a_hook_message_with_a_classifier_word_is_never_quoted(stop: str | None) -> None:
+    envelope = json.loads(EXPIRED_ENVELOPE)
+    envelope.update(
+        result=(
+            "UserPromptSubmit operation blocked by hook: prompt mentions the Q3 quota "
+            "and authentication for Project Falcon, Dana Levi's team"
+        )
+    )
+    if stop is None:
+        envelope.pop("terminal_reason", None)
+    else:
+        envelope["terminal_reason"] = stop
+    try:
+        ClaudeCliClient._raise_for(1, json.dumps(envelope), "")
+    except RecoverableError as exc:
+        facts = scrub.facts(exc)
+    assert "cli_message" not in facts
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        ("Your organization Acme Widgets.", "Your organization …"),
+        ("Account Acme Widgets Ltd, access denied", "Account …, access denied"),
+        ("Your account does not have access", "Your account does not have access"),
+    ],
+)
+def test_names_after_a_keyword_go_whole(said: str, kept: str) -> None:
+    error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
+    assert scrub.facts(error)["cli_message"] == kept
+
+
+def test_a_model_the_user_named_is_reported_as_custom() -> None:
+    from app.llm.client import FakeLlm
+    from app.pipeline.stages.summarize import reported_model
+
+    own = FakeLlm()
+    own.name = "openai"
+    own.model = "acme-gpt4o-prod"  # type: ignore[attr-defined]
+    assert reported_model(own) == "custom"
+    vendor = FakeLlm()
+    vendor.name = "gemini"
+    vendor.model = "gemini-2.5-pro"  # type: ignore[attr-defined]
+    assert reported_model(vendor) == "gemini-2.5-pro"

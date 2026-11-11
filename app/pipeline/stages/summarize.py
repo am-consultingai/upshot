@@ -351,7 +351,7 @@ def summarize(
             )
         except UpshotError as exc:
             # Every provider, API keys included: which one failed, for a crash report.
-            describe(exc, provider=client.name, model=str(getattr(client, "model", "") or ""))
+            describe(exc, provider=client.name, model=reported_model(client))
             raise
         usage.append(result.usage)
         parts.append(str(result.data.get("summary_html", "")))
@@ -548,6 +548,20 @@ def note_spent(ctx: StageContext, *errors: BaseException) -> None:
     for error in errors:
         if isinstance(error, QuotaExhausted) and error.provider:
             status.spent(error.provider, back_at(error, now))
+
+
+#: Providers whose model ids are the vendor's own: any other (an OpenAI-compatible endpoint,
+#: Ollama) runs a model the user named, which can name their company or deployment.
+VENDOR_MODELS = frozenset(
+    {"anthropic", "gemini", "claude-subscription", "codex-subscription", "antigravity-subscription"}
+)
+
+
+def reported_model(client: LlmClient) -> str:
+    """The model a crash report names: the vendor's id, or "custom" for one the user named."""
+    if client.name not in VENDOR_MODELS:
+        return "custom"
+    return str(getattr(client, "model", "") or "default")
 
 
 def windows_band(count: int) -> str:
