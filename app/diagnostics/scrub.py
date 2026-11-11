@@ -316,3 +316,71 @@ def platform_tags() -> dict[str, str]:
     except Exception:  # psutil is a dependency, but a report must never fail on it
         pass
     return tags
+
+
+#: The facts a crash report may carry about a failure, beyond the error and its stack
+#: (owner, 2026-11-11: as much as is relevant). A fixed list: anything else attached to an
+#: exception is dropped. None of these can hold meeting content: names of providers and
+#: models, numbers, and ``cli_message``, which is set only from what a CLI said about
+#: itself (its error stream, or its answer when it never reached the model).
+FACTS = (
+    "provider",
+    "model",
+    "cli_version",
+    "exit_code",
+    "model_reached",
+    "terminal_reason",
+    "subtype",
+    "api_error_status",
+    "num_turns",
+    "cli_message",
+    "stage",
+    "attempt",
+    "windows",
+    "language",
+    "meeting_minutes",
+)
+
+
+def facts(exc: BaseException) -> dict[str, Any]:
+    """The listed facts attached to ``exc`` and to those it was raised from, scrubbed:
+    strings lose paths, addresses and keys and are cut to 300 characters."""
+    found: dict[str, Any] = {}
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        held = getattr(current, "facts", None)
+        if isinstance(held, dict):
+            for key in FACTS:
+                if key in held and key not in found:
+                    found[key] = held[key]
+        current = current.__cause__ or current.__context__
+    clean: dict[str, Any] = {}
+    for key, value in found.items():
+        if isinstance(value, bool | int | float):
+            clean[key] = value
+        else:
+            text = scrub_text(str(value), homes=homes())
+            if key == "cli_message":
+                text = _anonymous_message(text)
+            text = text.strip()
+            if text:
+                clean[key] = text[:300]
+    return clean
+
+
+#: A sign-in error can name an account or an organisation, quoted or after a keyword.
+_CLI_QUOTED = re.compile(r"(['\"\u2018\u201c])[^'\"\u2019\u201d]{1,120}(['\"\u2019\u201d])")
+_NAMED = re.compile(
+    r"\b(organi[sz]ation|org|account|workspace|tenant)\b(\s*[:=]?\s*)"
+    r"([^\s,.;:)]+(?:\s+(?:Ltd|Inc|LLC|GmbH|Corp)\.?)?)",
+    re.IGNORECASE,
+)
+
+
+def _anonymous_message(text: str) -> str:
+    """A CLI's message without the names in it: quoted values, and what follows words
+    such as "organization" or "account", become placeholders."""
+    text = _CLI_QUOTED.sub(r"\1…\2", text)
+    return _NAMED.sub(lambda m: f"{m.group(1)}{m.group(2)}…", text)

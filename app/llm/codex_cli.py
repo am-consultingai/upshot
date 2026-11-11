@@ -43,7 +43,14 @@ from typing import Any
 from app import paths
 from app.clock import SystemClock
 from app.config import Config
-from app.errors import PermanentError, QuotaExhausted, RecoverableError, SignInRequired
+from app.errors import (
+    PermanentError,
+    QuotaExhausted,
+    RecoverableError,
+    SignInRequired,
+    UpshotError,
+    describe,
+)
 from app.llm.claude_cli import (
     CliStatus,
     InstallPlan,
@@ -545,6 +552,15 @@ class _Scratch:
     answer_file: Path
 
 
+def own_error(stderr: str) -> str:
+    """Codex's own words about a failure, for a crash report: its ``ERROR:`` lines only.
+    The rest of its error stream is progress, which echoes the prompt — the transcript."""
+    lines = [
+        line.strip() for line in stderr.splitlines() if line.strip().lower().startswith("error")
+    ]
+    return lines[-1] if lines else ""
+
+
 class CodexCliClient:
     name = NAME
 
@@ -715,7 +731,17 @@ class CodexCliClient:
                     raise PermanentError("Codex is not installed", category="setup") from exc
                 answer = self._answer(scratch.answer_file, out)
                 if code != 0 or not answer:
-                    self._raise_for(code, out, err, path)
+                    try:
+                        self._raise_for(code, out, err, path)
+                    except UpshotError as exc:
+                        describe(
+                            exc,
+                            provider=NAME,
+                            model=self.model or "default",
+                            exit_code=code,
+                            cli_message=own_error(err),
+                        )
+                        raise
                 return self._relax(answer, schema)
 
             data, attempts = complete_with_repair(

@@ -40,7 +40,14 @@ from pathlib import Path
 from typing import Any
 
 from app import paths
-from app.errors import PermanentError, QuotaExhausted, RecoverableError, SignInRequired
+from app.errors import (
+    PermanentError,
+    QuotaExhausted,
+    RecoverableError,
+    SignInRequired,
+    UpshotError,
+    describe,
+)
 from app.llm.claude_cli import CliStatus, InstallPlan, Runner, creation_flags
 from app.llm.client import LlmResult
 from app.llm.codex_cli import isolated
@@ -585,7 +592,19 @@ class AntigravityCliClient:
                     # it carries the model's text, and a summary that mentions "safety"
                     # or a "usage limit" is not a refusal or a spent plan.
                     said = str(result.get("error") or "") if result is not None else out
-                    self._raise_for(code, said, err, path)
+                    try:
+                        self._raise_for(code, said, err, path)
+                    except UpshotError as exc:
+                        # Only the result's own error: its stream carries the model's text.
+                        own = str(result.get("error") or "") if result is not None else ""
+                        describe(
+                            exc,
+                            provider=NAME,
+                            model=self.model or "default",
+                            exit_code=code,
+                            cli_message=own,
+                        )
+                        raise
                 return answer
 
             data, attempts = complete_with_repair(

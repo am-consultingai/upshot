@@ -304,6 +304,7 @@ def summarize(
         overlap_tokens=int(ctx.config.get("llm.window_overlap_tokens", 300)),
     )
     log.info("summarizing %d window(s) in %s (free-form)", len(windows), language)
+    ctx.metrics["windows"] = len(windows)  # for a crash report, if this run fails
 
     envelope = (
         "Reply with a JSON object holding `summary_html` — the complete summary as HTML — "

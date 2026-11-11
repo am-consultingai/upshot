@@ -9,6 +9,23 @@ class UpshotError(Exception):
     """Base class for everything this application raises deliberately."""
 
 
+def describe(exc: BaseException, **facts: object) -> BaseException:
+    """Attach facts about a failure for its crash report (``scrub.facts`` keeps only the
+    listed ones, scrubbed): which provider, its exit code, the CLI's own words when it
+    never reached the model. Later facts do not overwrite earlier ones. Returns ``exc``."""
+    held = getattr(exc, "facts", None)
+    if not isinstance(held, dict):
+        held = {}
+        try:
+            exc.facts = held  # type: ignore[attr-defined]
+        except AttributeError:  # an exception type that takes no attributes
+            return exc
+    for key, value in facts.items():
+        if value is not None and value != "" and key not in held:
+            held[key] = value
+    return exc
+
+
 class RecoverableError(UpshotError):
     """Retry with backoff."""
 

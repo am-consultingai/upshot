@@ -31,7 +31,14 @@ from typing import Any, Protocol
 
 from app import paths
 from app.config import Config
-from app.errors import PermanentError, QuotaExhausted, RecoverableError, SignInRequired
+from app.errors import (
+    PermanentError,
+    QuotaExhausted,
+    RecoverableError,
+    SignInRequired,
+    UpshotError,
+    describe,
+)
 from app.llm.client import LlmResult
 from app.llm.console_log import transcribed
 from app.llm.repair import complete_with_repair, schema_instruction
@@ -75,6 +82,8 @@ NEEDS_UPDATE = ("unknown option", "unknown command", "error: unknown", "unknown 
 
 DEFAULT_EXECUTABLE = "claude"
 NAME = "claude-subscription"
+#: Each program's ``--version``, asked once: what a crash report says it ran.
+_VERSIONS: dict[str, str] = {}
 #: Anthropic's own winget package, from the documented install instructions.
 WINGET_PACKAGE = "Anthropic.ClaudeCode"
 INSTALL_DOCS_URL = "https://code.claude.com/docs/en/setup"
@@ -643,9 +652,13 @@ class ClaudeCliClient:
                 raise RecoverableError(f"Claude Code timed out after {self.timeout:g}s") from exc
             except FileNotFoundError as exc:
                 raise PermanentError("Claude Code is not installed", category="setup") from exc
-            if code != 0:
-                self._raise_for(code, out, err, path)
-            return self._payload(out)
+            try:
+                if code != 0:
+                    self._raise_for(code, out, err, path)
+                return self._payload(out)
+            except UpshotError as exc:
+                describe(exc, model=self.model or "default", cli_version=self._version(path))
+                raise
 
         data, attempts = complete_with_repair(
             send, user, schema, max_repairs=self.max_repairs, provider=self.name
@@ -684,6 +697,41 @@ class ClaudeCliClient:
 
     @classmethod
     def _raise_for(cls, code: int, out: str, err: str, path: str = DEFAULT_EXECUTABLE) -> None:
+        try:
+            cls._classify(code, out, err, path)
+        except UpshotError as exc:
+            describe(exc, provider=NAME, exit_code=code, **cls._envelope_facts(out, err))
+            raise
+
+    @classmethod
+    def _envelope_facts(cls, out: str, err: str) -> dict[str, object]:
+        """What the failed run's envelope says about itself, for the crash report. The
+        CLI's own message only when the model was never reached (nothing a model wrote can
+        be in it then), or from its error stream."""
+        try:
+            envelope = json.loads(out.strip() or "null")
+        except ValueError:
+            envelope = None
+        facts: dict[str, object] = {}
+        reached: bool | None = None
+        if isinstance(envelope, dict):
+            for key in ("terminal_reason", "subtype", "api_error_status", "num_turns"):
+                value = envelope.get(key)
+                if isinstance(value, str | int) and not isinstance(value, bool):
+                    facts[key] = value
+            api_ms = envelope.get("duration_api_ms")
+            if isinstance(api_ms, int | float):
+                reached = api_ms > 0
+                facts["model_reached"] = reached
+        own = err.strip()
+        if not own and reached is False:
+            own = cls._reason(out) or ""
+        if own:
+            facts["cli_message"] = own
+        return facts
+
+    @classmethod
+    def _classify(cls, code: int, out: str, err: str, path: str = DEFAULT_EXECUTABLE) -> None:
         reason = cls._reason(out)
         said = out.strip() if reason is None else reason
         text = "\n".join(part for part in (err.strip(), said) if part)
@@ -727,6 +775,16 @@ class ClaudeCliClient:
                 if isinstance(value, str) and value.strip():
                     return value
         return text
+
+    def _version(self, path: str) -> str:
+        """The CLI's version, asked once per program and kept: for a crash report."""
+        if path not in _VERSIONS:
+            try:
+                code, out, _err = self.runner([path, "--version"], "", 30.0)
+                _VERSIONS[path] = out.strip()[:40] if code == 0 else ""
+            except Exception:
+                _VERSIONS[path] = ""
+        return _VERSIONS[path]
 
     def count_tokens(self, text: str) -> int:
         """No token endpoint here, so windows are estimated — and deliberately small.

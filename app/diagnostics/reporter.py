@@ -33,6 +33,8 @@ from app.log import get
 log = get(__name__)
 
 CONSENT = ("unset", "on", "off")
+#: The outbox of reports the user sent by hand from the error window, one by one.
+APPROVED = "outbox-approved"
 _active: CrashReporter | None = None
 
 
@@ -113,10 +115,10 @@ class CrashReporter:
             return None
         values = scrub.exception_values(exc)
         return self._report(
-            {"exception": {"values": values}, "level": "error"},
+            _exception_body(exc, values),
             fingerprint=_fingerprint(values),
             where=where,
-            tags=tags,
+            tags=_with_provider(exc, tags),
         )
 
     def prepare_exception(
@@ -128,8 +130,8 @@ class CrashReporter:
         if not self.available:
             return None
         values = scrub.exception_values(exc)
-        body = {"exception": {"values": values}, "level": "error"}
-        return self._event(body, where=where, tags=tags or {}, platform="python")
+        body = _exception_body(exc, values)
+        return self._event(body, where=where, tags=_with_provider(exc, tags), platform="python")
 
     def send_prepared(self, event: dict[str, Any]) -> bool:
         """Send a report the user saw and chose to send: exactly that event, no other."""
@@ -145,13 +147,32 @@ class CrashReporter:
             (self.home / "last-report.json").write_text(
                 json.dumps(event, indent=2, ensure_ascii=False), encoding="utf-8"
             )
+        # Its own outbox, holding only reports the user sent one by one: whatever crash
+        # reports are set to, this delivers this report (and others they sent by hand that
+        # waited for a connection), never one kept automatically, and switching reports off
+        # does not drop it.
         if self.background:
             threading.Thread(
-                target=self._deliver, args=(event, self.dsn), name="crash-report", daemon=True
+                target=self._deliver,
+                args=(event, self.dsn, APPROVED),
+                name="crash-report",
+                daemon=True,
             ).start()
         else:
-            self._deliver(event, self.dsn)
+            self._deliver(event, self.dsn, APPROVED)
         return True
+
+    def flush_approved(self) -> int:
+        """At start: reports the user sent by hand that waited for a connection."""
+        if not self.available or not self.dsn:
+            return 0
+        try:
+            from app.diagnostics.client import SentryClient
+
+            return SentryClient(self.dsn, self.home / APPROVED).flush()
+        except Exception:
+            log.exception("could not send the reports kept for later")
+            return 0
 
     def report_native(
         self, frames: list[dict[str, Any]], *, version: str | None
@@ -289,7 +310,7 @@ class CrashReporter:
         path.write_text(json.dumps(sent), encoding="utf-8")
         return True
 
-    def _deliver(self, event: dict[str, Any], dsn: str | None) -> None:
+    def _deliver(self, event: dict[str, Any], dsn: str | None, box: str | None = None) -> None:
         try:
             if self._send is not None:
                 self._send("event", event)
@@ -298,10 +319,26 @@ class CrashReporter:
 
             assert dsn
             # One outbox per project: an item kept for later must reach the same one.
-            box = "outbox-ui" if dsn == self.frontend_dsn and dsn != self.dsn else "outbox"
+            if box is None:
+                box = "outbox-ui" if dsn == self.frontend_dsn and dsn != self.dsn else "outbox"
             SentryClient(dsn, self.home / box).send("event", event)
         except Exception:  # reporting a crash must never cause one
             log.exception("could not send a crash report")
+
+
+def _exception_body(exc: BaseException, values: list[dict[str, Any]]) -> dict[str, Any]:
+    """The error, its stack, and the listed facts about the failure (``scrub.facts``)."""
+    body: dict[str, Any] = {"exception": {"values": values}, "level": "error"}
+    known = scrub.facts(exc)
+    if known:
+        body["contexts"] = {"failure": known}
+    return body
+
+
+def _with_provider(exc: BaseException, tags: dict[str, str] | None) -> dict[str, str]:
+    """The provider as a tag as well, so reports can be counted by it in Sentry."""
+    provider = scrub.facts(exc).get("provider")
+    return {**(tags or {}), **({"provider": str(provider)} if provider else {})}
 
 
 def _fingerprint(values: list[dict[str, Any]]) -> str:
