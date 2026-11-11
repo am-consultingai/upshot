@@ -202,6 +202,17 @@ class BaseNotifier:
             )
         )
 
+    def fallback_took_over(self, meeting_id: str, signed_out: str, wrote: str) -> None:
+        """The fallback wrote the summary because ``signed_out`` is signed out."""
+        self.show(
+            Toast(
+                title=self._t("toast.fallbackTookOver.title", product=signed_out, fallback=wrote),
+                buttons=(Button(self._t("button.open"), "meeting.open", meeting_id),),
+                key=f"fallback:{signed_out}",
+                meeting_id=meeting_id,
+            )
+        )
+
     def failed(self, meeting_id: str, stage: str) -> None:
         # A stage the catalogue does not name keeps its own name, as English always did.
         name = self._t(f"stage.{stage}") if f"stage.{stage}" in MESSAGES else stage.title()

@@ -456,6 +456,22 @@ def test_a_signed_out_cli_goes_to_the_fallback_the_user_chose(  # type: ignore[n
     assert written["fallback_for"] == "codex-subscription"
     assert "not signed in" in written["fallback_reason"]
 
+    # Taken over for a sign-out: the user is told, once per sign-out (owner, 2026-11-11).
+    notifier = api.services.notifier
+    told = [t for t in notifier.shown if t.key.startswith("fallback:")]
+    assert [t.title for t in told] == ["Codex CLI is signed out — Gemini wrote the summary instead"]
+    assert told[0].meeting_id == meeting.id
+    second = api.services.meetings.create(source="manual", title="Backlog")
+    second.path.mkdir(parents=True, exist_ok=True)
+    (second.path / "transcript.md").write_text(TRANSCRIPT, encoding="utf-8")
+    queue = api.services.queue
+    queue.enqueue(second.id, JobStage.SUMMARIZE)
+    while (job := queue.claim_next()) is not None:  # the first meeting's later stages too
+        api.services.worker.execute(job)
+    summarized = queue.get_by_stage(second.id, str(JobStage.SUMMARIZE))
+    assert summarized is not None and summarized.state == "done"
+    assert len([t for t in notifier.shown if t.key.startswith("fallback:")]) == 1, "one message"
+
 
 def test_when_the_fallback_cannot_run_either_the_job_waits_on_the_usual_one(  # type: ignore[no-untyped-def]
     api, monkeypatch: pytest.MonkeyPatch
@@ -725,7 +741,7 @@ def test_signed_out_tells_the_user_once_and_refreshes_the_status(  # type: ignor
 
     notifier = api.services.notifier
     titles = [t.title for t in notifier.shown if t.key.startswith("signedout:")]
-    assert titles == ["Codex is signed out — the summary is waiting"], "two meetings, one toast"
+    assert titles == ["Codex CLI is signed out — the summary is waiting"], "two meetings, one toast"
     assert first.id != second.id
 
     attention = api.client().get("/api/attention").json()["items"]

@@ -22,7 +22,7 @@ from app import meta
 from app.clock import iso
 from app.config import LLM_PROVIDERS, Config
 from app.db.dao import GlossaryTerm, Meeting, capabilities, transaction
-from app.llm.model_choice import CLI_PRODUCTS
+from app.llm.model_choice import CLI_NAMES, CLI_PRODUCTS
 from app.log import get
 from app.pipeline.queue import STOPPED
 from app.pipeline.states import STAGE_ORDER, JobStage, MeetingState
@@ -2544,8 +2544,8 @@ def cli_row(svc: Services, provider: str, label: str, *, fresh: bool = False) ->
     return {
         "id": provider,
         "label": label,
-        # The program, as notices and the meeting page name it ("Codex").
-        "product": CLI_PRODUCTS.get(provider, label),
+        # How notices and the meeting page name it ("Claude Agent", as the row's label).
+        "product": CLI_NAMES.get(provider, label),
         # A summary waits for this CLI's sign-in (jobs.waiting_for): offer Sign in.
         "waiting": waiting,
         # Its plan's allowance is used up until then, as it last said: not offered as an

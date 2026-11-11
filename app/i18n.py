@@ -281,6 +281,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "{product} no tiene la sesión iniciada — el resumen está en espera",
         "fr": "{product} n'est pas connecté — le résumé attend",
     },
+    "toast.fallbackTookOver.title": {
+        "en": "{product} is signed out — {fallback} wrote the summary instead",
+        "he": "{product} לא מחובר — {fallback} כתב את הסיכום במקומו",
+        "de": "{product} ist nicht angemeldet – {fallback} hat die Zusammenfassung geschrieben",
+        "es": "{product} no tiene la sesión iniciada — {fallback} escribió el resumen",
+        "fr": "{product} n'est pas connecté — {fallback} a rédigé le résumé à sa place",
+    },
     "toast.failed.title": {
         "en": "{stage} failed — audio is safe",
         "he": "שלב {stage} נכשל — השמע שמור",

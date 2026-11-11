@@ -492,6 +492,9 @@ def run(ctx: StageContext) -> None:
                 client=fallback,
                 instead_of=stuck,
             )
+            if isinstance(stuck, SignInRequired) and stuck.provider:
+                # The worker tells the user: the fallback took over for a sign-out.
+                ctx.metrics["signed_out_instead_of"] = stuck.provider
         except Deferred as also:
             log.warning("the fallback %s cannot run either: %s", fallback.name, also)
             note_spent(ctx, stuck, also)

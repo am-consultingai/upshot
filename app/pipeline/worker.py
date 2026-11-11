@@ -133,6 +133,8 @@ class Worker:
         self.services = services
         #: When each provider's sign-out was last told (monotonic): one toast per sign-out.
         self._told_signed_out: dict[str, float] = {}
+        #: When each provider's sign-out was last answered by the fallback, told the same way.
+        self._told_fallback: dict[str, float] = {}
         #: File transcription (D86): the store of file jobs, and the scheduler that picks
         #: between them and meeting jobs, first in, first out. Without them the worker
         #: runs meeting jobs only, as it always has.
@@ -532,8 +534,12 @@ class Worker:
             # A summary written by a provider (in this run: not one that found the notes
             # current and skipped) means it is signed in and has allowance: its next
             # sign-out is news again, and it may be offered on the meeting page.
-            name = str((context.metrics if context else {}).get("written_by") or "")
+            metrics = context.metrics if context else {}
+            name = str(metrics.get("written_by") or "")
             self._told_signed_out.pop(name, None)
+            instead_of = str(metrics.get("signed_out_instead_of") or "")
+            if instead_of and name:
+                self._fallback_took_over(job, instead_of, name)
             status = getattr(self.services, "cli_status", None) if self.services else None
             if status is not None and name:
                 status.unspent(name)
@@ -600,6 +606,26 @@ class Worker:
         if signed_out:
             self._signed_out(job, exc.provider)
 
+    def _fallback_took_over(self, job: Job, signed_out: str, wrote: str) -> None:
+        """The fallback wrote a summary because the usual provider is signed out: say so
+        (owner, 2026-11-11), once per sign-out like the sign-out notice itself, so a
+        backlog of meetings is one message and not one each."""
+        notifier = getattr(self.services, "notifier", None) if self.services else None
+        if notifier is None or not hasattr(notifier, "fallback_took_over"):
+            return
+        now = self.clock.monotonic()
+        told = self._told_fallback.get(signed_out)
+        if told is not None and now - told < SIGNED_OUT_TOLD_S:
+            return
+        self._told_fallback[signed_out] = now
+        from app.llm.model_choice import PROVIDER_NAMES
+
+        notifier.fallback_took_over(
+            job.meeting_id,
+            PROVIDER_NAMES.get(signed_out, signed_out),
+            PROVIDER_NAMES.get(wrote, wrote),
+        )
+
     def _signed_out(self, job: Job, provider: str) -> None:
         """A CLI turned out signed out: the page must see it now, not at the status
         cache's next refresh, and the user hears it once per sign-out — not once per
@@ -616,9 +642,9 @@ class Worker:
         if told is not None and now - told < SIGNED_OUT_TOLD_S:
             return
         self._told_signed_out[provider] = now
-        from app.llm.model_choice import CLI_PRODUCTS
+        from app.llm.model_choice import CLI_NAMES
 
-        notifier.signed_out(job.meeting_id, CLI_PRODUCTS.get(provider, provider))
+        notifier.signed_out(job.meeting_id, CLI_NAMES.get(provider, provider))
 
     def _on_failure(
         self, job: Job, exc: BaseException, *, permanent: bool, ran_with: str | None = None
