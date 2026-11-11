@@ -30,22 +30,30 @@ export default function ErrorNoticeHost() {
     // Server events refetch it as a job fails; this only catches one that slipped by.
     refetchInterval: 60_000,
   });
-  const notice = notices.data?.items[0];
+  const items = notices.data?.items ?? [];
+  const notice = items[0];
   if (!notice) return null;
-  return <ErrorNoticeDialog key={notice.id} notice={notice} />;
+  // The others this window stands for: closed with it, and only those it was drawn with.
+  const alongside = items.slice(1).filter((item) => item.fingerprint === notice.fingerprint);
+  return <ErrorNoticeDialog key={notice.id} notice={notice} alongside={alongside.map((item) => item.id)} />;
 }
 
-function ErrorNoticeDialog({ notice }: { notice: ErrorNotice }) {
+function ErrorNoticeDialog({ notice, alongside }: { notice: ErrorNotice; alongside: string[] }) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showReport, setShowReport] = useState(false);
   const box = useRef<HTMLDivElement | null>(null);
   const close = useMutation({
-    mutationFn: (send: boolean) => api.closeErrorNotice(notice.id, send),
+    mutationFn: (send: boolean) => api.closeErrorNotice(notice.id, send, alongside),
     onSuccess: (answer, send) => {
       if (send && answer.report.status === "sent") toast({ title: t("errorNotice.thanks") });
       else if (send) toast({ title: t("errorNotice.notSent"), tone: "danger" });
+      // Gone at once, not when the refetch lands: no buttons left to press twice.
+      const closed = new Set([notice.id, ...alongside]);
+      queryClient.setQueryData<{ items: ErrorNotice[] }>(["error-notices"], (data) =>
+        data ? { items: data.items.filter((item) => !closed.has(item.id)) } : data,
+      );
       void queryClient.invalidateQueries({ queryKey: ["error-notices"] });
     },
     onError: (error) => toast({ title: reason(error), tone: "danger" }),

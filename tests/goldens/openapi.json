@@ -279,6 +279,14 @@
             "default": false,
             "title": "Send",
             "type": "boolean"
+          },
+          "with_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "With Ids",
+            "type": "array"
           }
         },
         "title": "CloseNotice",

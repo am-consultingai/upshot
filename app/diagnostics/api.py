@@ -98,11 +98,16 @@ def error_notices(request: Request) -> dict[str, Any]:
 
     dao = request.app.state.services.dao
     items = []
+    existing: set[str] = set()
     for notice in notices.pending():
-        meeting = dao.visible_meeting(str(notice.get("meeting_id", "")))
+        meeting_id = str(notice.get("meeting_id", ""))
+        if dao.get_meeting(meeting_id) is not None:
+            existing.add(meeting_id)  # hidden (another calendar account) is still there
+        meeting = dao.visible_meeting(meeting_id)
         if meeting is None:
             continue
         items.append({**notice, "title": meeting.title})
+    notices.keep_only(existing)  # gone meetings: their error text goes too
     # One window per error: how many other open notices the same error stopped, which a
     # close of the first closes with it.
     for item in items:
@@ -117,6 +122,8 @@ def error_notices(request: Request) -> dict[str, Any]:
 class CloseNotice(BaseModel):
     #: Send the report the window showed (only for one that asked).
     send: bool = False
+    #: The other notices of the same error the window showed, closed with it.
+    with_ids: list[str] = Field(default_factory=list, max_length=50)
 
 
 @router.post("/errors/{notice_id}/close")
@@ -124,7 +131,7 @@ def close_error_notice(request: Request, notice_id: str, body: CloseNotice) -> d
     """Close the window: with ``send``, the report it showed goes first."""
     from app.diagnostics import notices
 
-    closed = notices.close(notice_id, send=body.send)
+    closed = notices.close(notice_id, send=body.send, with_ids=frozenset(body.with_ids))
     if closed is None:
         raise HTTPException(404, "no such notice")
     return {"report": {k: v for k, v in closed["report"].items() if k != "event"}}

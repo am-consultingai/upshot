@@ -66,3 +66,14 @@ def test_the_list_says_how_many_meetings_the_same_error_stopped(tmp_path: Path) 
         )  # fmt: skip
     items = api.client().get("/api/diagnostics/errors").json()["items"]
     assert [item["same_error"] for item in items] == [2, 2, 2]
+
+
+def test_notices_of_meetings_that_no_longer_exist_are_dropped(tmp_path: Path) -> None:
+    """Removed by a path that could not tidy up: the error text goes when it is next asked."""
+    api = build_harness(tmp_path)
+    notices.record(
+        meeting_id="gone", stage="summarize", message="SECRET", at="now",
+        exc=RuntimeError("boom"), sent=None,
+    )  # fmt: skip
+    assert api.client().get("/api/diagnostics/errors").json()["items"] == []
+    assert notices.pending() == []

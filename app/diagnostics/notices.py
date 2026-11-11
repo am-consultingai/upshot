@@ -18,10 +18,13 @@ the job's own error, on this computer only; what may leave it is the report alon
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import threading
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -56,26 +59,56 @@ def _read(home: Path | None = None) -> list[dict[str, Any]]:
 
 
 def _write(items: list[dict[str, Any]], home: Path | None = None) -> None:
-    """Whole or not at all: a crash mid-write must not lose every notice."""
+    """Whole or not at all: a crash mid-write must not lose every notice. Windows refuses
+    the replace while another process has the file open (an indexer, an antivirus scan):
+    tried again briefly, as ``app.prepare`` does."""
     path = _path(home)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(items[-KEEP:], ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temporary, path)
+    for attempt in range(10):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(0.05)
 
 
-def fingerprint(exc: BaseException) -> str:
+def _never_raises(default: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """The window is a courtesy: a notice that cannot be kept or dropped must never stop
+    a stage from being marked failed, the next stage from being queued, or a delete from
+    being reported as done. Logged, and ``default`` returned."""
+
+    def wrap(function: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(function)
+        def guarded(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return function(*args, **kwargs)
+            except Exception:
+                log.exception("error notices: %s failed", function.__name__)
+                return default
+
+        return guarded
+
+    return wrap
+
+
+def fingerprint(exc: BaseException, stage: str = "") -> str:
     """The same error, the same key: its type and the innermost Upshot frame, as the
-    reporter counts crashes. Meetings stopped by one error share one window."""
+    reporter counts crashes, at the same stage. Meetings stopped by one error share one
+    window."""
     from app.diagnostics import scrub
     from app.diagnostics.reporter import _fingerprint
 
     try:
-        return _fingerprint(scrub.exception_values(exc))
+        return f"{stage}|{_fingerprint(scrub.exception_values(exc))}"
     except Exception:  # a notice must never fail for want of a key
-        return type(exc).__name__
+        return f"{stage}|{type(exc).__name__}"
 
 
+@_never_raises(None)
 def record(
     *,
     meeting_id: str,
@@ -106,7 +139,7 @@ def record(
         report = {"status": "none"}  # a build that cannot send
     notice = {
         "id": uuid.uuid4().hex[:12],
-        "fingerprint": fingerprint(exc),
+        "fingerprint": fingerprint(exc, stage),
         "meeting_id": meeting_id,
         "stage": stage,
         "message": message[:2000],
@@ -122,29 +155,36 @@ def record(
     return notice
 
 
+@_never_raises([])
 def pending(home: Path | None = None) -> list[dict[str, Any]]:
     """The notices not closed yet, oldest first."""
     with _lock:
         return _read(home)
 
 
-def close(notice_id: str, *, send: bool, home: Path | None = None) -> dict[str, Any] | None:
-    """Close a notice, and with it every open notice of the same error (one window for
-    meetings stopped the same way); with ``send``, first send the report it showed — one
-    report, whatever the number of meetings, and only for a notice that asked. The notice
-    as it ended, or ``None`` when there is no such notice."""
+def close(
+    notice_id: str,
+    *,
+    send: bool,
+    with_ids: frozenset[str] = frozenset(),
+    home: Path | None = None,
+) -> dict[str, Any] | None:
+    """Close a notice, and with it the other notices of the same error the window showed
+    (``with_ids``: never one recorded after it was drawn); with ``send``, first send the
+    report it showed — one report, whatever the number of meetings, and only for a notice
+    that asked. The notice as it ended, or ``None`` when there is no such notice."""
     with _lock:
         items = _read(home)
         found = next((item for item in items if item.get("id") == notice_id), None)
         if found is None:
             return None
         key = found.get("fingerprint")
-        items = [
-            item
+        closing = {notice_id} | {
+            str(item.get("id"))
             for item in items
-            if item.get("id") != notice_id and (key is None or item.get("fingerprint") != key)
-        ]
-        _write(items, home)
+            if item.get("id") in with_ids and item.get("fingerprint") == key
+        }
+        _write([item for item in items if item.get("id") not in closing], home)
     report = found.get("report") or {}
     if send and report.get("status") == "ask" and isinstance(report.get("event"), dict):
         from app.diagnostics import reporter as reporting
@@ -159,6 +199,7 @@ def close(notice_id: str, *, send: bool, home: Path | None = None) -> dict[str, 
     return found
 
 
+@_never_raises(None)
 def forget_meeting(meeting_id: str, *, stage: str | None = None, home: Path | None = None) -> None:
     """A meeting deleted (every notice of it, and the error text it keeps on disk), or a
     ``stage`` of it that went through after all (that stage's notice)."""
@@ -170,5 +211,16 @@ def forget_meeting(meeting_id: str, *, stage: str | None = None, home: Path | No
             if item.get("meeting_id") != meeting_id
             or (stage is not None and item.get("stage") != stage)
         ]
+        if len(kept) != len(items):
+            _write(kept, home)
+
+
+@_never_raises(None)
+def keep_only(meeting_ids: set[str], home: Path | None = None) -> None:
+    """Drop the notices of meetings that no longer exist (removed by a path that could not
+    tidy up, or from another library): their error text must not outlive them."""
+    with _lock:
+        items = _read(home)
+        kept = [item for item in items if str(item.get("meeting_id")) in meeting_ids]
         if len(kept) != len(items):
             _write(kept, home)

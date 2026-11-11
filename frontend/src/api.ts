@@ -375,6 +375,8 @@ export interface ModelChoices {
 /** A meeting that failed for good for a reason Upshot does not recognise (the error window). */
 export interface ErrorNotice {
   id: string;
+  /** The same error at the same stage: notices sharing it are one window. */
+  fingerprint: string;
   meeting_id: string;
   title: string | null;
   stage: string;
@@ -814,10 +816,10 @@ export const api = {
   /** Meetings that failed for a reason Upshot does not recognise, not closed yet. */
   errorNotices: () => request<{ items: ErrorNotice[] }>("/api/diagnostics/errors"),
   /** Close the error window; with `send`, the report it showed is sent first. */
-  closeErrorNotice: (id: string, send: boolean) =>
+  closeErrorNotice: (id: string, send: boolean, withIds: string[] = []) =>
     request<{ report: { status: string; reference?: string } }>(
       `/api/diagnostics/errors/${encodeURIComponent(id)}/close`,
-      { method: "POST", body: JSON.stringify({ send }) },
+      { method: "POST", body: JSON.stringify({ send, with_ids: withIds }) },
     ),
   feedback: () => request<{ available: boolean }>("/api/feedback"),
   feedbackPreview: (body: FeedbackBody) =>

@@ -153,14 +153,57 @@ def test_meetings_stopped_by_the_same_error_share_one_window_and_one_report(
     set_active(reporter)
     error = _boom()
     first = _record("a", error)
-    _record("b", error)
-    _record("c", error)
+    second = _record("b", error)
+    third = _record("c", error)
     other = _record("d", ValueError("something else"))
-    assert len(notices.pending()) == 4
+    later = _record("e", error, stage="deliver")  # the same error at another stage
+    assert len(notices.pending()) == 5
+    assert first["fingerprint"] == second["fingerprint"] != later["fingerprint"]
 
-    notices.close(first["id"], send=True)
+    notices.close(first["id"], send=True, with_ids=frozenset({second["id"], third["id"]}))
     assert len(sent) == 1, "one report for the three meetings"
-    assert [item["id"] for item in notices.pending()] == [other["id"]], "a different error stays"
+    assert [item["id"] for item in notices.pending()] == [other["id"], later["id"]]
+
+
+def test_a_close_never_takes_a_notice_the_window_did_not_show(tmp_path: Path, active: None) -> None:
+    reporter, _ = _reporter(tmp_path, "off")
+    set_active(reporter)
+    error = _boom()
+    shown = _record("a", error)
+    unseen = _record("b", error)  # recorded after the window was drawn
+    notices.close(shown["id"], send=False)
+    assert [item["id"] for item in notices.pending()] == [unseen["id"]]
+
+
+def test_a_notices_file_that_cannot_be_written_never_stops_the_pipeline(
+    h: Harness, tmp_path: Path, active: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses the replace while another process holds the file: the meeting is
+    still marked failed, with its error, and a later success still moves on."""
+
+    def locked(*_args: Any, **_kwargs: Any) -> None:
+        raise PermissionError("the file is in use")
+
+    monkeypatch.setattr(notices.os, "replace", locked)
+    monkeypatch.setattr(notices.time, "sleep", lambda _s: None)
+    meeting_id = _fail_for_good(h)
+    meeting = h.dao.require_meeting(meeting_id)
+    assert meeting.state == "FAILED" and meeting.error
+    notices.forget_meeting(meeting_id)  # no exception
+
+
+def test_a_stage_that_goes_through_in_the_worker_clears_its_notice(h: Harness) -> None:
+    meeting = h.meeting()
+    h.stages.fail_times = 99
+    h.queue.enqueue(meeting.id, "flaky")
+    for _ in range(5):
+        h.worker.run_once()
+        h.clock.advance(3700)
+    assert len(notices.pending()) == 1
+    h.stages.fail_times = 0
+    h.queue.retry(meeting.id, "flaky")
+    h.worker.run_once()
+    assert notices.pending() == []
 
 
 def test_send_on_a_notice_that_did_not_ask_sends_nothing(tmp_path: Path, active: None) -> None:
