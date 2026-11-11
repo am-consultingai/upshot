@@ -204,11 +204,13 @@ def test_claude_api_errors_keep_their_reason() -> None:
         provider="claude-subscription",
         cli_message=(
             'API Error: 401 {"type":"error","error":{"type":"authentication_error",'
-            '"message":"OAuth token has expired."},"request_id":"req_1"}'
+            '"message":"OAuth token has expired. Please obtain a new token or refresh your '
+            'existing token."},"request_id":"req_1"}'
         ),
     )
     assert scrub.facts(error)["cli_message"] == (
-        "API Error: 401 authentication_error: OAuth token has expired."
+        "API Error: 401 authentication_error: OAuth token has expired. Please obtain a new "
+        "token or refresh your existing token."
     )
 
 
@@ -302,3 +304,49 @@ def test_a_model_the_user_named_is_reported_as_custom() -> None:
     vendor.name = "gemini"
     vendor.model = "gemini-2.5-pro"  # type: ignore[attr-defined]
     assert reported_model(vendor) == "gemini-2.5-pro"
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        (  # the API's own message, however long: kept
+            'API Error: 400 {"type":"error","error":{"type":"invalid_request_error",'
+            '"message":"Your credit balance is too low to access the Anthropic API. Please go '
+            'to Plans & Billing to upgrade or purchase credits."}}',
+            "API Error: 400 invalid_request_error: Your credit balance is too low to access "
+            "the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+        ),
+        (  # anything else, however short: only its type
+            'API Error: 400 {"type":"error","error":{"type":"invalid_request_error",'
+            '"message":"messages.0: Dana said the merger with Globex closes Friday"}}',
+            "API Error: 400 invalid_request_error",
+        ),
+        (
+            'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
+            "API Error: 500 api_error",
+        ),
+        (  # text after the JSON is dropped, not a reason to lose the whole message
+            'API Error: 529 {"type":"error","error":{"type":"overloaded_error",'
+            '"message":"Overloaded"}} · Retrying in 2s',
+            "API Error: 529 overloaded_error: Overloaded",
+        ),
+    ],
+)
+def test_an_api_error_keeps_only_the_apis_own_message(said: str, kept: str) -> None:
+    error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
+    assert scrub.facts(error)["cli_message"] == kept
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        (
+            "Your organization, Acme Corp, has disabled Claude Code",
+            "Your organization, …, has disabled Claude Code",
+        ),
+        ("Your account, which is new, is limited", "Your account, which is new, is limited"),
+    ],
+)
+def test_a_name_set_off_by_commas_goes_too(said: str, kept: str) -> None:
+    error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
+    assert scrub.facts(error)["cli_message"] == kept

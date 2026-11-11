@@ -514,3 +514,28 @@ def test_a_setup_failure_is_reported_once_a_day_with_its_log(tmp_path: Path) -> 
     off, nothing = reporter(tmp_path / "off", consent="off")
     assert off.report_setup_failure(product="Codex", stage="install", reason="x", log=[]) is None
     assert nothing.items == []
+
+
+def test_hand_sent_reports_that_waited_go_at_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reports the user sent by hand from the error window that waited for a connection:
+    sent at the next start, from their own outbox only, and nothing without a DSN."""
+    import app.diagnostics.client as client_module
+
+    made, _ = reporter(tmp_path, consent="off")
+    flushed: list[Path] = []
+
+    class Client:
+        def __init__(self, _dsn: str, outbox: Path, **_: Any) -> None:
+            self.outbox = outbox
+
+        def flush(self) -> int:
+            flushed.append(self.outbox)
+            return 1
+
+    monkeypatch.setattr(client_module, "SentryClient", Client)
+    assert made.flush_approved() == 1
+    assert [box.name for box in flushed] == ["outbox-approved"], "only the approved box"
+    no_dsn, _ = reporter(tmp_path / "b", dsn="")
+    assert no_dsn.flush_approved() == 0
