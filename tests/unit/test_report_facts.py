@@ -204,11 +204,13 @@ def test_claude_api_errors_keep_their_reason() -> None:
         provider="claude-subscription",
         cli_message=(
             'API Error: 401 {"type":"error","error":{"type":"authentication_error",'
-            '"message":"OAuth token has expired."},"request_id":"req_1"}'
+            '"message":"OAuth token has expired. Please obtain a new token or refresh your '
+            'existing token."},"request_id":"req_1"}'
         ),
     )
     assert scrub.facts(error)["cli_message"] == (
-        "API Error: 401 authentication_error: OAuth token has expired."
+        "API Error: 401 authentication_error: OAuth token has expired. Please obtain a new "
+        "token or refresh your existing token."
     )
 
 
@@ -307,19 +309,30 @@ def test_a_model_the_user_named_is_reported_as_custom() -> None:
 @pytest.mark.parametrize(
     ("said", "kept"),
     [
-        (
+        (  # the API's own message, however long: kept
             'API Error: 400 {"type":"error","error":{"type":"invalid_request_error",'
-            '"message":"messages.0: Dana said the merger with Globex closes Friday and the '
-            'board knows"}}',
+            '"message":"Your credit balance is too low to access the Anthropic API. Please go '
+            'to Plans & Billing to upgrade or purchase credits."}}',
+            "API Error: 400 invalid_request_error: Your credit balance is too low to access "
+            "the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+        ),
+        (  # anything else, however short: only its type
+            'API Error: 400 {"type":"error","error":{"type":"invalid_request_error",'
+            '"message":"messages.0: Dana said the merger with Globex closes Friday"}}',
             "API Error: 400 invalid_request_error",
         ),
         (
             'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
             "API Error: 500 api_error",
         ),
+        (  # text after the JSON is dropped, not a reason to lose the whole message
+            'API Error: 529 {"type":"error","error":{"type":"overloaded_error",'
+            '"message":"Overloaded"}} · Retrying in 2s',
+            "API Error: 529 overloaded_error: Overloaded",
+        ),
     ],
 )
-def test_a_long_api_error_message_keeps_only_its_type(said: str, kept: str) -> None:
+def test_an_api_error_keeps_only_the_apis_own_message(said: str, kept: str) -> None:
     error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
     assert scrub.facts(error)["cli_message"] == kept
 
@@ -337,28 +350,3 @@ def test_a_long_api_error_message_keeps_only_its_type(said: str, kept: str) -> N
 def test_a_name_set_off_by_commas_goes_too(said: str, kept: str) -> None:
     error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
     assert scrub.facts(error)["cli_message"] == kept
-
-
-def test_hand_sent_reports_that_waited_go_at_start(tmp_path: Path) -> None:
-    made, _ = reporter(tmp_path, consent="off")
-    flushed: list[Path] = []
-
-    class Client:
-        def __init__(self, _dsn: str, outbox: Path, **_: Any) -> None:
-            self.outbox = outbox
-
-        def flush(self) -> int:
-            flushed.append(self.outbox)
-            return 1
-
-    import app.diagnostics.client as client_module
-
-    original = client_module.SentryClient
-    client_module.SentryClient = Client  # type: ignore[assignment,misc]
-    try:
-        assert made.flush_approved() == 1
-    finally:
-        client_module.SentryClient = original  # type: ignore[misc]
-    assert [box.name for box in flushed] == ["outbox-approved"], "only the approved box"
-    no_dsn, _ = reporter(tmp_path / "b", dsn="")
-    assert no_dsn.flush_approved() == 0

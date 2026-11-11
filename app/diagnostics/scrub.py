@@ -405,36 +405,67 @@ _NAMED = re.compile(
 )
 
 
-#: The longest API error message a report keeps; a longer one keeps only its type.
-API_MESSAGE_WORDS = 12
-_API_ERROR = re.compile(r"^(API Error:\s*\d{3})\s*(\{.*\})\s*$", re.DOTALL)
+#: How the Anthropic API's own error messages begin: the only ones a report keeps whole.
+#: Any other message keeps only its type, since it could quote the request.
+API_OWN_MESSAGES = (
+    "token has expired",
+    "authentication is not",
+    "invalid x-api-key",
+    "invalid api key",
+    "your credit balance is too low",
+    "this request would exceed",
+    "number of request tokens has exceeded",
+    "overloaded",
+    "internal server error",
+    "prompt is too long",
+    "this organization has been disabled",
+    "your account does not have access",
+    "rate limit",
+    "request timed out",
+)
+#: One of those beginnings, at the start or after one word naming the kind of token.
+_API_OWN = re.compile(
+    r"^(?:\w+ )?(?:" + "|".join(re.escape(phrase) for phrase in API_OWN_MESSAGES) + ")",
+    re.IGNORECASE,
+)
+
+
+def _api_own(message: str) -> bool:
+    return bool(_API_OWN.match(message.strip()))
+
+
+_API_ERROR_HEAD = re.compile(r"^(API Error:\s*\d{3})\s*(\{.*)$", re.DOTALL)
 
 
 def _api_error(text: str) -> str:
     """Claude Code's "API Error: 401 {json}" as "API Error: 401 authentication_error: OAuth
-    token has expired": the JSON's quotes would otherwise all be scrubbed away."""
-    match = _API_ERROR.match(text.strip())
+    token has expired…": the JSON's quotes would otherwise all be scrubbed away. The API's
+    message is kept only when it is one of its own (``API_OWN_MESSAGES``); otherwise only
+    its type, which says what kind of failure without anything that could quote a request.
+    Text after the JSON (a "· Retrying") is dropped."""
+    match = _API_ERROR_HEAD.match(text.strip())
     if not match:
         return text
+    head = match.group(1)
     try:
-        body = json.loads(match.group(2))
+        body, _end = json.JSONDecoder().raw_decode(match.group(2))
     except ValueError:
-        return match.group(1)
+        return head
     error = body.get("error") if isinstance(body, dict) else None
     if not isinstance(error, dict):
-        return match.group(1)
+        return head
     kind = str(error.get("type") or "").strip()
     message = str(error.get("message") or "").strip()
-    # Out of its quotes, the message escapes the quoted-text rule: a short one is the API
-    # describing itself ("OAuth token has expired."); a long one could quote the request.
-    if len(message.split()) > API_MESSAGE_WORDS:
+    if not _api_own(message):
         message = ""
     said = f"{kind}: {message}" if kind and message else kind or message
-    return f"{match.group(1)} {said}".strip()
+    return f"{head} {said}".strip()
 
 
 #: Words that follow "account" or "organization" in ordinary sentences, not names.
-_NOT_A_NAME = frozenset({"has", "have", "does", "do", "is", "was", "not", "and", "or", "to", "for"})
+_NOT_A_NAME = frozenset(
+    {"has", "have", "does", "do", "is", "was", "not", "and", "or", "to", "for", "please", "claude"}
+)
 
 
 def _anonymous_message(text: str) -> str:
