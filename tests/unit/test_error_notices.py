@@ -293,3 +293,33 @@ def test_a_provider_that_declined_whatever_its_category_opens_no_window(category
 
 def test_a_model_that_could_not_produce_valid_output_opens_the_window() -> None:
     assert not notices.recognised(PermanentError("no valid JSON", category="schema"))
+
+
+def test_a_provider_failure_carries_the_job_facts_end_to_end(
+    h: Harness, tmp_path: Path, active: None
+) -> None:
+    """Through the worker: the stage, the try and the meeting's language and length band
+    reach the report when an AI provider failed."""
+    from app.errors import describe
+
+    reporter, sent = _reporter(tmp_path, "on")
+    set_active(reporter)
+    meeting = h.meeting()
+    h.dao.update_meeting(meeting.id, language="he", duration_s=25 * 60)
+
+    def provider_fails(ctx: Any) -> None:
+        raise describe(RuntimeError("Claude Code exited 1: boom"), provider="claude-subscription")
+
+    h.worker.stages["custom"] = provider_fails
+    h.queue.enqueue(meeting.id, "custom")
+    for _ in range(5):
+        h.worker.run_once()
+        h.clock.advance(3700)
+    assert len(sent) == 1
+    assert sent[0]["contexts"]["failure"] == {
+        "provider": "claude-subscription",
+        "stage": "custom",
+        "attempt": 5,
+        "language": "he",
+        "meeting_minutes": "<30",
+    }

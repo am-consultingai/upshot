@@ -302,3 +302,63 @@ def test_a_model_the_user_named_is_reported_as_custom() -> None:
     vendor.name = "gemini"
     vendor.model = "gemini-2.5-pro"  # type: ignore[attr-defined]
     assert reported_model(vendor) == "gemini-2.5-pro"
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        (
+            'API Error: 400 {"type":"error","error":{"type":"invalid_request_error",'
+            '"message":"messages.0: Dana said the merger with Globex closes Friday and the '
+            'board knows"}}',
+            "API Error: 400 invalid_request_error",
+        ),
+        (
+            'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
+            "API Error: 500 api_error",
+        ),
+    ],
+)
+def test_a_long_api_error_message_keeps_only_its_type(said: str, kept: str) -> None:
+    error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
+    assert scrub.facts(error)["cli_message"] == kept
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        (
+            "Your organization, Acme Corp, has disabled Claude Code",
+            "Your organization, …, has disabled Claude Code",
+        ),
+        ("Your account, which is new, is limited", "Your account, which is new, is limited"),
+    ],
+)
+def test_a_name_set_off_by_commas_goes_too(said: str, kept: str) -> None:
+    error = describe(RuntimeError("x"), provider="claude-subscription", cli_message=said)
+    assert scrub.facts(error)["cli_message"] == kept
+
+
+def test_hand_sent_reports_that_waited_go_at_start(tmp_path: Path) -> None:
+    made, _ = reporter(tmp_path, consent="off")
+    flushed: list[Path] = []
+
+    class Client:
+        def __init__(self, _dsn: str, outbox: Path, **_: Any) -> None:
+            self.outbox = outbox
+
+        def flush(self) -> int:
+            flushed.append(self.outbox)
+            return 1
+
+    import app.diagnostics.client as client_module
+
+    original = client_module.SentryClient
+    client_module.SentryClient = Client  # type: ignore[assignment,misc]
+    try:
+        assert made.flush_approved() == 1
+    finally:
+        client_module.SentryClient = original  # type: ignore[misc]
+    assert [box.name for box in flushed] == ["outbox-approved"], "only the approved box"
+    no_dsn, _ = reporter(tmp_path / "b", dsn="")
+    assert no_dsn.flush_approved() == 0

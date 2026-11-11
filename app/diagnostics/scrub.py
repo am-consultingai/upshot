@@ -399,12 +399,14 @@ def facts(exc: BaseException) -> dict[str, Any]:
 #: A sign-in error can name an account or an organisation, quoted or after a keyword.
 _CLI_QUOTED = re.compile(r"(['\"\u2018\u201c])[^'\"\u2019\u201d]{1,120}(['\"\u2019\u201d])")
 _NAMED = re.compile(
-    r"\b(organi[sz]ation|org|account|workspace|tenant)\b(\s*[:=]?\s*)"
+    r"\b(organi[sz]ation|org|account|workspace|tenant)\b(\s*[:=,]?\s*)"
     r"([^\s,.;:)]+(?:\s+(?:Ltd|Inc|LLC|GmbH|Corp)\.?)?)",
     re.IGNORECASE,
 )
 
 
+#: The longest API error message a report keeps; a longer one keeps only its type.
+API_MESSAGE_WORDS = 12
 _API_ERROR = re.compile(r"^(API Error:\s*\d{3})\s*(\{.*\})\s*$", re.DOTALL)
 
 
@@ -423,7 +425,12 @@ def _api_error(text: str) -> str:
         return match.group(1)
     kind = str(error.get("type") or "").strip()
     message = str(error.get("message") or "").strip()
-    return " ".join(part for part in (match.group(1), f"{kind}:" if kind else "", message) if part)
+    # Out of its quotes, the message escapes the quoted-text rule: a short one is the API
+    # describing itself ("OAuth token has expired."); a long one could quote the request.
+    if len(message.split()) > API_MESSAGE_WORDS:
+        message = ""
+    said = f"{kind}: {message}" if kind and message else kind or message
+    return f"{match.group(1)} {said}".strip()
 
 
 #: Words that follow "account" or "organization" in ordinary sentences, not names.
@@ -438,6 +445,8 @@ def _anonymous_message(text: str) -> str:
     def hide(match: re.Match[str]) -> str:
         if match.group(3).lower() in _NOT_A_NAME:
             return match.group(0)
+        if "," in match.group(2) and not match.group(3)[:1].isupper():
+            return match.group(0)  # "account, which …": an ordinary clause, not a name
         return f"{match.group(1)}{match.group(2)}…"
 
     text = _NAMED.sub(hide, text)
