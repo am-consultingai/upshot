@@ -190,6 +190,13 @@ def build(
         # Switched off some other way (the file, an environment variable): nothing kept
         # from before goes out if they come back on.
         services.reporter.forget_kept()
+    if services.reporter.available:
+        import threading as _threading
+
+        # Reports sent by hand that waited for a connection: each was approved on its own.
+        _threading.Thread(
+            target=services.reporter.flush_approved, name="approved-reports", daemon=True
+        ).start()
     from app.llm import model_choice
 
     # What models each provider offers, asked for in the background once the app runs.

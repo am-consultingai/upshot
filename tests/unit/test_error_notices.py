@@ -234,6 +234,7 @@ def test_a_send_that_cannot_go_says_so() -> None:
     notices._write([notice_file])
     closed = notices.close(notice["id"], send=True)
     assert closed is not None and closed["report"] == {"status": "not_sent"}
+    assert [item["id"] for item in notices.pending()] == [notice["id"]], "kept: Send again"
 
 
 def test_a_stage_that_goes_through_clears_only_its_own_notice() -> None:
@@ -276,9 +277,19 @@ def test_a_send_that_raises_is_not_lost_and_says_so(
     monkeypatch.setattr(reporter, "send_prepared", locked)
     closed = notices.close(notice["id"], send=True)
     assert closed is not None and closed["report"] == {"status": "not_sent"}
+    assert [item["id"] for item in notices.pending()] == [notice["id"]], "kept: Send again"
 
 
 def test_a_missing_speech_model_opens_no_window() -> None:
     from app.asr.models import ModelNotInstalled
 
     assert notices.recognised(ModelNotInstalled("hebrew", "C:/models"))
+
+
+@pytest.mark.parametrize("category", ["setup", "auth", "refusal", "unknown", "SAFETY", "OTHER"])
+def test_a_provider_that_declined_whatever_its_category_opens_no_window(category: str) -> None:
+    assert notices.recognised(PermanentError("declined", category=category))
+
+
+def test_a_model_that_could_not_produce_valid_output_opens_the_window() -> None:
+    assert not notices.recognised(PermanentError("no valid JSON", category="schema"))

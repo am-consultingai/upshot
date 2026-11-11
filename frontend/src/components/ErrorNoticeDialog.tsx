@@ -48,7 +48,11 @@ function ErrorNoticeDialog({ notice, alongside }: { notice: ErrorNotice; alongsi
     mutationFn: (send: boolean) => api.closeErrorNotice(notice.id, send, alongside),
     onSuccess: (answer, send) => {
       if (send && answer.report.status === "sent") toast({ title: t("errorNotice.thanks") });
-      else if (send) toast({ title: t("errorNotice.notSent"), tone: "danger" });
+      else if (send) {
+        // Not sent, and still there: the window stays, so Send can be pressed again.
+        toast({ title: t("errorNotice.notSent"), tone: "danger" });
+        return;
+      }
       // Gone at once, not when the refetch lands: no buttons left to press twice.
       const closed = new Set([notice.id, ...alongside]);
       queryClient.setQueryData<{ items: ErrorNotice[] }>(["error-notices"], (data) =>
@@ -56,7 +60,11 @@ function ErrorNoticeDialog({ notice, alongside }: { notice: ErrorNotice; alongsi
       );
       void queryClient.invalidateQueries({ queryKey: ["error-notices"] });
     },
-    onError: (error) => toast({ title: reason(error), tone: "danger" }),
+    onError: (error) => {
+      toast({ title: reason(error), tone: "danger" });
+      // Closed elsewhere meanwhile (another window, a newer failure): show what is left.
+      void queryClient.invalidateQueries({ queryKey: ["error-notices"] });
+    },
   });
   const closeRef = useRef(close);
   closeRef.current = close;

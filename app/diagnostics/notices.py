@@ -40,10 +40,18 @@ KEEP = 20
 _lock = threading.Lock()
 
 
+#: Categories that do not explain themselves: a model that could not produce valid output
+#: is a fault to report, not something the user can act on.
+UNEXPLAINED = frozenset({"schema"})
+
+
 def recognised(exc: BaseException) -> bool:
-    """A failure the meeting page already explains, with a way out (setup, auth, a
-    refusal, …): no window for it."""
-    return isinstance(exc, PermanentError) and bool(exc.category)
+    """A failure the meeting page already explains, with a way out (setup, a key or a
+    sign-in, the mail settings, a provider that declined, whatever category it gives):
+    no window for it. A model that could not produce valid output is not one of these."""
+    return (
+        isinstance(exc, PermanentError) and bool(exc.category) and exc.category not in UNEXPLAINED
+    )
 
 
 def _path(home: Path | None = None) -> Path:
@@ -195,16 +203,20 @@ def close(
             found["report"] = {"status": "sent", "reference": str(event.get("event_id", ""))[:8]}
             log.info("error notice %s: report sent on the user's word", notice_id)
         else:
-            found["report"] = {"status": "not_sent"}
+            # Kept, so Send can be pressed again when it comes back.
+            return {**found, "report": {"status": "not_sent"}}
     key = found.get("fingerprint")
-    with _lock:
-        items = _read(home)
-        closing = {notice_id} | {
-            str(item.get("id"))
-            for item in items
-            if item.get("id") in with_ids and item.get("fingerprint") == key
-        }
-        _write([item for item in items if item.get("id") not in closing], home)
+    try:
+        with _lock:
+            items = _read(home)
+            closing = {notice_id} | {
+                str(item.get("id"))
+                for item in items
+                if item.get("id") in with_ids and item.get("fingerprint") == key
+            }
+            _write([item for item in items if item.get("id") not in closing], home)
+    except Exception:  # the report went; a notice that lingers is the lesser harm
+        log.exception("error notice %s: could not be removed", notice_id)
     return found
 
 

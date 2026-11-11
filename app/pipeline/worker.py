@@ -26,6 +26,7 @@ from app.errors import (
     Preempted,
     QuotaExhausted,
     SignInRequired,
+    describe,
 )
 from app.log import get, meeting_context, meeting_log_handler
 from app.pipeline.activity import FakeRecorderState, RecorderState, SystemActivity
@@ -39,6 +40,19 @@ from app.pipeline.states import (
 )
 
 log = get(__name__)
+
+
+def _minutes_bucket(duration_s: int | None) -> str | None:
+    """A meeting's length for a crash report, coarsely: enough to see that long meetings
+    fail, not enough to tell one meeting from another."""
+    if not duration_s:
+        return None
+    minutes = duration_s / 60
+    for edge in (15, 30, 60, 120):
+        if minutes < edge:
+            return f"<{edge}"
+    return "120+"
+
 
 #: A provider still signed out after this long is mentioned again (a day of waiting
 #: summaries is worth a second word; every fifteen-minute retry is not).
@@ -319,9 +333,11 @@ class Worker:
                     self._on_deferred(job, exc)
                     return
                 except PermanentError as exc:
+                    describe(exc, summary_windows=context.metrics.get("summary_windows"))
                     self._on_failure(job, exc, permanent=True, ran_with=ran_with)
                     return
                 except Exception as exc:
+                    describe(exc, summary_windows=context.metrics.get("summary_windows"))
                     self._keep_force(job, context)
                     self._on_failure(job, exc, permanent=False, ran_with=ran_with)
                     return
@@ -672,6 +688,17 @@ class Worker:
         if isinstance(exc, Exception):
             from app.diagnostics import notices
             from app.diagnostics.reporter import report
+
+            failed_meeting = self.dao.get_meeting(job.meeting_id)
+            describe(
+                exc,
+                stage=str(job.stage),
+                attempt=updated.attempts,
+                language=(failed_meeting.language if failed_meeting else None),
+                meeting_minutes=_minutes_bucket(
+                    failed_meeting.duration_s if failed_meeting else None
+                ),
+            )
 
             sent = report(exc, where=f"stage:{job.stage}")
             # And a window of its own for the user, unless the page already explains it.

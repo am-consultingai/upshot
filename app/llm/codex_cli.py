@@ -43,7 +43,14 @@ from typing import Any
 from app import paths
 from app.clock import SystemClock
 from app.config import Config
-from app.errors import PermanentError, QuotaExhausted, RecoverableError, SignInRequired
+from app.errors import (
+    PermanentError,
+    QuotaExhausted,
+    RecoverableError,
+    SignInRequired,
+    UpshotError,
+    describe,
+)
 from app.llm.claude_cli import (
     CliStatus,
     InstallPlan,
@@ -545,6 +552,20 @@ class _Scratch:
     answer_file: Path
 
 
+#: Codex's own prefix, upper case: a model's text that starts "Error: " is not Codex's.
+_OWN_ERROR = re.compile(r"ERROR: ")
+
+
+def own_error(stderr: str, prompt: str = "") -> str:
+    """Codex's own words about a failure, for a crash report: its ``ERROR: `` lines only,
+    and never a line of the prompt it echoed (the rest of its error stream is progress,
+    which repeats the prompt — the transcript — line by line)."""
+    echoed = {line.strip() for line in prompt.splitlines() if line.strip()}
+    lines = [line.strip() for line in stderr.splitlines()]
+    own = [line for line in lines if _OWN_ERROR.match(line) and line not in echoed]
+    return own[-1] if own else ""
+
+
 class CodexCliClient:
     name = NAME
 
@@ -715,12 +736,30 @@ class CodexCliClient:
                     raise PermanentError("Codex is not installed", category="setup") from exc
                 answer = self._answer(scratch.answer_file, out)
                 if code != 0 or not answer:
-                    self._raise_for(code, out, err, path)
+                    try:
+                        self._raise_for(code, out, err, path)
+                    except UpshotError as exc:
+                        describe(
+                            exc,
+                            provider=NAME,
+                            model=self.model or "default",
+                            exit_code=code,
+                            cli_message=own_error(err, prompt),
+                        )
+                        raise
                 return self._relax(answer, schema)
 
-            data, attempts = complete_with_repair(
-                send, user, schema, max_repairs=self.max_repairs, provider=self.name
-            )
+            try:
+                data, attempts = complete_with_repair(
+                    send, user, schema, max_repairs=self.max_repairs, provider=self.name
+                )
+
+            except UpshotError as exc:
+                # Also what failed outside a run: no valid answer after the repairs, an empty one.
+
+                describe(exc, provider=NAME, model=self.model or "default")
+
+                raise
         return LlmResult(data=data, model=f"codex:{self.name}", attempts=attempts)
 
     @staticmethod

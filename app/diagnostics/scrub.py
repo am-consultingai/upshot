@@ -20,6 +20,7 @@ the exception message is the only free text, and it passes through ``scrub_text`
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from collections.abc import Iterable
@@ -316,3 +317,130 @@ def platform_tags() -> dict[str, str]:
     except Exception:  # psutil is a dependency, but a report must never fail on it
         pass
     return tags
+
+
+#: The facts a crash report may carry about a failure, beyond the error and its stack
+#: (owner, 2026-11-11: as much as is relevant). A fixed list: anything else attached to an
+#: exception is dropped. None of these can hold meeting content: names of providers and
+#: models, numbers, and ``cli_message``, which is set only from what a CLI said about
+#: itself: Claude Code's own failure messages when the model was never reached, Codex's
+#: ``ERROR:`` lines that are not part of the prompt it echoed, Antigravity's result error.
+FACTS = (
+    "provider",
+    "model",
+    "cli_version",
+    "exit_code",
+    "model_reached",
+    "terminal_reason",
+    "subtype",
+    "api_error_status",
+    "num_turns",
+    "cli_message",
+    "stage",
+    "attempt",
+    "summary_windows",
+    "language",
+    "meeting_minutes",
+)
+
+
+#: Facts about the AI program that failed: all from one exception, the outermost one that
+#: names a provider, so a fallback's failure never borrows the first provider's words.
+AI_FACTS = frozenset(FACTS[:10])
+#: Facts about the job: sent only when an AI provider was involved (Privacy Policy §6).
+JOB_FACTS = frozenset(FACTS[10:])
+
+
+def facts(exc: BaseException) -> dict[str, Any]:
+    """The listed facts about a failure, scrubbed: strings lose paths, addresses, keys and
+    names and are cut to 300 characters. Nothing at all when no AI provider was involved."""
+    chain: list[BaseException] = []
+    current: BaseException | None = exc
+    while current is not None and id(current) not in {id(seen) for seen in chain}:
+        chain.append(current)
+        current = current.__cause__ or (
+            None if current.__suppress_context__ else current.__context__
+        )
+
+    def held(item: BaseException) -> dict[str, Any]:
+        value = getattr(item, "facts", None)
+        return value if isinstance(value, dict) else {}
+
+    # The outermost exception that names a provider is the one that failed last: the
+    # fallback's, not the one it stood in for (which its own exception chains to).
+    ai = next((held(item) for item in chain if held(item).get("provider")), None)
+    if ai is None:
+        return {}
+    found: dict[str, Any] = {key: ai[key] for key in AI_FACTS if key in ai}
+    for item in chain:
+        for key in JOB_FACTS:
+            if key in held(item) and key not in found:
+                found[key] = held(item)[key]
+    clean: dict[str, Any] = {}
+    for key in FACTS:
+        if key not in found:
+            continue
+        value = found[key]
+        if isinstance(value, bool | int | float):
+            clean[key] = value
+        else:
+            text = str(value)
+            if key == "cli_message":
+                text = _api_error(text)
+            text = scrub_text(text, homes=homes())
+            if key == "cli_message":
+                text = _anonymous_message(text)
+            text = text.strip()
+            if text:
+                clean[key] = text[:300]
+    return clean
+
+
+#: A sign-in error can name an account or an organisation, quoted or after a keyword.
+_CLI_QUOTED = re.compile(r"(['\"\u2018\u201c])[^'\"\u2019\u201d]{1,120}(['\"\u2019\u201d])")
+_NAMED = re.compile(
+    r"\b(organi[sz]ation|org|account|workspace|tenant)\b(\s*[:=]?\s*)"
+    r"([^\s,.;:)]+(?:\s+(?:Ltd|Inc|LLC|GmbH|Corp)\.?)?)",
+    re.IGNORECASE,
+)
+
+
+_API_ERROR = re.compile(r"^(API Error:\s*\d{3})\s*(\{.*\})\s*$", re.DOTALL)
+
+
+def _api_error(text: str) -> str:
+    """Claude Code's "API Error: 401 {json}" as "API Error: 401 authentication_error: OAuth
+    token has expired": the JSON's quotes would otherwise all be scrubbed away."""
+    match = _API_ERROR.match(text.strip())
+    if not match:
+        return text
+    try:
+        body = json.loads(match.group(2))
+    except ValueError:
+        return match.group(1)
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return match.group(1)
+    kind = str(error.get("type") or "").strip()
+    message = str(error.get("message") or "").strip()
+    return " ".join(part for part in (match.group(1), f"{kind}:" if kind else "", message) if part)
+
+
+#: Words that follow "account" or "organization" in ordinary sentences, not names.
+_NOT_A_NAME = frozenset({"has", "have", "does", "do", "is", "was", "not", "and", "or", "to", "for"})
+
+
+def _anonymous_message(text: str) -> str:
+    """A CLI's message without the names in it: quoted values, and the name that follows
+    words such as "organization" or "account" (up to the next verb), become placeholders."""
+    text = _CLI_QUOTED.sub(r"\1…\2", text)
+
+    def hide(match: re.Match[str]) -> str:
+        if match.group(3).lower() in _NOT_A_NAME:
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}…"
+
+    text = _NAMED.sub(hide, text)
+    # A name of several words: what is left of it, up to the next ordinary word or the
+    # end of the clause, goes too.
+    return re.sub(r"…(?:\s+[A-Z][\w&'.-]*)+(?=[\s,;:!?)]|$)", "…", text)
