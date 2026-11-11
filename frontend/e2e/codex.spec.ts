@@ -203,7 +203,7 @@ test("a_signed_out_service_offers_sign_in_and_the_services_that_are_ready", asyn
 
   // Not a failure and not a stack trace: what is wrong, and what can be done now.
   const card = page.getByTestId("signed-out");
-  await expect(card).toContainText("Codex is signed out", { timeout: 15_000 });
+  await expect(card).toContainText("Codex CLI is signed out", { timeout: 15_000 });
   await expect(page.getByTestId("stage-failed")).toHaveCount(0);
   await expect(card.getByTestId("signed-out-sign-in")).toBeVisible();
   const other = card.locator('[data-testid=signed-out-use][data-provider="antigravity-subscription"]');

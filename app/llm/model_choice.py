@@ -286,7 +286,24 @@ def _list_api(provider: str, config: Config, http: Any) -> list[ModelInfo]:
 
 
 CLI_PROVIDERS = ("claude-subscription", "codex-subscription", "antigravity-subscription")
-#: The program each CLI provider runs, named as the software it is (D46, D58, D79).
+#: How notices and the meeting page name each CLI provider: as its Settings row does
+#: ("Claude Agent", not Claude Code: D46's branding note; owner, 2026-11-11).
+CLI_NAMES = {
+    "claude-subscription": "Claude Agent",
+    "codex-subscription": "Codex CLI",
+    "antigravity-subscription": "Antigravity CLI",
+}
+#: Every provider, as notices name it: the CLIs above, and the rest by the short name of
+#: its Settings row, a proper noun that reads the same in every interface language.
+PROVIDER_NAMES = {
+    **CLI_NAMES,
+    "anthropic": "Claude (API key)",
+    "gemini": "Gemini",
+    "openai": "OpenAI",
+    "ollama": "Ollama",
+}
+#: The program each CLI provider runs, named as the software it is (D46, D58, D79): what
+#: install and sign-in copy names, since that is the thing installed and signed into.
 CLI_PRODUCTS = {
     "claude-subscription": "Claude Code",
     "codex-subscription": "Codex",
