@@ -172,6 +172,21 @@ def test_examples_are_marked_as_demo(page: Path) -> None:
     assert html.count(label) >= len(figures) + 2
 
 
+def test_the_download_links_name_one_installer_of_this_repository() -> None:
+    """Both pages, header and start section: a click downloads the installer, the same
+    one in each language (site.js may repoint it to the update manifest's)."""
+    installer = re.compile(
+        r"https://github\.com/am-consultingai/upshot/releases/download/"
+        r"v[0-9][\w.-]*/Upshot-[\w.-]+-Setup\.exe"
+    )
+    hrefs = set()
+    for page in PAGES:
+        found = re.findall(r'<a [^>]*href="([^"]+)"[^>]*\bdata-download\b', page.read_text("utf-8"))
+        assert len(found) == 2, page  # the header and the start section
+        hrefs.update(found)
+    assert len(hrefs) == 1 and installer.fullmatch(hrefs.pop())
+
+
 def test_pages_link_to_each_other() -> None:
     english, hebrew = (p.read_text(encoding="utf-8") for p in PAGES)
     assert 'href="he/"' in english and 'data-lang="he"' in english
