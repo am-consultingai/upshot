@@ -40,31 +40,47 @@ function ErrorNoticeDialog({ notice }: { notice: ErrorNotice }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showReport, setShowReport] = useState(false);
-  const first = useRef<HTMLButtonElement | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
   const close = useMutation({
     mutationFn: (send: boolean) => api.closeErrorNotice(notice.id, send),
     onSuccess: (answer, send) => {
       if (send && answer.report.status === "sent") toast({ title: t("errorNotice.thanks") });
+      else if (send) toast({ title: t("errorNotice.notSent"), tone: "danger" });
       void queryClient.invalidateQueries({ queryKey: ["error-notices"] });
     },
     onError: (error) => toast({ title: reason(error), tone: "danger" }),
   });
+  const closeRef = useRef(close);
+  closeRef.current = close;
   const report = notice.report;
   const asks = report.status === "ask";
 
   useEffect(() => {
-    first.current?.focus();
+    // The window opens by itself, perhaps while the user is typing elsewhere: the focus
+    // goes to the window, not to a button a stray Space or Enter would press. Once, on
+    // opening: a re-render must not pull the focus back (as in MeetingInfoDialog).
+    const before = document.activeElement;
+    box.current?.focus();
     const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
       // Escape is "not now" for a report that asks, and Close otherwise: never a send.
-      if (event.key === "Escape" && !close.isPending) close.mutate(false);
+      // This window is on top, so the Escape is its alone, not a dialog's underneath.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!closeRef.current.isPending) closeRef.current.mutate(false);
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [close]);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      if (before instanceof HTMLElement) before.focus();
+    };
+  }, []);
 
   return createPortal(
     <div className="fixed inset-0 z-[80] grid place-items-center bg-scrim-soft px-4 backdrop-blur-xs">
       <div
+        ref={box}
+        tabIndex={-1}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="error-notice-title"
@@ -73,10 +89,17 @@ function ErrorNoticeDialog({ notice }: { notice: ErrorNotice }) {
       >
         <h2 id="error-notice-title" className="text-md font-semibold tracking-snug">
           {notice.title
-            ? t("errorNotice.title").replace("{title}", notice.title)
+            ? t("errorNotice.title").replace("{title}", () => notice.title ?? "")
             : t("meeting.failedLead")}
         </h2>
         <p className="mt-1 text-sm">{t(FAILED_WHILE[notice.stage] ?? "meeting.failedWhileWorking")}</p>
+        {notice.same_error > 0 && (
+          <p data-testid="error-notice-same" className="mt-1 text-sm">
+            {notice.same_error === 1
+              ? t("errorNotice.sameErrorOne")
+              : t("errorNotice.sameErrorMany").replace("{n}", String(notice.same_error))}
+          </p>
+        )}
         <p className="mt-1 text-sm text-secondary">{t("meeting.failedSafe")}</p>
         <details data-testid="error-notice-detail" className="mt-2">
           <summary className="cursor-pointer text-xs text-tertiary">{t("meeting.failedDetail")}</summary>
@@ -88,7 +111,7 @@ function ErrorNoticeDialog({ notice }: { notice: ErrorNotice }) {
         {report.status === "sent" && (
           <p data-testid="error-notice-sent" className="mt-3 text-sm text-secondary">
             {report.reference
-              ? t("errorNotice.sent").replace("{reference}", report.reference)
+              ? t("errorNotice.sent").replace("{reference}", () => report.reference)
               : t("errorNotice.sentToday")}
           </p>
         )}
@@ -129,7 +152,6 @@ function ErrorNoticeDialog({ notice }: { notice: ErrorNotice }) {
           {asks ? (
             <>
               <Button
-                ref={first}
                 data-testid="error-notice-dont-send"
                 variant="secondary"
                 disabled={close.isPending}
@@ -149,7 +171,6 @@ function ErrorNoticeDialog({ notice }: { notice: ErrorNotice }) {
             </>
           ) : (
             <Button
-              ref={first}
               data-testid="error-notice-close"
               variant="primary"
               disabled={close.isPending}

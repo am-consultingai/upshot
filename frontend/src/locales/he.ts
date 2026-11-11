@@ -47,6 +47,9 @@ export const he: Record<MessageKey, string> = {
   "errorNotice.open": "פתיחת הפגישה",
   "errorNotice.close": "סגירה",
   "errorNotice.thanks": "הדוח נשלח. תודה.",
+  "errorNotice.sameErrorOne": "אותה שגיאה עצרה עוד פגישה אחת.",
+  "errorNotice.sameErrorMany": "אותה שגיאה עצרה עוד {n} פגישות.",
+  "errorNotice.notSent": "לא ניתן היה לשלוח את הדוח.",
 
   "palette.title": "פקודות",
   "palette.placeholder": "חיפוש פגישות, תמלילים ופקודות…",

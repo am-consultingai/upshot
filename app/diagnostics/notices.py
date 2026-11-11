@@ -19,6 +19,7 @@ the job's own error, on this computer only; what may leave it is the report alon
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from pathlib import Path
@@ -55,9 +56,24 @@ def _read(home: Path | None = None) -> list[dict[str, Any]]:
 
 
 def _write(items: list[dict[str, Any]], home: Path | None = None) -> None:
+    """Whole or not at all: a crash mid-write must not lose every notice."""
     path = _path(home)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items[-KEEP:], ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(items[-KEEP:], ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def fingerprint(exc: BaseException) -> str:
+    """The same error, the same key: its type and the innermost Upshot frame, as the
+    reporter counts crashes. Meetings stopped by one error share one window."""
+    from app.diagnostics import scrub
+    from app.diagnostics.reporter import _fingerprint
+
+    try:
+        return _fingerprint(scrub.exception_values(exc))
+    except Exception:  # a notice must never fail for want of a key
+        return type(exc).__name__
 
 
 def record(
@@ -90,6 +106,7 @@ def record(
         report = {"status": "none"}  # a build that cannot send
     notice = {
         "id": uuid.uuid4().hex[:12],
+        "fingerprint": fingerprint(exc),
         "meeting_id": meeting_id,
         "stage": stage,
         "message": message[:2000],
@@ -112,14 +129,21 @@ def pending(home: Path | None = None) -> list[dict[str, Any]]:
 
 
 def close(notice_id: str, *, send: bool, home: Path | None = None) -> dict[str, Any] | None:
-    """Close a notice; with ``send``, first send the report it showed (only one that asked).
-    The notice as it ended, or ``None`` when there is no such notice."""
+    """Close a notice, and with it every open notice of the same error (one window for
+    meetings stopped the same way); with ``send``, first send the report it showed — one
+    report, whatever the number of meetings, and only for a notice that asked. The notice
+    as it ended, or ``None`` when there is no such notice."""
     with _lock:
         items = _read(home)
         found = next((item for item in items if item.get("id") == notice_id), None)
         if found is None:
             return None
-        items = [item for item in items if item.get("id") != notice_id]
+        key = found.get("fingerprint")
+        items = [
+            item
+            for item in items
+            if item.get("id") != notice_id and (key is None or item.get("fingerprint") != key)
+        ]
         _write(items, home)
     report = found.get("report") or {}
     if send and report.get("status") == "ask" and isinstance(report.get("event"), dict):
@@ -130,13 +154,21 @@ def close(notice_id: str, *, send: bool, home: Path | None = None) -> dict[str, 
         if active is not None and active.send_prepared(event):
             found["report"] = {"status": "sent", "reference": str(event.get("event_id", ""))[:8]}
             log.info("error notice %s: report sent on the user's word", notice_id)
+        else:
+            found["report"] = {"status": "not_sent"}
     return found
 
 
-def forget_meeting(meeting_id: str, home: Path | None = None) -> None:
-    """A meeting deleted, or summarized after all: its notice has nothing left to say."""
+def forget_meeting(meeting_id: str, *, stage: str | None = None, home: Path | None = None) -> None:
+    """A meeting deleted (every notice of it, and the error text it keeps on disk), or a
+    ``stage`` of it that went through after all (that stage's notice)."""
     with _lock:
         items = _read(home)
-        kept = [item for item in items if item.get("meeting_id") != meeting_id]
+        kept = [
+            item
+            for item in items
+            if item.get("meeting_id") != meeting_id
+            or (stage is not None and item.get("stage") != stage)
+        ]
         if len(kept) != len(items):
             _write(kept, home)

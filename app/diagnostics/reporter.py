@@ -94,7 +94,8 @@ class CrashReporter:
             return 0
 
     def install_id(self) -> str:
-        """Random, made the first time a report is sent, and linked to nothing."""
+        """Random, made the first time a report is sent or shown (the error window's preview
+        is the report as it would be sent), and linked to nothing."""
         value = str(self.config.get("diagnostics.install_id") or "")
         if len(value) != 32:
             value = uuid.uuid4().hex
@@ -135,6 +136,11 @@ class CrashReporter:
         if not self.available:
             return False
         with self._lock:
+            values = event.get("exception", {}).get("values") or []
+            if values:
+                # Counted like an automatic one, so turning reports on later the same day
+                # does not send this crash a second time.
+                self._first_today(_fingerprint(values))
             self.home.mkdir(parents=True, exist_ok=True)
             (self.home / "last-report.json").write_text(
                 json.dumps(event, indent=2, ensure_ascii=False), encoding="utf-8"

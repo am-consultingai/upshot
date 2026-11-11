@@ -45,6 +45,9 @@ export const en = {
   "errorNotice.open": "Open meeting",
   "errorNotice.close": "Close",
   "errorNotice.thanks": "Report sent. Thank you.",
+  "errorNotice.sameErrorOne": "The same error stopped one other meeting.",
+  "errorNotice.sameErrorMany": "The same error stopped {n} other meetings.",
+  "errorNotice.notSent": "The report could not be sent.",
 
   "palette.title": "Commands",
   "palette.placeholder": "Search meetings, transcripts and commands…",

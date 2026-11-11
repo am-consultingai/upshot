@@ -381,6 +381,8 @@ export interface ErrorNotice {
   /** What went wrong, as the job recorded it: shown here, never sent. */
   message: string;
   at: string;
+  /** How many other open notices the same error stopped: closed with this one. */
+  same_error: number;
   report:
     | { status: "sent"; reference: string }
     | { status: "ask"; event: Record<string, unknown> }

@@ -3359,7 +3359,10 @@ def test_router() -> APIRouter:
             svc.reporter = reporter
             set_active(reporter)
         else:
-            set_active(None)
+            # A build that cannot send: a reporter with no DSN, still the active one.
+            unavailable = CrashReporter(svc.config, dsn="", background=False)
+            svc.reporter = unavailable
+            set_active(unavailable)
         stage = JobStage(str(body.get("stage", "summarize")))
         job = svc.queue.enqueue(str(body["meeting_id"]), stage)
         claimed = svc.queue.claim(job.id) or job

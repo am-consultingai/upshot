@@ -47,6 +47,9 @@ export const de: Record<MessageKey, string> = {
   "errorNotice.open": "Besprechung öffnen",
   "errorNotice.close": "Schließen",
   "errorNotice.thanks": "Bericht gesendet. Danke.",
+  "errorNotice.sameErrorOne": "Derselbe Fehler hat eine weitere Besprechung gestoppt.",
+  "errorNotice.sameErrorMany": "Derselbe Fehler hat {n} weitere Besprechungen gestoppt.",
+  "errorNotice.notSent": "Der Bericht konnte nicht gesendet werden.",
 
   "palette.title": "Befehle",
   "palette.placeholder": "Besprechungen, Transkripte und Befehle durchsuchen…",

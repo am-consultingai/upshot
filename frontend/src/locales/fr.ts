@@ -47,6 +47,9 @@ export const fr: Record<MessageKey, string> = {
   "errorNotice.open": "Ouvrir la réunion",
   "errorNotice.close": "Fermer",
   "errorNotice.thanks": "Rapport envoyé. Merci.",
+  "errorNotice.sameErrorOne": "La même erreur a arrêté une autre réunion.",
+  "errorNotice.sameErrorMany": "La même erreur a arrêté {n} autres réunions.",
+  "errorNotice.notSent": "Le rapport n'a pas pu être envoyé.",
 
   "palette.title": "Commandes",
   "palette.placeholder": "Rechercher des réunions, des transcriptions et des commandes…",

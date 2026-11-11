@@ -126,3 +126,87 @@ def test_one_notice_per_meeting_and_gone_when_it_is_summarized_after_all() -> No
 
 def test_closing_an_unknown_notice_is_none() -> None:
     assert notices.close("nope", send=True) is None
+
+
+# ------------------------------------------------------------------ review round 1
+
+
+def _boom() -> BaseException:
+    try:
+        raise RuntimeError("Claude Code exited 1: boom")
+    except RuntimeError as exc:
+        return exc
+
+
+def _record(meeting_id: str, exc: BaseException, stage: str = "summarize") -> dict[str, Any]:
+    notice = notices.record(
+        meeting_id=meeting_id, stage=stage, message=str(exc), at="now", exc=exc, sent=None
+    )
+    assert notice is not None
+    return notice
+
+
+def test_meetings_stopped_by_the_same_error_share_one_window_and_one_report(
+    tmp_path: Path, active: None
+) -> None:
+    reporter, sent = _reporter(tmp_path, "off")
+    set_active(reporter)
+    error = _boom()
+    first = _record("a", error)
+    _record("b", error)
+    _record("c", error)
+    other = _record("d", ValueError("something else"))
+    assert len(notices.pending()) == 4
+
+    notices.close(first["id"], send=True)
+    assert len(sent) == 1, "one report for the three meetings"
+    assert [item["id"] for item in notices.pending()] == [other["id"]], "a different error stays"
+
+
+def test_send_on_a_notice_that_did_not_ask_sends_nothing(tmp_path: Path, active: None) -> None:
+    reporter, sent = _reporter(tmp_path, "on")
+    set_active(reporter)
+    notice = notices.record(
+        meeting_id="m", stage="summarize", message="x", at="now", exc=_boom(),
+        sent={"event_id": "0123456789abcdef"},
+    )  # fmt: skip
+    assert notice is not None
+    notices.close(notice["id"], send=True)
+    assert sent == []
+
+
+def test_a_notice_replaced_by_a_newer_failure_is_gone(tmp_path: Path, active: None) -> None:
+    reporter, sent = _reporter(tmp_path, "off")
+    set_active(reporter)
+    old = _record("m", _boom())
+    _record("m", ValueError("again"))
+    assert notices.close(old["id"], send=True) is None
+    assert sent == []
+
+
+def test_a_send_that_cannot_go_says_so() -> None:
+    notice = _record("m", _boom())
+    notice_file = notices.pending()[0]
+    notice_file["report"] = {"status": "ask", "event": {"event_id": "x"}}
+    notices._write([notice_file])
+    closed = notices.close(notice["id"], send=True)
+    assert closed is not None and closed["report"] == {"status": "not_sent"}
+
+
+def test_a_stage_that_goes_through_clears_only_its_own_notice() -> None:
+    _record("m", _boom(), stage="deliver")
+    notices.forget_meeting("m", stage="summarize")
+    assert len(notices.pending()) == 1
+    notices.forget_meeting("m", stage="deliver")
+    assert notices.pending() == []
+
+
+def test_a_report_sent_by_hand_counts_for_the_day(tmp_path: Path, active: None) -> None:
+    """Turning reports on later the same day must not send the same crash again."""
+    reporter, sent = _reporter(tmp_path, "off")
+    set_active(reporter)
+    error = _boom()
+    notices.close(_record("m", error)["id"], send=True)
+    assert len(sent) == 1
+    reporter.config.set("diagnostics.crash_reports", "on")
+    assert reporter.report_exception(error, where="stage:summarize") is None

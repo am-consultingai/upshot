@@ -103,6 +103,14 @@ def error_notices(request: Request) -> dict[str, Any]:
         if meeting is None:
             continue
         items.append({**notice, "title": meeting.title})
+    # One window per error: how many other open notices the same error stopped, which a
+    # close of the first closes with it.
+    for item in items:
+        item["same_error"] = sum(
+            1
+            for other in items
+            if other is not item and other.get("fingerprint") == item.get("fingerprint")
+        )
     return {"items": items}
 
 

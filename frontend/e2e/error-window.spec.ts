@@ -12,10 +12,10 @@ import { expect, gotoApp, isoAt, test } from "./fixtures";
 
 const HEADERS = { "X-CSRF-Token": CSRF, Cookie: `up_session=${SESSION}; up_csrf=${CSRF}` };
 
-async function fail(request: APIRequestContext, reports: "on" | "off" | "none") {
+async function fail(request: APIRequestContext, reports: "on" | "off" | "none", meeting = "e2e-tableau") {
   const response = await request.post("/api/test/fail-stage", {
     headers: HEADERS,
-    data: { meeting_id: "e2e-tableau", stage: "summarize", reports, message: "Claude Code exited 1: boom" },
+    data: { meeting_id: meeting, stage: "summarize", reports, message: "Claude Code exited 1: boom" },
   });
   expect(response.status()).toBe(200);
 }
@@ -33,6 +33,14 @@ test.beforeEach(async ({ seed }) => {
       started_at: isoAt(0, 10),
       language: "en",
       turns: [{ speaker: "ME", at_ms: 0, end_ms: 3000, text: "The dashboard ships Friday." }],
+    },
+    {
+      id: "e2e-budget",
+      title: "Budget $$ review",
+      state: "TRANSCRIBED",
+      started_at: isoAt(0, 11),
+      language: "en",
+      turns: [{ speaker: "ME", at_ms: 0, end_ms: 3000, text: "The budget is approved." }],
     },
   ]);
 });
@@ -84,4 +92,34 @@ test("open_meeting_goes_to_it", async ({ page, request }) => {
   await page.getByTestId("error-notice-open").click();
   await expect(page).toHaveURL(/\/m\/e2e-tableau/);
   await expect(page.getByTestId("error-notice")).toHaveCount(0);
+});
+
+test("escape_never_sends_and_the_window_not_a_button_has_the_focus", async ({ page, request }) => {
+  const before = (await sent(request)).length;
+  await fail(request, "off");
+  await gotoApp(page, "/");
+  const window = page.getByTestId("error-notice");
+  await expect(window).toBeVisible();
+  await expect(window).toBeFocused(); // a stray Space or Enter presses nothing
+  await window.getByTestId("error-notice-preview").click();
+  await expect(window.getByTestId("error-notice-dont-send")).not.toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("error-notice")).toHaveCount(0);
+  expect((await sent(request)).length).toBe(before);
+});
+
+test("meetings_stopped_by_the_same_error_share_one_window", async ({ page, request }) => {
+  const before = (await sent(request)).length;
+  await fail(request, "off", "e2e-budget");
+  await fail(request, "off", "e2e-tableau");
+  await gotoApp(page, "/");
+  const window = page.getByTestId("error-notice");
+  await expect(window).toContainText("Upshot could not finish Budget $$ review");
+  await expect(window.getByTestId("error-notice-same")).toHaveText("The same error stopped one other meeting.");
+  await window.getByTestId("error-notice-send").click();
+  await expect(page.getByTestId("error-notice")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("app")).toBeVisible();
+  await expect(page.getByTestId("error-notice")).toHaveCount(0);
+  expect((await sent(request)).length).toBe(before + 1);
 });

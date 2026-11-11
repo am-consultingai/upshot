@@ -503,9 +503,6 @@ class Worker:
             return
         finally:
             self.queue.deleted(meeting_id)
-            from app.diagnostics import notices
-
-            notices.forget_meeting(meeting_id)
         if self.services is not None and getattr(self.services, "events", None) is not None:
             self.services.events.publish("meeting", meeting_id=meeting_id, action="deleted")
 
@@ -532,12 +529,11 @@ class Worker:
             return  # deleted as the stage finished: nothing to move on
         self.queue.complete(job)
         self.stats.completed += 1
-        if job.stage == JobStage.SUMMARIZE:
-            # Summarized after all (a retry, a sign-in): an error window still open for it
-            # has nothing left to say.
-            from app.diagnostics import notices
+        # The stage that failed went through after all (a retry, a sign-in): an error
+        # window still open for it has nothing left to say.
+        from app.diagnostics import notices
 
-            notices.forget_meeting(job.meeting_id)
+        notices.forget_meeting(job.meeting_id, stage=str(job.stage))
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}
         if job.stage == JobStage.SUMMARIZE:
             # A summary written by a provider (in this run: not one that found the notes
