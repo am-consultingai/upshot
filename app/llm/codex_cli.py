@@ -552,7 +552,8 @@ class _Scratch:
     answer_file: Path
 
 
-_OWN_ERROR = re.compile(r"(ERROR|Error): ")
+#: Codex's own prefix, upper case: a model's text that starts "Error: " is not Codex's.
+_OWN_ERROR = re.compile(r"ERROR: ")
 
 
 def own_error(stderr: str, prompt: str = "") -> str:

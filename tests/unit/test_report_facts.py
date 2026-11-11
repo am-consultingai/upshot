@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from app.diagnostics import scrub
 from app.errors import PermanentError, RecoverableError, describe
 from app.llm.claude_cli import ClaudeCliClient
@@ -178,3 +180,78 @@ def test_once_reached_not_even_the_error_stream_is_the_message() -> None:
         ClaudeCliClient._raise_for(1, json.dumps(envelope), "[debug] prompt: Thursday's launch")
     except RecoverableError as exc:
         assert "cli_message" not in scrub.facts(exc)
+
+
+def test_a_hook_that_blocked_the_prompt_is_never_quoted() -> None:
+    """The model never reached, but the reason is a hook's, which can quote the prompt:
+    only the structured fields go."""
+    envelope = json.loads(EXPIRED_ENVELOPE)
+    envelope.update(
+        terminal_reason="hook_blocked",
+        result="Blocked: prompt mentions Project Falcon and Dana Cohen",
+    )
+    try:
+        ClaudeCliClient._raise_for(1, json.dumps(envelope), "warning: something on stderr")
+    except RecoverableError as exc:
+        facts = scrub.facts(exc)
+    assert facts["model_reached"] is False and facts["terminal_reason"] == "hook_blocked"
+    assert "cli_message" not in facts
+
+
+def test_claude_api_errors_keep_their_reason() -> None:
+    error = describe(
+        RuntimeError("x"),
+        provider="claude-subscription",
+        cli_message=(
+            'API Error: 401 {"type":"error","error":{"type":"authentication_error",'
+            '"message":"OAuth token has expired."},"request_id":"req_1"}'
+        ),
+    )
+    assert scrub.facts(error)["cli_message"] == (
+        "API Error: 401 authentication_error: OAuth token has expired."
+    )
+
+
+@pytest.mark.parametrize(
+    ("count", "band"),
+    [(0, "1"), (1, "1"), (2, "2-3"), (3, "2-3"), (4, "4-8"), (8, "4-8"), (9, "9+")],
+)
+def test_summary_windows_go_in_bands(count: int, band: str) -> None:
+    from app.pipeline.stages.summarize import windows_band
+
+    assert windows_band(count) == band
+
+
+@pytest.mark.parametrize(
+    ("seconds", "band"),
+    [(None, None), (0, None), (60, "<15"), (15 * 60, "<30"), (120 * 60, "120+")],
+)
+def test_meeting_length_goes_in_bands(seconds: int | None, band: str | None) -> None:
+    from app.pipeline.worker import _minutes_bucket
+
+    assert _minutes_bucket(seconds) == band
+
+
+def test_the_cli_version_is_asked_again_after_an_update(tmp_path: Path) -> None:
+    import os
+
+    from app.config import default_config
+    from app.llm import claude_cli
+
+    program = tmp_path / "claude"
+    program.write_text("#!/bin/sh\n")
+    answers = iter(["2.1.263 (Claude Code)", "2.1.300 (Claude Code)"])
+    asked: list[str] = []
+
+    def runner(args: list[str], _stdin: str, _timeout: float) -> tuple[int, str, str]:
+        asked.append(args[-1])
+        return 0, next(answers), ""
+
+    client = ClaudeCliClient(default_config(), runner=runner)
+    claude_cli._VERSIONS.clear()
+    assert client._version(str(program)) == "2.1.263 (Claude Code)"
+    assert client._version(str(program)) == "2.1.263 (Claude Code)", "kept"
+    stat = program.stat()
+    os.utime(program, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10_000_000))  # updated
+    assert client._version(str(program)) == "2.1.300 (Claude Code)"
+    assert len(asked) == 2

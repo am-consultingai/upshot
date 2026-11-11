@@ -20,6 +20,7 @@ the exception message is the only free text, and it passes through ``scrub_text`
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from collections.abc import Iterable
@@ -342,7 +343,7 @@ FACTS = (
 )
 
 
-#: Facts about the AI program that failed: all from one exception, the innermost one that
+#: Facts about the AI program that failed: all from one exception, the outermost one that
 #: names a provider, so a fallback's failure never borrows the first provider's words.
 AI_FACTS = frozenset(FACTS[:10])
 #: Facts about the job: sent only when an AI provider was involved (Privacy Policy §6).
@@ -382,7 +383,10 @@ def facts(exc: BaseException) -> dict[str, Any]:
         if isinstance(value, bool | int | float):
             clean[key] = value
         else:
-            text = scrub_text(str(value), homes=homes())
+            text = str(value)
+            if key == "cli_message":
+                text = _api_error(text)
+            text = scrub_text(text, homes=homes())
             if key == "cli_message":
                 text = _anonymous_message(text)
             text = text.strip()
@@ -398,6 +402,27 @@ _NAMED = re.compile(
     r"([^\s,.;:)]+(?:\s+(?:Ltd|Inc|LLC|GmbH|Corp)\.?)?)",
     re.IGNORECASE,
 )
+
+
+_API_ERROR = re.compile(r"^(API Error:\s*\d{3})\s*(\{.*\})\s*$", re.DOTALL)
+
+
+def _api_error(text: str) -> str:
+    """Claude Code's "API Error: 401 {json}" as "API Error: 401 authentication_error: OAuth
+    token has expired": the JSON's quotes would otherwise all be scrubbed away."""
+    match = _API_ERROR.match(text.strip())
+    if not match:
+        return text
+    try:
+        body = json.loads(match.group(2))
+    except ValueError:
+        return match.group(1)
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        return match.group(1)
+    kind = str(error.get("type") or "").strip()
+    message = str(error.get("message") or "").strip()
+    return " ".join(part for part in (match.group(1), f"{kind}:" if kind else "", message) if part)
 
 
 #: Words that follow "account" or "organization" in ordinary sentences, not names.

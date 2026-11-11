@@ -15,7 +15,7 @@ from app import meta
 from app.asr.languages import english_name
 from app.asr.models import DEFAULT_LANGUAGE
 from app.due import anchor_date, resolve_due
-from app.errors import Deferred, QuotaExhausted, SignInRequired
+from app.errors import Deferred, QuotaExhausted, SignInRequired, UpshotError, describe
 from app.llm import schema
 from app.llm.client import LlmClient, LlmResult, make_client, system_blocks
 from app.llm.prompts import load as load_prompt
@@ -304,7 +304,8 @@ def summarize(
         overlap_tokens=int(ctx.config.get("llm.window_overlap_tokens", 300)),
     )
     log.info("summarizing %d window(s) in %s (free-form)", len(windows), language)
-    ctx.metrics["summary_windows"] = len(windows)  # for a crash report, if this run fails
+    # For a crash report, if this run fails: in bands, like the meeting's length.
+    ctx.metrics["summary_windows"] = windows_band(len(windows))
 
     envelope = (
         "Reply with a JSON object holding `summary_html` — the complete summary as HTML — "
@@ -339,14 +340,19 @@ def summarize(
     chapters: list[dict[str, Any]] = []
     for window in windows:
         ctx.checkpoint()
-        result = client.complete_json(
-            system_blocks=system_blocks(f"{system}\n\n{instruction}\n\n{envelope}", glossary),
-            # The invitation leads, then the transcript: the model reads what the meeting
-            # was for before it reads what was said.
-            user=f"{context}\n\nTranscript:\n{window.text}" if context else window.text,
-            schema=FREE_SCHEMA,
-            max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
-        )
+        try:
+            result = client.complete_json(
+                system_blocks=system_blocks(f"{system}\n\n{instruction}\n\n{envelope}", glossary),
+                # The invitation leads, then the transcript: the model reads what the meeting
+                # was for before it reads what was said.
+                user=f"{context}\n\nTranscript:\n{window.text}" if context else window.text,
+                schema=FREE_SCHEMA,
+                max_tokens=int(ctx.config.get("llm.max_tokens", 16000)),
+            )
+        except UpshotError as exc:
+            # Every provider, API keys included: which one failed, for a crash report.
+            describe(exc, provider=client.name, model=str(getattr(client, "model", "") or ""))
+            raise
         usage.append(result.usage)
         parts.append(str(result.data.get("summary_html", "")))
         model_title = model_title or str(result.data.get("title", "") or "").strip()
@@ -542,6 +548,18 @@ def note_spent(ctx: StageContext, *errors: BaseException) -> None:
     for error in errors:
         if isinstance(error, QuotaExhausted) and error.provider:
             status.spent(error.provider, back_at(error, now))
+
+
+def windows_band(count: int) -> str:
+    """How many parts a transcript was cut into, coarsely: a crash report must not tell
+    one meeting from another (Privacy Policy §6: length in broad bands)."""
+    if count <= 1:
+        return "1"
+    if count <= 3:
+        return "2-3"
+    if count <= 8:
+        return "4-8"
+    return "9+"
 
 
 def chosen_provider(ctx: StageContext) -> str | None:
