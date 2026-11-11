@@ -280,6 +280,9 @@ def _remove(service: MeetingService, meeting: Meeting) -> None:
         except OSError:
             log.warning("could not mark %s for deletion", meeting.path)
         service.dao.delete_meeting(meeting.id)
+        from app.diagnostics import notices
+
+        notices.forget_meeting(meeting.id)
 
 
 def _matched(meeting: Meeting) -> bool:

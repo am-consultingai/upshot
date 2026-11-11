@@ -94,7 +94,8 @@ class CrashReporter:
             return 0
 
     def install_id(self) -> str:
-        """Random, made the first time a report is sent, and linked to nothing."""
+        """Random, made the first time a report is sent or shown (the error window's preview
+        is the report as it would be sent), and linked to nothing."""
         value = str(self.config.get("diagnostics.install_id") or "")
         if len(value) != 32:
             value = uuid.uuid4().hex
@@ -117,6 +118,40 @@ class CrashReporter:
             where=where,
             tags=tags,
         )
+
+    def prepare_exception(
+        self, exc: BaseException, *, where: str, tags: dict[str, str] | None = None
+    ) -> dict[str, Any] | None:
+        """The report ``exc`` would make, built and not sent, whatever the consent: for the
+        error window to show as it is and send only if the user says so. ``None`` in a
+        build that cannot send."""
+        if not self.available:
+            return None
+        values = scrub.exception_values(exc)
+        body = {"exception": {"values": values}, "level": "error"}
+        return self._event(body, where=where, tags=tags or {}, platform="python")
+
+    def send_prepared(self, event: dict[str, Any]) -> bool:
+        """Send a report the user saw and chose to send: exactly that event, no other."""
+        if not self.available:
+            return False
+        with self._lock:
+            values = event.get("exception", {}).get("values") or []
+            if values:
+                # Counted like an automatic one, so turning reports on later the same day
+                # does not send this crash a second time.
+                self._first_today(_fingerprint(values))
+            self.home.mkdir(parents=True, exist_ok=True)
+            (self.home / "last-report.json").write_text(
+                json.dumps(event, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        if self.background:
+            threading.Thread(
+                target=self._deliver, args=(event, self.dsn), name="crash-report", daemon=True
+            ).start()
+        else:
+            self._deliver(event, self.dsn)
+        return True
 
     def report_native(
         self, frames: list[dict[str, Any]], *, version: str | None
@@ -288,13 +323,19 @@ def set_active(reporter: CrashReporter | None) -> None:
     _active = reporter
 
 
-def report(exc: BaseException, *, where: str) -> None:
+def active() -> CrashReporter | None:
+    """The reporter in use, if any."""
+    return _active
+
+
+def report(exc: BaseException, *, where: str) -> dict[str, Any] | None:
     """Report through the active reporter, never raising: for the excepthooks, a stage
-    that has failed for good, and the installer's download."""
+    that has failed for good, and the installer's download. The event sent, or None."""
     reporter = _active
     if reporter is None:
-        return
+        return None
     try:
-        reporter.report_exception(exc, where=where)
+        return reporter.report_exception(exc, where=where)
     except Exception:
         log.exception("could not report an exception")
+        return None

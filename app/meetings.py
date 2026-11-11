@@ -658,6 +658,10 @@ class MeetingService:
             remove_tree(folder)
         # Jobs and indexed turns go with it: both cascade on the meeting row.
         self.dao.delete_meeting(meeting.id)
+        # And an error window's notice, which keeps the job's error text on disk.
+        from app.diagnostics import notices
+
+        notices.forget_meeting(meeting.id)
         log.info("deleted meeting %s and %s", meeting.id, folder)
         return folder
 

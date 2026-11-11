@@ -84,3 +84,57 @@ def setup_failure(request: Request, body: SetupFailure) -> dict[str, Any]:
             product=product, stage=body.stage, reason=body.reason, log=lines
         )
     return {"reported": sent is not None}
+
+
+# --------------------------------------------------------------------- the error window
+
+
+@router.get("/errors")
+def error_notices(request: Request) -> dict[str, Any]:
+    """Meetings that failed for a reason Upshot does not recognise, not closed yet, each
+    with the report sent or, when the user has not agreed to reports, the one that would
+    be (owner, 2026-11-10). Meetings no longer listed are left out."""
+    from app.diagnostics import notices
+
+    dao = request.app.state.services.dao
+    items = []
+    gone: set[str] = set()
+    for notice in notices.pending():
+        meeting_id = str(notice.get("meeting_id", ""))
+        if dao.get_meeting(meeting_id) is None:
+            gone.add(meeting_id)  # hidden (another calendar account) is still there
+            continue
+        meeting = dao.visible_meeting(meeting_id)
+        if meeting is None:
+            continue
+        items.append({**notice, "title": meeting.title})
+    # Gone meetings: their error text goes too. Only those found gone here, never a notice
+    # the worker recorded since this list was read.
+    notices.drop_meetings(gone)
+    # One window per error: how many other open notices the same error stopped, which a
+    # close of the first closes with it.
+    for item in items:
+        item["same_error"] = sum(
+            1
+            for other in items
+            if other is not item and other.get("fingerprint") == item.get("fingerprint")
+        )
+    return {"items": items}
+
+
+class CloseNotice(BaseModel):
+    #: Send the report the window showed (only for one that asked).
+    send: bool = False
+    #: The other notices of the same error the window showed, closed with it.
+    with_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
+@router.post("/errors/{notice_id}/close")
+def close_error_notice(request: Request, notice_id: str, body: CloseNotice) -> dict[str, Any]:
+    """Close the window: with ``send``, the report it showed goes first."""
+    from app.diagnostics import notices
+
+    closed = notices.close(notice_id, send=body.send, with_ids=frozenset(body.with_ids))
+    if closed is None:
+        raise HTTPException(404, "no such notice")
+    return {"report": {k: v for k, v in closed["report"].items() if k != "event"}}

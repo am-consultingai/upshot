@@ -529,6 +529,11 @@ class Worker:
             return  # deleted as the stage finished: nothing to move on
         self.queue.complete(job)
         self.stats.completed += 1
+        # The stage that failed went through after all (a retry, a sign-in): an error
+        # window still open for it has nothing left to say.
+        from app.diagnostics import notices
+
+        notices.forget_meeting(job.meeting_id, stage=str(job.stage))
         self.last_metrics[job.stage] = dict(context.metrics) if context else {}
         if job.stage == JobStage.SUMMARIZE:
             # A summary written by a provider (in this run: not one that found the notes
@@ -665,9 +670,19 @@ class Worker:
                 drop_chosen_provider(folder, only=ran_with)
         # Failed for good, not a retry: worth a crash report, if the user agreed (D87).
         if isinstance(exc, Exception):
+            from app.diagnostics import notices
             from app.diagnostics.reporter import report
 
-            report(exc, where=f"stage:{job.stage}")
+            sent = report(exc, where=f"stage:{job.stage}")
+            # And a window of its own for the user, unless the page already explains it.
+            notices.record(
+                meeting_id=job.meeting_id,
+                stage=str(job.stage),
+                message=updated.last_error or str(exc),
+                at=self.clock.now().isoformat(),
+                exc=exc,
+                sent=sent,
+            )
         # A delivery failure must never regress a rendered meeting (DESIGN.md §13).
         if job.stage == JobStage.DELIVER:
             self.dao.update_meeting(job.meeting_id, error=updated.last_error)

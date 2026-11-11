@@ -3332,6 +3332,50 @@ def test_router() -> APIRouter:
         worker = services_of(request).worker
         return {"ran": worker.drain(limit=50) if worker is not None else 0}
 
+    sent_reports: list[dict[str, Any]] = []
+
+    @seed.post("/fail-stage")
+    def fail_stage(request: Request, body: dict[str, Any]) -> dict[str, Any]:
+        """Fail a meeting's stage for good through the worker's own path, with crash
+        reports "on", "off" or unavailable ("none") and a stand-in for Sentry whose
+        reports ``/api/test/sent-reports`` lists: the error window's specs."""
+        from app.diagnostics.reporter import CrashReporter, set_active
+
+        svc = services_of(request)
+        consent = str(body.get("reports", "none"))
+        if consent in ("on", "off"):
+            svc.config.set("diagnostics.crash_reports", consent)
+
+            def keep(_kind: str, event: dict[str, Any]) -> bool:
+                sent_reports.append(event)
+                return True
+
+            reporter = CrashReporter(
+                svc.config,
+                dsn="https://0123456789abcdef0123456789abcdef@o1.ingest.example.io/42",
+                send=keep,
+                background=False,
+            )
+            svc.reporter = reporter
+            set_active(reporter)
+        else:
+            # A build that cannot send: a reporter with no DSN, still the active one.
+            unavailable = CrashReporter(svc.config, dsn="", background=False)
+            svc.reporter = unavailable
+            set_active(unavailable)
+        stage = JobStage(str(body.get("stage", "summarize")))
+        job = svc.queue.enqueue(str(body["meeting_id"]), stage)
+        claimed = svc.queue.claim(job.id) or job
+        assert svc.worker is not None
+        svc.worker._on_failure(
+            claimed, RuntimeError(str(body.get("message", "boom"))), permanent=True
+        )
+        return {"failed": claimed.id}
+
+    @seed.get("/sent-reports")
+    def list_sent_reports() -> dict[str, Any]:
+        return {"items": sent_reports}
+
     @seed.post("/seed")
     def seed_db(request: Request, body: dict[str, Any]) -> JSONResponse:
         svc = services_of(request)
@@ -3341,6 +3385,10 @@ def test_router() -> APIRouter:
             for meeting in svc.dao.list_meetings(limit=10_000, include_hidden=True):
                 svc.dao.clear_turns(meeting.id)
             svc.conn.execute("DELETE FROM jobs")
+            from app.diagnostics import notices
+
+            for notice in notices.pending():  # each spec starts with no error window
+                notices.close(str(notice["id"]), send=False)
             if svc.progress is not None:
                 svc.progress.clear()
             # Cascades from meetings too; said here so the reset does not depend on

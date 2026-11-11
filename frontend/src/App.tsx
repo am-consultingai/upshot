@@ -18,6 +18,7 @@ import LicencesPage from "./routes/Licences";
 import TermsNotice from "./components/TermsNotice";
 import UpdateNotice from "./components/UpdateNotice";
 import ReportsNotice from "./components/ReportsNotice";
+import ErrorNoticeHost from "./components/ErrorNoticeDialog";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FeedbackDialog from "./components/FeedbackDialog";
 import { setupPending } from "./lib/speech";
@@ -326,6 +327,8 @@ export default function App() {
         <CommandPalette />
         <Toaster />
         <FeedbackDialog />
+        {/* A meeting that failed for a reason Upshot does not recognise: its own window. */}
+        {!welcoming && <ErrorNoticeHost />}
         {celebrate && <Confetti onDone={celebrated} />}
         <ConfirmHost />
         <MeetingInfoHost />
