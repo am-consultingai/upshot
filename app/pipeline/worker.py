@@ -333,11 +333,11 @@ class Worker:
                     self._on_deferred(job, exc)
                     return
                 except PermanentError as exc:
-                    describe(exc, windows=context.metrics.get("windows"))
+                    describe(exc, summary_windows=context.metrics.get("summary_windows"))
                     self._on_failure(job, exc, permanent=True, ran_with=ran_with)
                     return
                 except Exception as exc:
-                    describe(exc, windows=context.metrics.get("windows"))
+                    describe(exc, summary_windows=context.metrics.get("summary_windows"))
                     self._keep_force(job, context)
                     self._on_failure(job, exc, permanent=False, ran_with=ran_with)
                     return

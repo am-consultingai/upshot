@@ -660,9 +660,17 @@ class ClaudeCliClient:
                 describe(exc, model=self.model or "default", cli_version=self._version(path))
                 raise
 
-        data, attempts = complete_with_repair(
-            send, user, schema, max_repairs=self.max_repairs, provider=self.name
-        )
+        try:
+            data, attempts = complete_with_repair(
+                send, user, schema, max_repairs=self.max_repairs, provider=self.name
+            )
+
+        except UpshotError as exc:
+            # Also what failed outside a run: no valid answer after the repairs, an empty one.
+
+            describe(exc, provider=NAME, model=self.model or "default")
+
+            raise
         return LlmResult(data=data, model=f"claude-code:{self.name}", attempts=attempts)
 
     @staticmethod
@@ -723,11 +731,12 @@ class ClaudeCliClient:
             if isinstance(api_ms, int | float):
                 reached = api_ms > 0
                 facts["model_reached"] = reached
-        own = err.strip()
-        if not own and reached is False:
-            own = cls._reason(out) or ""
-        if own:
-            facts["cli_message"] = own
+        # Only when the model was never reached: nothing a model wrote can be in it then,
+        # whatever else (a debug flag, a user's hook) prints on the error stream.
+        if reached is False:
+            own = err.strip() or cls._reason(out) or ""
+            if own:
+                facts["cli_message"] = own
         return facts
 
     @classmethod

@@ -29,15 +29,44 @@ def test_only_listed_facts_go_and_strings_are_scrubbed() -> None:
     assert "Thursday" not in json.dumps(facts)
 
 
-def test_facts_from_the_chain_and_the_first_one_wins() -> None:
+def test_a_fallbacks_failure_never_borrows_the_first_providers_facts() -> None:
+    """Claude signed out, Codex the fallback failing: the report is Codex's alone."""
     try:
         try:
-            raise describe(ValueError("inner"), provider="codex-subscription", exit_code=2)
-        except ValueError as inner:
-            raise describe(RecoverableError("outer"), exit_code=9) from inner
+            raise describe(
+                RecoverableError("signed out"),
+                provider="claude-subscription",
+                cli_message="Not logged in",
+                model_reached=False,
+                cli_version="2.1.263",
+            )
+        except RecoverableError:
+            # As summarize's fallback does: inside the except, so Claude's is its context.
+            raise describe(  # noqa: B904
+                RecoverableError("Codex exited 1"), provider="codex-subscription", exit_code=1
+            )
     except RecoverableError as outer:
         facts = scrub.facts(outer)
-    assert facts == {"exit_code": 9, "provider": "codex-subscription"}
+    assert facts == {"provider": "codex-subscription", "exit_code": 1}
+
+
+def test_job_facts_go_only_when_a_provider_was_involved() -> None:
+    """Privacy Policy §6: language and length band only for an AI provider's failure."""
+    transcription = describe(RuntimeError("x"), stage="transcribe", language="he", attempt=5)
+    assert scrub.facts(transcription) == {}
+    summary = describe(
+        RuntimeError("x"),
+        provider="gemini",
+        stage="summarize",
+        language="he",
+        meeting_minutes="<30",
+    )
+    assert scrub.facts(summary) == {
+        "provider": "gemini",
+        "stage": "summarize",
+        "language": "he",
+        "meeting_minutes": "<30",
+    }
 
 
 def test_the_expired_sign_in_reports_why_the_cli_stopped() -> None:
@@ -121,6 +150,7 @@ def test_a_hand_sent_report_goes_alone_through_its_own_outbox(tmp_path: Path) ->
 def test_a_cli_message_loses_account_and_organisation_names() -> None:
     error = describe(
         RuntimeError("x"),
+        provider="claude-subscription",
         cli_message=(
             'Your organization Acme Ltd has disabled Claude Code for account "dana@acme.io"'
         ),
@@ -128,3 +158,23 @@ def test_a_cli_message_loses_account_and_organisation_names() -> None:
     message = scrub.facts(error)["cli_message"]
     assert "Acme" not in message and "dana" not in message
     assert message.startswith("Your organization … has disabled Claude Code")
+
+
+def test_codex_never_keeps_a_line_of_the_prompt_it_echoed() -> None:
+    """A transcript window can start mid-sentence with "errors…" or even "Error: ": the
+    echoed prompt is not Codex's own words, whatever it looks like."""
+    prompt = (
+        "Summarize.\n\nTranscript:\nerrors in the payroll export for Dana Cohen\nError: the board"
+    )
+    stderr = prompt + "\nERROR: stream disconnected before completion\n"
+    assert own_error(stderr, prompt) == "ERROR: stream disconnected before completion"
+    assert own_error(prompt, prompt) == ""
+
+
+def test_once_reached_not_even_the_error_stream_is_the_message() -> None:
+    envelope = json.loads(EXPIRED_ENVELOPE)
+    envelope.update(duration_api_ms=900)
+    try:
+        ClaudeCliClient._raise_for(1, json.dumps(envelope), "[debug] prompt: Thursday's launch")
+    except RecoverableError as exc:
+        assert "cli_message" not in scrub.facts(exc)

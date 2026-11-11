@@ -607,9 +607,17 @@ class AntigravityCliClient:
                         raise
                 return answer
 
-            data, attempts = complete_with_repair(
-                send, user, schema, max_repairs=self.max_repairs, provider=self.name
-            )
+            try:
+                data, attempts = complete_with_repair(
+                    send, user, schema, max_repairs=self.max_repairs, provider=self.name
+                )
+
+            except UpshotError as exc:
+                # Also what failed outside a run: no valid answer after the repairs, an empty one.
+
+                describe(exc, provider=NAME, model=self.model or "default")
+
+                raise
         return LlmResult(data=data, model=f"antigravity:{self.name}", attempts=attempts)
 
     @staticmethod

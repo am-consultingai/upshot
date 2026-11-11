@@ -282,3 +282,12 @@ def test_a_missing_speech_model_opens_no_window() -> None:
     from app.asr.models import ModelNotInstalled
 
     assert notices.recognised(ModelNotInstalled("hebrew", "C:/models"))
+
+
+@pytest.mark.parametrize("category", ["setup", "auth", "refusal", "unknown", "SAFETY", "OTHER"])
+def test_a_provider_that_declined_whatever_its_category_opens_no_window(category: str) -> None:
+    assert notices.recognised(PermanentError("declined", category=category))
+
+
+def test_a_model_that_could_not_produce_valid_output_opens_the_window() -> None:
+    assert not notices.recognised(PermanentError("no valid JSON", category="schema"))

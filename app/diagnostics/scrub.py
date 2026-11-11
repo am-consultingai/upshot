@@ -336,28 +336,49 @@ FACTS = (
     "cli_message",
     "stage",
     "attempt",
-    "windows",
+    "summary_windows",
     "language",
     "meeting_minutes",
 )
 
 
+#: Facts about the AI program that failed: all from one exception, the innermost one that
+#: names a provider, so a fallback's failure never borrows the first provider's words.
+AI_FACTS = frozenset(FACTS[:10])
+#: Facts about the job: sent only when an AI provider was involved (Privacy Policy §6).
+JOB_FACTS = frozenset(FACTS[10:])
+
+
 def facts(exc: BaseException) -> dict[str, Any]:
-    """The listed facts attached to ``exc`` and to those it was raised from, scrubbed:
-    strings lose paths, addresses and keys and are cut to 300 characters."""
-    found: dict[str, Any] = {}
+    """The listed facts about a failure, scrubbed: strings lose paths, addresses, keys and
+    names and are cut to 300 characters. Nothing at all when no AI provider was involved."""
+    chain: list[BaseException] = []
     current: BaseException | None = exc
-    seen: set[int] = set()
-    while current is not None and id(current) not in seen:
-        seen.add(id(current))
-        held = getattr(current, "facts", None)
-        if isinstance(held, dict):
-            for key in FACTS:
-                if key in held and key not in found:
-                    found[key] = held[key]
-        current = current.__cause__ or current.__context__
+    while current is not None and id(current) not in {id(seen) for seen in chain}:
+        chain.append(current)
+        current = current.__cause__ or (
+            None if current.__suppress_context__ else current.__context__
+        )
+
+    def held(item: BaseException) -> dict[str, Any]:
+        value = getattr(item, "facts", None)
+        return value if isinstance(value, dict) else {}
+
+    # The outermost exception that names a provider is the one that failed last: the
+    # fallback's, not the one it stood in for (which its own exception chains to).
+    ai = next((held(item) for item in chain if held(item).get("provider")), None)
+    if ai is None:
+        return {}
+    found: dict[str, Any] = {key: ai[key] for key in AI_FACTS if key in ai}
+    for item in chain:
+        for key in JOB_FACTS:
+            if key in held(item) and key not in found:
+                found[key] = held(item)[key]
     clean: dict[str, Any] = {}
-    for key, value in found.items():
+    for key in FACTS:
+        if key not in found:
+            continue
+        value = found[key]
         if isinstance(value, bool | int | float):
             clean[key] = value
         else:
@@ -379,8 +400,20 @@ _NAMED = re.compile(
 )
 
 
+#: Words that follow "account" or "organization" in ordinary sentences, not names.
+_NOT_A_NAME = frozenset({"has", "have", "does", "do", "is", "was", "not", "and", "or", "to", "for"})
+
+
 def _anonymous_message(text: str) -> str:
-    """A CLI's message without the names in it: quoted values, and what follows words
-    such as "organization" or "account", become placeholders."""
+    """A CLI's message without the names in it: quoted values, and the name that follows
+    words such as "organization" or "account" (up to the next verb), become placeholders."""
     text = _CLI_QUOTED.sub(r"\1…\2", text)
-    return _NAMED.sub(lambda m: f"{m.group(1)}{m.group(2)}…", text)
+
+    def hide(match: re.Match[str]) -> str:
+        if match.group(3).lower() in _NOT_A_NAME:
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}…"
+
+    text = _NAMED.sub(hide, text)
+    # A name of several words: what is left of it up to the next ordinary word goes too.
+    return re.sub(r"… (?:[A-Z][\w&.-]*\s+)*(?=(?:[a-z]|$))", "… ", text)

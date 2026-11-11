@@ -40,15 +40,18 @@ KEEP = 20
 _lock = threading.Lock()
 
 
-#: Failures whose message says what to do about them: install or repair something, fix a
-#: key or a sign-in, fill in the mail settings, or accept that the provider declined.
-EXPLAINED = frozenset({"setup", "auth", "config", "refusal", "content_filter", "safety"})
+#: Categories that do not explain themselves: a model that could not produce valid output
+#: is a fault to report, not something the user can act on.
+UNEXPLAINED = frozenset({"schema"})
 
 
 def recognised(exc: BaseException) -> bool:
-    """A failure the meeting page already explains, with a way out: no window for it. A
-    model that could not produce valid output (``schema``) is not one of these."""
-    return isinstance(exc, PermanentError) and exc.category in EXPLAINED
+    """A failure the meeting page already explains, with a way out (setup, a key or a
+    sign-in, the mail settings, a provider that declined, whatever category it gives):
+    no window for it. A model that could not produce valid output is not one of these."""
+    return (
+        isinstance(exc, PermanentError) and bool(exc.category) and exc.category not in UNEXPLAINED
+    )
 
 
 def _path(home: Path | None = None) -> Path:
