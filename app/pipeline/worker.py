@@ -537,6 +537,7 @@ class Worker:
             metrics = context.metrics if context else {}
             name = str(metrics.get("written_by") or "")
             self._told_signed_out.pop(name, None)
+            self._told_fallback.pop(name, None)  # it runs again: its next sign-out is news
             instead_of = str(metrics.get("signed_out_instead_of") or "")
             if instead_of and name:
                 self._fallback_took_over(job, instead_of, name)

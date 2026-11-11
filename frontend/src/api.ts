@@ -392,7 +392,7 @@ export interface LlmProvider {
   update_hint?: string;
   /** False for a CLI that cannot be signed out from outside it (Antigravity, D79). */
   can_sign_out?: boolean;
-  /** A CLI's program, as the page names it ("Codex"). */
+  /** How the page names this CLI: its Settings row's name ("Codex CLI", "Claude Agent"). */
   product?: string;
   /** A summary waits for this CLI's sign-in: Sign in is offered even if it reads signed in. */
   waiting?: boolean;

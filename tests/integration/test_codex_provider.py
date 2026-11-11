@@ -400,6 +400,8 @@ def test_with_a_fallback_the_meeting_is_summarized_and_says_by_whom(  # type: ig
     assert written["name"] == "gemini"
     assert written["fallback_for"] == "codex-subscription"
     assert "allowance is used up" in written["fallback_reason"]
+    told = [t for t in api.services.notifier.shown if t.key.startswith("fallback:")]
+    assert told == [], "a spent allowance is not a sign-out: no takeover notice"
     page = api.client().get(f"/api/meetings/{meeting.id}").json()
     assert page["summarized_by"]["provider"] == "gemini"
     assert page["summarized_by"]["fallback_for"] == "codex-subscription"
@@ -471,6 +473,25 @@ def test_a_signed_out_cli_goes_to_the_fallback_the_user_chose(  # type: ignore[n
     summarized = queue.get_by_stage(second.id, str(JobStage.SUMMARIZE))
     assert summarized is not None and summarized.state == "done"
     assert len([t for t in notifier.shown if t.key.startswith("fallback:")]) == 1, "one message"
+
+    # Codex is signed in again and writes one; when it signs out later, that is news again.
+    monkeypatch.setenv("FAKE_CODEX_MODE", "ok")
+    third = api.services.meetings.create(source="manual", title="Signed in again")
+    third.path.mkdir(parents=True, exist_ok=True)
+    (third.path / "transcript.md").write_text(TRANSCRIPT, encoding="utf-8")
+    queue.enqueue(third.id, JobStage.SUMMARIZE)
+    while (job := queue.claim_next()) is not None:
+        api.services.worker.execute(job)
+    assert meta.read(third.path)["llm"]["name"] == "codex-subscription"
+    monkeypatch.setenv("FAKE_CODEX_MODE", "signed-out")
+    api.services.clock.advance(3600)  # an hour later, not inside the notifier's debounce
+    fourth = api.services.meetings.create(source="manual", title="Signed out again")
+    fourth.path.mkdir(parents=True, exist_ok=True)
+    (fourth.path / "transcript.md").write_text(TRANSCRIPT, encoding="utf-8")
+    queue.enqueue(fourth.id, JobStage.SUMMARIZE)
+    while (job := queue.claim_next()) is not None:
+        api.services.worker.execute(job)
+    assert len([t for t in notifier.shown if t.key.startswith("fallback:")]) == 2
 
 
 def test_when_the_fallback_cannot_run_either_the_job_waits_on_the_usual_one(  # type: ignore[no-untyped-def]

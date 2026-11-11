@@ -293,13 +293,14 @@ CLI_NAMES = {
     "codex-subscription": "Codex CLI",
     "antigravity-subscription": "Antigravity CLI",
 }
-#: Every provider, as notices name it: the CLIs above, and the rest as Settings does.
+#: Every provider, as notices name it: the CLIs above, and the rest by the short name of
+#: its Settings row, a proper noun that reads the same in every interface language.
 PROVIDER_NAMES = {
     **CLI_NAMES,
     "anthropic": "Claude (API key)",
     "gemini": "Gemini",
     "openai": "OpenAI",
-    "ollama": "the local model",
+    "ollama": "Ollama",
 }
 #: The program each CLI provider runs, named as the software it is (D46, D58, D79): what
 #: install and sign-in copy names, since that is the thing installed and signed into.
