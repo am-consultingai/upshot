@@ -1,4 +1,4 @@
-// Upshot site: copy button, the remembered language choice, and the video player.
+// Upshot site: download links, copy button, the remembered language choice, and the video player.
 // The page is complete without this file.
 (function () {
   "use strict";
@@ -28,6 +28,24 @@
       frame.focus();
     });
   });
+
+  // The download links name a release in the page itself, so they work without this
+  // file. Here they follow the update manifest instead: the stable channel's installer,
+  // or the beta's until there is a stable one. Only this repository's release files.
+  var downloads = document.querySelectorAll("a[data-download]");
+  var script = document.currentScript;
+  if (downloads.length && script && window.fetch) {
+    var RELEASES = "https://github.com/am-consultingai/upshot/releases/download/";
+    var manifest = function (channel) {
+      return fetch(new URL("updates/" + channel + ".json", script.src)).then(function (r) {
+        return r.ok ? r.json() : null;
+      });
+    };
+    manifest("stable").then(function (m) { return m || manifest("beta"); }).then(function (m) {
+      if (!m || typeof m.url !== "string" || m.url.indexOf(RELEASES) !== 0) return;
+      downloads.forEach(function (link) { link.href = m.url; });
+    }).catch(function () {});
+  }
 
   document.querySelectorAll("button[data-copy]").forEach(function (btn) {
     if (!navigator.clipboard) return;

@@ -557,3 +557,6 @@ footer{font-size:var(--t-label)}
   .nav-links{display:none}
   .nav .lang-switch{margin-inline-start:auto}
 }
+
+/* The download button in place of the old command box. */
+.start-dl{margin:34px 0 0}
