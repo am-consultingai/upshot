@@ -1,9 +1,9 @@
 /* Upshot site: layout on top of AM Consulting brand.css tokens. */
 
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.shot-bar,.term-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line-soft);
+.shot-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line-soft);
   background:var(--tile)}
-.shot-bar i,.term-bar i{width:9px;height:9px;border-radius:50%;background:var(--line)}
+.shot-bar i{width:9px;height:9px;border-radius:50%;background:var(--line)}
 .shot-bar span{margin-inline-start:8px;font-family:var(--mono);font-size:11.5px;color:var(--s4)}
 .ic{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .ic.big{width:34px;height:34px}
@@ -107,15 +107,6 @@ em{font-style:normal;color:var(--ink)}
 /* start */
 .start{text-align:center;padding-bottom:20px}
 .start h2{margin:0 auto}
-.term{max-width:620px;margin:34px auto 0;text-align:start;background:var(--deep);border:1px solid var(--line);
-  border-radius:14px;overflow:hidden;box-shadow:0 30px 70px -45px rgba(56,189,248,.35)}
-.term pre{margin:0;padding:20px 22px;font-family:var(--mono);font-size:14.5px;line-height:1.8;color:var(--ink);
-  white-space:pre-wrap;overflow-wrap:anywhere}
-.term pre code{background:none;padding:0;color:inherit;font-size:inherit;white-space:inherit}
-.copy{margin-inline-start:auto;display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;
-  color:var(--s3);background:none;border:1px solid var(--line);border-radius:7px;padding:4px 9px;cursor:pointer}
-.copy .ic{width:14px;height:14px}
-.copy:hover{color:var(--ink);border-color:var(--cyan)}
 .req{margin-top:20px;font-family:var(--mono);font-size:12.5px;color:var(--s3)}
 .req a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--cyan)}
 .limits{margin-top:10px;font-size:14px;color:var(--s4)}
@@ -306,8 +297,6 @@ body{font-size:var(--t-body)}
 .callouts b{font-size:17px}
 .start-sub{font-size:20px}
 .req{font-size:var(--t-label)}
-.term pre{font-size:15px}
-.copy{font-size:13px}
 .legend{font-size:var(--t-label)}
 .tool{font-size:18px}
 .vs{font-size:17px}
@@ -333,7 +322,7 @@ body{font-size:var(--t-body)}
 .demo,.tag-new,.tool b,.mono-mark,.people i,.cw-t em{font-size:var(--t-micro)}
 footer{font-size:var(--t-label)}
 .powered{font-size:13px}
-.ready-top,.ready dt,.fmt-label,.shot-bar span,.cw-bar span,.people small,.copy{font-size:var(--t-label)}
+.ready-top,.ready dt,.fmt-label,.shot-bar span,.cw-bar span,.people small{font-size:var(--t-label)}
 
 
 /* ---- language switch ---- */
@@ -440,8 +429,7 @@ footer{font-size:var(--t-label)}
 [dir=rtl] .fmt-arrow{transform:scaleX(-1)}
 [dir=rtl] .track-line{background:linear-gradient(270deg,var(--good),var(--cyan) 50%,var(--indigo))}
 /* logos, commands and code read left to right whatever the page does */
-[dir=rtl] .marquee,[dir=rtl] .term pre,[dir=rtl] .ltr{direction:ltr}
-[dir=rtl] .term pre{text-align:left}
+[dir=rtl] .marquee,[dir=rtl] .ltr{direction:ltr}
 /* Hebrew has no capitals: tracking meant for uppercase Latin just spaces the letters apart */
 [lang=he] .eyebrow,[lang=he] .nav-links a,[lang=he] .fmt-label,[lang=he] .ready-top,
 [lang=he] .legend,[lang=he] .powered,[lang=he] .tag-new,[lang=he] .demo,[lang=he] .tool b{letter-spacing:0}

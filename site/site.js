@@ -1,4 +1,4 @@
-// Upshot site: download links, copy button, the remembered language choice, and the video player.
+// Upshot site: download links, the remembered language choice, and the video player.
 // The page is complete without this file.
 (function () {
   "use strict";
@@ -35,32 +35,16 @@
   var downloads = document.querySelectorAll("a[data-download]");
   var script = document.currentScript;
   if (downloads.length && script && window.fetch) {
-    var RELEASES = "https://github.com/am-consultingai/upshot/releases/download/";
+    // A whole installer URL of this repository's releases: no other host, path or "..".
+    var INSTALLER = /^https:\/\/github\.com\/am-consultingai\/upshot\/releases\/download\/v[0-9][\w.-]*\/Upshot-[\w.-]+-Setup\.exe$/;
     var manifest = function (channel) {
       return fetch(new URL("updates/" + channel + ".json", script.src)).then(function (r) {
         return r.ok ? r.json() : null;
       });
     };
     manifest("stable").then(function (m) { return m || manifest("beta"); }).then(function (m) {
-      if (!m || typeof m.url !== "string" || m.url.indexOf(RELEASES) !== 0) return;
+      if (!m || typeof m.url !== "string" || !INSTALLER.test(m.url)) return;
       downloads.forEach(function (link) { link.href = m.url; });
     }).catch(function () {});
   }
-
-  document.querySelectorAll("button[data-copy]").forEach(function (btn) {
-    if (!navigator.clipboard) return;
-    // Labels come from the page, so the Hebrew page's button answers in Hebrew.
-    var label = btn.querySelector("span");
-    var idle = label.textContent;
-    btn.hidden = false;
-    btn.addEventListener("click", function () {
-      var text = document.getElementById(btn.dataset.copy).textContent.trim();
-      navigator.clipboard.writeText(text).then(function () {
-        label.textContent = btn.dataset.done || "Copied";
-      }, function () {
-        label.textContent = btn.dataset.fail || "Select to copy";
-      });
-      setTimeout(function () { label.textContent = idle; }, 1600);
-    });
-  });
 })();
