@@ -543,3 +543,5 @@ footer{font-size:var(--t-label)}
 
 /* The download button in place of the old command box. */
 .start-dl{margin:34px 0 22px}
+/* The logo keeps its size; the menu gives way, never the wordmark. */
+.nav-mark{flex:none}
