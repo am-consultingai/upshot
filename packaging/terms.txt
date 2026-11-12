@@ -1,7 +1,7 @@
 Upshot Terms of Service
 =======================
 
-Version 2026-11-12, effective 2026-11-12.
+Version 2026-11-13, effective 2026-11-13.
 
 1. AGREEMENT
 
@@ -289,10 +289,10 @@ these Terms limits your rights under those licences: where a component's
 licence lets you modify, replace or reverse-engineer that component, these
 Terms do not restrict it.
 
-Two components are not open source and are licensed to us, not to you:
-Microsoft's Visual C++ runtime files that come with Upshot, and NVIDIA's
-CUDA runtime built into Upshot's speech engine (ctranslate2.dll). We pass
-them on to you under these Terms. For those components only:
+Two of these components are licensed to us, not to you: Microsoft's Visual
+C++ runtime files that come with Upshot, and NVIDIA's CUDA runtime built
+into Upshot's speech engine (ctranslate2.dll). We pass them on to you under
+these Terms. For those components only:
 
   - they are licensed, not sold, and Microsoft and NVIDIA keep all rights in
     them;

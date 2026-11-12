@@ -1,9 +1,9 @@
 ---
-version: 2026-11-12
-effective: 2026-11-12
+version: 2026-11-13
+effective: 2026-11-13
 material: false
 last_material: 2026-10-17
-summary: Our contact email address is now upshot@amconsultingai.com. Nothing else has changed.
+summary: A wording fix in section 16, Third-party components and models, about the two components licensed to us rather than to you. Upshot's source code is published under the Upshot licence (section 5), which is not an open-source licence. Nothing else has changed.
 ---
 
 # Upshot Terms of Service
@@ -134,7 +134,7 @@ Transcripts, summaries, action items and answers are produced automatically by s
 
 Upshot includes software components and uses speech-recognition models published by others, including models from ivrit.ai and OpenAI's Whisper models as converted by SYSTRAN. Upshot is installed only once NVIDIA's licence has been accepted, on every computer: by ticking the box on the installer's page or, for a silent installation, with the installer's NVIDIA option. On a computer whose NVIDIA graphics card has enough memory to run the speech model, the installer then downloads NVIDIA's cuBLAS library, as NVIDIA publishes it on PyPI; on any other computer the installer downloads nothing from NVIDIA. Your acceptance is saved until you uninstall Upshot. While NVIDIA's licence text stays the same, a later installation or update downloads, completes or updates the library under that acceptance without asking again, including on a computer that has since gained a suitable card. If NVIDIA's licence changes, nothing more is downloaded from NVIDIA until the new licence has been accepted; a copy already downloaded stays on your computer. NVIDIA's licence is an agreement between NVIDIA and you or, for a silent installation, the user or organization it is accepted for. These components and models are licensed under their own licences, which are listed in the notices that come with Upshot and in the app. Most of them, NVIDIA's cuBLAS library included, are licensed to you directly. Nothing in these Terms limits your rights under those licences: where a component's licence lets you modify, replace or reverse-engineer that component, these Terms do not restrict it.
 
-Two components are not open source and are licensed to us, not to you: Microsoft's Visual C++ runtime files that come with Upshot, and NVIDIA's CUDA runtime built into Upshot's speech engine (ctranslate2.dll). We pass them on to you under these Terms. For those components only:
+Two of these components are licensed to us, not to you: Microsoft's Visual C++ runtime files that come with Upshot, and NVIDIA's CUDA runtime built into Upshot's speech engine (ctranslate2.dll). We pass them on to you under these Terms. For those components only:
 
 - they are licensed, not sold, and Microsoft and NVIDIA keep all rights in them;
 - you may use them only as part of Upshot, and you must not distribute them separately from it;
