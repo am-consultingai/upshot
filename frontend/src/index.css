@@ -807,3 +807,10 @@ kbd {
     display: none;
   }
 }
+
+/* An API key: masked like a password, but a text field, so Chrome and Edge never offer
+   to save it as a website password ("Save password?" in setup on machine B, 2026-11-12;
+   autocomplete="off" does not stop that on a password field). */
+.secret-input {
+  -webkit-text-security: disc;
+}

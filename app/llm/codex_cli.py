@@ -181,10 +181,25 @@ def reset_time(text: str, now: datetime | None = None) -> tuple[datetime | None,
             continue
         if fmt == "%I:%M %p":
             parsed = datetime.combine(current.date(), parsed.time())
-            when = parsed.replace(tzinfo=current.tzinfo)
-            return (when if when > current else when + timedelta(days=1)), words
-        return parsed.replace(tzinfo=current.tzinfo), words
+            when = _wall_clock(parsed, current)
+            if when <= current:
+                when = _wall_clock(parsed + timedelta(days=1), current)
+            return when, words
+        return _wall_clock(parsed, current), words
     return None, words
+
+
+def _wall_clock(naive: datetime, current: datetime) -> datetime:
+    """A time the CLI printed, in the zone ``current`` is in.
+
+    The CLI prints this machine's local time. When ``current`` is local time too, the
+    offset is the one that date has, not today's: "Aug 29, 2026 4:15 PM" read in winter
+    with winter's +02:00 was an hour off Israel's summer +03:00 (found 2026-11-12, when
+    the clocks had changed). Any other zone keeps its own offset.
+    """
+    if current.utcoffset() == datetime.now().astimezone().utcoffset():
+        return naive.astimezone()
+    return naive.replace(tzinfo=current.tzinfo)
 
 
 def quota_exhausted(text: str, now: datetime | None = None) -> QuotaExhausted:

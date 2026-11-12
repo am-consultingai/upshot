@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -402,3 +403,21 @@ def test_claudes_login_link_is_recognised() -> None:
     line = "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&x=1"
     match = claude_cli.LOGIN_URL.search(line)
     assert match and match.group(0).startswith("https://claude.com/cai/oauth/authorize")
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="the zone is set through tzset")
+def test_a_reset_in_summer_read_in_winter_keeps_summers_offset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Israel, read on 2026-11-12 (+02:00) for Aug 29 (+03:00): an hour off before."""
+    monkeypatch.setenv("TZ", "Asia/Jerusalem")
+    time.tzset()
+    try:
+        now = datetime(2026, 11, 12, 10, 0).astimezone()
+        when, _ = reset_time("try again at Aug 29, 2026 4:15 PM", now)
+        assert when is not None and when.isoformat() == "2026-08-29T16:15:00+03:00"
+        later, _ = reset_time("Try again at 4:15 PM.", now)
+        assert later is not None and later.isoformat() == "2026-11-12T16:15:00+02:00"
+    finally:
+        monkeypatch.undo()
+        time.tzset()
