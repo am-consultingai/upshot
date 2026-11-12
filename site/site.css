@@ -477,7 +477,6 @@ footer{font-size:var(--t-label)}
   .sec{padding-top:80px}
   .copies,.steps{grid-template-columns:1fr}
   .hero{min-height:0}
-  .hero-bg img{object-position:62% center}
   .risk-in{padding:80px var(--pad)}
   .steps{gap:34px}
   .steps::before{display:none}
@@ -545,3 +544,7 @@ footer{font-size:var(--t-label)}
 .start-dl{margin:34px 0 22px}
 /* The logo keeps its size; the menu gives way, never the wordmark. */
 .nav-mark{flex:none}
+/* The hero photo: the calendar on one side, the person on the other, both kept in view. */
+.hero-bg img,[dir=rtl] .hero-bg img{object-position:center}
+/* RTL: the photo mirrors with the layout, so the person stays beside the card, not behind the text. */
+[dir=rtl] .hero-bg img{transform:scaleX(-1)}

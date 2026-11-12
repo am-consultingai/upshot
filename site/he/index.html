@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Upshot: סיכומי פגישות בלי בוט בשיחה</title>
-<meta name="description" content="Upshot מקליט פגישות על מחשב ה-Windows שלכם והופך אותן לטקסט בעזרת AI מקומי, בשפות רבות, כולל עברית. אף בוט לא מצטרף לשיחה, האודיו לא יוצא מהמחשב, והסיכומים מגיעים מה-AI שאתם כבר משלמים עליו.">
+<title>Upshot: סיכומי פגישות בלי בוט בפגישה</title>
+<meta name="description" content="Upshot יכול להכיר את הפגישות שלכם מיומן Google, מקליט אותן על מחשב ה-Windows שלכם והופך אותן לטקסט בעזרת AI מקומי, בשפות רבות, כולל עברית. אף בוט לא מצטרף לפגישה, האודיו לא יוצא מהמחשב, והסיכומים מגיעים מה-AI שאתם כבר משלמים עליו.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0f19">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="he_IL">
-<meta property="og:title" content="סיכום לכל פגישה, בלי בוט בשיחה.">
-<meta property="og:description" content="בלי בוט בשיחה, והאודיו לא יוצא מהמחשב שלכם. Upshot מקליט ומתמלל את הפגישות שלכם בעזרת AI מקומי, ומסכם אותן עם ה-AI שאתם כבר משלמים עליו, או עם מודל על המחשב שלכם.">
+<meta property="og:title" content="סיכום לכל פגישה, בלי בוט בפגישה.">
+<meta property="og:description" content="בלי בוט בפגישה, והאודיו לא יוצא מהמחשב שלכם. Upshot מקליט ומתמלל את הפגישות שלכם בעזרת AI מקומי, ומסכם אותן עם ה-AI שאתם כבר משלמים עליו, או עם מודל על המחשב שלכם.">
 <meta property="og:url" content="https://upshot.amconsultingai.com/he/">
 <meta property="og:image" content="https://upshot.amconsultingai.com/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -29,6 +29,7 @@
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M7.5 13.5h3M13.5 13.5h3M7.5 17h3"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
     <symbol id="i-wave" viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/></symbol>
     <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
@@ -36,7 +37,6 @@
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12c1.8-4 5.6-7 10-7s8.2 3 10 7c-1.8 4-5.6 7-10 7s-8.2-3-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5h10.2a4.3 4.3 0 0 0 .6-8.55A6.2 6.2 0 0 0 5.9 9.4 4.6 4.6 0 0 0 7 18.5z"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></symbol>
-    <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></symbol>
     <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 6.5 8.5 6.5 8.5-6.5"/></symbol>
     <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.6"/><path d="M2 19.5h20"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></symbol>
@@ -54,9 +54,9 @@
     <a class="nav-mark" href="#top" aria-label="Upshot, חזרה למעלה"><img src="../img/upshot-mark.svg" alt="" width="30" height="30"><span>upshot</span></a>
     <nav class="nav-links" aria-label="חלקי העמוד">
       <a href="#hebrew">עברית</a>
+      <a href="#calendar">יומן</a>
       <a href="#bots">בלי בוטים</a>
       <a href="#ai-app">ה-AI שלכם</a>
-      <a href="#record">הקלטה אוטומטית</a>
       <a href="#how">איך זה עובד</a>
       <a href="#faq">שאלות</a>
     </nav>
@@ -72,27 +72,27 @@
   <section class="hero" id="top">
     <picture class="hero-bg" aria-hidden="true">
       <source media="(max-width: 700px)" srcset="../img/hero-sm.webp">
-      <img src="../img/hero.webp" width="3200" height="1200" alt="" fetchpriority="high">
+      <img src="../img/hero.webp" width="2752" height="1536" alt="" fetchpriority="high">
     </picture>
     <div class="hero-in">
       <div class="hero-text">
         <p class="eyebrow">סיכומי פגישות ל-Windows</p>
-        <h1>אודיו השיחה נשאר על המחשב שלכם.</h1>
-        <p class="lede">Upshot מקליט את הפגישות שלכם והופך אותן לטקסט בעזרת AI שרץ על המחשב שלכם, בשפות רבות, כולל עברית. אף בוט לא מצטרף לשיחה, והאודיו לא יוצא מהמחשב. לסיכומים, חברו את ה-AI שאתם כבר משלמים עליו, או השאירו הכול על המחשב שלכם.</p>
+        <h1>האודיו של הפגישה נשאר על המחשב שלכם.</h1>
+        <p class="lede">חברו את יומן Google ו-Upshot יכיר את הפגישות שלכם: מתי כל אחת מתחילה, איך היא נקראת ומי מוזמן אליה. הוא מקליט ומתמלל על המחשב שלכם, בלי בוט בפגישה, והסיכומים מגיעים מה-AI שאתם כבר משלמים עליו.</p>
         <div class="hero-actions">
           <a class="btn btn-pri" href="#start">להתחיל</a>
           <a class="btn btn-sec" href="#dial">לאן המידע שלכם מגיע</a>
         </div>
-        <p class="hero-meta">Windows · בלי בוט בשיחה · האודיו נשאר על המחשב · סיכומים מה-AI שאתם משלמים עליו · הקוד ב-GitHub</p>
+        <p class="hero-meta">Windows · יומן Google · בלי בוט בפגישה · האודיו נשאר על המחשב · סיכומים מה-AI שאתם משלמים עליו · הקוד ב-GitHub</p>
       </div>
-      <figure class="flow" aria-label="לאן הפגישה מגיעה: מוקלטת ומתומללת על המחשב שלכם, ורק הטקסט יוצא.">
+      <figure class="flow" aria-label="פגישה מיומן Google שלכם: Upshot יודע מתי היא מתחילה, מקליט ומתמלל אותה על המחשב שלכם, ורק טקסט יוצא: התמליל ופרטי ההזמנה.">
         <ol>
-          <li><span class="f-ic"><svg class="ic"><use href="#i-mic"/></svg></span><b>הפגישה שלכם</b><span>הקול שלכם ושל האחרים</span></li>
-          <li class="f-here"><span class="f-ic"><svg class="ic"><use href="#i-laptop"/></svg></span><b>המחשב שלכם</b><span>מוקלטת והופכת לטקסט, כאן</span></li>
+          <li><span class="f-ic"><svg class="ic"><use href="#i-cal"/></svg></span><b>יומן Google שלכם</b><span>הפגישה, השעה שלה ומי מוזמן</span></li>
+          <li class="f-here"><span class="f-ic"><svg class="ic"><use href="#i-laptop"/></svg></span><b>Upshot על המחשב שלכם</b><span>מוכן כשהיא מתחילה. הפגישה מוקלטת והופכת לטקסט, כאן</span></li>
         </ol>
         <p class="f-stop"><svg class="ic"><use href="#i-lock"/></svg>ההקלטה נעצרת כאן</p>
         <ol>
-          <li><span class="f-ic"><svg class="ic"><use href="#i-doc"/></svg></span><b>רק הטקסט</b><span>ל-AI שבחרתם — או למודל על המחשב שלכם, ואז שום דבר לא יוצא</span></li>
+          <li><span class="f-ic"><svg class="ic"><use href="#i-doc"/></svg></span><b>סיכום שמכיר את סדר היום</b><span>הטקסט ופרטי ההזמנה, בלי כתובות מייל, נשלחים ל-AI שבחרתם — או למודל על המחשב שלכם, ואז שום דבר לא יוצא</span></li>
         </ol>
       </figure>
     </div>
@@ -114,8 +114,8 @@
   <section class="pillars" aria-label="מה Upshot עושה">
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
-      <h2>אודיו השיחה נשאר בבית</h2>
-      <p>הפגישה מוקלטת על המחשב שלכם, והאודיו לא יוצא ממנו. אף בוט לא מצטרף לשיחה, ושום דבר לא נשלח לשירות הקלטה.</p>
+      <h2>האודיו של הפגישה נשאר בבית</h2>
+      <p>הפגישה מוקלטת על המחשב שלכם, והאודיו לא יוצא ממנו. אף בוט לא מצטרף לפגישה, ושום דבר לא נשלח לשירות הקלטה.</p>
     </article>
     <article>
       <span class="p-ic"><svg class="ic"><use href="#i-laptop"/></svg></span>
@@ -146,12 +146,41 @@
 
   <!-- STATS --------------------------------------------------------------->
   <section class="stats" aria-label="במבט אחד">
-    <div><b>0</b><span>בוטים בשיחה</span></div>
+    <div><b>0</b><span>בוטים בפגישה</span></div>
     <div><b>0</b><span>דקות אודיו שנשלחות לספק AI</span></div>
     <div><b data-audio-kept>∞</b><span>ההקלטות נשמרות, עד שתמחקו אותן</span></div>
     <div><b data-providers>7</b><span>מודלי AI לבחירה, אחד על המחשב שלכם</span></div>
   </section>
 
+  <!-- CALENDAR ------------------------------------------------------------>
+  <section class="sec calendar" id="calendar">
+    <p class="eyebrow">הגדרה</p>
+    <h2>מחברים את יומן Google פעם אחת. כל פגישה מגיעה מוכנה.</h2>
+    <p class="he-sub">בהגדרה הראשונית Upshot מציע לחבר את יומן Google שלכם. זה לא חובה, וההרשאה לקריאה בלבד: Upshot לא יכול ליצור, לשנות או למחוק שום דבר ביומן.</p>
+    <ol class="steps">
+      <li>
+        <span class="step-ic"><svg class="ic"><use href="#i-cal"/></svg></span>
+        <h3>מחברים בהגדרה</h3>
+        <p>נכנסים עם חשבון Google ומאשרים גישת קריאה בלבד לאירועים</p>
+      </li>
+      <li>
+        <span class="step-ic"><svg class="ic"><use href="#i-clock"/></svg></span>
+        <h3>Upshot מכיר את היום שלכם</h3>
+        <p>הוא יודע מתי כל פגישה מתוכננת, ומוכן להקליט</p>
+      </li>
+      <li>
+        <span class="step-ic"><svg class="ic"><use href="#i-doc"/></svg></span>
+        <h3>הקלטות שמכירות את הפגישה</h3>
+        <p>כל הקלטה של פגישה מהיומן מקבלת את הכותרת, השעה והמוזמנים שלה</p>
+      </li>
+    </ol>
+    <div class="signals">
+      <article><b>שם לכל הקלטה</b><p>כל הקלטה של פגישה מהיומן נושאת את הכותרת והשעה שלה, כך שציר הזמן נראה כמו השבוע שלכם.</p></article>
+      <article><b>מי הוזמן</b><p>המוזמנים מופיעים ליד הפגישה בציר הזמן.</p></article>
+      <article><b>סיכומים שמכירים את סדר היום</b><p>פרטי ההזמנה (הכותרת, השעות, המארגן, שמות המוזמנים, מי מהם אופציונלי ומי סירב, התיאור, המיקום והשמות והקישורים של הקבצים המצורפים) נשלחים עם הטקסט של הפגישה ל-AI שבחרתם, כך שהסיכום יודע למה הפגישה נועדה. כתובות מייל לא נשלחות אף פעם. אפשר לכבות את זה, ועם מודל על המחשב שום דבר לא נשלח.</p></article>
+    </div>
+    <p class="chips-note">נתוני היומן עוברים מ-Google ישירות למחשב שלכם, אף פעם לא אלינו. מנתוני היומן יוצאים מהמחשב רק פרטי הזמנה: אלה שלמעלה ל-AI שבחרתם, וכשתבקשו, פרטי הפגישות והאירועים ביומן לאפליקציית AI שחיברתם בעצמכם. אפשר לנתק בכל רגע. <a href="../privacy.html#google" hreflang="en">מדיניות הפרטיות</a></p>
+  </section>
   <!-- DIAL ---------------------------------------------------------------->
   <section class="sec dial" id="dial">
     <p class="eyebrow">המידע שלכם</p>
@@ -228,9 +257,9 @@
     <img class="risk-bg" src="../img/room.webp" width="2000" height="1333" alt="" loading="lazy" aria-hidden="true">
     <div class="risk-in">
       <p class="eyebrow">הבעיה עם בוטים לסיכום פגישות</p>
-      <h2>בוט בשיחה הוא זר בחדר.</h2>
+      <h2>בוט בפגישה הוא זר בחדר.</h2>
       <div class="bot-grid">
-        <figure class="callwin" aria-label="איור של שיחת וידאו עם בוט רשמים בין המשתתפים. נתוני הדגמה.">
+        <figure class="callwin" aria-label="איור של פגישת וידאו עם בוט רשמים בין המשתתפים. נתוני הדגמה.">
           <div class="cw-bar"><i></i><i></i><i></i><span>סקירה עם לקוח · 4 משתתפים</span></div>
           <div class="cw-tiles">
             <div class="cw-t"><b>ד</b><span>דנה</span></div>
@@ -245,7 +274,7 @@
           <svg class="ic big"><use href="#i-eye"/></svg>
           <h3>כולם רואים אותו</h3>
           <ul class="tags">
-            <li>זר בשיחה</li>
+            <li>זר בפגישה</li>
             <li>״מי זה?״ עוד לפני שהתחלתם</li>
             <li>אנשים מדברים פחות בחופשיות</li>
             <li>יש מארחים שמוציאים אותו</li>
@@ -258,33 +287,33 @@
             <li>האודיו עולה לענן של ספק</li>
             <li>נשמר לפי המדיניות שלהם</li>
             <li>סיכומים שמשותפים בקישור</li>
-            <li>עוד חשבון מלא בשיחות שלכם</li>
+            <li>עוד חשבון מלא בפגישות שלכם</li>
           </ul>
         </article>
       </div>
-      <p class="punch">Upshot אף פעם לא מצטרף לשיחה. <span>הוא מקשיב מהמחשב שלכם, ומשאיר שם את מה ששמע.</span></p>
+      <p class="punch">Upshot אף פעם לא מצטרף לפגישה. <span>הוא מקשיב מהמחשב שלכם, ומשאיר שם את מה ששמע.</span></p>
     </div>
   </section>
 
   <!-- HOW ----------------------------------------------------------------->
   <section class="sec how" id="how">
     <p class="eyebrow">איך זה עובד</p>
-    <h2>נכנסים לשיחה. Upshot מטפל בשאר.</h2>
+    <h2>נכנסים לפגישה. Upshot מטפל בשאר.</h2>
     <ol class="steps">
       <li>
-        <span class="step-ic"><svg class="ic"><use href="#i-radar"/></svg></span>
-        <h3>מזהה את הפגישה</h3>
-        <p>נכנסים כרגיל, בכל אפליקציה. Upshot מזהה לבד שפגישה התחילה</p>
+        <span class="step-ic"><svg class="ic"><use href="#i-cal"/></svg></span>
+        <h3>מכיר את הפגישה</h3>
+        <p>מיומן Google, או כשהוא מזהה שפגישה התחילה, בכל אפליקציה</p>
       </li>
       <li>
         <span class="step-ic"><svg class="ic"><use href="#i-mic"/></svg></span>
         <h3>מקליט</h3>
-        <p>בשקט, על המחשב שלכם. אף אחד בשיחה לא רואה כלום</p>
+        <p>בשקט, על המחשב שלכם. אף אחד בפגישה לא רואה כלום</p>
       </li>
       <li>
         <span class="step-ic"><svg class="ic"><use href="#i-doc"/></svg></span>
         <h3>מקבלים סיכום</h3>
-        <p>אחרי השיחה, הסיכום בפורמט שלכם מחכה בציר הזמן</p>
+        <p>אחרי הפגישה, הסיכום בפורמט שלכם מחכה בציר הזמן</p>
       </li>
     </ol>
     <div class="signals">
@@ -299,7 +328,7 @@
     <p class="eyebrow">הקלטה אוטומטית</p>
     <h2>הוא מזהה את הפגישה, כדי שלא תצטרכו לזכור.</h2>
     <div class="signals">
-      <article><b>מחפש את הסימנים <span class="tag-new">חדש</span></b><p>כשאפליקציית שיחות תופסת את המיקרופון, Upshot בודק איזו אפליקציה זו, את כותרת החלון, אם המצלמה פועלת ואם מדברים משני הצדדים. מספיק סימנים יחד אומרים פגישה.</p></article>
+      <article><b>מחפש את הסימנים <span class="tag-new">חדש</span></b><p>כשאפליקציית פגישות תופסת את המיקרופון, Upshot בודק איזו אפליקציה זו, את כותרת החלון, אם המצלמה פועלת ואם מדברים משני הצדדים. מספיק סימנים יחד אומרים פגישה.</p></article>
       <article><b>מראה לכם לפני שהוא פועל</b><p>מההתחלה הוא רק מציג את הפגישות שזיהה, כדי שתראו שהוא צודק. כשתסמכו עליו, הפעילו הקלטה אוטומטית ותפסיקו ללחוץ על הקלטה.</p></article>
       <article><b>מעדיף לפספס מאשר להפריע</b><p>פגישה שפוספסה עולה לכם קליק אחד; הקלטה של משהו שהוא לא פגישה עולה באמון. כל הקלטה מספרת מה גרם לה להתחיל, כך שתמיד אפשר לענות "למה זה הוקלט?"</p></article>
     </div>
@@ -342,11 +371,11 @@
   <!-- APPS CAROUSEL -------------------------------------------------------->
   <section class="tools" id="apps">
     <div class="tools-head">
-      <p class="eyebrow">עובד עם אפליקציית השיחות שלכם</p>
-      <h2>כל שיחה שהמחשב שומע.</h2>
+      <p class="eyebrow">עובד עם אפליקציית הפגישות שלכם</p>
+      <h2>כל פגישה שהמחשב שומע.</h2>
       <p class="legend"><span class="st on">נוסה בפגישות אמיתיות</span></p>
     </div>
-    <div class="marquee" role="list" aria-label="אפליקציות שיחה">
+    <div class="marquee" role="list" aria-label="אפליקציות פגישות">
       <div class="track">
         <div class="tool" role="listitem"><img src="../img/logos/zoom.svg" alt="" width="22" height="22">Zoom</div>
         <div class="tool" role="listitem"><img src="../img/logos/microsoftteams.svg" alt="" width="22" height="22">Microsoft Teams</div>
@@ -390,7 +419,7 @@
         <div class="tool on" dir="rtl"><span class="mono-mark">he</span>מודל דיבור עברי<b>בשימוש</b></div>
       </div>
     </div>
-    <p class="tools-note">Upshot עובד עם כל אפליקציית שיחות במחשב, בלי להצטרף לשיחה ובלי להוסיף לה שום דבר. את הסיכום כותב מודל ה-AI שתבחרו: Claude כבר כתב סיכומים לפגישות אמיתיות, והשאר מוכנים אבל עוד לא שימשו בפגישה חיה.</p>
+    <p class="tools-note">Upshot עובד עם כל אפליקציית פגישות במחשב, בלי להצטרף לפגישה ובלי להוסיף לה שום דבר. את הסיכום כותב מודל ה-AI שתבחרו: Claude כבר כתב סיכומים לפגישות אמיתיות, והשאר מוכנים אבל עוד לא שימשו בפגישה חיה.</p>
   </section>
 
   <!-- SCREENSHOT ---------------------------------------------------------->
@@ -414,7 +443,7 @@
   <!-- COMPARE ------------------------------------------------------------->
   <section class="sec compare" id="compare">
     <p class="eyebrow">השוואה</p>
-    <h2>בוטים מצטרפים לשיחה. Upshot לא.</h2>
+    <h2>בוטים מצטרפים לפגישה. Upshot לא.</h2>
     <div class="table-wrap">
       <table class="vs">
         <thead><tr><th scope="col"><span class="sr">שאלה</span></th><th scope="col">בוטים לסיכום פגישות</th><th scope="col" class="us">Upshot</th></tr></thead>
@@ -424,7 +453,7 @@
           <tr><th scope="row">מופיע ברשימת המשתתפים</th><td class="them">כן</td><td class="us">אף פעם</td></tr>
           <tr><th scope="row">ההקלטה נשמרת בשרתים של ספק</th><td class="them">בדרך כלל</td><td class="us">אף פעם</td></tr>
           <tr><th scope="row">תמלול שאומן על עברית</th><td class="them">לעיתים רחוקות</td><td class="us">כן</td></tr>
-          <tr><th scope="row">מתחיל בלי שתלחצו על הקלטה</th><td>לפי היומן</td><td class="us">כשהשיחה מתחילה, אם הפעלתם</td></tr>
+          <tr><th scope="row">מתחיל בלי שתלחצו על הקלטה</th><td>לפי היומן</td><td class="us">כשהפגישה מתחילה, אם הפעלתם</td></tr>
           <tr><th scope="row">סיכום בפורמט שאתם כותבים</th><td>תבניות</td><td class="us">כל פורמט</td></tr>
           <tr><th scope="row">חשבון שצריך לפתוח</th><td class="them">כן</td><td class="us">לא</td></tr>
           <tr><th scope="row">עובד על Mac</th><td>בדרך כלל</td><td class="us no">לא, רק Windows</td></tr>
@@ -452,20 +481,18 @@
     <div class="faq-list">
       <details class="acc"><summary>הפגישה יוצאת מהמחשב שלי?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">ההקלטה לא: היא נשמרת והופכת לטקסט על המחשב שלכם. משם זו הבחירה שלכם — הטקסט נשלח ל-AI שבחרתם, או למודל על המחשב שלכם, ואז שום דבר לא יוצא. ראו <a href="#dial">עד לאן הפגישה מגיעה</a>.</div></details>
-      <details class="acc"><summary>כמה טוב הוא בעברית?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">מודל התמלול של Upshot אומן על יותר מ-5,000 שעות של עברית. בטבלת השוואה ציבורית הוא טועה בכ-7 מילים מתוך 100 בשיחה יומיומית, בערך חצי מהטעויות של OpenAI Whisper.</div></details>
-      <details class="acc"><summary>האנשים האחרים בשיחה יראו משהו?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">לא. Upshot מקליט מהמחשב שלכם, ושום דבר לא מצטרף לשיחה. החוק לגבי הקלטת שיחות משתנה ממדינה למדינה, אז ספרו למשתתפים שאתם מקליטים.</div></details>
+      <details class="acc"><summary>האנשים האחרים בפגישה יראו משהו?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="acc-b">לא. Upshot מקליט מהמחשב שלכם, ושום דבר לא מצטרף לפגישה. החוק לגבי הקלטת שיחות משתנה ממדינה למדינה, אז ספרו למשתתפים שאתם מקליטים.</div></details>
       <details class="acc"><summary>איך הוא יודע שפגישה התחילה?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">הוא מזהה כשאפליקציית שיחות מתחילה להשתמש במיקרופון, ומחפש סימנים לשיחה אמיתית. בהתחלה הוא רק מראה לכם אילו פגישות זיהה, כדי שתראו שהוא צודק. כשתסמכו עליו, הפעילו הקלטה אוטומטית. ההקלטה האוטומטית חדשה, ותמיד אפשר ללחוץ על הקלטה בעצמכם.</div></details>
+        <div class="acc-b">הוא מזהה כשאפליקציית פגישות מתחילה להשתמש במיקרופון, ומחפש סימנים לשיחה אמיתית. בהתחלה הוא רק מראה לכם אילו פגישות זיהה, כדי שתראו שהוא צודק. כשתסמכו עליו, הפעילו הקלטה אוטומטית. ההקלטה האוטומטית חדשה, ותמיד אפשר ללחוץ על הקלטה בעצמכם.</div></details>
       <details class="acc"><summary>Upshot משתמש ביומן Google שלי?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">רק אם תחברו אותו. Upshot קורא את האירועים ביומן בהרשאת קריאה בלבד, על המחשב שלכם, כדי לדעת מתי הפגישות מתוכננות ולתת להן שם. נתוני היומן לא נשלחים אלינו. ההזמנה נשלחת יחד עם טקסט הפגישה ל-AI שבחרתם, כדי שהסיכום יֵדע לשם מה הפגישה; אפשר לכבות את זה. הפרטים ב<a href="../privacy.html#google" hreflang="en">מדיניות הפרטיות</a>.</div></details>
+        <div class="acc-b">רק אם תחברו אותו. Upshot קורא את האירועים ביומן בהרשאת קריאה בלבד, על המחשב שלכם, כדי לדעת מתי הפגישות מתוכננות ולתת להן שם. נתוני היומן לא נשלחים אלינו. ההזמנה נשלחת יחד עם טקסט הפגישה ל-AI שבחרתם, כדי שהסיכום יֵדע לשם מה הפגישה; אפשר לכבות את זה. אפליקציית AI שחיברתם יכולה גם לקרוא את פרטי הפגישות והאירועים ביומן, כשתבקשו. הפרטים ב<a href="../privacy.html#google" hreflang="en">מדיניות הפרטיות</a>.</div></details>
       <details class="acc"><summary>אפליקציית ה-AI שלי יכולה לקרוא את הפגישות?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">כן, אם תחברו אותה: Claude Desktop, Claude Code, Codex, Antigravity, Cursor, Open WebUI ואפליקציות אחרות שמדברות MCP. שאלו אותה ”מה החלטנו ביום שלישי?“ והיא תקרא את התמליל והסיכום מ-Upshot שעל המחשב שלכם. מה שהיא קוראת נשלח ל-AI של האפליקציה, כמו כל דבר בצ'אט. אפשר לכבות את זה, ו-Upshot מציג מה היא ביקשה. הפרטים ב<a href="../privacy.html#third-parties" hreflang="en">מדיניות הפרטיות</a>.</div></details>
       <details class="acc"><summary>אפשר לשלוח את הסיכום ישר במייל?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">כן. בקשו מ-Upshot לכתוב אותו כמייל, עם הפרקים, הטון והצבעים שלכם. לוחצים העתקה, מדביקים במייל, והעיצוב עובר איתו.</div></details>
       <details class="acc"><summary>צריך מחשב חזק?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
-        <div class="acc-b">לא. כרטיס מסך של NVIDIA מאיץ את העבודה. בלעדיו, Upshot מחכה לסוף השיחה כדי לא להאט את הפגישה, והסיכום מגיע מאוחר יותר.</div></details>
+        <div class="acc-b">לא. כרטיס מסך של NVIDIA מאיץ את העבודה. בלעדיו, Upshot מחכה לסוף הפגישה כדי לא להאט אותה, והסיכום מגיע מאוחר יותר.</div></details>
       <details class="acc"><summary>באילו שפות, ועל אילו מחשבים?<svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></summary>
         <div class="acc-b">פגישות בכמאה שפות, עם מודל שאומן על עברית. האפליקציה עצמה בעברית ובאנגלית. Upshot עובד על Windows בלבד.</div></details>
     </div>
@@ -474,16 +501,16 @@
   <!-- START --------------------------------------------------------------->
   <section class="sec start" id="start">
     <img class="start-mark" src="../img/upshot-mark.svg" alt="" width="64" height="64">
-    <h2>כל פגישה, בכתב. בלי בוט בשיחה.</h2>
+    <h2>כל פגישה, בכתב. בלי בוט בפגישה.</h2>
     <p class="start-dl"><a class="btn btn-pri" href="https://github.com/am-consultingai/upshot/releases/download/v0.2.0/Upshot-0.2.0-Setup.exe" data-download>הורדה ל-Windows</a></p>
-    <p class="limits">Upshot מבחין בין המשתתפים האחרים בשיחה, ואפשר לתת לכל אחד מהם שם.</p>
+    <p class="limits">Upshot מבחין בין המשתתפים האחרים בפגישה, ואפשר לתת לכל אחד מהם שם.</p>
   </section>
 
 </main>
 
 <footer>
   <p class="legal-links"><a href="../privacy.html" hreflang="en">מדיניות פרטיות</a> · <a href="../terms.html" hreflang="en">תנאי שימוש</a> (באנגלית)</p>
-  <p class="legal-links">Anthropic,‏ Claude,‏ OpenAI,‏ Codex,‏ Cursor ו-Google הם סימני מסחר של בעליהם. Upshot אינו קשור אליהם ואינו מאושר על ידם.</p>
+  <p class="legal-links">Anthropic,‏ Claude,‏ OpenAI,‏ Codex,‏ Cursor,‏ Google ויומן Google הם סימני מסחר של בעליהם. Upshot אינו קשור אליהם ואינו מאושר על ידם.</p>
   upshot <span data-version>0.2.0</span> · <a href="https://github.com/am-consultingai/upshot">GitHub</a>
   <a class="powered" href="https://www.amconsultingai.com" aria-label="Powered by AM Consulting" dir="ltr">
     <span>Powered by</span>
