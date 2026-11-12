@@ -299,7 +299,7 @@ export const es: Record<MessageKey, string> = {
   "feedback.title": "Comentarios",
   "feedback.lead": "Cuéntenos qué funciona, qué no y qué le gustaría. Es anónimo, salvo que agregue su correo.",
   "feedback.settingsHint": "Una idea, un problema o algo que le gusta. Anónimo, salvo que agregue su correo.",
-  "feedback.unavailable": "Esta copia se ejecuta desde el código fuente, así que no puede enviar comentarios. Escríbanos a office@amconsultingai.com.",
+  "feedback.unavailable": "Esta copia se ejecuta desde el código fuente, así que no puede enviar comentarios. Escríbanos a upshot@amconsultingai.com.",
   "feedback.kindLabel": "Tipo de comentario",
   "feedback.kind.idea": "Idea",
   "feedback.kind.problem": "Problema",

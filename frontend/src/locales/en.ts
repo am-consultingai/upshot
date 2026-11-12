@@ -297,7 +297,7 @@ export const en = {
   "feedback.title": "Feedback",
   "feedback.lead": "Tell us what works, what doesn't, and what you'd like. It's anonymous unless you add your email.",
   "feedback.settingsHint": "An idea, a problem or something you like. Anonymous unless you add your email.",
-  "feedback.unavailable": "This copy runs from source, so it can't send feedback. Email us at office@amconsultingai.com instead.",
+  "feedback.unavailable": "This copy runs from source, so it can't send feedback. Email us at upshot@amconsultingai.com instead.",
   "feedback.kindLabel": "What kind of feedback",
   "feedback.kind.idea": "Idea",
   "feedback.kind.problem": "Problem",

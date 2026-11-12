@@ -215,7 +215,7 @@ def test_privacy_policy_has_what_google_review_checks() -> None:
         "do not sell Google user data",
         # how to revoke, and who to contact
         "https://myaccount.google.com/permissions",
-        "office@amconsultingai.com",
+        "upshot@amconsultingai.com",
         'id="google"',
     )
     missing = [r for r in required if r not in policy]
@@ -224,7 +224,7 @@ def test_privacy_policy_has_what_google_review_checks() -> None:
 
 def test_terms_name_the_operator_and_law() -> None:
     terms = (SITE / "terms.html").read_text(encoding="utf-8")
-    for needle in ("AM Consulting", "State of Israel", "office@amconsultingai.com", "privacy.html"):
+    for needle in ("AM Consulting", "State of Israel", "upshot@amconsultingai.com", "privacy.html"):
         assert needle in terms
 
 

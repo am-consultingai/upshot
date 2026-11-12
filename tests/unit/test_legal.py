@@ -35,7 +35,7 @@ You accept **these** Terms. See the [Privacy Policy](https://example.com/privacy
 """
 
 
-def doc(version: str = "2026-11-01", effective: str = "2026-11-01", material: bool = True) -> str:
+def doc(version: str = "2027-02-01", effective: str = "2027-02-01", material: bool = True) -> str:
     return DOC.format(version=version, effective=effective, material=str(material).lower())
 
 
@@ -152,10 +152,10 @@ def test_an_installer_record_this_build_does_not_know_is_ignored(tmp_path: Path)
 
 
 def test_acceptance_never_moves_backwards(tmp_path: Path) -> None:
-    terms = service(tmp_path, today="2026-12-01")
+    terms = service(tmp_path, today="2027-03-01")
     (tmp_path / "legal").mkdir()
-    (tmp_path / "legal" / "terms-2026-11-01.md").write_text(doc(), encoding="utf-8")
-    terms.accept("2026-11-01")
+    (tmp_path / "legal" / "terms-2027-02-01.md").write_text(doc(), encoding="utf-8")
+    terms.accept("2027-02-01")
     with pytest.raises(ValueError):
         terms.accept(bundled().version)
 
@@ -163,9 +163,9 @@ def test_acceptance_never_moves_backwards(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("material", "today", "gate", "notice"),
     [
-        (True, "2026-12-01", True, None),  # material and in effect: the whole screen
-        (False, "2026-12-01", False, "changed"),  # minor and in effect: the banner
-        (True, "2026-10-20", False, "upcoming"),  # announced before it applies
+        (True, "2027-03-01", True, None),  # material and in effect: the whole screen
+        (False, "2027-03-01", False, "changed"),  # minor and in effect: the banner
+        (True, "2027-01-20", False, "upcoming"),  # announced before it applies
     ],
 )
 def test_a_newer_version_is_shown_the_way_its_kind_needs(
@@ -173,7 +173,7 @@ def test_a_newer_version_is_shown_the_way_its_kind_needs(
 ) -> None:
     terms = service(tmp_path, today=today)
     terms.accept(bundled().version)
-    (tmp_path / "legal" / "terms-2026-11-01.md").write_text(
+    (tmp_path / "legal" / "terms-2027-02-01.md").write_text(
         doc(material=material), encoding="utf-8"
     )
     state = terms.state()
@@ -191,15 +191,15 @@ def test_a_newer_version_is_shown_the_way_its_kind_needs(
 def test_a_minor_version_does_not_carry_anyone_past_a_material_one(
     tmp_path: Path, accepted: str, gate: bool, notice: str | None
 ) -> None:
-    terms = service(tmp_path, today="2026-12-01")
+    terms = service(tmp_path, today="2027-03-01")
     terms.config.set("legal.accepted_version", accepted)
     minor = doc(material=False).replace(
         "material: false", "material: false\nlast_material: 2026-10-06"
     )
     (tmp_path / "legal").mkdir(exist_ok=True)
-    (tmp_path / "legal" / "terms-2026-11-01.md").write_text(minor, encoding="utf-8")
+    (tmp_path / "legal" / "terms-2027-02-01.md").write_text(minor, encoding="utf-8")
     state = terms.state()
-    assert state["current"]["version"] == "2026-11-01"
+    assert state["current"]["version"] == "2027-02-01"
     assert state["gate"] is gate
     assert (state["notice"] or {}).get("kind") == notice
 
@@ -231,7 +231,7 @@ def test_a_minor_version_that_names_no_material_one_is_not_published(
 
 def test_last_material_must_be_a_date_no_later_than_the_version() -> None:
     later = doc(material=False).replace(
-        "material: false", "material: false\nlast_material: 2026-12-01"
+        "material: false", "material: false\nlast_material: 2027-03-01"
     )
     with pytest.raises(TermsError, match="later than their version"):
         parse(later)
@@ -239,7 +239,7 @@ def test_last_material_must_be_a_date_no_later_than_the_version() -> None:
     impossible = "material: false\nlast_material: 2026-02-30"
     with pytest.raises(TermsError, match="must be a real date"):
         parse(doc(material=False).replace("material: false", impossible))
-    assert parse(doc(material=True)).last_material == "2026-11-01"
+    assert parse(doc(material=True)).last_material == "2027-02-01"
 
 
 # ------------------------------------------------------------------ the website
@@ -274,11 +274,11 @@ def _manifest(source: str) -> dict[str, object]:
 
 def test_a_newer_version_on_the_website_reaches_an_installed_copy(tmp_path: Path) -> None:
     source = doc()
-    terms = service(tmp_path, today="2026-12-01", http=_website(_manifest(source), source))
+    terms = service(tmp_path, today="2027-03-01", http=_website(_manifest(source), source))
     terms.accept(bundled().version)
     assert terms.check_now() is True
-    assert (tmp_path / "legal" / "terms-2026-11-01.md").read_text(encoding="utf-8") == source
-    assert terms.state()["gate"] is True and terms.state()["current"]["version"] == "2026-11-01"
+    assert (tmp_path / "legal" / "terms-2027-02-01.md").read_text(encoding="utf-8") == source
+    assert terms.state()["gate"] is True and terms.state()["current"]["version"] == "2027-02-01"
     assert terms.check_now() is False, "nothing newer the second time"
 
 
