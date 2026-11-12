@@ -510,7 +510,7 @@ def check_models(config: Config, provider: str, use: str, catalog: Catalog | Non
     the longest-established Flash. The default ``gemini-2.5-pro`` answered a new key with
     404 "no longer available to new users" (2026-11-12), and setup called the key bad; the
     newest Flash took minutes, Flash-Lite one second. The next model is tried only when
-    one is refused, never when the key is. A model the user chose is tested as it is:
+    one is refused or busy, never when the key is. A model the user chose is tested as it is:
     that is what runs.
     """
     if provider != "gemini" or catalog is None:
@@ -579,8 +579,8 @@ def refusal_fallbacks(
 
 
 def may_hand_over(config: Config, provider: str, use: str, catalog: Catalog | None) -> bool:
-    """Whether a refused model may be handed over at all: Gemini running a model nobody
-    named. With no list to hand over to, the refusal is then worth another try later,
+    """Whether a refused or busy model may be handed over at all: Gemini running a model
+    nobody named. With no list to hand over to, the refusal is then worth another try later,
     when the list may be there, rather than the end of the summary."""
     if provider != "gemini" or catalog is None:
         return False

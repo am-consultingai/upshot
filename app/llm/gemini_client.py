@@ -44,13 +44,16 @@ class GeminiClient:
         self.max_repairs = max_repairs
         self.timeout = timeout
         self._transport = transport  # injected in tests: (path, payload) -> dict
-        #: Models to hand over to, in order, when Gemini refuses the one that runs (a
-        #: 404): set by ``make_client`` from the list, never for a model the user named.
+        #: Models to hand over to, in order, when Gemini refuses the one that runs (404) or
+        #: it is busy (503, 429): set by ``make_client`` from the list, never for a model
+        #: the user named.
         self.fallbacks: list[str] = []
         #: Whether a refused model may be handed over (``make_client``): when it may but
         #: there is nothing to hand over to, the refusal is retried later, not final.
         self.hands_over = False
         self._handed_over = False
+        #: A model on the way was busy: it may answer on the worker's next try.
+        self._busy = False
         self.requests: list[dict[str, Any]] = []
 
     def key(self) -> str:
@@ -165,6 +168,7 @@ class GeminiClient:
             try:
                 return self._post(f"models/{self.model}:generateContent", request)
             except ModelBusy:
+                self._busy = True
                 if not self.fallbacks:
                     raise
                 self._handed_over = True
@@ -174,6 +178,13 @@ class GeminiClient:
                 if exc.category != "model":
                     raise
                 if not self.fallbacks:
+                    if self._busy:
+                        # Refused at the end of a hand-over that met a busy model: that
+                        # one may answer later, so this is not the end of the summary.
+                        raise ModelBusy(
+                            f"Gemini does not offer {self.model} to this key, and the "
+                            "models before it were busy; trying again later"
+                        ) from exc
                     if self.hands_over and not self._handed_over:
                         # No list to hand over to yet (it failed or is not fetched): a
                         # later try may have one.

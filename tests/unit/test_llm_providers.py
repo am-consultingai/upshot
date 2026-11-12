@@ -886,3 +886,20 @@ def test_gemini_says_a_busy_model_is_busy(monkeypatch: pytest.MonkeyPatch, statu
     client = _gemini_answers(monkeypatch, status, '{"error": {"status": "UNAVAILABLE"}}')
     with pytest.raises(ModelBusy):
         client._post("models/x:generateContent", {})
+
+
+def test_a_refusal_after_a_busy_model_is_retried_not_final(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review round 1 of #100: busy, then refused as the last fallback, is not the end."""
+    from app.llm.gemini_client import ModelBusy
+
+    client = GeminiClient(default_config(), transport=None)
+    client.hands_over, client.fallbacks = True, ["gemini-2.5-flash", "gemini-3.8-flash"]
+
+    def post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if "gemini-2.5-flash:" in path:
+            raise ModelBusy("Gemini returned 503")
+        raise PermanentError("Gemini does not offer it", category="model")
+
+    monkeypatch.setattr(client, "_post", post)
+    with pytest.raises(ModelBusy, match="were busy"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
