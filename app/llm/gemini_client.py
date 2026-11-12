@@ -21,6 +21,12 @@ log = get(__name__)
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 
+class ModelBusy(RecoverableError):
+    """The model is overloaded or out of its per-model quota (503, 429): another one may
+    answer now, and this one later. Machine B, 2026-11-12: gemini-2.5-flash answered 503
+    "high demand" five times in four minutes while Flash-Lite answered in a second."""
+
+
 class GeminiClient:
     name = "gemini"
 
@@ -38,13 +44,16 @@ class GeminiClient:
         self.max_repairs = max_repairs
         self.timeout = timeout
         self._transport = transport  # injected in tests: (path, payload) -> dict
-        #: Models to hand over to, in order, when Gemini refuses the one that runs (a
-        #: 404): set by ``make_client`` from the list, never for a model the user named.
+        #: Models to hand over to, in order, when Gemini refuses the one that runs (404) or
+        #: it is busy (503, 429): set by ``make_client`` from the list, never for a model
+        #: the user named.
         self.fallbacks: list[str] = []
         #: Whether a refused model may be handed over (``make_client``): when it may but
         #: there is nothing to hand over to, the refusal is retried later, not final.
         self.hands_over = False
         self._handed_over = False
+        #: A model on the way was busy: it may answer on the worker's next try.
+        self._busy = False
         self.requests: list[dict[str, Any]] = []
 
     def key(self) -> str:
@@ -71,7 +80,11 @@ class GeminiClient:
         except Exception as exc:
             raise RecoverableError(f"Gemini request failed: {exc}") from exc
         if response.status_code == 429:
-            raise RecoverableError("Gemini rate limited (the free tier has per-minute limits)")
+            raise ModelBusy(
+                f"Gemini rate limited {self.model} (the free tier has per-minute limits)"
+            )
+        if response.status_code == 503:
+            raise ModelBusy(f"Gemini returned 503 for {self.model}: {response.text[:200]}")
         # A key Google does not know comes back as a 400, not a 401.
         if response.status_code in (401, 403) or (
             response.status_code == 400 and "API_KEY_INVALID" in response.text
@@ -149,14 +162,29 @@ class GeminiClient:
 
     def _generate(self, request: dict[str, Any]) -> dict[str, Any]:
         """One generateContent, handing over to the next fallback while the model is
-        refused. The model that answered stays for the rest of this client's work."""
+        refused or busy. The model that answered stays for the rest of this client's work.
+        With every fallback busy, the error is the last one: the worker tries again later."""
         while True:
             try:
                 return self._post(f"models/{self.model}:generateContent", request)
+            except ModelBusy:
+                self._busy = True
+                if not self.fallbacks:
+                    raise
+                self._handed_over = True
+                busy, self.model = self.model, self.fallbacks.pop(0)
+                log.warning("Gemini is busy on %s; using %s", busy, self.model)
             except PermanentError as exc:
                 if exc.category != "model":
                     raise
                 if not self.fallbacks:
+                    if self._busy:
+                        # Refused at the end of a hand-over that met a busy model: that
+                        # one may answer later, so this is not the end of the summary.
+                        raise ModelBusy(
+                            f"Gemini does not offer {self.model} to this key, and the "
+                            "models before it were busy; trying again later"
+                        ) from exc
                     if self.hands_over and not self._handed_over:
                         # No list to hand over to yet (it failed or is not fetched): a
                         # later try may have one.

@@ -497,10 +497,10 @@ def test_a_refused_model_hands_over_to_the_longest_established_flash(tmp_path: P
     catalog._lists["gemini"] = gemini_listing()
     assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == [
         "gemini-2.5-flash",
+        "gemini-3.5-flash-lite",
         "gemini-3.5-flash",
         "gemini-3.8-flash",
-        "gemini-3.5-flash-lite",
-    ]
+    ], "Flash-Lite second: the quickest answer close behind a busy Flash"
     assert model_choice.refusal_fallbacks(cfg, "anthropic", "summary", catalog) == []
     cfg.set("llm.gemini_model", "gemini-3.1-pro-preview")
     assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == [], (

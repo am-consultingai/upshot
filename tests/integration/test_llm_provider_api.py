@@ -719,3 +719,29 @@ def test_a_refused_anthropic_key_is_the_key(api, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(AnthropicClient, "complete_json", refused)
     body = api.client().post("/api/llm/test", json={"provider": "anthropic"}).json()
     assert (body["ok"], body["reason"]) == (False, "key")
+
+
+def test_the_check_passes_over_a_busy_model(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    from app.llm import model_choice
+    from app.llm.client import LlmResult
+    from app.llm.gemini_client import GeminiClient, ModelBusy
+
+    listing = model_choice.Listing(
+        models=[
+            model_choice.ModelInfo(i, i) for i in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
+        ],
+        fetched_at=time.time(),
+    )
+    monkeypatch.setattr(model_choice.Catalog, "listing", lambda self, p, refresh=False: listing)
+    model_choice.set_catalog(model_choice.Catalog(api.services.config))
+
+    def answer(self, **_kwargs):  # type: ignore[no-untyped-def]
+        if self.model == "gemini-3.5-flash-lite":
+            raise ModelBusy("Gemini returned 503")
+        return LlmResult(
+            data={"ok": True}, stop_reason="STOP", model=self.model, usage={}, attempts=1
+        )
+
+    monkeypatch.setattr(GeminiClient, "complete_json", answer)
+    body = api.client().post("/api/llm/test", json={"provider": "gemini"}).json()
+    assert body == {"provider": "gemini", "ok": True, "model": "gemini-3.1-flash-lite"}

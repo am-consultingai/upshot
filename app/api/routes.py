@@ -3097,12 +3097,13 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
     try:
         from app.errors import PermanentError
         from app.llm import model_choice
+        from app.llm.gemini_client import ModelBusy
 
         use = model_choice.conversation_use(provider)
         client = make_client(svc.config, provider=provider, use=use, fetch=True)
         model = str(getattr(client, "model", "") or "")
         # The quickest models the provider lists, when it is ours to pick: the check only
-        # proves the key answers. One that is refused hands over to the next.
+        # proves the key answers. One that is refused or busy hands over to the next.
         tries = model_choice.check_models(svc.config, provider, use, model_choice.catalog())
         for index, candidate in enumerate(tries or [model]):
             if tries:
@@ -3118,10 +3119,13 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
                     max_tokens=64,
                 )
                 break
-            except PermanentError as exc:
-                if exc.category != "model" or index + 1 >= len(tries):
+            except (PermanentError, ModelBusy) as exc:
+                passed_over = isinstance(exc, ModelBusy) or exc.category == "model"
+                if not passed_over or index + 1 >= len(tries):
                     raise
-                log.info("provider test %s: %s refused, trying the next", provider, candidate)
+                log.info(
+                    "provider test %s: %s refused or busy, trying the next", provider, candidate
+                )
         ok = bool(result.data.get("ok"))
         verdict = "ok" if ok else "wrong answer"
         took = time.monotonic() - started
