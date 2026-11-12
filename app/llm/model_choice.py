@@ -510,7 +510,8 @@ def check_models(config: Config, provider: str, use: str, catalog: Catalog | Non
     the longest-established Flash. The default ``gemini-2.5-pro`` answered a new key with
     404 "no longer available to new users" (2026-11-12), and setup called the key bad; the
     newest Flash took minutes, Flash-Lite one second. The next model is tried only when
-    one is refused, never when the key is. A model the user chose is tested as it is: that is what runs.
+    one is refused, never when the key is. A model the user chose is tested as it is:
+    that is what runs.
     """
     if provider != "gemini" or catalog is None:
         return []
