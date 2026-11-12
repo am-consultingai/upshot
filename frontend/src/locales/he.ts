@@ -295,7 +295,7 @@ export const he: Record<MessageKey, string> = {
   "feedback.title": "משוב",
   "feedback.lead": "ספרו לנו מה עובד, מה לא ומה הייתם רוצים. המשוב אנונימי, אלא אם תוסיפו כתובת דוא״ל.",
   "feedback.settingsHint": "רעיון, תקלה או משהו שאהבתם. אנונימי, אלא אם תוסיפו כתובת דוא״ל.",
-  "feedback.unavailable": "העותק הזה פועל מקוד המקור, ולכן אינו יכול לשלוח משוב. אפשר לכתוב לנו ל־office@amconsultingai.com.",
+  "feedback.unavailable": "העותק הזה פועל מקוד המקור, ולכן אינו יכול לשלוח משוב. אפשר לכתוב לנו ל־upshot@amconsultingai.com.",
   "feedback.kindLabel": "סוג המשוב",
   "feedback.kind.idea": "רעיון",
   "feedback.kind.problem": "תקלה",

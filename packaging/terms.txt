@@ -1,7 +1,7 @@
 Upshot Terms of Service
 =======================
 
-Version 2026-10-17, effective 2026-10-17.
+Version 2026-11-12, effective 2026-11-12.
 
 1. AGREEMENT
 
@@ -149,7 +149,7 @@ website.
 Production use that the Upshot licence does not permit free of charge, for
 example by an organization with 20 or more individuals working for it,
 requires a commercial licence from AM Consulting; to ask for one, write to
-office@amconsultingai.com. A commercial licence is governed by the terms
+upshot@amconsultingai.com. A commercial licence is governed by the terms
 agreed for it, which will form part of these Terms and prevail over these
 Terms and the Upshot licence where they differ. We will not charge you
 anything unless you explicitly agree to a commercial licence. Nothing in
@@ -436,5 +436,5 @@ these Terms cannot take away.
 27. CONTACT US
 
   - AM Consulting
-  - Email: office@amconsultingai.com
+  - Email: upshot@amconsultingai.com
   - Website: www.amconsultingai.com

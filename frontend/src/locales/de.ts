@@ -299,7 +299,7 @@ export const de: Record<MessageKey, string> = {
   "feedback.title": "Feedback",
   "feedback.lead": "Sagen Sie uns, was funktioniert, was nicht und was Sie sich wünschen. Es ist anonym, sofern Sie nicht Ihre E-Mail-Adresse angeben.",
   "feedback.settingsHint": "Eine Idee, ein Problem oder etwas, das Ihnen gefällt. Anonym, sofern Sie nicht Ihre E-Mail-Adresse angeben.",
-  "feedback.unavailable": "Diese Version läuft aus dem Quellcode und kann daher kein Feedback senden. Schreiben Sie uns stattdessen an office@amconsultingai.com.",
+  "feedback.unavailable": "Diese Version läuft aus dem Quellcode und kann daher kein Feedback senden. Schreiben Sie uns stattdessen an upshot@amconsultingai.com.",
   "feedback.kindLabel": "Art des Feedbacks",
   "feedback.kind.idea": "Idee",
   "feedback.kind.problem": "Problem",

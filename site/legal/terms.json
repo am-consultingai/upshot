@@ -1,9 +1,9 @@
 {
-  "version": "2026-10-17",
-  "effective": "2026-10-17",
-  "material": true,
-  "summary": "The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence. Installing Upshot now requires accepting NVIDIA's licence on every computer, though NVIDIA's library is downloaded only where a suitable NVIDIA graphics card can use it.",
+  "version": "2026-11-12",
+  "effective": "2026-11-12",
+  "material": false,
+  "summary": "Our contact email address is now upshot@amconsultingai.com. Nothing else has changed.",
   "url": "terms.md",
-  "sha256": "d987ea839057ad63edfabd026122974cd4b155570cc94caf3aac9a9ada10ef13",
+  "sha256": "4a803182c74ac170060de2f29ebceeb0b9dfe5a9a25e074b84c079b36b9cbbff",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }

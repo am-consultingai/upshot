@@ -184,7 +184,7 @@ def readme(sources: list[Source]) -> str:
         "THIRD-PARTY-NOTICES.txt, installed with Upshot and shown in the app under",
         "Settings > About and updates > Open-source licences.",
         "",
-        "AM Consulting will also provide this source on request at office@amconsultingai.com,",
+        "AM Consulting will also provide this source on request at upshot@amconsultingai.com,",
         "for at least three years after this release.",
         "",
     ]

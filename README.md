@@ -60,7 +60,7 @@ Two licences apply, one to the code and one to the app:
   than 20 people, as long as you do not offer it, or anything built from it, as a competing
   product or service. Each version becomes available under the Apache License 2.0 four years
   after it is published. Any other production use needs a commercial licence:
-  office@amconsultingai.com.
+  upshot@amconsultingai.com.
 - **The official Upshot app**, as built, signed and distributed by AM Consulting, is licensed
   under its [Terms of Service](https://upshot.amconsultingai.com/terms.html), which every user
   accepts when installing it.

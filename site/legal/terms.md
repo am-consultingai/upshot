@@ -1,9 +1,9 @@
 ---
-version: 2026-10-17
-effective: 2026-10-17
-material: true
+version: 2026-11-12
+effective: 2026-11-12
+material: false
 last_material: 2026-10-17
-summary: The Terms no longer describe a beta period. The app, like its source code, is now licensed under the Upshot licence (the Business Source License 1.1): free for personal use and for organizations with fewer than 20 people, with a commercial licence for other production use. The restrictions now match that licence. Installing Upshot now requires accepting NVIDIA's licence on every computer, though NVIDIA's library is downloaded only where a suitable NVIDIA graphics card can use it.
+summary: Our contact email address is now upshot@amconsultingai.com. Nothing else has changed.
 ---
 
 # Upshot Terms of Service
@@ -79,7 +79,7 @@ The Upshot licence does not give you any right to use the Upshot name or logo, o
 
 ## 8. Commercial licences {#plans}
 
-Production use that the Upshot licence does not permit free of charge, for example by an organization with 20 or more individuals working for it, requires a commercial licence from AM Consulting; to ask for one, write to office@amconsultingai.com. A commercial licence is governed by the terms agreed for it, which will form part of these Terms and prevail over these Terms and the Upshot licence where they differ. We will not charge you anything unless you explicitly agree to a commercial licence. Nothing in this section limits any right you have under consumer-protection law, including any right to cancel a purchase.
+Production use that the Upshot licence does not permit free of charge, for example by an organization with 20 or more individuals working for it, requires a commercial licence from AM Consulting; to ask for one, write to upshot@amconsultingai.com. A commercial licence is governed by the terms agreed for it, which will form part of these Terms and prevail over these Terms and the Upshot licence where they differ. We will not charge you anything unless you explicitly agree to a commercial licence. Nothing in this section limits any right you have under consumer-protection law, including any right to cancel a purchase.
 
 ## 9. Updates and checks the app makes {#updates}
 
@@ -207,5 +207,5 @@ These Terms are governed by the laws of the State of Israel, without regard to i
 ## 27. Contact us {#contact}
 
 - AM Consulting
-- Email: [office@amconsultingai.com](mailto:office@amconsultingai.com)
+- Email: [upshot@amconsultingai.com](mailto:upshot@amconsultingai.com)
 - Website: [www.amconsultingai.com](https://www.amconsultingai.com)

@@ -547,3 +547,5 @@ footer{font-size:var(--t-label)}
 .hero-bg img,[dir=rtl] .hero-bg img{object-position:center}
 /* RTL: the photo mirrors with the layout, so the person stays beside the card, not behind the text. */
 [dir=rtl] .hero-bg img{transform:scaleX(-1)}
+/* Each strip is clipped to the page, so it starts at its first logo in either direction and loops. */
+.marquee{width:auto;overflow:hidden}
