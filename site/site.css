@@ -477,7 +477,6 @@ footer{font-size:var(--t-label)}
   .sec{padding-top:80px}
   .copies,.steps{grid-template-columns:1fr}
   .hero{min-height:0}
-  .hero-bg img{object-position:62% center}
   .risk-in{padding:80px var(--pad)}
   .steps{gap:34px}
   .steps::before{display:none}
