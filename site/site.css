@@ -107,8 +107,6 @@ em{font-style:normal;color:var(--ink)}
 /* start */
 .start{text-align:center;padding-bottom:20px}
 .start h2{margin:0 auto}
-.req{margin-top:20px;font-family:var(--mono);font-size:12.5px;color:var(--s3)}
-.req a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--cyan)}
 .limits{margin-top:10px;font-size:14px;color:var(--s4)}
 
 footer{margin-top:110px;line-height:1.9}
@@ -193,7 +191,6 @@ footer a:hover{color:var(--ink)}
 
 /* ---- final cta ---- */
 .start-mark{display:block;margin:0 auto 22px}
-.start-sub{margin-top:14px;font-size:18px;color:var(--s2)}
 
 /* ---- hero card: the participant list, with no bot in it ---- */
 .ready-top .live{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(16,185,129,.18)}
@@ -295,8 +292,6 @@ body{font-size:var(--t-body)}
 .copy-card h3{font-size:25px}
 .stats span,.tags li,.callouts li,.tile span,.tools-note,.chips-note,.limits,.chips li{font-size:var(--t-sub)}
 .callouts b{font-size:17px}
-.start-sub{font-size:20px}
-.req{font-size:var(--t-label)}
 .legend{font-size:var(--t-label)}
 .tool{font-size:18px}
 .vs{font-size:17px}
@@ -442,7 +437,7 @@ footer{font-size:var(--t-label)}
 [lang=he] .eyebrow, [lang=he] .nav-links a, [lang=he] .btn, [lang=he] .hero-meta,
 [lang=he] .ready-top, [lang=he] .people small, [lang=he] .people i, [lang=he] .fmt-label, [lang=he] .legend,
 [lang=he] .tool b, [lang=he] .demo, [lang=he] .tag-new, [lang=he] figcaption,
-[lang=he] .req, [lang=he] .cw-bar span, [lang=he] .cw-t em, [lang=he] .mail-head span,
+[lang=he] .cw-bar span, [lang=he] .cw-t em, [lang=he] .mail-head span,
 [lang=he] .vs thead th, [lang=he] .vs td, [lang=he] .shot-bar span, [lang=he] .stats span,
 [lang=he] .chips-note, [lang=he] .tools-note{font-family:var(--sans)}
 
@@ -547,4 +542,4 @@ footer{font-size:var(--t-label)}
 }
 
 /* The download button in place of the old command box. */
-.start-dl{margin:34px 0 0}
+.start-dl{margin:34px 0 22px}
