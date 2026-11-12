@@ -174,7 +174,7 @@ function KeyOffer() {
             autoComplete="off"
             spellCheck={false}
             className={`h-10 w-full rounded-md bg-surface-2 px-3 font-mono text-sm text-primary ring-inset ${
-              key.phase === "valid" ? "ring-2 ring-success" : key.phase === "invalid" ? "ring-2 ring-danger" : ""
+              key.phase === "valid" ? "ring-2 ring-success" : key.phase === "invalid" || key.phase === "failed" ? "ring-2 ring-danger" : ""
             }`}
           />
           {key.phase === "checking" && (
@@ -191,6 +191,9 @@ function KeyOffer() {
           <Note tone="good" testId="key-valid">{fill(t("firstRun.key.valid"), { provider: providerName })}</Note>
         )}
         {key.phase === "invalid" && <Note tone="bad" testId="key-invalid">{t("firstRun.key.invalid")}</Note>}
+        {key.phase === "failed" && (
+          <Note tone="bad" testId="key-failed">{fill(t("firstRun.key.failed"), { provider: providerName })}</Note>
+        )}
         <p className="text-xs text-tertiary">{t("firstRun.key.stored")}</p>
       </div>
 

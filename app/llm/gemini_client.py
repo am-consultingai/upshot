@@ -65,8 +65,18 @@ class GeminiClient:
             raise RecoverableError(f"Gemini request failed: {exc}") from exc
         if response.status_code == 429:
             raise RecoverableError("Gemini rate limited (the free tier has per-minute limits)")
-        if response.status_code in (401, 403):
+        # A key Google does not know comes back as a 400, not a 401.
+        if response.status_code in (401, 403) or (
+            response.status_code == 400 and "API_KEY_INVALID" in response.text
+        ):
             raise PermanentError(f"Gemini rejected the key: {response.text[:200]}", category="auth")
+        if response.status_code == 404:
+            # The key works; the model does not, for it: Google retires models for new
+            # keys first ("gemini-2.5-pro is no longer available to new users", 2026-11).
+            raise PermanentError(
+                f"Gemini does not offer {self.model} to this key: {response.text[:200]}",
+                category="model",
+            )
         if response.status_code >= 400:
             raise RecoverableError(f"Gemini returned {response.status_code}: {response.text[:200]}")
         return dict(response.json())

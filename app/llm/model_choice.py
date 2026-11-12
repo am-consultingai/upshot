@@ -450,8 +450,25 @@ def providers_to_list(config: Config) -> list[str]:
 #: ``gemini-3.8-flash-low`` → version (3, 8) and level ``low``.
 _AGY_FLASH = re.compile(r"^gemini-(?P<version>\d+(?:\.\d+)*)-flash-(?P<level>low|medium|high)$")
 
+#: A Gemini API model by generation and tier: ``gemini-3.5-flash-lite``. Previews,
+#: ``-latest`` aliases and the specialised models (tts, image, …) do not match.
+_GEMINI = re.compile(r"^gemini-(?P<version>\d+(?:\.\d+)*)-(?P<tier>flash-lite|flash)$")
+
 #: The providers whose automatic choice is read from their list.
 NEEDS_LIST = frozenset({"antigravity-subscription"})
+
+
+def _gemini_newest(listing: Listing | None, tier: str) -> list[str]:
+    """The listed Gemini models of ``tier``, newest first."""
+    if listing is None:
+        return []
+    found = []
+    for model in listing.models:
+        match = _GEMINI.match(model.id)
+        if match and match.group("tier") == tier:
+            version = tuple(int(part) for part in match.group("version").split("."))
+            found.append((version, model.id))
+    return [model_id for _, model_id in sorted(found, reverse=True)]
 
 
 def automatic(
@@ -479,6 +496,27 @@ def automatic(
             version = tuple(int(part) for part in match.group("version").split("."))
             flashes.append((version, model.id))
     return max(flashes)[1] if flashes else ""
+
+
+#: How many models the provider test tries before it gives up on the model.
+CHECK_TRIES = 3
+
+
+def check_models(config: Config, provider: str, use: str, catalog: Catalog | None) -> list[str]:
+    """The models the provider test tries, quickest first; ``[]`` runs the usual one.
+
+    The test proves the key answers, and setup waits on it, so it wants the quickest
+    model the provider lists, not the best: for Gemini, the newest stable Flash-Lite, then
+    the newest Flash. The default ``gemini-2.5-pro`` answered a new key with 404 "no longer
+    available to new users" (2026-11-12), and setup called the key bad; the newest Flash
+    took minutes, Flash-Lite one second. The next model is tried only when one is refused,
+    never when the key is. A model the user chose is tested as it is: that is what runs.
+    """
+    if provider != "gemini" or catalog is None or chosen(config, provider, use):
+        return []
+    listing = catalog.listing(provider)
+    quick = _gemini_newest(listing, "flash-lite") + _gemini_newest(listing, "flash")
+    return quick[:CHECK_TRIES]
 
 
 def chosen(config: Config, provider: str, use: str) -> str:

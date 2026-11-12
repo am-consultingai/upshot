@@ -447,3 +447,44 @@ def test_who_answers_someone_waiting() -> None:
     assert model_choice.conversation_use("gemini") == "summary", (
         "no chat box to choose a conversation model at: the summaries' model, chosen in Settings"
     )
+
+
+# ------------------------------------------------------------------ gemini (API key)
+
+#: What Gemini listed to a new key (2026-11-12), trimmed: stable tiers, aliases, previews
+#: and specialised models side by side.
+GEMINI_IDS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash-lite",
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.8-flash-tts",
+    "gemini-3.8-flash-lite-tts",
+]
+
+
+def gemini_listing() -> Listing:
+    return Listing(models=[ModelInfo(i, i) for i in GEMINI_IDS], fetched_at=1000.0)
+
+
+def test_the_check_tries_the_quickest_listed_models_first(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, now=lambda: 1000.0)
+    catalog._lists["gemini"] = gemini_listing()
+    assert model_choice.check_models(cfg, "gemini", "summary", catalog) == [
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash-lite",
+    ]
+    assert model_choice.check_models(cfg, "anthropic", "summary", catalog) == []
+    cfg.set("llm.summary_models", {"gemini": "gemini-3.5-flash"})
+    assert model_choice.check_models(cfg, "gemini", "summary", catalog) == [], (
+        "a model the user chose is tested as it is"
+    )

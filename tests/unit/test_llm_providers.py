@@ -725,3 +725,39 @@ def test_asking_for_a_model_with_none_says_so() -> None:
 
     with pytest.raises(PermanentError, match="No AI provider"):
         make_client(default_config())
+
+
+class _Response:
+    def __init__(self, status: int, text: str) -> None:
+        self.status_code = status
+        self.text = text
+
+    def json(self) -> dict[str, Any]:
+        return json.loads(self.text)
+
+
+def _gemini_answers(monkeypatch: pytest.MonkeyPatch, status: int, text: str) -> GeminiClient:
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Response(status, text))
+    config = default_config(secrets__backend="memory")
+    config.secrets.set("gemini", "k")
+    return GeminiClient(config)
+
+
+def test_gemini_says_a_retired_model_is_the_model_not_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = '{"error": {"code": 404, "message": "no longer available to new users"}}'
+    client = _gemini_answers(monkeypatch, 404, body)
+    with pytest.raises(PermanentError, match="does not offer") as caught:
+        client._post("models/x:generateContent", {})
+    assert caught.value.category == "model"
+
+
+def test_gemini_says_an_unknown_key_is_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = '{"error": {"code": 400, "details": [{"reason": "API_KEY_INVALID"}]}}'
+    client = _gemini_answers(monkeypatch, 400, body)
+    with pytest.raises(PermanentError, match="rejected the key") as caught:
+        client._post("models/x:generateContent", {})
+    assert caught.value.category == "auth"

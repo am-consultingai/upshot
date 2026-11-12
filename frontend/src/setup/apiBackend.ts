@@ -375,9 +375,11 @@ export class ApiSetupBackend implements SetupBackend {
       .then(() => api.llmTest(provider))
       .then(async (result) => {
         if (!result.ok) await api.putSecrets({ [provider]: "" });
-        this.set({ ...this.state, key: { provider, phase: result.ok ? "valid" : "invalid" } });
+        // Only a refused key is called one; a model or a busy provider is not the key.
+        const phase = result.ok ? "valid" : result.reason === "key" ? "invalid" : "failed";
+        this.set({ ...this.state, key: { provider, phase } });
       })
-      .catch(() => this.set({ ...this.state, key: { provider, phase: "invalid" } }));
+      .catch(() => this.set({ ...this.state, key: { provider, phase: "failed" } }));
   }
 
   chooseKeyProvider(provider: KeyProviderId): void {
