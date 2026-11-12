@@ -550,15 +550,18 @@ def refusal_fallbacks(
     refused: str = "",
     fetch: bool = False,
 ) -> list[str]:
-    """The models a client hands over to when the one it runs is refused (a 404), in order.
+    """The models a client hands over to when the one it runs is refused (a 404) or busy
+    (503, 429), in order.
 
     Google withdraws models from new keys first: the default ``gemini-2.5-pro`` was
     refused to a new key while older keys still ran it (2026-11-12). The longest-
-    established stable Flash first, then newer ones, then Flash-Lite: the newest Flash
-    took two minutes or did not answer at all while ``gemini-2.5-flash`` answered in one
-    second, and an older model a key may not use is refused at once, so a stale one
-    costs one quick 404. Never a generation older than ``refused``, Flash or Flash-Lite.
-    A model the user named never hands over.
+    established stable Flash first: the newest Flash took two minutes or did not answer
+    at all while ``gemini-2.5-flash`` answered in one second, and an older model a key may
+    not use is refused at once, so a stale one costs one quick 404. Then the newest
+    Flash-Lite, then the other Flash and Flash-Lite models: on B the same day,
+    ``gemini-2.5-flash`` answered 503 "high demand" to every try while Flash-Lite answered
+    in a second. Never a generation older than ``refused``. A model the user named never
+    hands over.
     """
     if provider != "gemini" or catalog is None:
         return []
@@ -568,8 +571,11 @@ def refusal_fallbacks(
     if _gemini_named(config, use, listing):
         return []
     floor = _version(refused)
-    flash = list(reversed(_gemini_newest(listing, "flash"))) + _gemini_newest(listing, "flash-lite")
-    return [m for m in flash if _version(m) >= floor][:FALLBACK_TRIES]
+    flash = [m for m in reversed(_gemini_newest(listing, "flash")) if _version(m) >= floor]
+    lite = [m for m in _gemini_newest(listing, "flash-lite") if _version(m) >= floor]
+    # Flash-Lite second: when the first Flash is busy, the quickest answer is close behind.
+    order = flash[:1] + lite[:1] + flash[1:] + lite[1:]
+    return order[:FALLBACK_TRIES]
 
 
 def may_hand_over(config: Config, provider: str, use: str, catalog: Catalog | None) -> bool:

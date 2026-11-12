@@ -840,3 +840,49 @@ def test_make_client_lets_only_an_unnamed_gemini_hand_over(tmp_path: Path) -> No
     assert make_client(config, provider="gemini").hands_over is True  # type: ignore[attr-defined]
     config.set("llm.gemini_model", "gemini-3.1-pro-preview")
     assert make_client(config, provider="gemini").hands_over is False  # type: ignore[attr-defined]
+
+
+def test_gemini_hands_a_busy_model_over_and_retries_when_all_are_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Machine B, 2026-11-12: gemini-2.5-flash answered 503 to five tries in a row."""
+    from app.llm.gemini_client import ModelBusy
+
+    client = GeminiClient(default_config(), transport=None)
+    client.model, client.fallbacks = (
+        "gemini-2.5-flash",
+        ["gemini-3.5-flash-lite", "gemini-3.5-flash"],
+    )
+    asked: list[str] = []
+
+    def post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        asked.append(path.split("/")[1].split(":")[0])
+        if "flash-lite" not in path:
+            raise ModelBusy("Gemini returned 503")
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(VALID)}]}}]}
+
+    monkeypatch.setattr(client, "_post", post)
+    result = client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    assert (result.model, asked) == (
+        "gemini-3.5-flash-lite",
+        ["gemini-2.5-flash", "gemini-3.5-flash-lite"],
+    )
+
+    everyone_busy = GeminiClient(default_config(), transport=None)
+    everyone_busy.fallbacks = ["gemini-2.5-flash"]
+
+    def busy(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raise ModelBusy("Gemini returned 503")
+
+    monkeypatch.setattr(everyone_busy, "_post", busy)
+    with pytest.raises(RecoverableError, match="503"):
+        everyone_busy.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_gemini_says_a_busy_model_is_busy(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
+    from app.llm.gemini_client import ModelBusy
+
+    client = _gemini_answers(monkeypatch, status, '{"error": {"status": "UNAVAILABLE"}}')
+    with pytest.raises(ModelBusy):
+        client._post("models/x:generateContent", {})

@@ -21,6 +21,12 @@ log = get(__name__)
 BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 
+class ModelBusy(RecoverableError):
+    """The model is overloaded or out of its per-model quota (503, 429): another one may
+    answer now, and this one later. Machine B, 2026-11-12: gemini-2.5-flash answered 503
+    "high demand" five times in four minutes while Flash-Lite answered in a second."""
+
+
 class GeminiClient:
     name = "gemini"
 
@@ -71,7 +77,11 @@ class GeminiClient:
         except Exception as exc:
             raise RecoverableError(f"Gemini request failed: {exc}") from exc
         if response.status_code == 429:
-            raise RecoverableError("Gemini rate limited (the free tier has per-minute limits)")
+            raise ModelBusy(
+                f"Gemini rate limited {self.model} (the free tier has per-minute limits)"
+            )
+        if response.status_code == 503:
+            raise ModelBusy(f"Gemini returned 503 for {self.model}: {response.text[:200]}")
         # A key Google does not know comes back as a 400, not a 401.
         if response.status_code in (401, 403) or (
             response.status_code == 400 and "API_KEY_INVALID" in response.text
@@ -149,10 +159,17 @@ class GeminiClient:
 
     def _generate(self, request: dict[str, Any]) -> dict[str, Any]:
         """One generateContent, handing over to the next fallback while the model is
-        refused. The model that answered stays for the rest of this client's work."""
+        refused or busy. The model that answered stays for the rest of this client's work.
+        With every fallback busy, the error is the last one: the worker tries again later."""
         while True:
             try:
                 return self._post(f"models/{self.model}:generateContent", request)
+            except ModelBusy:
+                if not self.fallbacks:
+                    raise
+                self._handed_over = True
+                busy, self.model = self.model, self.fallbacks.pop(0)
+                log.warning("Gemini is busy on %s; using %s", busy, self.model)
             except PermanentError as exc:
                 if exc.category != "model":
                     raise
