@@ -83,6 +83,8 @@ export class ApiSetupBackend implements SetupBackend {
   private timers = new Map<string, ReturnType<typeof setInterval>>();
   private started = new Map<CliId, number>();
   private disposed = false;
+  /** Bumped by each key check, so only the latest one sets the phase. */
+  private keyCheck = 0;
   /** The server opens Google's page itself (Windows), so no tab is opened here. */
   private opensExternally = false;
 
@@ -370,17 +372,23 @@ export class ApiSetupBackend implements SetupBackend {
   checkKey(provider: KeyProviderId, key: string): void {
     if (!key.trim()) return;
     this.set({ ...this.state, key: { provider, phase: "checking" } });
+    // A paste and a typed key can both be checked at once: only the latest one speaks,
+    // and an older one never clears the key a newer one saved.
+    const check = ++this.keyCheck;
     void api
       .putSecrets({ [provider]: key.trim() })
       .then(() => api.llmTest(provider))
       .then((result) => {
+        if (check !== this.keyCheck) return;
         // Only a refused key is called one; a model or a busy provider is not the key.
         const phase = result.ok ? "valid" : result.reason === "key" ? "invalid" : "failed";
         this.set({ ...this.state, key: { provider, phase } });
         // Decided first: a failed cleanup must not turn a refused key into "didn't answer".
         if (!result.ok) void api.putSecrets({ [provider]: "" }).catch(() => undefined);
       })
-      .catch(() => this.set({ ...this.state, key: { provider, phase: "failed" } }));
+      .catch(() => {
+        if (check === this.keyCheck) this.set({ ...this.state, key: { provider, phase: "failed" } });
+      });
   }
 
   chooseKeyProvider(provider: KeyProviderId): void {

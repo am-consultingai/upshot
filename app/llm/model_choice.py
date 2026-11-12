@@ -512,24 +512,41 @@ def check_models(config: Config, provider: str, use: str, catalog: Catalog | Non
     took minutes, Flash-Lite one second. The next model is tried only when one is refused,
     never when the key is. A model the user chose is tested as it is: that is what runs.
     """
-    if provider != "gemini" or catalog is None or _gemini_named(config, use):
+    if provider != "gemini" or catalog is None:
         return []
     listing = catalog.listing(provider)
+    if _gemini_named(config, use, listing):
+        return []
     quick = _gemini_newest(listing, "flash-lite") + _gemini_newest(listing, "flash")
     return quick[:CHECK_TRIES]
 
 
-def _gemini_named(config: Config, use: str) -> bool:
-    """A Gemini model named by the user: chosen in Settings, or ``llm.gemini_model`` set
-    by hand away from its default. That one runs as it is, refused or not."""
+def _gemini_named(config: Config, use: str, listing: Listing | None) -> bool:
+    """A Gemini model named by the user that runs: chosen in Settings and still offered
+    (one dropped from the list falls back to automatic, as ``resolve`` does), or
+    ``llm.gemini_model`` set by hand away from its default. It runs as it is."""
     from app.config import DEFAULTS
 
-    default = DEFAULTS["llm"]["gemini_model"]
-    return bool(chosen(config, "gemini", use)) or config.get("llm.gemini_model") != default
+    choice = chosen(config, "gemini", use)
+    if choice and (listing is None or not listing.models or choice in listing.ids()):
+        return True
+    return bool(config.get("llm.gemini_model") != DEFAULTS["llm"]["gemini_model"])
+
+
+def _version(model: str) -> tuple[int, ...]:
+    """``gemini-2.5-pro`` → (2, 5); () when the id carries no version."""
+    match = re.match(r"^gemini-(\d+(?:\.\d+)*)-", model)
+    return tuple(int(part) for part in match.group(1).split(".")) if match else ()
 
 
 def refusal_fallbacks(
-    config: Config, provider: str, use: str, catalog: Catalog | None, *, fetch: bool = False
+    config: Config,
+    provider: str,
+    use: str,
+    catalog: Catalog | None,
+    *,
+    refused: str = "",
+    fetch: bool = False,
 ) -> list[str]:
     """The models a client hands over to when the one it runs is refused (a 404), in order.
 
@@ -538,14 +555,18 @@ def refusal_fallbacks(
     established stable Flash first, then newer ones, then Flash-Lite: the newest Flash
     took two minutes or did not answer at all while ``gemini-2.5-flash`` answered in one
     second, and an older model a key may not use is refused at once, so a stale one
-    costs one quick 404. A model the user named never hands over.
+    costs one quick 404. Never a generation older than ``refused``. A model the user
+    named never hands over.
     """
-    if provider != "gemini" or catalog is None or _gemini_named(config, use):
+    if provider != "gemini" or catalog is None:
         return []
     listing = catalog.cached(provider)
     if fetch and (listing is None or not listing.models):
         listing = catalog.listing(provider)
-    flash = list(reversed(_gemini_newest(listing, "flash")))
+    if _gemini_named(config, use, listing):
+        return []
+    floor = _version(refused)
+    flash = [m for m in reversed(_gemini_newest(listing, "flash")) if _version(m) >= floor]
     return (flash + _gemini_newest(listing, "flash-lite"))[:FALLBACK_TRIES]
 
 

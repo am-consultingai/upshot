@@ -494,7 +494,7 @@ def make_client(
         client.fallbacks = [
             model_choice.guard(provider, fallback)
             for fallback in model_choice.refusal_fallbacks(
-                config, provider, use, catalog, fetch=fetch
+                config, provider, use, catalog, refused=getattr(client, "model", ""), fetch=fetch
             )
             if fallback != getattr(client, "model", "")
         ]

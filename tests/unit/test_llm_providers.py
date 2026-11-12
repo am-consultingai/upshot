@@ -800,3 +800,10 @@ def test_make_client_gives_gemini_its_fallbacks_from_the_list(tmp_path: Path) ->
     model_choice.set_catalog(catalog)
     client = make_client(config, provider="gemini")
     assert (client.model, client.fallbacks) == ("gemini-2.5-pro", ["gemini-2.5-flash"])  # type: ignore[attr-defined]
+
+
+def test_a_sensitive_meeting_never_gets_gemini_fallbacks(tmp_path: Path) -> None:
+    config = Config.load(file=tmp_path / "c.json")
+    config.set("llm.provider", "gemini")
+    client = make_client(config, sensitive=True)
+    assert client.name == "ollama" and not getattr(client, "fallbacks", [])

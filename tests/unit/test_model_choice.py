@@ -507,3 +507,46 @@ def test_a_refused_model_hands_over_to_the_longest_established_flash(tmp_path: P
         "a model set by hand runs as it is"
     )
     assert model_choice.check_models(cfg, "gemini", "summary", catalog) == []
+
+
+def test_a_choice_no_longer_listed_still_hands_over(tmp_path: Path) -> None:
+    """Review round 2: a Settings choice dropped from the list must not switch it off."""
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, now=lambda: 1000.0)
+    catalog._lists["gemini"] = gemini_listing()
+    cfg.set("llm.summary_models", {"gemini": "gemini-9-gone"})
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog)[0] == (
+        "gemini-2.5-flash"
+    )
+    cfg.set("llm.summary_models", {"gemini": "gemini-3.5-flash"})
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == []
+
+
+def test_a_refused_model_never_hands_over_to_an_older_generation(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, now=lambda: 1000.0)
+    catalog._lists["gemini"] = Listing(
+        models=[
+            ModelInfo(i, i) for i in ("gemini-2.0-flash", "gemini-2.5-flash", "gemini-3.5-flash")
+        ],
+        fetched_at=1000.0,
+    )
+    assert model_choice.refusal_fallbacks(
+        cfg, "gemini", "summary", catalog, refused="gemini-2.5-pro"
+    ) == ["gemini-2.5-flash", "gemini-3.5-flash"]
+
+
+def test_fallbacks_ask_for_the_list_only_when_they_may_wait(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    asked: list[str] = []
+
+    class Counting(Catalog):
+        def listing(self, provider: str, *, refresh: bool = False) -> Listing:
+            asked.append(provider)
+            return gemini_listing()
+
+    catalog = Counting(cfg, now=lambda: 1000.0)
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == []
+    assert asked == [], "never on the event loop"
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog, fetch=True)
+    assert asked == ["gemini"]

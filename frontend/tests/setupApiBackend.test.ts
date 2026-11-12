@@ -157,3 +157,22 @@ describe("ApiSetupBackend: only a refused key is called a bad key (new Gemini ke
     backend.dispose();
   });
 });
+
+describe("ApiSetupBackend: overlapping key checks (review round 2)", () => {
+  it("an older check neither sets the phase nor clears the newer key", async () => {
+    api.putSecrets.mockResolvedValue({});
+    let finishOld: (value: object) => void = () => undefined;
+    api.llmTest
+      .mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)))
+      .mockResolvedValueOnce({ provider: "gemini", ok: true });
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "old");
+    backend.checkKey("gemini", "new");
+    await vi.waitFor(() => expect(backend.snapshot().key.phase).toBe("valid"));
+    finishOld({ provider: "gemini", ok: false, reason: "key" });
+    await flush();
+    expect(backend.snapshot().key.phase).toBe("valid");
+    expect(api.putSecrets).not.toHaveBeenCalledWith({ gemini: "" });
+    backend.dispose();
+  });
+});
