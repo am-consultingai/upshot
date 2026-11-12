@@ -399,7 +399,10 @@ export class ApiSetupBackend implements SetupBackend {
   }
 
   chooseKeyProvider(provider: KeyProviderId): void {
-    this.keyCheck += 1; // a check still out for the previous provider no longer speaks
+    const same = provider === this.state.key.provider;
+    // The same provider again (the "Get a key" link) leaves a running check to finish.
+    if (same && this.state.key.phase === "checking") return;
+    if (!same) this.keyCheck += 1; // a check out for the previous provider no longer speaks
     this.set({ ...this.state, key: { provider, phase: "idle" } });
   }
 

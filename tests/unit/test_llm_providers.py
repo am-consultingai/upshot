@@ -807,3 +807,36 @@ def test_a_sensitive_meeting_never_gets_gemini_fallbacks(tmp_path: Path) -> None
     config.set("llm.provider", "gemini")
     client = make_client(config, sensitive=True)
     assert client.name == "ollama" and not getattr(client, "fallbacks", [])
+
+
+def test_gemini_retries_a_refusal_it_may_hand_over_but_has_no_list_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review round 4: a list that failed must not make a refused default final."""
+    client = GeminiClient(default_config(), transport=None)
+
+    def post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raise PermanentError("Gemini does not offer it", category="model")
+
+    monkeypatch.setattr(client, "_post", post)
+    client.hands_over = True
+    with pytest.raises(RecoverableError, match="trying again later"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    client.hands_over, client.fallbacks = True, ["gemini-2.5-flash"]
+    with pytest.raises(PermanentError, match="does not offer"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    assert client.model == "gemini-2.5-flash", "handed over, and refused again: final"
+    named = GeminiClient(default_config(), transport=None)
+    monkeypatch.setattr(named, "_post", post)
+    with pytest.raises(PermanentError, match="does not offer"):
+        named.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+
+
+def test_make_client_lets_only_an_unnamed_gemini_hand_over(tmp_path: Path) -> None:
+    from app.llm import model_choice
+
+    config = Config.load(file=tmp_path / "c.json")
+    model_choice.set_catalog(model_choice.Catalog(config, now=lambda: 1000.0))
+    assert make_client(config, provider="gemini").hands_over is True  # type: ignore[attr-defined]
+    config.set("llm.gemini_model", "gemini-3.1-pro-preview")
+    assert make_client(config, provider="gemini").hands_over is False  # type: ignore[attr-defined]

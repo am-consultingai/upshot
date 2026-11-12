@@ -193,3 +193,18 @@ describe("ApiSetupBackend: a provider switched during a check (review round 3)",
     backend.dispose();
   });
 });
+
+describe("ApiSetupBackend: the Get a key link during a check (review round 4)", () => {
+  it("choosing the same provider leaves the running check to finish", async () => {
+    api.putSecrets.mockResolvedValue({});
+    let finish: (value: object) => void = () => undefined;
+    api.llmTest.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "k");
+    await vi.waitFor(() => expect(api.llmTest).toHaveBeenCalled());
+    backend.chooseKeyProvider("gemini");
+    finish({ provider: "gemini", ok: true });
+    await vi.waitFor(() => expect(backend.snapshot().key.phase).toBe("valid"));
+    backend.dispose();
+  });
+});

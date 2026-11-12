@@ -557,8 +557,8 @@ def refusal_fallbacks(
     established stable Flash first, then newer ones, then Flash-Lite: the newest Flash
     took two minutes or did not answer at all while ``gemini-2.5-flash`` answered in one
     second, and an older model a key may not use is refused at once, so a stale one
-    costs one quick 404. Never a generation older than ``refused``. A model the user
-    named never hands over.
+    costs one quick 404. Never a generation older than ``refused``, Flash or Flash-Lite.
+    A model the user named never hands over.
     """
     if provider != "gemini" or catalog is None:
         return []
@@ -568,8 +568,17 @@ def refusal_fallbacks(
     if _gemini_named(config, use, listing):
         return []
     floor = _version(refused)
-    flash = [m for m in reversed(_gemini_newest(listing, "flash")) if _version(m) >= floor]
-    return (flash + _gemini_newest(listing, "flash-lite"))[:FALLBACK_TRIES]
+    flash = list(reversed(_gemini_newest(listing, "flash"))) + _gemini_newest(listing, "flash-lite")
+    return [m for m in flash if _version(m) >= floor][:FALLBACK_TRIES]
+
+
+def may_hand_over(config: Config, provider: str, use: str, catalog: Catalog | None) -> bool:
+    """Whether a refused model may be handed over at all: Gemini running a model nobody
+    named. With no list to hand over to, the refusal is then worth another try later,
+    when the list may be there, rather than the end of the summary."""
+    if provider != "gemini" or catalog is None:
+        return False
+    return not _gemini_named(config, use, catalog.cached(provider))
 
 
 #: How many models a refused one may hand over to, one after another.

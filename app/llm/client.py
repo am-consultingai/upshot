@@ -491,6 +491,8 @@ def make_client(
         client.model = model_choice.guard(provider, model or str(client.model or ""))
     if hasattr(client, "fallbacks"):
         catalog = model_choice.catalog()
+        hands_over = model_choice.may_hand_over(config, provider, use, catalog)
+        setattr(client, "hands_over", hands_over)  # noqa: B010  # every client with fallbacks has it
         client.fallbacks = [
             model_choice.guard(provider, fallback)
             for fallback in model_choice.refusal_fallbacks(
