@@ -545,3 +545,7 @@ footer{font-size:var(--t-label)}
 .start-dl{margin:34px 0 22px}
 /* The logo keeps its size; the menu gives way, never the wordmark. */
 .nav-mark{flex:none}
+/* The hero photo: the calendar on one side, the person on the other, both kept in view. */
+.hero-bg img,[dir=rtl] .hero-bg img{object-position:center}
+/* RTL: the photo mirrors with the layout, so the person stays beside the card, not behind the text. */
+[dir=rtl] .hero-bg img{transform:scaleX(-1)}
