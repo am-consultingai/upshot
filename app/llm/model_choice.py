@@ -512,11 +512,45 @@ def check_models(config: Config, provider: str, use: str, catalog: Catalog | Non
     took minutes, Flash-Lite one second. The next model is tried only when one is refused,
     never when the key is. A model the user chose is tested as it is: that is what runs.
     """
-    if provider != "gemini" or catalog is None or chosen(config, provider, use):
+    if provider != "gemini" or catalog is None or _gemini_named(config, use):
         return []
     listing = catalog.listing(provider)
     quick = _gemini_newest(listing, "flash-lite") + _gemini_newest(listing, "flash")
     return quick[:CHECK_TRIES]
+
+
+def _gemini_named(config: Config, use: str) -> bool:
+    """A Gemini model named by the user: chosen in Settings, or ``llm.gemini_model`` set
+    by hand away from its default. That one runs as it is, refused or not."""
+    from app.config import DEFAULTS
+
+    default = DEFAULTS["llm"]["gemini_model"]
+    return bool(chosen(config, "gemini", use)) or config.get("llm.gemini_model") != default
+
+
+def refusal_fallbacks(
+    config: Config, provider: str, use: str, catalog: Catalog | None, *, fetch: bool = False
+) -> list[str]:
+    """The models a client hands over to when the one it runs is refused (a 404), in order.
+
+    Google withdraws models from new keys first: the default ``gemini-2.5-pro`` was
+    refused to a new key while older keys still ran it (2026-11-12). The longest-
+    established stable Flash first, then newer ones, then Flash-Lite: the newest Flash
+    took two minutes or did not answer at all while ``gemini-2.5-flash`` answered in one
+    second, and an older model a key may not use is refused at once, so a stale one
+    costs one quick 404. A model the user named never hands over.
+    """
+    if provider != "gemini" or catalog is None or _gemini_named(config, use):
+        return []
+    listing = catalog.cached(provider)
+    if fetch and (listing is None or not listing.models):
+        listing = catalog.listing(provider)
+    flash = list(reversed(_gemini_newest(listing, "flash")))
+    return (flash + _gemini_newest(listing, "flash-lite"))[:FALLBACK_TRIES]
+
+
+#: How many models a refused one may hand over to, one after another.
+FALLBACK_TRIES = 4
 
 
 def chosen(config: Config, provider: str, use: str) -> str:

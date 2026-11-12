@@ -38,6 +38,9 @@ class GeminiClient:
         self.max_repairs = max_repairs
         self.timeout = timeout
         self._transport = transport  # injected in tests: (path, payload) -> dict
+        #: Models to hand over to, in order, when Gemini refuses the one that runs (a
+        #: 404): set by ``make_client`` from the list, never for a model the user named.
+        self.fallbacks: list[str] = []
         self.requests: list[dict[str, Any]] = []
 
     def key(self) -> str:
@@ -110,7 +113,7 @@ class GeminiClient:
                 system=system, user=message, schema=schema, max_tokens=max_tokens
             )
             self.requests.append(request)
-            body = self._post(f"models/{self.model}:generateContent", request)
+            body = self._generate(request)
             usage.update(body.get("usageMetadata", {}) or {})
             candidates = body.get("candidates") or []
             if not candidates:
@@ -139,6 +142,18 @@ class GeminiClient:
             usage=usage,
             attempts=attempts,
         )
+
+    def _generate(self, request: dict[str, Any]) -> dict[str, Any]:
+        """One generateContent, handing over to the next fallback while the model is
+        refused. The model that answered stays for the rest of this client's work."""
+        while True:
+            try:
+                return self._post(f"models/{self.model}:generateContent", request)
+            except PermanentError as exc:
+                if exc.category != "model" or not self.fallbacks:
+                    raise
+                refused, self.model = self.model, self.fallbacks.pop(0)
+                log.warning("Gemini refused %s to this key; using %s", refused, self.model)
 
     def count_tokens(self, text: str) -> int:
         """Gemini has a real countTokens endpoint — use it, fall back to an estimate."""

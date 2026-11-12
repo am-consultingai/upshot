@@ -488,3 +488,22 @@ def test_the_check_tries_the_quickest_listed_models_first(tmp_path: Path) -> Non
     assert model_choice.check_models(cfg, "gemini", "summary", catalog) == [], (
         "a model the user chose is tested as it is"
     )
+
+
+def test_a_refused_model_hands_over_to_the_longest_established_flash(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, now=lambda: 1000.0)
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == [], "no list yet"
+    catalog._lists["gemini"] = gemini_listing()
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == [
+        "gemini-2.5-flash",
+        "gemini-3.5-flash",
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+    ]
+    assert model_choice.refusal_fallbacks(cfg, "anthropic", "summary", catalog) == []
+    cfg.set("llm.gemini_model", "gemini-3.1-pro-preview")
+    assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog) == [], (
+        "a model set by hand runs as it is"
+    )
+    assert model_choice.check_models(cfg, "gemini", "summary", catalog) == []

@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   llmSignin: vi.fn(),
   llmSigninCode: vi.fn(),
   llmTest: vi.fn(),
+  putSecrets: vi.fn(),
   reportSetupFailure: vi.fn(),
 }));
 vi.mock("../src/api", () => ({ api }));
@@ -120,6 +121,39 @@ describe("ApiSetupBackend: a sign-in that worked is never reported as failed (ma
     await vi.advanceTimersByTimeAsync(1500);
     expect(backend.snapshot().cli.claude.phase).toBe("idle");
     expect(backend.snapshot().cli.claude.signedIn).toBe(true);
+    backend.dispose();
+  });
+});
+
+describe("ApiSetupBackend: only a refused key is called a bad key (new Gemini key, 2026-11-12)", () => {
+  const cases: [string, object | Error, string][] = [
+    ["a passing check", { provider: "gemini", ok: true }, "valid"],
+    ["a refused key", { provider: "gemini", ok: false, reason: "key" }, "invalid"],
+    ["a refused model", { provider: "gemini", ok: false, reason: "other" }, "failed"],
+    ["no reason given", { provider: "gemini", ok: false }, "failed"],
+    ["the request failing", new Error("500"), "failed"],
+  ];
+  for (const [name, result, phase] of cases) {
+    it(`${name} → ${phase}`, async () => {
+      api.putSecrets.mockResolvedValue({});
+      if (result instanceof Error) api.llmTest.mockRejectedValue(result);
+      else api.llmTest.mockResolvedValue(result);
+      const backend = await ApiSetupBackend.create();
+      backend.checkKey("gemini", "  k  ");
+      await vi.waitFor(() => expect(backend.snapshot().key.phase).toBe(phase));
+      expect(api.putSecrets).toHaveBeenCalledWith({ gemini: "k" });
+      backend.dispose();
+    });
+  }
+
+  it("a cleanup that fails leaves a refused key called refused", async () => {
+    api.putSecrets.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("503"));
+    api.llmTest.mockResolvedValue({ provider: "gemini", ok: false, reason: "key" });
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "k");
+    await vi.waitFor(() => expect(api.putSecrets).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(backend.snapshot().key.phase).toBe("invalid");
     backend.dispose();
   });
 });

@@ -761,3 +761,42 @@ def test_gemini_says_an_unknown_key_is_the_key(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(PermanentError, match="rejected the key") as caught:
         client._post("models/x:generateContent", {})
     assert caught.value.category == "auth"
+
+
+def test_gemini_hands_a_refused_model_over_to_the_next(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GeminiClient(default_config(), transport=None)
+    client.fallbacks = ["gemini-2.5-flash", "gemini-3.5-flash"]
+    asked: list[str] = []
+
+    def post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        asked.append(path)
+        if "gemini-2.5-flash:" not in path:
+            raise PermanentError("Gemini does not offer it", category="model")
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(VALID)}]}}]}
+
+    monkeypatch.setattr(client, "_post", post)
+    result = client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    assert result.model == "gemini-2.5-flash"
+    assert asked == [
+        "models/gemini-2.5-pro:generateContent",
+        "models/gemini-2.5-flash:generateContent",
+    ]
+
+    client.fallbacks = []
+    client.model = "gemini-gone"
+    with pytest.raises(PermanentError, match="does not offer"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+
+
+def test_make_client_gives_gemini_its_fallbacks_from_the_list(tmp_path: Path) -> None:
+    from app.llm import model_choice
+
+    config = Config.load(file=tmp_path / "c.json")
+    catalog = model_choice.Catalog(config, now=lambda: 1000.0)
+    catalog._lists["gemini"] = model_choice.Listing(
+        models=[model_choice.ModelInfo(i, i) for i in ("gemini-2.5-pro", "gemini-2.5-flash")],
+        fetched_at=1000.0,
+    )
+    model_choice.set_catalog(catalog)
+    client = make_client(config, provider="gemini")
+    assert (client.model, client.fallbacks) == ("gemini-2.5-pro", ["gemini-2.5-flash"])  # type: ignore[attr-defined]

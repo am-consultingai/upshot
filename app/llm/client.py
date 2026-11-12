@@ -489,6 +489,15 @@ def make_client(
     if hasattr(client, "model"):
         model = model_choice.resolve(config, provider, use, model_choice.catalog(), fetch=fetch)
         client.model = model_choice.guard(provider, model or str(client.model or ""))
+    if hasattr(client, "fallbacks"):
+        catalog = model_choice.catalog()
+        client.fallbacks = [
+            model_choice.guard(provider, fallback)
+            for fallback in model_choice.refusal_fallbacks(
+                config, provider, use, catalog, fetch=fetch
+            )
+            if fallback != getattr(client, "model", "")
+        ]
     return client
 
 

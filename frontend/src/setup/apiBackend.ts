@@ -373,11 +373,12 @@ export class ApiSetupBackend implements SetupBackend {
     void api
       .putSecrets({ [provider]: key.trim() })
       .then(() => api.llmTest(provider))
-      .then(async (result) => {
-        if (!result.ok) await api.putSecrets({ [provider]: "" });
+      .then((result) => {
         // Only a refused key is called one; a model or a busy provider is not the key.
         const phase = result.ok ? "valid" : result.reason === "key" ? "invalid" : "failed";
         this.set({ ...this.state, key: { provider, phase } });
+        // Decided first: a failed cleanup must not turn a refused key into "didn't answer".
+        if (!result.ok) void api.putSecrets({ [provider]: "" }).catch(() => undefined);
       })
       .catch(() => this.set({ ...this.state, key: { provider, phase: "failed" } }));
   }

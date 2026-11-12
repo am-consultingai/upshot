@@ -3107,6 +3107,7 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
         for index, candidate in enumerate(tries or [model]):
             if tries:
                 client.model = model_choice.guard(provider, candidate)  # type: ignore[attr-defined]
+                client.fallbacks = []  # type: ignore[attr-defined]  # the loop is the order
                 model = candidate
             try:
                 result = client.complete_json(
