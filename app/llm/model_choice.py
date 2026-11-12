@@ -507,18 +507,19 @@ def check_models(config: Config, provider: str, use: str, catalog: Catalog | Non
 
     The test proves the key answers, and setup waits on it, so it wants the quickest
     model the provider lists, not the best: for Gemini, the newest stable Flash-Lite, then
-    the newest Flash. The default ``gemini-2.5-pro`` answered a new key with 404 "no longer
-    available to new users" (2026-11-12), and setup called the key bad; the newest Flash
-    took minutes, Flash-Lite one second. The next model is tried only when one is refused,
-    never when the key is. A model the user chose is tested as it is: that is what runs.
+    the longest-established Flash. The default ``gemini-2.5-pro`` answered a new key with
+    404 "no longer available to new users" (2026-11-12), and setup called the key bad; the
+    newest Flash took minutes, Flash-Lite one second. The next model is tried only when
+    one is refused, never when the key is. A model the user chose is tested as it is: that is what runs.
     """
     if provider != "gemini" or catalog is None:
         return []
     listing = catalog.listing(provider)
     if _gemini_named(config, use, listing):
         return []
-    quick = _gemini_newest(listing, "flash-lite") + _gemini_newest(listing, "flash")
-    return quick[:CHECK_TRIES]
+    # Flash oldest first, as refusal_fallbacks: the newest did not answer for minutes.
+    flash = list(reversed(_gemini_newest(listing, "flash")))
+    return (_gemini_newest(listing, "flash-lite") + flash)[:CHECK_TRIES]
 
 
 def _gemini_named(config: Config, use: str, listing: Listing | None) -> bool:

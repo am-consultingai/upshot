@@ -550,3 +550,20 @@ def test_fallbacks_ask_for_the_list_only_when_they_may_wait(tmp_path: Path) -> N
     assert asked == [], "never on the event loop"
     assert model_choice.refusal_fallbacks(cfg, "gemini", "summary", catalog, fetch=True)
     assert asked == ["gemini"]
+
+
+def test_the_check_takes_the_longest_established_flash_after_flash_lite(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    catalog = Catalog(cfg, now=lambda: 1000.0)
+    catalog._lists["gemini"] = Listing(
+        models=[
+            ModelInfo(i, i)
+            for i in ("gemini-3.8-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite")
+        ],
+        fetched_at=1000.0,
+    )
+    assert model_choice.check_models(cfg, "gemini", "summary", catalog) == [
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-3.8-flash",
+    ]

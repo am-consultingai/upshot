@@ -176,3 +176,20 @@ describe("ApiSetupBackend: overlapping key checks (review round 2)", () => {
     backend.dispose();
   });
 });
+
+describe("ApiSetupBackend: a provider switched during a check (review round 3)", () => {
+  it("the old check does not speak for the new provider, and still clears its own key", async () => {
+    api.putSecrets.mockResolvedValue({});
+    let finish: (value: object) => void = () => undefined;
+    api.llmTest.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "k");
+    await vi.waitFor(() => expect(api.llmTest).toHaveBeenCalled());
+    backend.chooseKeyProvider("anthropic");
+    finish({ provider: "gemini", ok: false, reason: "key" });
+    await flush();
+    expect(backend.snapshot().key).toEqual({ provider: "anthropic", phase: "idle" });
+    expect(api.putSecrets).toHaveBeenCalledWith({ gemini: "" });
+    backend.dispose();
+  });
+});

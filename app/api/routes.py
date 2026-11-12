@@ -3134,7 +3134,10 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
         )  # fmt: skip
         # "key" when the provider refused the key; anything else says nothing of the key,
         # and setup must not call it a bad one (a retired model did, 2026-11-12).
-        reason = "key" if getattr(exc, "category", None) == "auth" else "other"
+        # The Anthropic SDK's own errors carry the HTTP status, not a category.
+        refused = getattr(exc, "category", None) == "auth"
+        refused = refused or getattr(exc, "status_code", None) in (401, 403)
+        reason = "key" if refused else "other"
         return {
             "provider": provider,
             "ok": False,

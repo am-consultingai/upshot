@@ -379,7 +379,14 @@ export class ApiSetupBackend implements SetupBackend {
       .putSecrets({ [provider]: key.trim() })
       .then(() => api.llmTest(provider))
       .then((result) => {
-        if (check !== this.keyCheck) return;
+        if (check !== this.keyCheck) {
+          // A provider switched away from still loses a key that failed; the same
+          // provider's key belongs to the newer check.
+          if (!result.ok && provider !== this.state.key.provider) {
+            void api.putSecrets({ [provider]: "" }).catch(() => undefined);
+          }
+          return;
+        }
         // Only a refused key is called one; a model or a busy provider is not the key.
         const phase = result.ok ? "valid" : result.reason === "key" ? "invalid" : "failed";
         this.set({ ...this.state, key: { provider, phase } });
@@ -392,6 +399,7 @@ export class ApiSetupBackend implements SetupBackend {
   }
 
   chooseKeyProvider(provider: KeyProviderId): void {
+    this.keyCheck += 1; // a check still out for the previous provider no longer speaks
     this.set({ ...this.state, key: { provider, phase: "idle" } });
   }
 

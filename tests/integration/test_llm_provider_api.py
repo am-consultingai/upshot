@@ -704,3 +704,18 @@ def test_the_check_fails_as_other_when_every_model_is_refused_and_once_with_no_l
     body = api.client().post("/api/llm/test", json={"provider": "gemini"}).json()
     assert (body["ok"], body["reason"]) == (False, "other")
     assert tried == ["gemini-2.5-pro"], "no list: the usual model, once"
+
+
+def test_a_refused_anthropic_key_is_the_key(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """Review round 3: the SDK's 401 carries a status code, not a category."""
+    from app.llm.client import AnthropicClient
+
+    class Unauthorized(Exception):
+        status_code = 401
+
+    def refused(self, **_kwargs):  # type: ignore[no-untyped-def]
+        raise Unauthorized("invalid x-api-key")
+
+    monkeypatch.setattr(AnthropicClient, "complete_json", refused)
+    body = api.client().post("/api/llm/test", json={"provider": "anthropic"}).json()
+    assert (body["ok"], body["reason"]) == (False, "key")
