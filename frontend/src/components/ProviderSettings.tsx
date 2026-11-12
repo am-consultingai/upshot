@@ -360,14 +360,19 @@ export default function ProviderSettings() {
                           {secret && (
                             <>
                               <input
-                                type="password"
+                                type="text"
+                                autoComplete="off"
+                                spellCheck={false}
+                                data-1p-ignore
+                                data-lpignore="true"
+                                data-bwignore
                                 data-testid="provider-key"
                                 placeholder={t("settings.apiKey")}
                                 value={keys[provider.id] ?? ""}
                                 onChange={(event) =>
                                   setKeys((previous) => ({ ...previous, [provider.id]: event.target.value }))
                                 }
-                                className="w-48 rounded border border-line px-2 py-1 text-sm"
+                                className="secret-input w-48 rounded border border-line px-2 py-1 text-sm"
                               />
                               <Button
                                 data-testid="provider-save-key"

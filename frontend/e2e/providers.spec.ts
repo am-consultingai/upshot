@@ -39,6 +39,10 @@ test("api_key_is_stored_and_never_rendered", async ({ page }) => {
   const row = page.locator('[data-provider="gemini"]');
   await expect(row.getByTestId("provider-ready")).toHaveText("No key yet");
 
+  // Masked, but not a password field: Chrome must not offer to save a key as a password.
+  const field = row.getByTestId("provider-key");
+  await expect(field).toHaveAttribute("type", "text");
+  expect(await field.evaluate((e) => getComputedStyle(e).getPropertyValue("-webkit-text-security"))).toBe("disc");
   await row.getByTestId("provider-key").fill("AIza-SECRET-VALUE");
   await row.getByTestId("provider-save-key").click();
   await expect(row.getByTestId("provider-ready")).toHaveText("Key stored");

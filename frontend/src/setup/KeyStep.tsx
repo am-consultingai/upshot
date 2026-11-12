@@ -158,7 +158,7 @@ function KeyOffer() {
           <input
             id="setup-key"
             data-testid="key-input"
-            type="password"
+            type="text"
             dir="ltr"
             value={value}
             placeholder={t("firstRun.key.placeholder")}
@@ -172,8 +172,11 @@ function KeyOffer() {
               backend.checkKey(provider.id, pasted);
             }}
             autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
             spellCheck={false}
-            className={`h-10 w-full rounded-md bg-surface-2 px-3 font-mono text-sm text-primary ring-inset ${
+            className={`secret-input h-10 w-full rounded-md bg-surface-2 px-3 font-mono text-sm text-primary ring-inset ${
               key.phase === "valid" ? "ring-2 ring-success" : key.phase === "invalid" || key.phase === "failed" ? "ring-2 ring-danger" : ""
             }`}
           />
