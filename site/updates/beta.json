@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "channel": "beta",
-  "version": "0.2.0",
-  "published": "2026-11-11T20:14:23Z",
-  "url": "https://github.com/am-consultingai/upshot/releases/download/v0.2.0/Upshot-0.2.0-Setup.exe",
-  "size": 76028808,
-  "sha256": "494a19d45f88fc77680c0f1e3404c5dd8cdc73b764e5301fc04eee7a7559088c",
+  "version": "0.2.2",
+  "published": "2026-11-12T09:47:09Z",
+  "url": "https://github.com/am-consultingai/upshot/releases/download/v0.2.2/Upshot-0.2.2-Setup.exe",
+  "size": 76045128,
+  "sha256": "4bc2560b2226a25920304ad18f958421a1c395ab8105e361e067b49aa1bd530e",
   "signer": "C985B41264A55274F15C25224DC9B61CBB3D3FBB",
   "rollout": 100,
   "critical": false,
   "notes": {
-    "en": "The first release of Upshot: it records your meetings on this computer, transcribes them (Hebrew and English included) and writes the summary with the AI service you choose.\n\nNew in this version:\n- If your AI service is signed out, the summary waits instead of failing. Your backup service takes over, or the meeting offers Sign in and the other services that are ready.\n- When something goes wrong that Upshot does not recognise, a window says so. If crash reports are off, it shows the report and sends it only if you choose to.\n- Crash reports now say which AI service failed and why. They never contain your recordings, transcripts or summaries.",
-    "he": "הגרסה הראשונה של Upshot: הוא מקליט את הפגישות שלך במחשב הזה, מתמלל אותן (גם בעברית ובאנגלית) וכותב סיכום עם שירות ה-AI שבחרת.\n\nחדש בגרסה הזאת:\n- אם שירות ה-AI שלך לא מחובר, הסיכום ממתין במקום להיכשל. שירות הגיבוי שלך נכנס במקומו, או שהפגישה מציעה להתחבר או לבחור שירות אחר שמוכן.\n- כשמשהו משתבש ו-Upshot לא מזהה את הסיבה, נפתח חלון שמסביר. אם דוחות קריסה כבויים, הוא מציג את הדוח ושולח אותו רק אם בחרת בכך.\n- דוחות קריסה מציינים עכשיו איזה שירות AI נכשל ולמה. אין בהם לעולם הקלטות, תמלולים או סיכומים שלך."
+    "en": "New in this version:\n- A new Gemini API key now gets through setup. Setup used to say the key didn't work when Google no longer offered the model it checked with.\n- When Google stops offering the model that writes your summaries, or it is busy, Upshot switches to one your key can use.\n- Setup says the key didn't work only when the key itself was refused. If the check gets no answer, it says so.",
+    "he": "חדש בגרסה הזאת:\n- מפתח API חדש של Gemini עובר עכשיו את ההגדרה הראשונית. קודם ההגדרה אמרה שהמפתח לא עובד כש-Google כבר לא הציעה את המודל שאיתו היא בדקה אותו.\n- כש-Google מפסיקה להציע את המודל שכותב את הסיכומים שלך, או כשהוא עמוס, Upshot עובר למודל שהמפתח שלך יכול להשתמש בו.\n- ההגדרה אומרת שהמפתח לא עובד רק כשהמפתח עצמו נדחה. אם הבדיקה לא מקבלת תשובה, היא אומרת את זה."
   }
 }
