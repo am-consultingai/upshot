@@ -964,7 +964,7 @@ export const api = {
       body: JSON.stringify({ provider, use, model }),
     }),
   llmTest: (provider: string) =>
-    request<{ provider: string; ok: boolean; model?: string; error?: string }>(
+    request<{ provider: string; ok: boolean; model?: string; reason?: "key" | "other"; error?: string }>(
       "/api/llm/test",
       {
         method: "POST",

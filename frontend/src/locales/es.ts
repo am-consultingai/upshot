@@ -920,6 +920,7 @@ export const es: Record<MessageKey, string> = {
   "firstRun.key.checking": "Comprobando…",
   "firstRun.key.valid": "La clave funciona. {provider} escribirá sus resúmenes.",
   "firstRun.key.invalid": "Esa clave no funcionó.",
+  "firstRun.key.failed": "{provider} no respondió a la comprobación. Vuelva a intentarlo en un minuto.",
   "firstRun.key.stored": "Guardada en el Administrador de credenciales de Windows.",
   "firstRun.key.freeTier": "Nivel gratuito: Google puede usar sus transcripciones para mejorar sus productos.",
   "firstRun.key.terms": "Términos",

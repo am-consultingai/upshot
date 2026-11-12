@@ -38,6 +38,13 @@ class GeminiClient:
         self.max_repairs = max_repairs
         self.timeout = timeout
         self._transport = transport  # injected in tests: (path, payload) -> dict
+        #: Models to hand over to, in order, when Gemini refuses the one that runs (a
+        #: 404): set by ``make_client`` from the list, never for a model the user named.
+        self.fallbacks: list[str] = []
+        #: Whether a refused model may be handed over (``make_client``): when it may but
+        #: there is nothing to hand over to, the refusal is retried later, not final.
+        self.hands_over = False
+        self._handed_over = False
         self.requests: list[dict[str, Any]] = []
 
     def key(self) -> str:
@@ -65,8 +72,18 @@ class GeminiClient:
             raise RecoverableError(f"Gemini request failed: {exc}") from exc
         if response.status_code == 429:
             raise RecoverableError("Gemini rate limited (the free tier has per-minute limits)")
-        if response.status_code in (401, 403):
+        # A key Google does not know comes back as a 400, not a 401.
+        if response.status_code in (401, 403) or (
+            response.status_code == 400 and "API_KEY_INVALID" in response.text
+        ):
             raise PermanentError(f"Gemini rejected the key: {response.text[:200]}", category="auth")
+        if response.status_code == 404:
+            # The key works; the model does not, for it: Google retires models for new
+            # keys first ("gemini-2.5-pro is no longer available to new users", 2026-11).
+            raise PermanentError(
+                f"Gemini does not offer {self.model} to this key: {response.text[:200]}",
+                category="model",
+            )
         if response.status_code >= 400:
             raise RecoverableError(f"Gemini returned {response.status_code}: {response.text[:200]}")
         return dict(response.json())
@@ -100,7 +117,7 @@ class GeminiClient:
                 system=system, user=message, schema=schema, max_tokens=max_tokens
             )
             self.requests.append(request)
-            body = self._post(f"models/{self.model}:generateContent", request)
+            body = self._generate(request)
             usage.update(body.get("usageMetadata", {}) or {})
             candidates = body.get("candidates") or []
             if not candidates:
@@ -129,6 +146,28 @@ class GeminiClient:
             usage=usage,
             attempts=attempts,
         )
+
+    def _generate(self, request: dict[str, Any]) -> dict[str, Any]:
+        """One generateContent, handing over to the next fallback while the model is
+        refused. The model that answered stays for the rest of this client's work."""
+        while True:
+            try:
+                return self._post(f"models/{self.model}:generateContent", request)
+            except PermanentError as exc:
+                if exc.category != "model":
+                    raise
+                if not self.fallbacks:
+                    if self.hands_over and not self._handed_over:
+                        # No list to hand over to yet (it failed or is not fetched): a
+                        # later try may have one.
+                        raise RecoverableError(
+                            f"Gemini does not offer {self.model} to this key, and its model "
+                            "list could not be read to choose another; trying again later"
+                        ) from exc
+                    raise
+                self._handed_over = True
+                refused, self.model = self.model, self.fallbacks.pop(0)
+                log.warning("Gemini refused %s to this key; using %s", refused, self.model)
 
     def count_tokens(self, text: str) -> int:
         """Gemini has a real countTokens endpoint — use it, fall back to an estimate."""

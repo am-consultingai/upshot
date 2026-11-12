@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   llmSignin: vi.fn(),
   llmSigninCode: vi.fn(),
   llmTest: vi.fn(),
+  putSecrets: vi.fn(),
   reportSetupFailure: vi.fn(),
 }));
 vi.mock("../src/api", () => ({ api }));
@@ -120,6 +121,90 @@ describe("ApiSetupBackend: a sign-in that worked is never reported as failed (ma
     await vi.advanceTimersByTimeAsync(1500);
     expect(backend.snapshot().cli.claude.phase).toBe("idle");
     expect(backend.snapshot().cli.claude.signedIn).toBe(true);
+    backend.dispose();
+  });
+});
+
+describe("ApiSetupBackend: only a refused key is called a bad key (new Gemini key, 2026-11-12)", () => {
+  const cases: [string, object | Error, string][] = [
+    ["a passing check", { provider: "gemini", ok: true }, "valid"],
+    ["a refused key", { provider: "gemini", ok: false, reason: "key" }, "invalid"],
+    ["a refused model", { provider: "gemini", ok: false, reason: "other" }, "failed"],
+    ["no reason given", { provider: "gemini", ok: false }, "failed"],
+    ["the request failing", new Error("500"), "failed"],
+  ];
+  for (const [name, result, phase] of cases) {
+    it(`${name} → ${phase}`, async () => {
+      api.putSecrets.mockResolvedValue({});
+      if (result instanceof Error) api.llmTest.mockRejectedValue(result);
+      else api.llmTest.mockResolvedValue(result);
+      const backend = await ApiSetupBackend.create();
+      backend.checkKey("gemini", "  k  ");
+      await vi.waitFor(() => expect(backend.snapshot().key.phase).toBe(phase));
+      expect(api.putSecrets).toHaveBeenCalledWith({ gemini: "k" });
+      backend.dispose();
+    });
+  }
+
+  it("a cleanup that fails leaves a refused key called refused", async () => {
+    api.putSecrets.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("503"));
+    api.llmTest.mockResolvedValue({ provider: "gemini", ok: false, reason: "key" });
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "k");
+    await vi.waitFor(() => expect(api.putSecrets).toHaveBeenCalledTimes(2));
+    await flush();
+    expect(backend.snapshot().key.phase).toBe("invalid");
+    backend.dispose();
+  });
+});
+
+describe("ApiSetupBackend: overlapping key checks (review round 2)", () => {
+  it("an older check neither sets the phase nor clears the newer key", async () => {
+    api.putSecrets.mockResolvedValue({});
+    let finishOld: (value: object) => void = () => undefined;
+    api.llmTest
+      .mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)))
+      .mockResolvedValueOnce({ provider: "gemini", ok: true });
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "old");
+    backend.checkKey("gemini", "new");
+    await vi.waitFor(() => expect(backend.snapshot().key.phase).toBe("valid"));
+    finishOld({ provider: "gemini", ok: false, reason: "key" });
+    await flush();
+    expect(backend.snapshot().key.phase).toBe("valid");
+    expect(api.putSecrets).not.toHaveBeenCalledWith({ gemini: "" });
+    backend.dispose();
+  });
+});
+
+describe("ApiSetupBackend: a provider switched during a check (review round 3)", () => {
+  it("the old check does not speak for the new provider, and still clears its own key", async () => {
+    api.putSecrets.mockResolvedValue({});
+    let finish: (value: object) => void = () => undefined;
+    api.llmTest.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "k");
+    await vi.waitFor(() => expect(api.llmTest).toHaveBeenCalled());
+    backend.chooseKeyProvider("anthropic");
+    finish({ provider: "gemini", ok: false, reason: "key" });
+    await flush();
+    expect(backend.snapshot().key).toEqual({ provider: "anthropic", phase: "idle" });
+    expect(api.putSecrets).toHaveBeenCalledWith({ gemini: "" });
+    backend.dispose();
+  });
+});
+
+describe("ApiSetupBackend: the Get a key link during a check (review round 4)", () => {
+  it("choosing the same provider leaves the running check to finish", async () => {
+    api.putSecrets.mockResolvedValue({});
+    let finish: (value: object) => void = () => undefined;
+    api.llmTest.mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+    const backend = await ApiSetupBackend.create();
+    backend.checkKey("gemini", "k");
+    await vi.waitFor(() => expect(api.llmTest).toHaveBeenCalled());
+    backend.chooseKeyProvider("gemini");
+    finish({ provider: "gemini", ok: true });
+    await vi.waitFor(() => expect(backend.snapshot().key.phase).toBe("valid"));
     backend.dispose();
   });
 });

@@ -725,3 +725,118 @@ def test_asking_for_a_model_with_none_says_so() -> None:
 
     with pytest.raises(PermanentError, match="No AI provider"):
         make_client(default_config())
+
+
+class _Response:
+    def __init__(self, status: int, text: str) -> None:
+        self.status_code = status
+        self.text = text
+
+    def json(self) -> dict[str, Any]:
+        return json.loads(self.text)
+
+
+def _gemini_answers(monkeypatch: pytest.MonkeyPatch, status: int, text: str) -> GeminiClient:
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Response(status, text))
+    config = default_config(secrets__backend="memory")
+    config.secrets.set("gemini", "k")
+    return GeminiClient(config)
+
+
+def test_gemini_says_a_retired_model_is_the_model_not_the_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = '{"error": {"code": 404, "message": "no longer available to new users"}}'
+    client = _gemini_answers(monkeypatch, 404, body)
+    with pytest.raises(PermanentError, match="does not offer") as caught:
+        client._post("models/x:generateContent", {})
+    assert caught.value.category == "model"
+
+
+def test_gemini_says_an_unknown_key_is_the_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = '{"error": {"code": 400, "details": [{"reason": "API_KEY_INVALID"}]}}'
+    client = _gemini_answers(monkeypatch, 400, body)
+    with pytest.raises(PermanentError, match="rejected the key") as caught:
+        client._post("models/x:generateContent", {})
+    assert caught.value.category == "auth"
+
+
+def test_gemini_hands_a_refused_model_over_to_the_next(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GeminiClient(default_config(), transport=None)
+    client.fallbacks = ["gemini-2.5-flash", "gemini-3.5-flash"]
+    asked: list[str] = []
+
+    def post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        asked.append(path)
+        if "gemini-2.5-flash:" not in path:
+            raise PermanentError("Gemini does not offer it", category="model")
+        return {"candidates": [{"content": {"parts": [{"text": json.dumps(VALID)}]}}]}
+
+    monkeypatch.setattr(client, "_post", post)
+    result = client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    assert result.model == "gemini-2.5-flash"
+    assert asked == [
+        "models/gemini-2.5-pro:generateContent",
+        "models/gemini-2.5-flash:generateContent",
+    ]
+
+    client.fallbacks = []
+    client.model = "gemini-gone"
+    with pytest.raises(PermanentError, match="does not offer"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+
+
+def test_make_client_gives_gemini_its_fallbacks_from_the_list(tmp_path: Path) -> None:
+    from app.llm import model_choice
+
+    config = Config.load(file=tmp_path / "c.json")
+    catalog = model_choice.Catalog(config, now=lambda: 1000.0)
+    catalog._lists["gemini"] = model_choice.Listing(
+        models=[model_choice.ModelInfo(i, i) for i in ("gemini-2.5-pro", "gemini-2.5-flash")],
+        fetched_at=1000.0,
+    )
+    model_choice.set_catalog(catalog)
+    client = make_client(config, provider="gemini")
+    assert (client.model, client.fallbacks) == ("gemini-2.5-pro", ["gemini-2.5-flash"])  # type: ignore[attr-defined]
+
+
+def test_a_sensitive_meeting_never_gets_gemini_fallbacks(tmp_path: Path) -> None:
+    config = Config.load(file=tmp_path / "c.json")
+    config.set("llm.provider", "gemini")
+    client = make_client(config, sensitive=True)
+    assert client.name == "ollama" and not getattr(client, "fallbacks", [])
+
+
+def test_gemini_retries_a_refusal_it_may_hand_over_but_has_no_list_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review round 4: a list that failed must not make a refused default final."""
+    client = GeminiClient(default_config(), transport=None)
+
+    def post(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raise PermanentError("Gemini does not offer it", category="model")
+
+    monkeypatch.setattr(client, "_post", post)
+    client.hands_over = True
+    with pytest.raises(RecoverableError, match="trying again later"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    client.hands_over, client.fallbacks = True, ["gemini-2.5-flash"]
+    with pytest.raises(PermanentError, match="does not offer"):
+        client.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+    assert client.model == "gemini-2.5-flash", "handed over, and refused again: final"
+    named = GeminiClient(default_config(), transport=None)
+    monkeypatch.setattr(named, "_post", post)
+    with pytest.raises(PermanentError, match="does not offer"):
+        named.complete_json(system_blocks=[], user="x", schema=FREE_SCHEMA)
+
+
+def test_make_client_lets_only_an_unnamed_gemini_hand_over(tmp_path: Path) -> None:
+    from app.llm import model_choice
+
+    config = Config.load(file=tmp_path / "c.json")
+    model_choice.set_catalog(model_choice.Catalog(config, now=lambda: 1000.0))
+    assert make_client(config, provider="gemini").hands_over is True  # type: ignore[attr-defined]
+    config.set("llm.gemini_model", "gemini-3.1-pro-preview")
+    assert make_client(config, provider="gemini").hands_over is False  # type: ignore[attr-defined]

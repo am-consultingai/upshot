@@ -920,6 +920,7 @@ export const de: Record<MessageKey, string> = {
   "firstRun.key.checking": "Wird geprüft…",
   "firstRun.key.valid": "Der Schlüssel funktioniert. {provider} schreibt Ihre Zusammenfassungen.",
   "firstRun.key.invalid": "Dieser Schlüssel hat nicht funktioniert.",
+  "firstRun.key.failed": "{provider} hat auf die Prüfung nicht geantwortet. Versuchen Sie es in einer Minute erneut.",
   "firstRun.key.stored": "In der Windows-Anmeldeinformationsverwaltung gespeichert.",
   "firstRun.key.freeTier": "Kostenlose Stufe: Google kann Ihre Transkripte zur Verbesserung seiner Produkte verwenden.",
   "firstRun.key.terms": "Bedingungen",

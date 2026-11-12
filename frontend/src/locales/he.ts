@@ -963,6 +963,7 @@ export const he: Record<MessageKey, string> = {
   "firstRun.key.checking": "בודק…",
   "firstRun.key.valid": "המפתח עובד. {provider} יכתוב את הסיכומים.",
   "firstRun.key.invalid": "המפתח לא עבד.",
+  "firstRun.key.failed": "{provider} לא ענה לבדיקה. נסו שוב בעוד דקה.",
   "firstRun.key.stored": "נשמר במנהל האישורים של Windows.",
   "firstRun.key.freeTier": "מסלול חינמי: Google עשוי להשתמש בתמלולים כדי לשפר את המוצרים שלו.",
   "firstRun.key.terms": "תנאים",

@@ -970,6 +970,7 @@ export const en = {
   "firstRun.key.checking": "Checking…",
   "firstRun.key.valid": "Key works. {provider} will write your summaries.",
   "firstRun.key.invalid": "That key didn't work.",
+  "firstRun.key.failed": "{provider} didn't answer the check. Try again in a minute.",
   "firstRun.key.stored": "Stored in Windows Credential Manager.",
   "firstRun.key.freeTier": "Free tier: Google may use your transcripts to improve its products.",
   "firstRun.key.terms": "Terms",

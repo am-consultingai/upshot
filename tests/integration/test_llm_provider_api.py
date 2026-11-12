@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -622,3 +623,99 @@ def test_a_sign_out_is_not_hidden_by_a_held_status(  # type: ignore[no-untyped-d
     client.post("/api/llm/signout", json={"provider": "claude-subscription"})
     rows = {p["id"]: p for p in client.get("/api/llm/status").json()["providers"]}
     assert rows["claude-subscription"]["signed_in"] is False
+
+
+def test_the_check_runs_the_quickest_listed_gemini_and_skips_a_refused_one(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A new key was called bad when only the default model was withdrawn (2026-11-12)."""
+    from app.errors import PermanentError
+    from app.llm import model_choice
+    from app.llm.client import LlmResult
+    from app.llm.gemini_client import GeminiClient
+
+    catalog = model_choice.Catalog(api.services.config)
+    catalog._lists["gemini"] = model_choice.Listing(
+        models=[
+            model_choice.ModelInfo(i, i)
+            for i in ("gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite")
+        ],
+        fetched_at=time.time(),
+    )
+    monkeypatch.setattr(
+        model_choice.Catalog, "listing", lambda self, p, refresh=False: catalog._lists[p]
+    )
+    model_choice.set_catalog(catalog)
+    tried: list[str] = []
+
+    def answer(self, **_kwargs):  # type: ignore[no-untyped-def]
+        tried.append(self.model)
+        if self.model != "gemini-2.5-flash-lite":
+            raise PermanentError(f"Gemini does not offer {self.model}", category="model")
+        return LlmResult(
+            data={"ok": True}, stop_reason="STOP", model=self.model, usage={}, attempts=1
+        )
+
+    monkeypatch.setattr(GeminiClient, "complete_json", answer)
+    body = api.client().post("/api/llm/test", json={"provider": "gemini"}).json()
+    assert body == {"provider": "gemini", "ok": True, "model": "gemini-2.5-flash-lite"}
+    assert tried == ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite"], "Flash-Lite, newest first"
+
+    def refused(self, **_kwargs):  # type: ignore[no-untyped-def]
+        raise PermanentError("Gemini rejected the key", category="auth")
+
+    monkeypatch.setattr(GeminiClient, "complete_json", refused)
+    body = api.client().post("/api/llm/test", json={"provider": "gemini"}).json()
+    assert (body["ok"], body["reason"]) == (False, "key"), "a refused key is the key"
+
+
+def test_the_check_fails_as_other_when_every_model_is_refused_and_once_with_no_list(  # type: ignore[no-untyped-def]
+    api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.errors import PermanentError
+    from app.llm import model_choice
+    from app.llm.gemini_client import GeminiClient
+
+    lists = {
+        "gemini": model_choice.Listing(
+            models=[
+                model_choice.ModelInfo(i, i)
+                for i in ("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
+            ],
+            fetched_at=time.time(),
+        )
+    }
+    monkeypatch.setattr(model_choice.Catalog, "listing", lambda self, p, refresh=False: lists[p])
+    monkeypatch.setattr(model_choice.Catalog, "cached", lambda self, p: lists[p])
+    model_choice.set_catalog(model_choice.Catalog(api.services.config))
+    tried: list[str] = []
+
+    def refused(self, **_kwargs):  # type: ignore[no-untyped-def]
+        tried.append(self.model)
+        raise PermanentError(f"Gemini does not offer {self.model}", category="model")
+
+    monkeypatch.setattr(GeminiClient, "complete_json", refused)
+    body = api.client().post("/api/llm/test", json={"provider": "gemini"}).json()
+    assert (body["ok"], body["reason"]) == (False, "other"), "a refused model is not the key"
+    assert tried == ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+
+    tried.clear()
+    lists["gemini"] = model_choice.Listing(error="failed", fetched_at=time.time())
+    body = api.client().post("/api/llm/test", json={"provider": "gemini"}).json()
+    assert (body["ok"], body["reason"]) == (False, "other")
+    assert tried == ["gemini-2.5-pro"], "no list: the usual model, once"
+
+
+def test_a_refused_anthropic_key_is_the_key(api, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    """Review round 3: the SDK's 401 carries a status code, not a category."""
+    from app.llm.client import AnthropicClient
+
+    class Unauthorized(Exception):
+        status_code = 401
+
+    def refused(self, **_kwargs):  # type: ignore[no-untyped-def]
+        raise Unauthorized("invalid x-api-key")
+
+    monkeypatch.setattr(AnthropicClient, "complete_json", refused)
+    body = api.client().post("/api/llm/test", json={"provider": "anthropic"}).json()
+    assert (body["ok"], body["reason"]) == (False, "key")

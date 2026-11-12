@@ -3095,18 +3095,33 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
     started = time.monotonic()
     model = ""
     try:
-        from app.llm.model_choice import conversation_use
+        from app.errors import PermanentError
+        from app.llm import model_choice
 
-        client = make_client(
-            svc.config, provider=provider, use=conversation_use(provider), fetch=True
-        )
+        use = model_choice.conversation_use(provider)
+        client = make_client(svc.config, provider=provider, use=use, fetch=True)
         model = str(getattr(client, "model", "") or "")
-        result = client.complete_json(
-            system_blocks=system_blocks("You answer with JSON only.", None),
-            user='Reply with exactly {"ok": true}',
-            schema=PROBE_SCHEMA,
-            max_tokens=64,
-        )
+        # The quickest models the provider lists, when it is ours to pick: the check only
+        # proves the key answers. One that is refused hands over to the next.
+        tries = model_choice.check_models(svc.config, provider, use, model_choice.catalog())
+        for index, candidate in enumerate(tries or [model]):
+            if tries:
+                client.model = model_choice.guard(provider, candidate)  # type: ignore[attr-defined]
+                client.fallbacks = []  # type: ignore[attr-defined]  # the loop is the order
+                client.hands_over = False  # type: ignore[attr-defined]
+                model = candidate
+            try:
+                result = client.complete_json(
+                    system_blocks=system_blocks("You answer with JSON only.", None),
+                    user='Reply with exactly {"ok": true}',
+                    schema=PROBE_SCHEMA,
+                    max_tokens=64,
+                )
+                break
+            except PermanentError as exc:
+                if exc.category != "model" or index + 1 >= len(tries):
+                    raise
+                log.info("provider test %s: %s refused, trying the next", provider, candidate)
         ok = bool(result.data.get("ok"))
         verdict = "ok" if ok else "wrong answer"
         took = time.monotonic() - started
@@ -3118,7 +3133,18 @@ def llm_test(request: Request, body: ProviderPost | None = None) -> dict[str, An
             "provider test %s (model %s) failed in %.1f s: %s",
             provider, model or "default", time.monotonic() - started, type(exc).__name__,
         )  # fmt: skip
-        return {"provider": provider, "ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        # "key" when the provider refused the key; anything else says nothing of the key,
+        # and setup must not call it a bad one (a retired model did, 2026-11-12).
+        # The Anthropic SDK's own errors carry the HTTP status, not a category.
+        refused = getattr(exc, "category", None) == "auth"
+        refused = refused or getattr(exc, "status_code", None) in (401, 403)
+        reason = "key" if refused else "other"
+        return {
+            "provider": provider,
+            "ok": False,
+            "reason": reason,
+            "error": f"{type(exc).__name__}: {exc}"[:300],
+        }
 
 
 # --------------------------------------------------------------------------- detector

@@ -42,7 +42,8 @@ export interface CliSnapshot extends CliFacts {
   codeInWindow?: boolean;
 }
 
-export type KeyPhase = "idle" | "checking" | "valid" | "invalid";
+/** `invalid`: the provider refused the key. `failed`: the check failed for another reason. */
+export type KeyPhase = "idle" | "checking" | "valid" | "invalid" | "failed";
 
 /** The computer-audio self-test: a sound played, and whether the loopback heard it. */
 export type SpeakerPhase = "idle" | "playing" | "heard" | "silent";

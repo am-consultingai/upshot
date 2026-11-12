@@ -60,7 +60,7 @@ export interface Outcomes {
   calendar: "connected" | "partial" | "cancelled" | "timeout";
   install: "ok" | "fail";
   signin: "ok" | "fail";
-  key: "valid" | "invalid";
+  key: "valid" | "invalid" | "failed";
   speakers: "heard" | "silent";
 }
 
@@ -68,7 +68,7 @@ export const OUTCOME_CHOICES: { [K in keyof Outcomes]: Outcomes[K][] } = {
   calendar: ["connected", "partial", "cancelled", "timeout"],
   install: ["ok", "fail"],
   signin: ["ok", "fail"],
-  key: ["valid", "invalid"],
+  key: ["valid", "invalid", "failed"],
   speakers: ["heard", "silent"],
 };
 
