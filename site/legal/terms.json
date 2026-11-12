@@ -1,9 +1,9 @@
 {
-  "version": "2026-11-12",
-  "effective": "2026-11-12",
+  "version": "2026-11-13",
+  "effective": "2026-11-13",
   "material": false,
-  "summary": "Our contact email address is now upshot@amconsultingai.com. Nothing else has changed.",
+  "summary": "A wording fix in section 16, Third-party components and models, about the two components licensed to us rather than to you. Upshot's source code is published under the Upshot licence (section 5), which is not an open-source licence. Nothing else has changed.",
   "url": "terms.md",
-  "sha256": "4a803182c74ac170060de2f29ebceeb0b9dfe5a9a25e074b84c079b36b9cbbff",
+  "sha256": "9a753d6fbd9e09a065b1f67a3c366cb9859759bd3a309402f8f4a0f7a1092964",
   "page": "https://upshot.amconsultingai.com/terms.html"
 }
