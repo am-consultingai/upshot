@@ -149,7 +149,27 @@ def test_metadata_present(page: Path) -> None:
     for needle in ("<title>", 'name="description"', 'property="og:image"', 'property="og:title"'):
         assert needle in html
     assert 'hreflang="he"' in html and 'hreflang="en"' in html
-    assert (SITE / "og.png").is_file()
+    assert (SITE / "og.jpg").is_file() and (SITE / "og-he.jpg").is_file()
+
+
+@each_page
+def test_link_preview_fits(page: Path) -> None:
+    """What a shared link shows: the image exists, and the texts fit before they are cut."""
+    html, _ = _parse(page)
+
+    def meta(attr: str, name: str) -> str:
+        found = re.search(rf'<meta {attr}="{re.escape(name)}" content="([^"]*)"', html)
+        assert found, name
+        return found[1]
+
+    image = meta("property", "og:image").removeprefix("https://upshot.amconsultingai.com/")
+    assert (SITE / image).is_file()
+    assert (SITE / image).stat().st_size < 300_000  # WhatsApp drops larger previews
+    assert meta("name", "twitter:image").endswith(image)
+    assert meta("property", "og:site_name") == "Upshot"
+    assert len(meta("name", "description")) <= 160  # Google cuts around here
+    assert len(meta("property", "og:description")) <= 125  # social cards, on a phone
+    assert meta("property", "og:image:alt")
 
 
 @each_page
