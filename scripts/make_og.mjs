@@ -16,7 +16,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SITE = join(ROOT, "site");
-const { chromium } = createRequire(join(ROOT, "frontend", "package.json"))("playwright");
+const { chromium } = createRequire(join(ROOT, "frontend", "package.json"))("@playwright/test");
+
+// the hero's own headline, read from the page so the two never drift apart
+const headline = (page) => {
+  const found = readFileSync(join(SITE, page), "utf8").match(/<h1\b[^>]*>(.*?)<\/h1>/s);
+  if (!found) throw new Error(`no <h1> in site/${page}`);
+  return found[1];
+};
 
 const PAGES = [
   {
@@ -24,8 +31,7 @@ const PAGES = [
     lang: "en",
     dir: "ltr",
     eyebrow: "Meeting notes for Windows",
-    // the hero's own headline, read from the page so the two never drift apart
-    h1: readFileSync(join(SITE, "index.html"), "utf8").match(/<h1>(.*?)<\/h1>/s)[1],
+    h1: headline("index.html"),
     cta: "Download for Windows",
     meta: "No bot in the meeting · audio stays on your PC",
   },
@@ -34,9 +40,9 @@ const PAGES = [
     lang: "he",
     dir: "rtl",
     eyebrow: "סיכומי פגישות ל-Windows",
-    h1: readFileSync(join(SITE, "he", "index.html"), "utf8").match(/<h1>(.*?)<\/h1>/s)[1],
+    h1: headline("he/index.html"),
     cta: "הורדה ל-Windows",
-    meta: "בלי בוט בפגישה · האודיו נשאר במחשב",
+    meta: "בלי בוט בפגישה · האודיו נשאר על המחשב",
   },
 ];
 
